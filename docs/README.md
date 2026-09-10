@@ -36,6 +36,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [ADR 0001：混合与分布式执行模型](adr/0001-hybrid-distributed-execution.md)
 - [架构流程图索引](diagrams/README.md)
 - [ADR 0002：多节点技术栈与演进边界](adr/0002-multi-node-technology-strategy.md)
+- [ADR 0003：V0.1 契约冻结与权威来源](adr/0003-v01-contract-freeze.md)
 
 ## Product UI
 
@@ -43,9 +44,12 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [核心用户流程](product-ui/02-core-user-flows.md)
 - [P0 页面线框规范](product-ui/03-p0-wireframes.md)
 
-## 设计评审与开发任务
+## 设计评审、冻结决策与开发任务
 
 - [V0.1 设计评审与待冻结决策](planning/01-design-review.md)
 - [开发任务清单与 agent 交接模板](planning/02-development-task-backlog.md)
+- [决策登记（M0–M3 已冻结）](planning/decision-register.md)
+- [状态矩阵](planning/state-matrix.md)
+- [页面与 API 能力矩阵](planning/api-capability-matrix.md)
 
-以上为开发前评审与任务规划；不代表代码已经实现，也不自动替代已接受 ADR。
+`protocols` 与 `operations` 将在 T02/T17 出现首份真实文件时加入 Git。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。

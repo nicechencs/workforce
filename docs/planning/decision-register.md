@@ -1,0 +1,314 @@
+# V0.1 决策登记
+
+日期：2026-09-10  
+状态：**已冻结（M0–M3 开工基线）**  
+范围：设计评审 R01–R09 及评审推荐默认值。  
+协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。
+
+本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。
+
+未测的真实 Runtime 能力转交 T03，不得用猜测当决定。
+
+## 1. 冻结总表
+
+| 决策 | 冻结值 | 主要受影响任务 |
+|---|---|---|
+| 首版执行位置 | 单用户 Local Node；远程只保留版本化契约与 Mock | T02、T05、T09、T10、T13 |
+| 初始交付结果 | 固定基线 SHA 的整合 patch/分支 + 报告；合回用户目标分支是显式动作 | T06、T08、T14、T16 |
+| Planner 流程 | 先配置再规划；Planner 是普通受控 Task/Run；确认 Plan 版本后才发布冻结执行 DAG | T02、T09、T12、T14 |
+| 接管含义 | 先停写入并确认，再人工编辑，再重新注册 Artifact / Evaluation / 审批 | T05、T06、T09、T13 |
+| 协议唯一来源 | `packages/protocol` 可执行 schema 源；生成 JSON Schema、DTO、OpenAPI | T02 及所有消费者 |
+| 本地通信 | Daemon REST+SSE；Electron Main 代理；Renderer 仅 typed bridge | T10、T11、T12、T13 |
+| 版本 | `definitionRevision` 与 `stateRevision` 分开 | T02、T04、T09、T10 |
+| 运行能力 | capability probe + 受测 fixture；不支持则禁用或启动前拒绝 | T03、T05、T07、T15 |
+| 预算 | `costMinor` 整数 + `currency`；时间/次数/并发先硬约束；未知成本不得当 0 | T02、T04、T07、T09、T13 |
+| 共享进程控制 | 独立包 `packages/process`，实现所有权归 T06 | T01、T06、T08、T15 |
+
+## 2. B0 决策（R01–R09）
+
+### D01 / R01 — 契约权威来源
+
+**权威顺序（后者不得覆盖前者的已冻结字段语义）：**
+
+1. 本决策登记、[state-matrix.md](state-matrix.md)、[api-capability-matrix.md](api-capability-matrix.md)
+2. 已 Accepted 的 ADR
+3. `packages/protocol` 生成的 schema / DTO / OpenAPI（T02 落地后）
+4. 蓝图正文：领域不变量看 `02`，状态机看 `08`，Task 看 `05`，Artifact 看 `06`，Runtime SPI 看 `07`，Event envelope 看 `09`，存储意图看 `10`，HTTP 资源看 `11`
+5. Product UI 只约束页面能力，不发明 API 或状态值
+6. 架构概览 `03`、仓库结构 `04`、MVP 计划 `12` 是方向文档
+
+**类型分层，禁止混用同一组字段名：**
+
+| 层 | 用途 | 例子 |
+|---|---|---|
+| Domain | 持久化实体与不变量 | `Task.status`, `Run.status` |
+| Protocol DTO | 跨进程/HTTP JSON | `TaskDto`, `WorkforceEvent` |
+| Persistence | 表/列/JSON 载体 | `tasks.definition_revision` |
+| Runtime SPI | Adapter 输入输出 | `StartRunRequest`, `RuntimeHandleRef` |
+
+映射必须显式。文档示例分为：
+
+- **可校验 fixture**：进入 `packages/testkit` 与 contract 测试
+- **概念节选**：不得当作实现契约
+
+**Event envelope 以 `09` 为准：**
+
+```text
+specVersion, id, type, source, subject, time, recordedAt,
+actor, stream, sequence, correlationId, dataSchema, data
+```
+
+`02` 的 `schemaVersion` / `occurredAt` / `payload` 视为过时别名：
+
+| 过时 | 权威 |
+|---|---|
+| schemaVersion | specVersion |
+| occurredAt | time |
+| payload | data |
+| eventVersion | specVersion |
+
+SSE `data` 必须是完整 `WorkforceEvent` JSON，或明确的投影 DTO；禁止另造 `from/to` 事件把 Run 迁到不存在的 `waiting_review`。`waiting_review` 只属于 Task，不属于 Run。
+
+**Runtime SPI 以 `07 §4` 为准：** `describe/validate/start/sendInput/cancel/inspect/stream/reconcile`，使用 `RuntimeHandleRef`、receipt、cursor。`03` 中只收 `runId` 的 Adapter 图是概览。
+
+**Task 输出与验收以 `05` 为准：** `expectedOutputs[].id` + `kind` 稳定；`acceptanceCriteria[].id` 稳定。API 示例里的 `type: code_change` 与无 id 的 criterion 作废。
+
+### D02 / R02 — Planner 与不可变 DAG
+
+1. 新建 Project 先进入 `draft`：绑定 Workspace、预设 Team、Runtime、权限、预算。配置未完成不得启动 Planner。
+2. 配置齐备后进入 `planning`。Planner 是普通 Task/Run（Mock 或真实），产出不可变 **Plan Artifact**（精确 ArtifactVersion）。
+3. 用户确认指定 Plan 版本（gate 类型 `plan`）。确认成功后原子发布/引用 **执行 WorkflowVersion**，Project 进入 `ready`。
+4. 开发 DAG 只绑定已发布 WorkflowVersion。Planner **不得**修改活动执行图。
+5. 取消或重生成计划：保留旧 Plan Artifact 与审批记录；新 Plan 新版本。已发布执行图不原地改；若需改计划，取消或完成后走新 WorkflowInstance。
+6. M3 允许固定 Mock Plan fixture；V0.1 最终必须接真实 Planner。未批准 Plan 不得启动 Developer。
+
+计划审批（`plan`）与最终代码审批（`artifact`）是不同 gate。
+
+### D03 / R03 — 版本、retry、rework
+
+| 字段 | 含义 |
+|---|---|
+| `definitionRevision` | 可编辑内容版本；进入 Run 快照后该快照不可变 |
+| `stateRevision` | 状态 CAS / ETag；每次合法状态写入 +1 |
+| `generation` | 质量返工代数；同一 Task 身份上递增 |
+| `attempt` | 同一 Task 内单调增加的技术尝试序号 |
+
+规则：
+
+- 技术 retry：同一 `definitionRevision` + 同一 snapshot，**新 Run**，`attempt+1`。不改已终态 Run。
+- 质量返工（waiting_review 被 request-changes，或 Evaluation 未通过且未耗尽 rework）：新 `definitionRevision` 与新 `generation`，新 Run；不是新 Task。
+- `completed` 的 Task **不可重开**。后续工作创建 follow-up Task。
+- `maxAttempts` 按 `(taskId, generation)` 计数。
+- `maxReworkCycles` 单独约束质量循环。
+- Project 硬上限约束总 Run 次数。
+- `queued → running` **不**产生新 definitionRevision。
+- 启动幂等键：`start:{taskId}:definitionRevision:{n}:generation:{g}:attempt:{a}`。
+
+### D04 / R04 — 可恢复执行的存储原则
+
+不要求一对象一表。T04 必须提交「状态/记录 → 存储位置 → 唯一约束 → 恢复入口」矩阵，至少覆盖：
+
+- NodeInstance generation
+- 持久 Timer / retry schedule
+- Runtime Handle 与进程 identity
+- start command 与 idempotency receipt
+- pending approval action digest
+- Artifact staging / output binding
+- usage 去重与资源占用
+- SSE ingestion position
+
+事务规则：
+
+- 业务状态、Event、Outbox **同事务**
+- 外部 spawn、文件写入、Git 操作 **不得**夹在长数据库事务中
+- 先持久化再发布；禁止用 Event replay 重放副作用
+
+三个崩溃窗口必须可测：
+
+1. 命令已提交，进程未启动
+2. 进程已启动，Handle 未提交
+3. Artifact 已落盘，元数据未提交
+
+未知/孤儿进程：只允许 inspect 与安全终止；禁止盲目重跑。
+
+### D05 / R05 — 幂等身份
+
+持久作用域：
+
+```text
+principalId + clientId + canonicalOperation + resource + idempotencyKey
+```
+
+- Session token 只认证，不构成收据边界。重连换 token 后，同一 clientId + key 仍命中原收据。
+- 先比 key 的请求摘要与历史收据，再对首次命令检查 `If-Match`。
+- Receipt 状态：`pending | committed | failed`；至少保留 24 小时；过期后可通过 operationId 查询已发生操作，不得当「从未发生」。
+- 所有状态命令与 Runtime 输入携带可持久化 `operationId`。
+- 相同 key + 相同摘要 → 原结果；相同 key + 不同摘要 → `409 idempotency_key_reused`。
+
+### D06 / R06 — 事件序号与 SSE cursor
+
+三层序号：
+
+| 层 | 作用 |
+|---|---|
+| Runtime source cursor | Adapter 续流 |
+| 聚合 stream sequence | 单 stream 内业务顺序，可从 1 开始 |
+| SQLite ingestionPosition | 全库单调；SSE 补拉权威 |
+
+SSE：
+
+- `Last-Event-ID` / cursor 是不透明值，必须能解析为 `ingestionPosition`，并绑定过滤条件
+- 这是本地投递顺序，不是跨机器因果顺序
+- 握手：资源快照 + high-water mark，避免快照与订阅之间漏事件
+- cursor 过期 → `410`，客户端重建快照再订
+- heartbeat 不持久化、不占 ingestionPosition
+
+### D07 / R07 — Node 与 Placement
+
+- 本地新建 Run 在 **starting 之前**必须有 `executionNodeId`、`runtimeInstallationId`、`workspaceInstanceId`。分配前可空，starting 时缺一不可。
+- `workflowNodeId`（图节点）与 `executionNodeId`（执行位置）禁止混用同一字段名。
+- `RuntimeDescriptor.transport` 只表示接入方式：`process | sdk | http`。删除 `remote` 作为 transport 的含义。位置用 Placement。
+- V0.1 实现单机容量与 Node ports。远程 enrollment / heartbeat / 服务器 lease：版本化契约 + Mock，不建服务器控制面。
+- Lease 到期 ≠ 旧进程已停。fencing 只阻止旧结果被平台接纳，不能阻止旧进程写外部系统。
+- 恢复不确定时不得直接重跑。取消与 inspect 必须有明确授权路径。
+
+### D08 / R08 — 首版 API 与页面
+
+以 [api-capability-matrix.md](api-capability-matrix.md) 为准。硬规则：
+
+- 前端不得私自创造矩阵中不存在的 endpoint
+- Team 首版只读预设模板；自定义编排后置
+- 项目归档可延后，列表不展示伪造的归档成功
+- Artifact content / read / verify / approval / input **必须**带 `artifactVersionId` 或精确 `version`；`latest` 只用于非执行性浏览
+- Run takeover 与 Approval decision 分离：takeover 是执行权转移流程，不是把任意 shell 接到 Renderer
+- 提供 operation receipt 查询
+
+### D09 / R09 — 三层结果
+
+| 层 | 含义 | 成功条件 |
+|---|---|---|
+| Runtime execution outcome | Adapter 报告进程/会话结束 | Runtime 自己的 completed/failed |
+| Run 平台结果 | 平台对这一次执行的判定 | `succeeded` = Runtime 成功结束且平台已记录终态；**不**要求 Task 验收通过 |
+| Task acceptance verdict | 业务是否完成 | 全部 required outputs + criteria + 所需 gate 通过 |
+
+- Artifact 不完整或测试失败 → Evaluation/Task 不通过；**不回写**已终态 Run。
+- `03 §8`「Artifact 不完整则 Run 不得成功」废止，改为：缺产物则 Task 不得 completed，Run 保持其执行终态。
+- 依赖边默认 `onUpstream: outputs_ready`（上游 required outputs 已有精确版本），不是必须等待上游 Task `completed`。
+- Review/Gate 节点消费固定 ArtifactVersion，禁止 Developer completed ↔ Reviewer completed 循环等待。
+- 软件开发模板中 Reviewer 依赖 Developer 的 **输出版本**，Developer 不等待 Reviewer 才能 completed。最终人工验收是独立 Approval 节点。
+
+## 3. B1 默认（实现时遵守，T03 可补充证据）
+
+### D10 / R10 — 代码汇总
+
+- 每个 Project 冻结 immutable base SHA。
+- 每个 Run 独立 worktree，不共享可写目录。
+- 输出含 patch/commit、base SHA、changed paths、测试结果、内容 hash。
+- 依赖任务用上游精确 ArtifactVersion 构建工作区。
+- 并行分支在独立 integration worktree 按稳定 Node ID 顺序整合；冲突进人工处理。
+- 测试、Reviewer、最终审批绑定整合后同一 content digest。
+- 默认不自动 push、不开 GitHub PR。
+- 不得把两份分别通过测试的 diff 称为合并后项目通过。
+
+### D11 / R11 — 审批与接管
+
+Approval 必须绑定：action type、规范化参数 digest、resource/version、principal、policy version、expiry、一次性消费记录。目标版本/参数/权限变化必须重新审批。
+
+四类 gate：`plan`、`artifact`、`action`、`budget`。
+
+接管顺序：
+
+1. 请求停止/冻结 Agent 写入
+2. 确认其失去写入权（或进入只读诊断）
+3. 授予用户工作区操作
+4. 捕获人工变更为新 ArtifactVersion
+5. 重新 Evaluation / 审批
+
+结果不确定时只允许诊断，禁止人工与未知活动进程双写。
+
+### D12 / R12 — Policy 执行点
+
+- 能力矩阵记录 enforceable / observable / unsupported，并标明 enforcement owner。
+- Runtime 不能实施必需限制时，启动前拒绝该组合。
+- 默认使用既有本地 Runtime 身份；CredentialRef 与 Broker 独立。
+- 不默认复制用户整个环境变量或认证目录。
+- 脱敏覆盖跨输出分块、错误、raw payload、诊断导出。
+- 外部文本只是数据，不能修改 Policy。
+
+### D13 / R13 — 暂停、未知、恢复
+
+不新增 RunStatus 枚举值。用 operation/recovery 子状态表达：
+
+- `cancelRequestedAt`、deadline、lastTrustedFact
+- 取消 API `202` = 接受请求，UI 不得立即显示已取消
+- Daemon 重启用 durable Handle + 进程 identity 对账
+- Desktop 关窗不杀允许继续的 Run
+
+RunStatus 仍为：`pending | starting | running | waiting_input | paused | succeeded | failed | timed_out | cancelled`。
+
+### D14 / R14 — 预算
+
+- 存储与比较使用 `costMinor: integer` + `currency: ISO-4217`。展示层可换算，禁止各模块私自解析 `5.0`。
+- 展示区分 unknown / estimated / settled。未知 ≠ 0。
+- V0.1 硬约束：调度前预留、最大运行时长、尝试次数、并发、可观测 token/tool 限制。
+- 货币硬上限只对有可靠计量且可停止的 Runtime 生效；否则阻止启动并说明。
+- 晚到 usage 仍入账（去重）；不回写冻结快照与终态。
+
+## 4. 包与文件所有权（领取前锁定）
+
+| 包/目录 | 写入负责人 | 备注 |
+|---|---|---|
+| `docs/planning/decision-register.md` 等决策文件、蓝图一致性 | T00 / 协调者 | 本批 |
+| 根 `package.json` / lockfile / turbo / tsconfig / lint / CI | T01，完成后 lockfile 归协调者 | 本批 |
+| `packages/protocol`, `domain`, `runtime-spi`, `application/src/ports`, `events/src/contracts`, `testkit/src/contracts` | T02 | 等 T00+T01 |
+| `tooling/spikes`, `docs/spikes` | T03 | 本批 |
+| `packages/database`, `packages/events/src/store\|outbox\|subscriptions` | T04 | 等 T02 |
+| `runtimes/mock`, `packages/runtime-sdk` | T05 | 等 T02 |
+| `packages/workspace`, `packages/process` | T06 | 等 T02 |
+| `packages/policy`, `packages/observability` | T07 | 等 T02 |
+| `packages/artifacts` | T08 | 等 T02 |
+| `packages/workflow-engine`, `application/src/use-cases/{projects,tasks,runs,approvals,budgets,recovery}` | T09 | 等 T02 |
+| `apps/daemon`, `packages/desktop-client` | T10 | 等 T02 |
+| `apps/desktop/src/{main,preload,renderer/app,renderer/routes,renderer/components}`, `packages/ui` | T11 | 等 T02 |
+| `renderer/features/{projects,tasks,teams}` | T12 | 等 UI 约定 |
+| `renderer/features/{runs,artifacts,approvals,nodes,settings,dashboard}` | T13 | 等 UI 约定 |
+| `templates/software-development-team`, `application/src/use-cases/{planning,delivery}` | T14 | 等 T02 |
+| `runtimes/codex` | T15 | 等 T02+T03 |
+| `tests/{contract,integration,e2e,platform}` | T16 / 协调者 | 从 T02 起可写场景 |
+| `tooling/release`, 打包配置 | T17 | 后置 |
+
+公共类型缺口：提交契约变更请求，禁止复制类型或改邻接模块。
+
+## 5. M3 Mock 主路径（首个可校验闭环）
+
+```text
+创建 Project(draft)
+  → 绑定 Workspace + 预设 Team + Mock Runtime + 预算
+  → Project(planning)
+  → Planner Task/Run(Mock) 产出 Plan ArtifactVersion
+  → Approval(gate=plan) 确认该版本
+  → 发布执行 WorkflowVersion，Project(ready/running)
+  → Developer A、Developer B 两个隔离 Run（独立 worktree，Mock 产出 patch）
+  → 输出就绪后 Review/Test 消费精确版本
+  → 整合 worktree + 测试证据 Artifact
+  → Approval(gate=artifact) 人工验收同一 digest
+  → 导出 bundle/report
+```
+
+重启不得重复创建 Run。同 operationId/key 返回原 Handle/收据。
+
+## 6. 明确不在本冻结内
+
+- 真实 Codex 能力（T03 实测后才能写入能力矩阵的 live 列）
+- 三平台安装签名/公证（T17）
+- 远程节点控制面、云账号、GitHub PR、自动 push
+- 自定义 Team 编排、可视化 Workflow 编辑器、复杂仪表盘
+
+## 7. 交接
+
+- 决策：本文
+- 状态： [state-matrix.md](state-matrix.md)
+- 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
+- ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
+
+T02 必须把本节字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。
