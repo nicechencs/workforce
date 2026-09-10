@@ -1,3 +1,31 @@
 id: software-development-team
-version: "0.0.0"
-status: placeholder
+version: "0.1.0"
+status: published
+protocolVersion: "0.1"
+name: Software Development Team
+description: >
+  Versioned Planner, Developer, and Reviewer team for M3 mock delivery.
+  Planner produces an immutable Plan Artifact. Developers emit isolated patches.
+  Reviewer and human artifact approval bind the same integrated content digest.
+runtime:
+  adapterId: mock
+  protocolVersion: "0.1"
+policyRef: software-development-team.default@0.1.0
+workers:
+  - workers/planner.yaml
+  - workers/developer.yaml
+  - workers/reviewer.yaml
+workflows:
+  - workflows/feature-delivery.yaml
+evaluations:
+  - evaluations/code-review.yaml
+fixtures:
+  - fixtures/mock-plan.json
+constraints:
+  maxDepth: 4
+  maxTasks: 8
+  maxAttempts: 3
+  maxReworkCycles: 2
+  developerCompletesWithoutReviewer: true
+  autoPush: false
+  autoPullRequest: false

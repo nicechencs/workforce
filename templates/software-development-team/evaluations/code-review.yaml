@@ -1,2 +1,20 @@
-id: code-review
-status: placeholder
+id: software-development-team.code-review
+version: "0.1.0"
+status: published
+protocolVersion: "0.1"
+type: review
+commandRef: evaluation.code-review
+schemaRef: urn:workforce:review-report:0.1
+binds:
+  digest: integration
+  gate: artifact
+passWhen:
+  - review_report.available
+  - artifact_approval.approved
+  - digest.unchanged
+failWhen:
+  - conflict.unresolved
+  - digest.mismatch
+notes: >
+  A passing slice test on an individual Developer patch is not the merged project verdict.
+  Re-integration produces a new digest and invalidates prior artifact approvals.

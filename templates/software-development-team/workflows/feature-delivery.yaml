@@ -1,2 +1,46 @@
-id: feature-delivery
-status: placeholder
+id: software-development-team.feature-delivery
+version: "0.1.0"
+status: published
+protocolVersion: "0.1"
+name: Feature delivery
+description: >
+  Confirm a Plan Artifact, run two isolated Developer Tasks, integrate patches by
+  stable Node ID, then Review and human artifact approval on one digest.
+entry: planning
+stages:
+  - id: planning
+    worker: planner
+    output: out_plan
+    gate: plan
+    publishes: workflowVersion
+  - id: implementation
+    worker: developer
+    parallel: true
+    nodeIdPattern: dev_*
+    onUpstream: outputs_ready
+    completesWithout: reviewer
+  - id: integration
+    kind: delivery
+    strategy: stable_node_id_order
+    worktree: dedicated
+    provision: workspace.provisionIntegrationWorkspace
+    apply: workspace.applyPatch
+    onConflict: human
+  - id: review
+    worker: reviewer
+    onUpstream: outputs_ready
+    bindDigest: integration
+  - id: acceptance
+    kind: approval
+    gate: artifact
+    bindDigest: integration
+failurePolicy:
+  type: fail_workflow
+concurrencyPolicy:
+  runWorktree: isolated
+  integrationWorktree: dedicated
+constraints:
+  autoPush: false
+  autoPullRequest: false
+  developerCompletesWithoutReviewer: true
+mockPlanFixture: fixtures/mock-plan.json
