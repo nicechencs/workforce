@@ -36,3 +36,9 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [ADR 0001：混合与分布式执行模型](adr/0001-hybrid-distributed-execution.md)
 - [架构流程图索引](diagrams/README.md)
 - [ADR 0002：多节点技术栈与演进边界](adr/0002-multi-node-technology-strategy.md)
+
+## Product UI
+
+- [页面信息架构](product-ui/01-information-architecture.md)
+- [核心用户流程](product-ui/02-core-user-flows.md)
+- [P0 页面线框规范](product-ui/03-p0-wireframes.md)
