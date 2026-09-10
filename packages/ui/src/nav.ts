@@ -4,6 +4,7 @@ export const FEATURE_SLOTS = [
   "tasks",
   "teams",
   "runs",
+  "workflows",
   "artifacts",
   "approvals",
   "nodes",
@@ -26,6 +27,10 @@ export interface ShellNavItem {
   primary: boolean;
 }
 
+/**
+ * Sidebar membership follows IA §2: every 一级导航 row is `primary`.
+ * `priority` is slice depth (P0 = M3 path, P1 = thinner V0.1 page), not visibility.
+ */
 export const SHELL_NAV_ITEMS: readonly ShellNavItem[] = [
   {
     id: "dashboard",
@@ -79,7 +84,16 @@ export const SHELL_NAV_ITEMS: readonly ShellNavItem[] = [
     slot: "runs",
     owner: "t13",
     priority: "p1",
-    primary: false,
+    primary: true,
+  },
+  {
+    id: "workflows",
+    path: "/workflows",
+    label: "工作流",
+    slot: "workflows",
+    owner: "t12",
+    priority: "p1",
+    primary: true,
   },
   {
     id: "settings",

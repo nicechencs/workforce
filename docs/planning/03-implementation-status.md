@@ -25,8 +25,8 @@
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob |
-| T12 | **本轮完成页面** | 项目 / Task / 只读团队 |
-| T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置 |
+| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流（模板·版本·结构化步骤，夹具；无画布编辑器） |
+| T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **本轮起步** | detect/describe/validate；**拒绝** live start |
 | T16 | **本轮起步** | HTTP M3 + typed client；桌面 happy-dom 页 driver（非真窗口） |
@@ -85,12 +85,15 @@ Approval(gate=artifact)                     ✅
 重启保留预算/reservation                     ✅ SQLite budgets / budget_reservations / usage_ledger
 ```
 
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的为「查看模板、版本和结构化步骤」，不用「管理」暗示画布。线框 §1 侧栏与 §7 只读页含「工作流」。实现仍是夹具只读；不发明 `GET /workflows`，不宣称真实 Runtime 可执行。
+
 ## 5. 剩余工作
 
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台与视觉。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
 3. **T17** 打包。  
-4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
+4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。  
+5. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。
 
 ## 6. 如何跑
 

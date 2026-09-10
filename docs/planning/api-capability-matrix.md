@@ -3,7 +3,8 @@
 日期：2026-09-10  
 状态：**已冻结（首版按钮与 endpoint）**  
 权威：[decision-register.md](decision-register.md) D08。  
-未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。
+未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+页面范围补了一行 P1 壳导航说明，与 [IA §2](../product-ui/01-information-architecture.md) 对齐；**未新增 endpoint**。
 
 图例：
 
@@ -30,6 +31,13 @@ P0 最小切片（M3 必须能走完主路径）：
 | 本机诊断 / Local Node | 必须 | 只读本机节点与 Mock/Codex 探测 |
 | AI 团队 | readonly | 预设 Software Development Team |
 | 设置 | 部分 | 本机 Runtime 探测、预算展示 |
+
+P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/01-information-architecture.md)）：
+
+| 页面 | M3 | 说明 |
+|---|---|---|
+| 运行记录列表 | 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
+| 工作流模板 / 版本 | readonly | IA P1；模板、版本、结构化步骤。无画布编辑器。矩阵未列目录 API，禁止前端发明 `GET /workflows` 并宣称已接通 |
 
 明确后置或示意：
 

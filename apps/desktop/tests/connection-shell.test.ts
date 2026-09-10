@@ -9,7 +9,18 @@ describe("renderer shell", () => {
     expect(view.overlay).toBe("loading");
     expect(view.banner?.id).toBe("loading");
     expect(view.mainEnabled).toBe(false);
-    expect(shellNav({ status: "loading" }, "/").every((item) => !item.enabled)).toBe(true);
+    const nav = shellNav({ status: "loading" }, "/");
+    expect(nav.every((item) => !item.enabled)).toBe(true);
+    expect(nav.map((item) => item.label)).toEqual([
+      "工作台",
+      "项目",
+      "AI 团队",
+      "执行节点",
+      "审批中心",
+      "运行记录",
+      "工作流",
+      "设置",
+    ]);
   });
 
   it("shows a recoverable offline banner", () => {

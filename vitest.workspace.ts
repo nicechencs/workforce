@@ -15,7 +15,7 @@ export default defineWorkspace([
         "tests/integration/**/*.test.ts",
         "tests/e2e/**/*.test.ts",
       ],
-      exclude: ["**/node_modules/**", "**/dist/**"],
+      exclude: ["**/node_modules/**", "**/dist/**", "tooling/docs/**/*.test.mjs"],
     },
   },
 ]);
