@@ -19,9 +19,9 @@ describe("shell route registry", () => {
   it("resolves workflow list, detail, and version paths onto the workflows slot", () => {
     const registry = createRouteRegistry();
     expect(registry.resolve("/workflows")?.route.slot).toBe("workflows");
-    expect(registry.resolve("/workflows/software-development-team.feature-delivery")?.params).toEqual(
-      { workflowId: "software-development-team.feature-delivery" },
-    );
+    expect(
+      registry.resolve("/workflows/software-development-team.feature-delivery")?.params,
+    ).toEqual({ workflowId: "software-development-team.feature-delivery" });
     expect(
       registry.resolve("/workflows/software-development-team.feature-delivery/versions/0.1.0")
         ?.params,
