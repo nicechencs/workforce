@@ -31,6 +31,16 @@ export function resolveSmokeWorkspacePath(env: Record<string, string | undefined
   return path.resolve(value);
 }
 
+/** Directory-dialog override is opt-in only. Normal `dev` / `start` never skip the picker. */
+export function resolveSmokeDirectoryOverride(
+  env: Record<string, string | undefined>,
+): string | null {
+  if (!isDesktopSmokeEnabled(env)) {
+    return null;
+  }
+  return resolveSmokeWorkspacePath(env);
+}
+
 export function resolveSmokeResultPath(env: Record<string, string | undefined>): string | null {
   const value = env[DESKTOP_SMOKE_ENV.result];
   if (typeof value !== "string" || value.length === 0) {

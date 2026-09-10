@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 
-import { resolveSmokeWorkspacePath, shouldLaunchElectronHeadless } from "./smoke-env.js";
+import { resolveSmokeDirectoryOverride, shouldLaunchElectronHeadless } from "./smoke-env.js";
 import { startDesktopApp } from "./start.js";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -64,7 +64,7 @@ void startDesktopApp({
       ipcMain.handle(channel, (_event, payload: unknown) => listener(payload));
     },
     pickDirectory: async () => {
-      const smokeWorkspace = resolveSmokeWorkspacePath(process.env);
+      const smokeWorkspace = resolveSmokeDirectoryOverride(process.env);
       if (smokeWorkspace) {
         return smokeWorkspace;
       }

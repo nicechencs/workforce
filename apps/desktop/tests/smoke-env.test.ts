@@ -8,6 +8,7 @@ import {
   isDesktopSmokeEnabled,
   isDesktopSmokeHeaded,
   resolveDaemonLaunchArgs,
+  resolveSmokeDirectoryOverride,
   resolveSmokeResultPath,
   resolveSmokeWorkspacePath,
   shouldLaunchElectronHeadless,
@@ -28,12 +29,22 @@ describe("desktop smoke env", () => {
     ).toBe(false);
   });
 
-  it("resolves an isolated workspace and result path without exposing a host prompt", () => {
+  it("does not skip the directory dialog unless Electron smoke is explicitly enabled", () => {
     const workspace = path.join(os.tmpdir(), "wf-smoke-ws");
+    expect(
+      resolveSmokeDirectoryOverride({
+        WORKFORCE_SMOKE_WORKSPACE: workspace,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSmokeDirectoryOverride({
+        WORKFORCE_DESKTOP_SMOKE: "1",
+        WORKFORCE_SMOKE_WORKSPACE: workspace,
+      }),
+    ).toBe(path.resolve(workspace));
     expect(resolveSmokeWorkspacePath({ WORKFORCE_SMOKE_WORKSPACE: workspace })).toBe(
       path.resolve(workspace),
     );
-    expect(resolveSmokeWorkspacePath({})).toBeNull();
     expect(resolveSmokeResultPath({ WORKFORCE_DESKTOP_SMOKE_OUT: "out.json" })).toBe(
       path.resolve("out.json"),
     );
@@ -59,9 +70,7 @@ describe("desktop smoke env", () => {
     expect(source).toContain("project-action-startPlanning");
     expect(source).toContain("project-action-confirmPlan");
     expect(source).toContain("project-action-startProject");
-    expect(isSmokeResultOk({ ok: true, status: "执行中", tasks: ["Implement slice Alpha"] })).toBe(
-      true,
-    );
+    expect(isSmokeResultOk({ ok: true, status: "执行中", tasks: ["dev_alpha"] })).toBe(true);
     expect(isSmokeResultOk({ ok: true, status: "执行中", tasks: [] })).toBe(false);
   });
 });

@@ -5,11 +5,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Headed/headless Electron click path. Default `pnpm test` skips this so CI
- * does not need a display or the Electron + Vite boot. Opt in with:
+ * Opt-in Electron helper. Default `pnpm test` skips this. It is not a
+ * substitute for a human in a true window. Run with:
  *   pnpm --filter @workforce/desktop smoke
- * or:
- *   WORKFORCE_DESKTOP_SMOKE=1 pnpm exec vitest run apps/desktop/tests/electron-main-path.smoke.test.ts
  */
 const enabled = process.env.WORKFORCE_DESKTOP_SMOKE === "1";
 const script = fileURLToPath(new URL("../scripts/smoke.mjs", import.meta.url));

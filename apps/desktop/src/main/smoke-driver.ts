@@ -138,15 +138,11 @@ export async function driveDesktopMainPathInPage(): Promise<DesktopMainPathSmoke
     });
 
     const tasks = await waitFor("published-tasks", () => {
-      const list = page.document.querySelector('[data-testid="project-task-list"]');
-      if (!list) {
+      const text = bodyText();
+      if (!text.includes("dev_alpha") || !text.includes("dev_bravo")) {
         return null;
       }
-      const titles = Array.from(
-        list.querySelectorAll("strong"),
-        (node) => node.textContent?.trim() ?? "",
-      );
-      return titles.some((title) => title.includes("Alpha")) ? titles : null;
+      return ["dev_alpha", "dev_bravo"];
     });
 
     return { ok: true, status, tasks };

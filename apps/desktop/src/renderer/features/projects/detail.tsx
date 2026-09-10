@@ -178,7 +178,6 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
     if (!picked.ok) {
       return;
     }
-    setGrant(picked.grant);
     const catalog = asCatalogClient(client);
     if (project && hasCatalogMethod(catalog, "createProjectWorkspace")) {
       try {
@@ -187,10 +186,14 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
           { authorizationRef: picked.grant.authorizationId },
           commandOptions(project.stateRevision),
         );
+        await reload(true);
+        setGrant(picked.grant);
       } catch (caught) {
         setError(errorMessage(caught));
       }
+      return;
     }
+    setGrant(picked.grant);
   }
 
   if (error && !project) {
