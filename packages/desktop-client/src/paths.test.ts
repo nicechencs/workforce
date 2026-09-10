@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+
+import { assertSafePath, paths } from "./paths.js";
+
+describe("desktop-client paths", () => {
+  it("never puts secrets in URLs", () => {
+    expect(paths.artifactVersionContent("art_1", "arv_1")).toBe(
+      "/api/v1/artifacts/art_1/versions/arv_1/content",
+    );
+    expect(paths.eventsStream({ projectId: "prj_1", cursor: "1:abc" })).toBe(
+      "/api/v1/events/stream?projectId=prj_1&cursor=1%3Aabc",
+    );
+    expect(() => assertSafePath("/api/v1/runs/run_1?token=secret")).toThrow(/Secrets/);
+    expect(() => assertSafePath("http://127.0.0.1/api/v1/health")).toThrow(/root-relative/);
+  });
+
+  it("builds command paths with colon actions", () => {
+    expect(paths.projectStartPlanning("prj_1")).toBe("/api/v1/projects/prj_1:start-planning");
+    expect(paths.runCancel("run_1")).toBe("/api/v1/runs/run_1:cancel");
+    expect(paths.approvalRequestChanges("apr_1")).toBe("/api/v1/approvals/apr_1:request-changes");
+  });
+});
