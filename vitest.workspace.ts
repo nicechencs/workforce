@@ -9,8 +9,11 @@ export default defineWorkspace([
       include: [
         "packages/**/*.test.ts",
         "apps/**/*.test.ts",
+        "apps/**/*.test.tsx",
         "runtimes/**/*.test.ts",
         "tooling/**/*.test.ts",
+        "tests/integration/**/*.test.ts",
+        "tests/e2e/**/*.test.ts",
       ],
       exclude: ["**/node_modules/**", "**/dist/**"],
     },

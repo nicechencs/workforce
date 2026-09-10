@@ -29,16 +29,16 @@ pnpm test
 pnpm build
 ```
 
-`pnpm test` is a toolchain smoke plus the browser/Node boundary check. It does not mean any product behavior is implemented.
+`pnpm test` runs unit tests across packages/apps plus the M3 Mock HTTP integration. It is not a headed Electron or live Codex proof. See `docs/planning/03-implementation-status.md`.
 
 ## Workspace layout
 
 ```text
-apps/desktop                 Electron shell (empty)
-apps/daemon                  Local daemon composition root (empty)
-packages/*                   Shared libraries (empty public API)
-runtimes/mock                Mock runtime adapter (empty)
-runtimes/codex               Codex adapter (empty)
+apps/desktop                 Electron + Vite + React shell and P0 pages
+apps/daemon                  Loopback Fastify; production uses composed Mock services
+packages/*                   Shared libraries (protocol, application, database, ui, …)
+runtimes/mock                Mock runtime adapter (wired in daemon composition)
+runtimes/codex               Detect/describe/validate; live exec not enabled
 templates/software-development-team
 tooling/eslint               Shared ESLint config + boundary test
 tooling/typescript           Shared tsconfig presets
@@ -128,4 +128,4 @@ The same `exports` rule applies to `domain`, `runtime-spi`, `application` ports,
 
 ## Status
 
-Monorepo skeleton (T01). Product logic, SQLite schema, Electron windows, and Fastify routes are intentionally absent.
+M3 Mock loop is wired in the daemon composition root (create → mock plan fixture → confirm → mock developer runs → artifact approval; restart does not duplicate runs). The desktop app has an Electron/React shell and P0 feature pages. Codex live exec is not enabled. Progress: [docs/planning/03-implementation-status.md](docs/planning/03-implementation-status.md).

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
 import type { ConnectionSnapshot } from "@workforce/ui";
 
+import { useOptionalWorkforceContext } from "../app/workforce-context.js";
 import {
   getInjectedConnectionForTests,
   getPreloadApi,
@@ -19,24 +20,6 @@ export {
 } from "./_client-fallback.js";
 export type { CatalogClient } from "./_client-fallback.js";
 
-/**
- * T11 will provide `../../app/workforce-context.js`. This worktree does not
- * include that module, so pages compile against the local fallback.
- */
-const WORKFORCE_CONTEXT_MODULE = "../../app/workforce-context.js";
-
-type AppContextHooks = {
-  useWorkforceClient: () => DesktopClient;
-  useWorkforceConnection: () => ConnectionSnapshot;
-};
-
-function tryAppContext(): AppContextHooks | null {
-  void WORKFORCE_CONTEXT_MODULE;
-  return null;
-}
-
-const appContext = tryAppContext();
-
 export function setWorkforceClientForTests(client: DesktopClient | null): void {
   setFallbackClient(client);
 }
@@ -46,19 +29,22 @@ export function setWorkforceConnectionForTests(snapshot: ConnectionSnapshot | un
 }
 
 export function useWorkforceClient(): DesktopClient {
-  if (appContext) {
-    return appContext.useWorkforceClient();
+  const ctx = useOptionalWorkforceContext();
+  if (ctx) {
+    return ctx.client;
   }
   return getFallbackClient();
 }
 
 export function useWorkforceConnection(): ConnectionSnapshot {
-  if (appContext) {
-    return appContext.useWorkforceConnection();
-  }
+  const ctx = useOptionalWorkforceContext();
   const injected = getInjectedConnectionForTests();
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot>(injected ?? { status: "loading" });
+  const inShell = ctx !== null;
   useEffect(() => {
+    if (inShell) {
+      return;
+    }
     if (injected !== undefined) {
       setSnapshot(injected);
       return;
@@ -70,6 +56,6 @@ export function useWorkforceConnection(): ConnectionSnapshot {
     }
     void api.connection.getState().then(setSnapshot);
     return api.connection.subscribe(setSnapshot);
-  }, [injected]);
-  return snapshot;
+  }, [inShell, injected]);
+  return ctx?.connection ?? snapshot;
 }

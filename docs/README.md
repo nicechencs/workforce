@@ -27,9 +27,15 @@ Git does not retain empty directories. The `protocols` and `operations` director
 11. [API Design](blueprint/11-api-design.md)
 12. [MVP Implementation Plan](blueprint/12-mvp-implementation-plan.md)
 
+## Planning
+
+- [Decision register](planning/decision-register.md)
+- [Development task backlog](planning/02-development-task-backlog.md)
+- [Implementation status (verified)](planning/03-implementation-status.md)
+
 ## Document status
 
-All blueprint documents are V0.1 drafts. Protocols and implementation details may change through Architecture Decision Records and reviewed pull requests.
+All blueprint documents are V0.1 drafts. Protocols and implementation details may change through Architecture Decision Records and reviewed pull requests. Implementation progress is tracked in `docs/planning/03-implementation-status.md`.
 
 ## 架构决策与流程图
 

@@ -3,6 +3,7 @@ export type { ConnectionController } from "./connection.js";
 export { renderShell } from "./shell.js";
 export {
   WorkforceProvider,
+  useOptionalWorkforceContext,
   useWorkforceCapabilities,
   useWorkforceClient,
   useWorkforceConnection,

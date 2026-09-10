@@ -139,16 +139,16 @@ export class ComposedAppServices implements AppServices {
     });
 
     const engine = createEnginePort();
-    let instance: ComposedAppServices | undefined;
+    const composed: { services?: ComposedAppServices } = {};
     const host = new ComposedMockHost({
       store: hostStore,
       completeAfterMs: options.completeAfterMs ?? 10,
       nodeId: LOCAL_NODE_ID,
       onTerminal: async (event) => {
-        if (!instance) {
+        if (!composed.services) {
           return;
         }
-        await instance.handleTerminal(event);
+        await composed.services.handleTerminal(event);
       },
     });
     const app = createWorkforceApp({
@@ -165,7 +165,7 @@ export class ComposedAppServices implements AppServices {
       sqlite,
       artifacts,
     });
-    instance = services;
+    composed.services = services;
 
     if (snapshot?.world) {
       const restored = await hydrateWorld(app.world, snapshot.world);

@@ -21,8 +21,12 @@ export function WorkforceProvider(props: {
   );
 }
 
+export function useOptionalWorkforceContext(): WorkforceContextValue | null {
+  return useContext(WorkforceContext);
+}
+
 function useWorkforceContext(): WorkforceContextValue {
-  const value = useContext(WorkforceContext);
+  const value = useOptionalWorkforceContext();
   if (!value) {
     throw new Error("Workforce context is unavailable outside the desktop shell");
   }

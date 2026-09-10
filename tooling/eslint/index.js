@@ -67,7 +67,14 @@ const nodeBuiltinRestriction = {
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/.turbo/**", "coverage/**", "docs/**"],
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/.turbo/**",
+      "coverage/**",
+      "docs/**",
+      "tooling/spikes/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

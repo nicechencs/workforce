@@ -67,7 +67,7 @@ describe("preload transport", () => {
     expect(page.items).toEqual([]);
   });
 
-  it("does not claim optional T10 catalog methods exist on today's client", () => {
+  it("sees T10 catalog methods on the typed client", () => {
     const client = createDesktopClient({
       transport: {
         async request() {
@@ -76,8 +76,8 @@ describe("preload transport", () => {
       },
     });
     const catalog = asCatalogClient(client);
-    expect(hasCatalogMethod(catalog, "listTeams")).toBe(false);
-    expect(hasCatalogMethod(catalog, "createProjectWorkspace")).toBe(false);
-    expect(hasCatalogMethod(catalog, "getProjectBudget")).toBe(false);
+    expect(hasCatalogMethod(catalog, "listTeams")).toBe(true);
+    expect(hasCatalogMethod(catalog, "createProjectWorkspace")).toBe(true);
+    expect(hasCatalogMethod(catalog, "getProjectBudget")).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-10  
-状态：任务规划，所有任务均未开始代码实现。  
-前置阅读：[设计评审与待冻结决策](01-design-review.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)。
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。  
+前置阅读：[设计评审与待冻结决策](01-design-review.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
 
