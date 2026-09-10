@@ -1,0 +1,36 @@
+{
+  "name": "@workforce/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workforce/application": "workspace:*",
+    "@workforce/config": "workspace:*",
+    "@workforce/database": "workspace:*",
+    "@workforce/domain": "workspace:*",
+    "@workforce/events": "workspace:*",
+    "@workforce/protocol": "workspace:*",
+    "@workforce/runtime-spi": "workspace:*",
+    "@workforce/workflow-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

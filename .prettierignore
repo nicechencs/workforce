@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+**/dist/**
+**/node_modules/**
+**/.turbo/**
+coverage
+*.tsbuildinfo
+docs
+AGENT_TASK.md

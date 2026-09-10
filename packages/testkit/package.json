@@ -1,0 +1,31 @@
+{
+  "name": "@workforce/testkit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workforce/domain": "workspace:*",
+    "@workforce/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}
