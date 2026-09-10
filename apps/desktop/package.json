@@ -9,15 +9,17 @@
       "default": "./src/index.ts"
     }
   },
-  "main": "./src/index.ts",
+  "main": "./dist/main/electron-main.js",
   "types": "./src/index.ts",
   "files": [
     "dist",
     "src"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node ./scripts/bundle-preload.mjs && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "dev": "node ./scripts/dev.mjs",
+    "start": "pnpm run build && electron ./dist/main/electron-main.js"
   },
   "dependencies": {
     "@workforce/desktop-client": "workspace:*",

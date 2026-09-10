@@ -27,3 +27,17 @@ export { requiredCoordinatorDependencies } from "./required-dependencies.js";
 export { assertSecureWebPreferences, createRendererWebPreferences } from "./security.js";
 export { decideDaemonUpgrade } from "./updater/index.js";
 export { createMainWindowSpec } from "./windows/index.js";
+export {
+  applyLastWindowClose,
+  applyUiSingleInstancePolicy,
+  attachIpcHandlers,
+  resolvePreloadPath,
+  resolveRendererLoadTarget,
+} from "./composition.js";
+export { startDesktopApp } from "./start.js";
+export type { DesktopAppPorts, DesktopWindowPort, StartDesktopOptions } from "./start.js";
+export {
+  createSupervisorDeps,
+  resolveDaemonEntry,
+  resolveDesktopStateDir,
+} from "./supervisor-runtime.js";

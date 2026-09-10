@@ -3,6 +3,7 @@ import { buildShellView, type ConnectionSnapshot, type ShellView } from "@workfo
 export function renderShell(input: {
   connection: ConnectionSnapshot;
   currentPath: string;
+  title?: string;
 }): ShellView {
   return buildShellView(input);
 }

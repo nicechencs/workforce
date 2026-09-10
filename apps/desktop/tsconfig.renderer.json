@@ -1,8 +1,9 @@
 {
   "extends": "../../tooling/typescript/browser.json",
   "compilerOptions": {
-    "outDir": "dist/renderer",
-    "rootDir": "src/renderer"
+    "outDir": "dist/renderer-tsc",
+    "rootDir": "src/renderer",
+    "types": ["vite/client"]
   },
   "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
 }
