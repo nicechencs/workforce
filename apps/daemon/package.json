@@ -21,13 +21,17 @@
   },
   "dependencies": {
     "@workforce/application": "workspace:*",
+    "@workforce/artifacts": "workspace:*",
     "@workforce/config": "workspace:*",
     "@workforce/database": "workspace:*",
     "@workforce/domain": "workspace:*",
     "@workforce/events": "workspace:*",
     "@workforce/protocol": "workspace:*",
+    "@workforce/runtime-mock": "workspace:*",
+    "@workforce/runtime-sdk": "workspace:*",
     "@workforce/runtime-spi": "workspace:*",
     "@workforce/workflow-engine": "workspace:*",
+    "@workforce/workspace": "workspace:*",
     "fastify": "5.6.1"
   },
   "devDependencies": {

@@ -5,6 +5,12 @@ import { SHELL_ROUTES, type ShellRoute } from "./catalog.js";
 export interface FeatureModule {
   slot: FeatureSlot;
   title?: string;
+  /** Optional T12/T13 page. Shell glob-loads features/<slot>/index.tsx. */
+  Page?: (props: {
+    params: Record<string, string>;
+    path: string;
+    navigate: (path: string) => void;
+  }) => unknown;
 }
 
 export interface ResolvedRoute {

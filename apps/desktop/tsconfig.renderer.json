@@ -4,5 +4,5 @@
     "outDir": "dist/renderer",
     "rootDir": "src/renderer"
   },
-  "include": ["src/renderer/**/*.ts"]
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
 }
