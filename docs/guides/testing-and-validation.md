@@ -38,7 +38,7 @@ pnpm check:docs
 | Runtime SPI/Host/Adapter | contract suite + Host 场景；真实能力单独标记 |
 | SQLite、幂等、恢复或并发 | 失败/重放/重启/乱序测试 + 对应 integration |
 | worktree、进程或跨平台路径 | 包级测试 + 实际目标平台证据 |
-| 依赖、生产边界、打包或发布 | 完整 `format:check`、lint、typecheck、test、build 和发布专用检查 |
+| 依赖、生产边界、打包或发布 | 完整 `format:check`、lint、typecheck、test、build、`check:docs` 和发布专用检查 |
 
 可使用 Vitest 的文件或名称过滤运行相关测试。不要为了局部改动默认运行所有平台或真实付费 Runtime。
 

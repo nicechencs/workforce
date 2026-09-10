@@ -32,7 +32,7 @@
 ```text
 从最新 main 开分支
   → 聚焦 PR
-  → CI 绿：format:check、lint、typecheck、test、build
+  → CI 绿：format:check、lint、typecheck、test、build、check:docs
   → review-bot 书面评审（对照冻结决策）
   → 项目管理-bot squash merge 进 main
   → 若本 PR 声称桌面主路径可用：Test-bot headed 验收（可选，但声称则必须）
