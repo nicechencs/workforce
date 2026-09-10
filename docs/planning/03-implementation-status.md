@@ -17,7 +17,7 @@
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` + contract tests |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | 完成库并接入 composition | migration 002 + entity repos；重启以 SQLite 实体表为准，world.json 仅 sidecar |
+| T04 | 完成库并接入 composition | migration 002/003 + entity repos；重启以 SQLite 实体表为准（含预算/reservation），world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest |
@@ -49,6 +49,7 @@ pnpm exec vitest run      # 全量 unit + integration
 1. **Daemon HTTP M3**（`apps/daemon/tests/composition.test.ts`）  
    创建项目 → 绑定 workspace 授权引用 → `:start-planning`（空 body，内部填 Mock 预设）→ `:confirm-plan`（冻结 fixture：`dev_alpha` / `dev_bravo` / `review_integration`）→ `:start` → Mock 运行完成并绑定产物 → artifact 审批 consumed。  
    同 `stateDir` 重启后项目仍在；重放同一 `operationId` **不**新增 Run。  
+   删除 `world.json` 后预算/reservation/usage key 仍从 SQLite 恢复；硬货币上限仍为 `422 unknown_cost_not_enforceable`。  
    Mock pause → `422 unsupported_capability`。  
    硬货币上限 → `InMemoryPolicyEngine.decideStart` → `422 unknown_cost_not_enforceable`。  
    计划审批 `actionDigest` 为 `plan.apply` 规范化 digest；digest 不一致的 confirm/approve → `409 conflict`。
@@ -79,16 +80,16 @@ Review 消费精确版本                          ✅ integratePatches 后 arti
 Approval(gate=artifact)                     ✅
 导出 bundle/report                          ✅ POST /projects/{id}:export
 重启不重复 Run                              ✅ SQLite 实体表权威（可删 world.json）
+重启保留预算/reservation                     ✅ SQLite budgets / budget_reservations / usage_ledger
 ```
 
 ## 5. 剩余工作
 
 1. **Headed Electron 点击验收**：`pnpm --filter @workforce/desktop dev` 人工走主路径（本轮 SSE 已接到 Run 控制台，仍无 headed e2e）。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
-3. **预算/reservation 落库**：仍在 sidecar JSON；实体已在 SQLite。  
-4. **T17** 打包。  
-5. 根 `tests/integration` 仍用相对导入解析 workspace 包。  
-6. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
+3. **T17** 打包。  
+4. 根 `tests/integration` 仍用相对导入解析 workspace 包。  
+5. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
 
 ## 6. 如何跑
 

@@ -135,6 +135,13 @@ export interface BudgetRecord extends BudgetState {
   projectId: string;
 }
 
+export interface ReservationRecord {
+  id: string;
+  budgetId: string;
+  amountMinor: number;
+  runId?: string;
+}
+
 export class MemoryClock implements Clock {
   private current: Date;
 
@@ -267,10 +274,7 @@ export class MemoryWorld {
   readonly nodes = new Map<string, NodeInstanceRecord>();
   readonly budgets = new Map<string, BudgetRecord>();
   readonly usageKeys = new Set<string>();
-  readonly reservations = new Map<
-    string,
-    { budgetId: string; amountMinor: number; runId?: string }
-  >();
+  readonly reservations = new Map<string, ReservationRecord>();
   readonly unknownStatuses = new Set<string>();
   readonly clock: MemoryClock;
   readonly ids: MemoryIds;

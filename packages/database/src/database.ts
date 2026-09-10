@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { backupDatabase } from "./backup.js";
+import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
 import { openSqlite, type OpenSqliteOptions } from "./connection.js";
 import { SqliteEventStore } from "./event-store.js";
 import { SqliteHandleRepository } from "./handles.js";
@@ -42,6 +43,8 @@ export class WorkforceSqlite {
   readonly approvals: SqliteApprovalRepository;
   readonly artifacts: SqliteArtifactBindingRepository;
   readonly usage: SqliteUsageRepository;
+  readonly budgets: SqliteBudgetRepository;
+  readonly reservations: SqliteReservationRepository;
   readonly resources: SqliteResourceRepository;
   readonly inbox: SqliteInbox;
 
@@ -63,6 +66,8 @@ export class WorkforceSqlite {
     this.approvals = new SqliteApprovalRepository(connection);
     this.artifacts = new SqliteArtifactBindingRepository(connection);
     this.usage = new SqliteUsageRepository(connection);
+    this.budgets = new SqliteBudgetRepository(connection);
+    this.reservations = new SqliteReservationRepository(connection);
     this.resources = new SqliteResourceRepository(connection);
     this.inbox = new SqliteInbox(connection);
   }

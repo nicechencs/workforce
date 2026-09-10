@@ -567,7 +567,27 @@ CREATE INDEX IF NOT EXISTS idx_artifact_versions_task
   ON artifact_versions(task_id);
 `;
 
+/**
+ * Align budgets / reservations / usage keys with application BudgetRecord
+ * so SQLite can reload them after restart without world.json.
+ * Forward-only: do not rewrite 001_init or 002_entity_alignment.
+ */
+export const MIGRATION_003_SQL = `
+ALTER TABLE budgets ADD COLUMN project_id TEXT;
+ALTER TABLE budgets ADD COLUMN limit_minor INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budgets ADD COLUMN reserved_minor INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budgets ADD COLUMN settled_minor INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budgets ADD COLUMN authorization_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE budgets ADD COLUMN updated_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_budgets_project
+  ON budgets(project_id);
+CREATE INDEX IF NOT EXISTS idx_budget_reservations_budget_status
+  ON budget_reservations(budget_id, status);
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
+  { version: "003_budget_alignment", sql: MIGRATION_003_SQL },
 ] as const;

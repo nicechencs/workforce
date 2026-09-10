@@ -20,6 +20,7 @@ export {
   type ApprovalRecord,
   type ArtifactRecord,
   type BudgetRecord,
+  type ReservationRecord,
   type NodeInstanceRecord,
   type ProjectRecord,
   type RunRecord,

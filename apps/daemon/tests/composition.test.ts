@@ -518,6 +518,108 @@ describe("composed M3 mock loop", () => {
     );
   });
 
+  it("reloads budget and reservation from sqlite after world.json is deleted", async () => {
+    const first = await startComposed();
+    const created = await json(first.daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(first.auth, "create-bdg"),
+      body: JSON.stringify({
+        name: "Budget authority",
+        objective: "survive budget without world.json",
+        operationId: "op_bdg",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(first.daemon.port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "plan-bdg", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_bdg_plan" }),
+    });
+    expect(planned.status).toBe(200);
+    const planning = planned.body as { stateRevision: number };
+    const budgetId = first.services.app.world.projects.get(project.id)?.budgetId;
+    expect(budgetId).toBeTruthy();
+
+    const reserved = first.services.app.reserveBudget({
+      budgetId: budgetId!,
+      amount: { costMinor: 250, currency: "USD", kind: "estimated" },
+      runId: "run_budget_persist",
+    });
+    first.services.app.settleUsage({
+      budgetId: budgetId!,
+      amount: { costMinor: 80, currency: "USD", kind: "settled" },
+      usageKey: "usage-persist-1",
+    });
+    expect(reserved.budget.reservedMinor).toBe(170);
+
+    const before = await json(first.daemon.port, `/api/v1/projects/${project.id}/budget`, {
+      headers: first.auth,
+    });
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      kind: "estimated",
+      estimatedLimitMinor: 1_000_000,
+      reservedMinor: 170,
+      settledMinor: 80,
+      authorizationVersion: 1,
+    });
+
+    await first.daemon.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const db = WorkforceSqlite.open(sqlitePath(first.stateDir));
+    const entities = db.worldSnapshot.load();
+    expect(entities.budgets.some((item) => item.id === budgetId && item.settledMinor === 80)).toBe(
+      true,
+    );
+    expect(
+      entities.reservations.some((item) => item.budgetId === budgetId && item.amountMinor === 250),
+    ).toBe(true);
+    expect(entities.usageKeys).toContain("usage-persist-1");
+    db.close();
+    fs.unlinkSync(path.join(first.stateDir, "world.json"));
+
+    const second = await startComposed(first.stateDir);
+    const budget = await json(second.daemon.port, `/api/v1/projects/${project.id}/budget`, {
+      headers: second.auth,
+    });
+    expect(budget.status).toBe(200);
+    expect(budget.body).toMatchObject({
+      kind: "estimated",
+      estimatedLimitMinor: 1_000_000,
+      reservedMinor: 170,
+      settledMinor: 80,
+    });
+    expect(second.services.app.world.usageKeys.has("usage-persist-1")).toBe(true);
+    expect(
+      [...second.services.app.world.reservations.values()].some(
+        (item) => item.budgetId === budgetId && item.amountMinor === 250,
+      ),
+    ).toBe(true);
+    expect(
+      second.services.app.settleUsage({
+        budgetId: budgetId!,
+        amount: { costMinor: 80, currency: "USD", kind: "settled" },
+        usageKey: "usage-persist-1",
+      }).settledMinor,
+    ).toBe(80);
+    expect(() =>
+      second.services.app.reserveBudget({
+        budgetId: budgetId!,
+        amount: { costMinor: 0, currency: "USD", kind: "unknown" },
+      }),
+    ).toThrow(/unknown cost/);
+
+    const hardBudget = await json(second.daemon.port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(second.auth, "start-bdg-hard", planning.stateRevision),
+      body: JSON.stringify({ budgetHardLimitMinor: 100, operationId: "op_bdg_hard" }),
+    });
+    expect(hardBudget.status).toBe(422);
+    expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
+  }, 20_000);
+
   it("reloads the project from sqlite after world.json is deleted", async () => {
     const first = await startComposed();
     const created = await json(first.daemon.port, "/api/v1/projects", {
