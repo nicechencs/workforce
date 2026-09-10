@@ -43,14 +43,16 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
     };
   }, [client]);
 
-  async function onCreate(event: FormEvent) {
+  async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") ?? form.name).trim();
+    const objective = String(data.get("objective") ?? form.objective).trim();
+    dispatch({ type: "change", field: "name", value: name });
+    dispatch({ type: "change", field: "objective", value: objective });
     dispatch({ type: "submit" });
     try {
-      const created = await client.createProject(
-        { name: form.name, objective: form.objective },
-        commandOptions(),
-      );
+      const created = await client.createProject({ name, objective }, commandOptions());
       dispatch({ type: "success" });
       navigate(`/projects/${created.id}`);
     } catch (error) {
@@ -70,6 +72,7 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
           </label>
           <input
             id="wf-project-name"
+            name="name"
             style={inputStyle}
             value={form.name}
             onChange={(event) =>
@@ -82,6 +85,7 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
           </label>
           <textarea
             id="wf-project-objective"
+            name="objective"
             style={{ ...inputStyle, minHeight: "80px" }}
             value={form.objective}
             onChange={(event) =>
@@ -99,6 +103,7 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
             type="submit"
             disabled={form.submitting}
             style={buttonStyle("primary", form.submitting)}
+            data-testid="project-create"
           >
             {form.submitting ? "创建中…" : "创建项目"}
           </button>

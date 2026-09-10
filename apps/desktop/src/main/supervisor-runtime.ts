@@ -15,6 +15,7 @@ import {
   writeDaemonState,
 } from "./daemon-supervisor/state.js";
 import type { SupervisorDeps } from "./daemon-supervisor/types.js";
+import { resolveDaemonLaunchArgs } from "./smoke-env.js";
 
 export function resolveDaemonEntry(
   appRoot: string,
@@ -55,7 +56,7 @@ export function createSupervisorDeps(input: {
     stateDir: input.stateDir,
     launch: {
       execPath: process.execPath,
-      args: [entry, "--state-dir", input.stateDir],
+      args: resolveDaemonLaunchArgs(entry, input.stateDir),
     },
     now: () => new Date(),
     readState: () => readDaemonState(input.stateDir),

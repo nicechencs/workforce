@@ -7,7 +7,7 @@
 
 目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。
 
-**HTTP Mock 闭环已通过（headless）。** 未在 headed Electron 窗口中做人工点击验收。Codex **未**做 live `exec`。
+**HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
@@ -29,7 +29,7 @@
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置 |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **本轮起步** | detect/describe/validate；**拒绝** live start |
-| T16 | **本轮起步** | `apps/daemon/tests/composition.test.ts` + `tests/integration/m3-mock-client.test.ts` |
+| T16 | **本轮起步** | HTTP M3 + typed client；桌面 happy-dom 页 driver（非真窗口） |
 | T17 | 未开始 | 打包/签名 |
 
 ## 3. 实际验证
@@ -41,7 +41,7 @@ pnpm lint                 # 通过（tooling/spikes 已从 ESLint 忽略，因�
 pnpm --filter @workforce/daemon typecheck
 pnpm --filter @workforce/desktop typecheck
 pnpm --filter @workforce/desktop-client typecheck
-pnpm exec vitest run      # 全量 unit + integration
+pnpm exec vitest run      # 全量 unit + integration + happy-dom 页 driver
 ```
 
 关键场景：
@@ -62,7 +62,8 @@ pnpm exec vitest run      # 全量 unit + integration
 
 4. **桌面**  
    `apps/desktop` unit tests 覆盖 IPC 白名单、hash 路由、feature glob、SSE 解析、页面 view-model（412 保留表单、取消中、未知成本非 0、pause 隐藏）。  
-   **未验证：** `pnpm --filter @workforce/desktop dev` 的 headed 窗口、真实点击主路径。
+   **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → 绑定工作区（测试 preload 假 picker）→ 开始规划 → 确认计划 → 开始执行。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
+   **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）、validate、start 抛 `unsupported_capability`。  
@@ -86,7 +87,7 @@ Approval(gate=artifact)                     ✅
 
 ## 5. 剩余工作
 
-1. **Headed Electron 点击验收**：`pnpm --filter @workforce/desktop dev` 人工走主路径（本轮 SSE 已接到 Run 控制台，仍无 headed e2e）。  
+1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台与视觉。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
 3. **T17** 打包。  
 4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
@@ -95,8 +96,20 @@ Approval(gate=artifact)                     ✅
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm test
-pnpm --filter @workforce/desktop dev   # Vite + Electron；需先能拉起 Daemon
+pnpm test                                          # 含 happy-dom 页 driver；不启动 Electron
+pnpm --filter @workforce/desktop smoke             # opt-in Electron helper；不能代替人工真窗口
+WORKFORCE_DESKTOP_SMOKE_HEADED=1 pnpm --filter @workforce/desktop smoke
+pnpm --filter @workforce/desktop dev               # Vite + Electron；目录对话框仍是原生的
 # Daemon 单独：
 node --experimental-strip-types apps/daemon/src/index.ts --state-dir /tmp/wf-state
 ```
+
+桌面 smoke 环境变量：
+
+| 变量 | 作用 |
+|---|---|
+| `WORKFORCE_DESKTOP_SMOKE=1` | 才启用 Electron helper（默认关闭）。`dev`/`start` 不读此开关时行为不变 |
+| `WORKFORCE_DESKTOP_SMOKE_OUT` | helper 结果 JSON（`scripts/smoke.mjs` 写入） |
+| `WORKFORCE_SMOKE_WORKSPACE` | **仅当** `WORKFORCE_DESKTOP_SMOKE=1` 时跳过 `showOpenDialog` |
+| `WORKFORCE_DESKTOP_SMOKE_HEADED=1` | helper 显示窗口、不加强制 headless |
+| `WORKFORCE_STATE_DIR` | 隔离 daemon / Electron `userData` |

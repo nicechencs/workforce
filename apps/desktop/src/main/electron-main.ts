@@ -3,9 +3,20 @@ import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 
+import { resolveSmokeDirectoryOverride, shouldLaunchElectronHeadless } from "./smoke-env.js";
 import { startDesktopApp } from "./start.js";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+if (process.env.WORKFORCE_STATE_DIR) {
+  app.setPath("userData", path.join(process.env.WORKFORCE_STATE_DIR, "electron-user-data"));
+}
+
+if (shouldLaunchElectronHeadless(process.env)) {
+  app.commandLine.appendSwitch("headless");
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("no-sandbox");
+}
 
 void startDesktopApp({
   appRoot,
@@ -46,12 +57,17 @@ void startDesktopApp({
         openDevTools: () => {
           win.webContents.openDevTools({ mode: "detach" });
         },
+        executeJavaScript: (code) => win.webContents.executeJavaScript(code),
       };
     },
     handleIpc: (channel, listener) => {
       ipcMain.handle(channel, (_event, payload: unknown) => listener(payload));
     },
     pickDirectory: async () => {
+      const smokeWorkspace = resolveSmokeDirectoryOverride(process.env);
+      if (smokeWorkspace) {
+        return smokeWorkspace;
+      }
       const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
       if (result.canceled) {
         return null;

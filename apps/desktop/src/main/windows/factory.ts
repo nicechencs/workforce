@@ -12,13 +12,16 @@ export interface BrowserWindowSpec {
   webPreferences: RendererWebPreferences;
 }
 
-export function createMainWindowSpec(preloadPath: string): BrowserWindowSpec {
+export function createMainWindowSpec(
+  preloadPath: string,
+  options: { show?: boolean } = {},
+): BrowserWindowSpec {
   const webPreferences = createRendererWebPreferences(preloadPath);
   assertSecureWebPreferences(webPreferences);
   return {
     width: 1280,
     height: 800,
-    show: true,
+    show: options.show ?? true,
     autoHideMenuBar: true,
     webPreferences,
   };

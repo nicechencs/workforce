@@ -178,19 +178,22 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
     if (!picked.ok) {
       return;
     }
-    setGrant(picked.grant);
     const catalog = asCatalogClient(client);
     if (project && hasCatalogMethod(catalog, "createProjectWorkspace")) {
       try {
         await catalog.createProjectWorkspace(
           project.id,
-          { authorizationId: picked.grant.authorizationId },
+          { authorizationRef: picked.grant.authorizationId },
           commandOptions(project.stateRevision),
         );
+        await reload(true);
+        setGrant(picked.grant);
       } catch (caught) {
         setError(errorMessage(caught));
       }
+      return;
     }
+    setGrant(picked.grant);
   }
 
   if (error && !project) {
@@ -228,7 +231,10 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       </p>
       <h1 style={titleStyle}>{project.name}</h1>
       <div style={rowStyle}>
-        <span style={badgeStyle(statusBadgeTone(project.status, project.cancelRequested))}>
+        <span
+          data-testid="project-status"
+          style={badgeStyle(statusBadgeTone(project.status, project.cancelRequested))}
+        >
           {statusLabel}
         </span>
         {actions.map((action) => (
@@ -237,6 +243,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             type="button"
             disabled={!action.enabled || busy !== null}
             style={buttonStyle(action.kind, !action.enabled || busy !== null)}
+            data-testid={`project-action-${action.id}`}
             onClick={() => void runAction(action.id)}
           >
             {action.label}
@@ -307,6 +314,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             <button
               type="button"
               style={buttonStyle("secondary")}
+              data-testid="project-bind-workspace"
               onClick={() => void bindWorkspace()}
             >
               绑定工作区
@@ -340,7 +348,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
               : "暂无任务。"}
           </p>
         ) : (
-          <ul style={listStyle}>
+          <ul style={listStyle} data-testid="project-task-list">
             {tasks.map((task) => (
               <li
                 key={task.id}

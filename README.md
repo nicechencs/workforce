@@ -29,7 +29,17 @@ pnpm test
 pnpm build
 ```
 
-`pnpm test` runs unit tests across packages/apps plus the M3 Mock HTTP integration. It is not a headed Electron or live Codex proof. See `docs/planning/03-implementation-status.md`.
+`pnpm test` runs unit tests, the M3 Mock HTTP integration, and a **headless happy-dom page driver** for the project main path (create → plan → confirm → start against the composed Mock daemon). That is not a real Electron window and does not replace headed human click-through. It is not a live Codex proof.
+
+Electron is **not** launched by default. An opt-in helper scripts the same page selectors via `executeJavaScript`; a human is still required for a true window (native directory dialog, SSE / Run console, visual checks):
+
+```bash
+pnpm --filter @workforce/desktop smoke
+# show the window while the helper runs:
+WORKFORCE_DESKTOP_SMOKE_HEADED=1 pnpm --filter @workforce/desktop smoke
+```
+
+`pnpm --filter @workforce/desktop dev` always shows the native directory picker. The helper skips that dialog only when `WORKFORCE_DESKTOP_SMOKE=1` is set. Details: `docs/planning/03-implementation-status.md`.
 
 ## Workspace layout
 
