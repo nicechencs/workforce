@@ -1,3 +1,6 @@
+# 节点调度与执行流程
+
+```mermaid
 flowchart TD
   Task[Ready Task] --> Match[Match Worker Runtime and Capabilities]
   Match --> Capacity[Select Node and Reserve Capacity]
@@ -6,3 +9,4 @@ flowchart TD
   Workspace --> Start[Start Runtime Handle]
   Start --> Events[Persist Events and Artifacts]
   Events --> Review[Evaluate and Review]
+```

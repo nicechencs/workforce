@@ -1,3 +1,6 @@
+# 混合执行拓扑
+
+```mermaid
 flowchart TB
   Client[Desktop or Web Client] --> Control[Control Plane]
   Control --> Scheduler[Scheduler and Lease Manager]
@@ -8,3 +11,4 @@ flowchart TB
   Local --> L2[Run 2]
   RemoteA --> R1[Run 3]
   RemoteB --> R2[Run 4]
+```

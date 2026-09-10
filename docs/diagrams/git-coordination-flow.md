@@ -1,3 +1,6 @@
+# Git 与信息协作流程
+
+```mermaid
 flowchart TD
   Planner[Planner Run] --> Task[Task and Coordination Message]
   Task --> Dev[Developer Run on Node A]
@@ -7,3 +10,4 @@ flowchart TD
   CommitA --> Review[Reviewer Run]
   CommitB --> Review
   Review --> Merge[Human or Merge Coordinator]
+```

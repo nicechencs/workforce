@@ -507,7 +507,7 @@ Repository Skeleton 完成时必须满足：
 
 下一份 `05 Task Protocol` 将定义 Task envelope、输入输出、能力要求、约束、依赖、预算、验收、版本兼容和幂等规则，并给出正式 JSON Schema 方向。
 
-## 16. 分布式执行的目录预留
+## Appendix A. 分布式执行的目录预留
 
 长期模块边界预留如下；V0.1 可以只创建 package 接口或空实现，不启动远程服务。
 
@@ -529,7 +529,7 @@ packages/
 
 `domain` 与 `protocol` 不得依赖本地路径、Electron 或具体网络传输。Daemon 的 V0.1 Local Node 实现必须通过 Node ports 调用 Runtime 和 Workspace，以便后续把同一接口移入独立 node-agent。
 
-## 17. 语言与框架边界
+## Appendix B. 语言与框架边界
 
 Monorepo 继续以 TypeScript 为主，保持 pnpm + Turborepo。协议 Schema 是跨语言事实来源，不能只以 TypeScript interface 存在。
 
