@@ -2,7 +2,12 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { ProjectRecord, Tx } from "@workforce/application";
 
-import { ensureOrganization, ensureTeamVersion, ensureWorkflowVersion, assertCas } from "./ensure.js";
+import {
+  ensureOrganization,
+  ensureTeamVersion,
+  ensureWorkflowVersion,
+  assertCas,
+} from "./ensure.js";
 import { PersistenceError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
 import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";

@@ -13,7 +13,11 @@ import type {
 
 import { PersistenceError } from "./errors.js";
 import { SqliteProjectRepository } from "./projects.js";
-import { SqliteApprovalRepository, SqliteArtifactBindingRepository, SqliteNodeInstanceRepository } from "./records.js";
+import {
+  SqliteApprovalRepository,
+  SqliteArtifactBindingRepository,
+  SqliteNodeInstanceRepository,
+} from "./records.js";
 import { SqliteRunRepository } from "./runs.js";
 import { sqliteDbOf } from "./session.js";
 import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";
@@ -178,12 +182,7 @@ function rowToAppRun(row: Record<string, unknown>): AppRunRecord {
   };
 }
 
-function saveAppRun(
-  tx: Tx,
-  runs: SqliteRunRepository,
-  db: DatabaseSync,
-  run: AppRunRecord,
-): void {
+function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: AppRunRecord): void {
   const existing = runs.get(run.id);
   const organizationId = organizationIdForTask(db, run.taskId);
   if (!existing) {

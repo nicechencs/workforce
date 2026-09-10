@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WorkforceSqlite } from "./database.js";
 import { PersistenceError } from "./errors.js";
 import { tableExists, unpublishedOutboxCount } from "./event-store.js";
-import { appliedMigrations } from "./migrate.js";
+import { appliedMigrations, checksumSql, migrate } from "./migrate.js";
+import { MIGRATION_001_SQL, SCHEMA_MIGRATIONS_DDL } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
 import { STORAGE_MATRIX } from "./storage-matrix.js";
 
@@ -42,6 +43,7 @@ describe("WorkforceSqlite", () => {
     try {
       const applied = appliedMigrations(db.connection);
       expect(applied.has("001_init")).toBe(true);
+      expect(applied.has("002_entity_alignment")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);

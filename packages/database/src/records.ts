@@ -1,6 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import type { ApprovalRecord, ArtifactRecord, NodeInstanceRecord, Tx } from "@workforce/application";
+import type {
+  ApprovalRecord,
+  ArtifactRecord,
+  NodeInstanceRecord,
+  Tx,
+} from "@workforce/application";
 
 import { assertCas, organizationIdOfProject } from "./ensure.js";
 import { PersistenceError, isConstraintError } from "./errors.js";
@@ -63,9 +68,7 @@ export class SqliteNodeInstanceRepository {
   }
 
   get(id: string): NodeInstanceRecord | null {
-    const row = this.db
-      .prepare(`SELECT ${NODE_COLUMNS} FROM node_instances WHERE id = ?`)
-      .get(id);
+    const row = this.db.prepare(`SELECT ${NODE_COLUMNS} FROM node_instances WHERE id = ?`).get(id);
     return row ? rowToNode(row) : null;
   }
 
@@ -282,7 +285,8 @@ const ARTIFACT_COLUMNS = `
   v.id AS artifact_version_id,
   a.project_id AS project_id,
   v.task_id AS task_id,
-  b.slot_id AS slot_id,
+  COALESCE(b.slot_id, CASE WHEN a.logical_name = 'artifact' THEN NULL ELSE a.logical_name END)
+    AS slot_id,
   v.sha256 AS digest,
   v.status AS status
 `;
@@ -400,12 +404,7 @@ export class SqliteArtifactBindingRepository {
             SET task_id = ?, status = ?, sha256 = ?
           WHERE id = ?`,
       )
-      .run(
-        record.taskId ?? null,
-        record.status,
-        record.digest,
-        record.artifactVersionId,
-      );
+      .run(record.taskId ?? null, record.status, record.digest, record.artifactVersionId);
     if (Number(result.changes) === 0) {
       throw new PersistenceError("not_found", `artifact version ${record.artifactVersionId}`);
     }

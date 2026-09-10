@@ -169,8 +169,12 @@ function rowToTask(row: Record<string, unknown>): TaskRecord {
     maxReworkCycles: requiredInt(cell(row, "max_rework_cycles"), "max_rework_cycles"),
     priority: requiredInt(cell(row, "priority"), "priority"),
     requiresReview: requiredInt(cell(row, "requires_review"), "requires_review") !== 0,
-    expectedOutputs: asExpectedOutputs(parseJson(cell(row, "expected_outputs_json"), "expected_outputs_json")),
-    outputBindings: asStringRecord(parseJson(cell(row, "output_bindings_json"), "output_bindings_json")),
+    expectedOutputs: asExpectedOutputs(
+      parseJson(cell(row, "expected_outputs_json"), "expected_outputs_json"),
+    ),
+    outputBindings: asStringRecord(
+      parseJson(cell(row, "output_bindings_json"), "output_bindings_json"),
+    ),
     dependsOn: asDependsOn(parseJson(cell(row, "depends_on_json"), "depends_on_json")),
     inputArtifactVersionIds: asStringArray(
       parseJson(cell(row, "input_artifact_version_ids_json"), "input_artifact_version_ids_json"),
