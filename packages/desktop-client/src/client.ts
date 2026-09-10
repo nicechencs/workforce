@@ -15,6 +15,7 @@ import type {
   CreateProjectInput,
   CreateWorkspaceInput,
   EventListQuery,
+  ExportBundleDto,
   HealthDto,
   ListQuery,
   NodeDto,
@@ -122,6 +123,10 @@ export class DesktopClient {
     input: CancelInput = {},
   ): Promise<CommandAcceptedDto | ProjectDto> {
     return this.send("POST", paths.projectCancel(id), options, withOperation(input, options));
+  }
+
+  exportProject(id: string, options: CommandOptions): Promise<ExportBundleDto> {
+    return this.send("POST", paths.projectExport(id), options, withOperation({}, options));
   }
 
   listTeams(query?: ListQuery): Promise<PageDto<TeamDto>> {

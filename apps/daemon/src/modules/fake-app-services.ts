@@ -35,6 +35,7 @@ import type {
   CreateProjectInput,
   CreateWorkspaceInput,
   EventListQuery,
+  ExportBundleDto,
   ListQuery,
   NodeDto,
   PageDto,
@@ -327,6 +328,30 @@ export class FakeAppServices implements AppServices {
       data: { from: "planning", to: status },
     });
     return { status: 200, body: next, revision: next.stateRevision };
+  }
+
+  exportProject(ctx: CommandContext, id: string): CommandResult<ExportBundleDto> {
+    const record = this.requireProject(id);
+    this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
+    if (record.dto.status === "draft" || record.dto.status === "planning") {
+      throw new AppError("invalid_transition", "Export requires a consumed artifact approval");
+    }
+    void ctx;
+    return {
+      status: 200,
+      body: {
+        projectId: id,
+        digest: "sha256:fake-export",
+        artifactVersionId: "arv_fake_export",
+        status: "exported",
+        report: {
+          projectId: id,
+          projectStatus: record.dto.status,
+          artifacts: [],
+        },
+      },
+      revision: record.dto.stateRevision,
+    };
   }
 
   startProject(

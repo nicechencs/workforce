@@ -174,6 +174,10 @@ export function sortTimeline(rows: TimelineRow[]): TimelineRow[] {
   });
 }
 
+export function mergeEventLists(base: unknown[], live: unknown[]): unknown[] {
+  return [...base, ...live];
+}
+
 export function timelineFromEvents(items: unknown[]): TimelineRow[] {
   const parsed: TimelineRow[] = [];
   for (const item of items) {

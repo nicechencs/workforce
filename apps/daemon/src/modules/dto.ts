@@ -274,3 +274,17 @@ export interface WorkspaceDto {
 export interface CreateWorkspaceInput {
   authorizationRef: string;
 }
+
+export interface ExportBundleDto {
+  projectId: string;
+  digest: string;
+  artifactVersionId: string;
+  status: "exported";
+  report: {
+    projectId: string;
+    projectStatus: string;
+    integratedDigest?: string;
+    approvedDigest?: string;
+    artifacts: Array<{ versionId: string; hash: string; slotId?: string }>;
+  };
+}

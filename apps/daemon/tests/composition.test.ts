@@ -5,7 +5,10 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { WorkforceSqlite } from "@workforce/database";
+
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
+import { sqlitePath } from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { commandHeaders, json, uniqueLockPath } from "./helpers.js";
 
@@ -511,5 +514,120 @@ describe("composed M3 mock loop", () => {
     expect(fs.readFileSync(path.join(services.worktrees.repoPath, "shared.txt"), "utf8")).toBe(
       "shared-base\n",
     );
+  });
+
+  it("reloads the project from sqlite after world.json is deleted", async () => {
+    const first = await startComposed();
+    const created = await json(first.daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(first.auth, "create-sql"),
+      body: JSON.stringify({
+        name: "SQLite authority",
+        objective: "survive without world.json",
+        operationId: "op_sql",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string };
+    await first.daemon.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const db = WorkforceSqlite.open(sqlitePath(first.stateDir));
+    expect(db.worldSnapshot.load().projects.some((item) => item.id === project.id)).toBe(true);
+    db.close();
+    fs.unlinkSync(path.join(first.stateDir, "world.json"));
+
+    const second = await startComposed(first.stateDir);
+    const listed = await json(second.daemon.port, "/api/v1/projects", { headers: second.auth });
+    expect(listed.status).toBe(200);
+    const items = (listed.body as { items: Array<{ id: string; name: string }> }).items;
+    expect(items.some((item) => item.id === project.id && item.name === "SQLite authority")).toBe(
+      true,
+    );
+  });
+
+  it("integrates developer patches and exports a digest after artifact approval", async () => {
+    const harness = await startComposed();
+    const { daemon, auth } = harness;
+    const port = daemon.port;
+    const created = await json(port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-exp"),
+      body: JSON.stringify({
+        name: "Export path",
+        objective: "integrate then export",
+        operationId: "op_exp_c",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-exp", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_exp_p" }),
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await json(port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-exp", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_exp_cf",
+      }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+    await json(port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "start-exp", ready.stateRevision),
+      body: JSON.stringify({ operationId: "op_exp_s" }),
+    });
+
+    const artifactApproval = await poll(async () => {
+      const listed = await json(port, `/api/v1/approvals?projectId=${project.id}`, {
+        headers: auth,
+      });
+      return (
+        listed.body as {
+          items: Array<{
+            id: string;
+            gate: string;
+            status: string;
+            actionDigest: string;
+            artifactVersionId?: string;
+            stateRevision: number;
+          }>;
+        }
+      ).items.find((item) => item.gate === "artifact" && item.status === "pending");
+    }, 4000);
+
+    const approved = await json(port, `/api/v1/approvals/${artifactApproval.id}:approve`, {
+      method: "POST",
+      headers: commandHeaders(auth, "approve-exp", artifactApproval.stateRevision),
+      body: JSON.stringify({
+        decisionReason: "accept integrated digest",
+        digest: artifactApproval.actionDigest,
+        ...(artifactApproval.artifactVersionId
+          ? { artifactVersionId: artifactApproval.artifactVersionId }
+          : {}),
+        operationId: "op_exp_a",
+      }),
+    });
+    expect(approved.status).toBe(200);
+
+    const live = await json(port, `/api/v1/projects/${project.id}`, { headers: auth });
+    const liveProject = live.body as { stateRevision: number };
+    const exported = await json(port, `/api/v1/projects/${project.id}:export`, {
+      method: "POST",
+      headers: commandHeaders(auth, "export-1", liveProject.stateRevision),
+      body: JSON.stringify({ operationId: "op_export" }),
+    });
+    expect(exported.status).toBe(200);
+    const bundle = exported.body as {
+      digest: string;
+      artifactVersionId: string;
+      report: { projectId: string; approvedDigest?: string; integratedDigest?: string };
+    };
+    expect(bundle.digest.length).toBeGreaterThan(8);
+    expect(bundle.report.projectId).toBe(project.id);
+    expect(bundle.report.approvedDigest).toBe(artifactApproval.actionDigest);
   });
 });

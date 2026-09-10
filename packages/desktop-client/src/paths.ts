@@ -60,6 +60,7 @@ export const paths = {
   projectConfirmPlan: (id: string) => `/api/v1/projects/${id}:confirm-plan`,
   projectStart: (id: string) => `/api/v1/projects/${id}:start`,
   projectCancel: (id: string) => `/api/v1/projects/${id}:cancel`,
+  projectExport: (id: string) => `/api/v1/projects/${id}:export`,
   projectBudget: (id: string) => `/api/v1/projects/${id}/budget`,
   projectWorkspaces: (id: string) => `/api/v1/projects/${id}/workspaces`,
   teams: (query?: ListQuery) => `/api/v1/teams${listSearch(query)}`,

@@ -17,9 +17,9 @@
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` + contract tests |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | 完成库，部分接线 | SQLite schema + event/receipt repos。Project/Task 列与 `ProjectRecord` 未对齐；M3 用 `world.json` + SQLite events/receipts |
+| T04 | 完成库并接入 composition | migration 002 + entity repos；重启以 SQLite 实体表为准，world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
-| T06 | 完成库，未接 M3 主路径 | Git worktree 原语存在；Mock 闭环用合成 patch，不强制真实 worktree |
+| T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库，未接 composition | Policy/redaction 单测通过 |
 | T08 | 完成库，部分接线 | `LocalArtifactStore` 打开；Mock 产物主要在 world snapshot |
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
@@ -73,22 +73,21 @@ pnpm exec vitest run      # 全量 unit + integration
 Project(planning) + Plan Artifact           ✅ fixture，无真实 Planner Run
 Approval(gate=plan)                         ✅ start-planning 创建，confirm 消费
 发布执行图，Project(ready/running)           ✅
-Developer A/B 隔离 Run + worktree           ⚠️ Mock 成功并绑定合成 patch；未强制独立 git worktree
-Review 消费精确版本                          ⚠️ reviewer 任务存在；整合 worktree/测试证据未走 T14 integratePatches
+Developer A/B 隔离 Run + worktree           ✅ 独立 worktree + git_diff 产物
+Review 消费精确版本                          ✅ integratePatches 后 artifact 审批
 Approval(gate=artifact)                     ✅
-导出 bundle/report                          ❌ 未做
-重启不重复 Run                              ✅
+导出 bundle/report                          ✅ POST /projects/{id}:export
+重启不重复 Run                              ✅ SQLite 实体表权威（可删 world.json）
 ```
 
-## 5. 剩余工作（建议下一轮）
+## 5. 剩余工作
 
-1. **Headed E2E**：启动 Electron，走创建→规划确认→审批。需要显示服务器。  
-2. **SQLite 实体表**：为 Project/Task/Workflow 补齐与 `ProjectRecord` 对齐的 migration（T04），替换 `world.json`。  
-3. **真实 worktree + 整合**：T06/T14 接到 composition：每 Run 独立 worktree，`integratePatches`，冲突人工处理。  
-4. **SSE 进页面**：Run 控制台目前主要 `listRunEvents`；Main 已有 SSE bridge。  
-5. **Codex live**：在已探测机器上跑授权的 `codex exec --json` fixture，映射 JSONL、进程树取消、未知成本。禁止把 session `resume` 当成 cursor。  
-6. **T17** 打包。  
-7. 根测试目录不是 workspace 包，`@workforce/*` 从 `tests/integration` 无法解析，当前用相对导入 + eslint 豁免。
+1. **Headed Electron 点击验收**：`pnpm --filter @workforce/desktop dev` 人工走主路径（本轮 SSE 已接到 Run 控制台，仍无 headed e2e）。  
+2. **Policy 接到 composition**：启动前拒绝 / 审批 digest 尚未用 `packages/policy`。  
+3. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
+4. **预算/reservation 落库**：仍在 sidecar JSON；实体已在 SQLite。  
+5. **T17** 打包。  
+6. 根 `tests/integration` 仍用相对导入解析 workspace 包。
 
 ## 6. 如何跑
 

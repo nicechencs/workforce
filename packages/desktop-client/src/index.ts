@@ -26,6 +26,7 @@ export type {
   CreateProjectInput,
   CreateWorkspaceInput,
   EventListQuery,
+  ExportBundleDto,
   HealthDto,
   ListQuery,
   NodeDto,
