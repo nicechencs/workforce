@@ -1,5 +1,5 @@
 {
-  "extends": "../../tooling/typescript/lib.json",
+  "extends": "../../tooling/typescript/node.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"
