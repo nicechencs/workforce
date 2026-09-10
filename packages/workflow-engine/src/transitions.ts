@@ -3,11 +3,29 @@ import type {
   ProjectStatus,
   RunStatus,
   TaskStatus,
+  WorkflowInstanceStatus,
 } from "@workforce/domain";
+
+import type { NodeInstanceStatus } from "./types.js";
 
 import { InvalidTransitionError } from "./invalid-transition.js";
 
 type Edge<S extends string> = readonly [from: S | "*", command: string, to: S];
+
+const TERMINAL = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "archived",
+  "consumed",
+  "skipped",
+  "succeeded",
+  "timed_out",
+  "rejected",
+  "expired",
+  "superseded",
+  "changes_requested",
+]);
 
 function apply<S extends string>(
   entity: string,
@@ -15,14 +33,11 @@ function apply<S extends string>(
   from: S,
   command: string,
 ): S {
-  const match = edges.find(
-    ([start, cmd]) => cmd === command && (start === "*" || start === from),
-  );
+  const match = edges.find(([start, cmd]) => cmd === command && (start === "*" || start === from));
   if (!match) {
     throw new InvalidTransitionError(entity, from, command);
   }
-  const terminal = new Set(["completed", "failed", "cancelled", "archived", "consumed"]);
-  if (terminal.has(from) && match[0] !== from) {
+  if (TERMINAL.has(from) && match[0] !== from) {
     throw new InvalidTransitionError(entity, from, command);
   }
   return match[2];
@@ -102,3 +117,66 @@ export function nextRunStatus(from: RunStatus, command: string): RunStatus {
 export function nextApprovalStatus(from: ApprovalStatus, command: string): ApprovalStatus {
   return apply("approval", APPROVAL_EDGES, from, command);
 }
+
+const WORKFLOW_EDGES = [
+  ["created", "validate", "validating"],
+  ["validating", "pass", "ready"],
+  ["validating", "fail", "failed"],
+  ["ready", "start", "running"],
+  ["running", "wait", "waiting"],
+  ["waiting", "resume-work", "running"],
+  ["running", "pause", "paused"],
+  ["waiting", "pause", "paused"],
+  ["paused", "resume", "running"],
+  ["created", "cancel", "cancelling"],
+  ["validating", "cancel", "cancelling"],
+  ["ready", "cancel", "cancelling"],
+  ["running", "cancel", "cancelling"],
+  ["waiting", "cancel", "cancelling"],
+  ["paused", "cancel", "cancelling"],
+  ["cancelling", "settle", "cancelled"],
+  ["running", "complete", "completed"],
+  ["waiting", "complete", "completed"],
+  ["running", "fail", "failed"],
+  ["waiting", "fail", "failed"],
+] as const satisfies readonly Edge<WorkflowInstanceStatus>[];
+
+const NODE_EDGES = [
+  ["pending", "block", "blocked"],
+  ["pending", "make-ready", "ready"],
+  ["blocked", "make-ready", "ready"],
+  ["ready", "activate", "active"],
+  ["active", "wait", "waiting"],
+  ["waiting", "resume-work", "active"],
+  ["active", "complete", "completed"],
+  ["waiting", "complete", "completed"],
+  ["active", "fail", "failed"],
+  ["pending", "skip", "skipped"],
+  ["blocked", "skip", "skipped"],
+  ["ready", "skip", "skipped"],
+  ["pending", "cancel", "cancelled"],
+  ["blocked", "cancel", "cancelled"],
+  ["ready", "cancel", "cancelled"],
+  ["active", "cancel", "cancelled"],
+  ["waiting", "cancel", "cancelled"],
+] as const satisfies readonly Edge<NodeInstanceStatus>[];
+
+export function nextWorkflowStatus(
+  from: WorkflowInstanceStatus,
+  command: string,
+): WorkflowInstanceStatus {
+  return apply("workflow", WORKFLOW_EDGES, from, command);
+}
+
+export function nextNodeStatus(from: NodeInstanceStatus, command: string): NodeInstanceStatus {
+  return apply("node", NODE_EDGES, from, command);
+}
+
+export const transitions = {
+  nextProjectStatus,
+  nextTaskStatus,
+  nextRunStatus,
+  nextApprovalStatus,
+  nextWorkflowStatus,
+  nextNodeStatus,
+} as const;

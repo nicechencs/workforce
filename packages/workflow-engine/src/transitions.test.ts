@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { InvalidTransitionError } from "./invalid-transition.js";
 import {
   nextApprovalStatus,
+  nextNodeStatus,
   nextProjectStatus,
   nextRunStatus,
   nextTaskStatus,
+  nextWorkflowStatus,
 } from "./transitions.js";
 
 describe("M3 status matrix", () => {
@@ -36,5 +38,16 @@ describe("M3 status matrix", () => {
     const approved = nextApprovalStatus("pending", "approve");
     expect(nextApprovalStatus(approved, "consume")).toBe("consumed");
     expect(() => nextApprovalStatus("consumed", "approve")).toThrow(InvalidTransitionError);
+  });
+
+  it("cancels a workflow without jumping to cancelled", () => {
+    expect(nextWorkflowStatus("running", "cancel")).toBe("cancelling");
+    expect(() => nextWorkflowStatus("running", "settle")).toThrow(InvalidTransitionError);
+    expect(nextWorkflowStatus("cancelling", "settle")).toBe("cancelled");
+  });
+
+  it("skips unselected nodes without activating them", () => {
+    expect(nextNodeStatus("pending", "skip")).toBe("skipped");
+    expect(() => nextNodeStatus("skipped", "activate")).toThrow(InvalidTransitionError);
   });
 });
