@@ -1,0 +1,20 @@
+{
+  "operationId": "op_01JTESTSTARTDEVA00000000000",
+  "idempotencyKey": "start:tsk_01JTESTDEVELOPERA0000000000:definitionRevision:1:generation:1:attempt:1",
+  "taskId": "tsk_01JTESTDEVELOPERA0000000000",
+  "definitionRevision": 1,
+  "generation": 1,
+  "attempt": 1,
+  "principalId": "usr_01JTESTOWNER00000000000000",
+  "clientId": "cli_01JTESTDESKTOP00000000000",
+  "placement": {
+    "executionNodeId": "ndl_01JTESTLOCALNODE000000000",
+    "runtimeInstallationId": "rtm_01JTESTMOCKINSTALL000000",
+    "workspaceInstanceId": "wsi_01JTESTDEVA_WT0000000000"
+  },
+  "runtime": {
+    "adapterId": "mock",
+    "protocolVersion": "0.1"
+  },
+  "snapshotRef": "snap_01JTESTDEVA_TASKDEF000000"
+}

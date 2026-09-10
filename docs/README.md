@@ -52,4 +52,4 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)
 
-`protocols` 与 `operations` 将在 T02/T17 出现首份真实文件时加入 Git。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。
+协议草案见 [docs/protocols](protocols/README.md)。`operations` 将在 T17 出现首份真实文件时加入 Git。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。

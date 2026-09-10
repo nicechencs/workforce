@@ -1,0 +1,39 @@
+{
+  "expectedOutputs": [
+    {
+      "id": "out_plan",
+      "name": "Software development plan",
+      "kind": "plan",
+      "required": true,
+      "cardinality": { "min": 1, "max": 1 },
+      "mediaTypes": ["application/vnd.workforce.plan+json"]
+    },
+    {
+      "id": "out_code_change",
+      "name": "Code changes",
+      "kind": "code",
+      "required": true,
+      "cardinality": { "min": 1, "max": 1 },
+      "schema": { "type": "git_diff", "baseRef": "immutable-base" }
+    },
+    {
+      "id": "out_test_result",
+      "name": "Test result",
+      "kind": "evaluation",
+      "required": true,
+      "mediaTypes": ["application/vnd.workforce.test-result+json"]
+    }
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "ac_plan_schema",
+      "type": "schema",
+      "schemaRef": "https://workforce.local/protocols/v0.1/plan-artifact.schema.json"
+    },
+    {
+      "id": "ac_tests",
+      "type": "test",
+      "commandRef": "test.default"
+    }
+  ]
+}

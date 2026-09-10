@@ -1,0 +1,5 @@
+{
+  "comment": "ILLEGAL fixture: RunStatus has no waiting_review. Contract tests must reject this payload.",
+  "runId": "run_01JILLEGAL00000000000000000",
+  "status": "waiting_review"
+}

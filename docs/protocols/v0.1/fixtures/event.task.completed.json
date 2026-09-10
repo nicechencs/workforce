@@ -1,0 +1,35 @@
+{
+  "specVersion": "0.1",
+  "id": "evt_01JTESTTASKCOMPLETED0000000000",
+  "type": "task.completed",
+  "source": "workforce.workflow-engine",
+  "subject": { "type": "task", "id": "tsk_01JTESTDEVELOPERA0000000000" },
+  "time": "2026-09-10T10:20:00.000Z",
+  "recordedAt": "2026-09-10T10:20:00.050Z",
+  "organizationId": "org_01JTESTLOCAL00000000000000",
+  "projectId": "prj_01JTESTMOCKFLOW00000000000",
+  "workflowInstanceId": "wfi_01JTESTEXEC00000000000000",
+  "taskId": "tsk_01JTESTDEVELOPERA0000000000",
+  "runId": "run_01JTESTDEVA1ATTEMPT10000000",
+  "actor": { "type": "service", "id": "workflow-engine" },
+  "sequence": 12,
+  "stream": "task:tsk_01JTESTDEVELOPERA0000000000",
+  "ingestionPosition": 40,
+  "correlationId": "op_01JTESTSTARTDEVA00000000000",
+  "dataContentType": "application/json",
+  "dataSchema": "https://workforce.local/protocols/v0.1/events/task.completed.json",
+  "data": {
+    "from": "running",
+    "to": "completed",
+    "definitionRevision": 1,
+    "stateRevision": 8,
+    "generation": 1,
+    "outputBindings": [
+      {
+        "slotId": "out_code_change",
+        "artifactVersionId": "arv_01JTESTDEVA_PATCH00000000"
+      }
+    ]
+  },
+  "sensitivity": "internal"
+}

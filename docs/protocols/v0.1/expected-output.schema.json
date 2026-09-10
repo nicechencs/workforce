@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workforce.local/protocols/v0.1/expected-output.schema.json",
+  "title": "ExpectedOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "required"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["code", "data", "document", "evaluation", "plan", "log", "other"]
+    },
+    "required": { "type": "boolean" },
+    "cardinality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "integer", "minimum": 0 },
+        "max": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "mediaTypes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "schema": { "type": "object" }
+  }
+}
