@@ -3,20 +3,25 @@ import type { DatabaseSync } from "node:sqlite";
 import type {
   ApprovalRecord,
   ArtifactRecord,
+  BudgetRecord,
   NodeInstanceRecord,
   ProjectRecord,
+  ReservationRecord,
   RunRecord as AppRunRecord,
   TaskRecord,
   Tx,
   WorkflowInstanceRecord,
 } from "@workforce/application";
 
+import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
+import { organizationIdOfProject } from "./ensure.js";
 import { PersistenceError } from "./errors.js";
 import { SqliteProjectRepository } from "./projects.js";
 import {
   SqliteApprovalRepository,
   SqliteArtifactBindingRepository,
   SqliteNodeInstanceRepository,
+  SqliteUsageRepository,
 } from "./records.js";
 import { SqliteRunRepository } from "./runs.js";
 import { sqliteDbOf } from "./session.js";
@@ -36,6 +41,9 @@ export interface WorldEntitySnapshot {
   approvals: ApprovalRecord[];
   artifacts: ArtifactRecord[];
   runs: AppRunRecord[];
+  budgets: BudgetRecord[];
+  reservations: ReservationRecord[];
+  usageKeys: string[];
 }
 
 export class SqliteWorldSnapshot {
@@ -46,6 +54,9 @@ export class SqliteWorldSnapshot {
   readonly approvals: SqliteApprovalRepository;
   readonly artifacts: SqliteArtifactBindingRepository;
   readonly runs: SqliteRunRepository;
+  readonly budgets: SqliteBudgetRepository;
+  readonly reservations: SqliteReservationRepository;
+  readonly usage: SqliteUsageRepository;
 
   constructor(private readonly db: DatabaseSync) {
     this.projects = new SqliteProjectRepository(db);
@@ -55,6 +66,9 @@ export class SqliteWorldSnapshot {
     this.approvals = new SqliteApprovalRepository(db);
     this.artifacts = new SqliteArtifactBindingRepository(db);
     this.runs = new SqliteRunRepository(db);
+    this.budgets = new SqliteBudgetRepository(db);
+    this.reservations = new SqliteReservationRepository(db);
+    this.usage = new SqliteUsageRepository(db);
   }
 
   load(): WorldEntitySnapshot {
@@ -66,6 +80,9 @@ export class SqliteWorldSnapshot {
       approvals: this.approvals.listAll(),
       artifacts: this.artifacts.listAll(),
       runs: loadAppRuns(this.db),
+      budgets: this.budgets.listAll(),
+      reservations: this.reservations.listActive(),
+      usageKeys: this.usage.listIdempotencyKeys(),
     };
   }
 
@@ -128,6 +145,22 @@ export class SqliteWorldSnapshot {
     }
     for (const run of snapshot.runs) {
       saveAppRun(tx, this.runs, this.db, run);
+    }
+    for (const budget of snapshot.budgets) {
+      this.budgets.upsert(tx, budget, at);
+    }
+    this.reservations.syncActive(tx, snapshot.reservations, at);
+    const organizationId =
+      snapshot.projects[0]?.organizationId ??
+      (snapshot.budgets[0]
+        ? organizationIdOfProject(this.db, snapshot.budgets[0].projectId)
+        : undefined);
+    if (organizationId && snapshot.usageKeys.length > 0) {
+      this.usage.putKeys(tx, {
+        organizationId,
+        keys: snapshot.usageKeys,
+        createdAt: at,
+      });
     }
   }
 }

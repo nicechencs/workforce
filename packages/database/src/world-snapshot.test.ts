@@ -5,8 +5,10 @@ import { join } from "node:path";
 import type {
   ApprovalRecord,
   ArtifactRecord,
+  BudgetRecord,
   NodeInstanceRecord,
   ProjectRecord,
+  ReservationRecord,
   RunRecord as AppRunRecord,
   TaskRecord,
   WorkflowInstanceRecord,
@@ -63,11 +65,74 @@ describe("SqliteWorldSnapshot", () => {
         [...snapshot.artifacts].sort(byArtifactId),
       );
       expect(loaded.runs).toEqual(snapshot.runs);
+      expect(loaded.budgets).toEqual(snapshot.budgets);
+      expect(loaded.reservations).toEqual(snapshot.reservations);
+      expect(loaded.usageKeys).toEqual(snapshot.usageKeys);
       expect(reopened.projects.get(ids.projectId)?.workspaceId).toBe("ws_1");
       expect(reopened.projects.get(ids.projectId)?.runtimeId).toBe("rt_mock");
       expect(reopened.projects.get(ids.projectId)?.budgetId).toBe("bdg_1");
       expect(reopened.tasks.listByProject(ids.projectId)).toHaveLength(1);
       expect(reopened.runs.listByProject(ids.projectId)).toHaveLength(1);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it("reloads budget, active reservation, and usage keys after reopen", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const path = join(dir, "workforce.sqlite");
+    const first = WorkforceSqlite.open(path);
+    const snapshot = sampleSnapshot();
+    const reserved: WorldEntitySnapshot = {
+      ...snapshot,
+      budgets: snapshot.budgets.map((budget) => ({
+        ...budget,
+        reservedMinor: 250,
+        settledMinor: 80,
+      })),
+      reservations: [
+        {
+          id: "rsv_snap",
+          budgetId: "bdg_1",
+          amountMinor: 250,
+          runId: "run_snap",
+        },
+      ],
+      usageKeys: ["usage-1"],
+    };
+    try {
+      await first.uow.withTransaction(async (tx) => {
+        first.worldSnapshot.save(tx, reserved, now);
+      });
+    } finally {
+      first.close();
+    }
+
+    const reopened = WorkforceSqlite.open(path);
+    try {
+      const loaded = reopened.worldSnapshot.load();
+      expect(loaded.budgets).toEqual(reserved.budgets);
+      expect(loaded.reservations).toEqual(reserved.reservations);
+      expect(loaded.usageKeys).toEqual(["usage-1"]);
+
+      await reopened.uow.withTransaction(async (tx) => {
+        reopened.worldSnapshot.save(
+          tx,
+          {
+            ...reserved,
+            budgets: reserved.budgets.map((budget) => ({ ...budget, reservedMinor: 0 })),
+            reservations: [],
+            usageKeys: ["usage-1", "usage-2"],
+          },
+          now,
+        );
+      });
+      const afterRelease = reopened.worldSnapshot.load();
+      expect(afterRelease.reservations).toEqual([]);
+      expect(afterRelease.budgets[0]?.reservedMinor).toBe(0);
+      expect(afterRelease.usageKeys).toEqual(["usage-1", "usage-2"]);
+      expect(reopened.reservations.get("rsv_snap")).toBeNull();
     } finally {
       reopened.close();
     }
@@ -206,6 +271,16 @@ describe("SqliteWorldSnapshot", () => {
       createdAt: now,
       updatedAt: now,
     };
+    const budget: BudgetRecord = {
+      id: "bdg_1",
+      projectId: ids.projectId,
+      currency: "USD",
+      limitMinor: 1_000_000,
+      reservedMinor: 0,
+      settledMinor: 0,
+      authorizationVersion: 1,
+    };
+    const reservations: ReservationRecord[] = [];
     return {
       projects: [project],
       tasks: [task],
@@ -214,6 +289,9 @@ describe("SqliteWorldSnapshot", () => {
       approvals: [approval],
       artifacts,
       runs: [run],
+      budgets: [budget],
+      reservations,
+      usageKeys: [],
     };
   }
 });

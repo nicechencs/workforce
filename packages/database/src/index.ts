@@ -15,6 +15,7 @@ export {
 export { SqliteEventStore, highWaterMark, unpublishedOutboxCount } from "./event-store.js";
 export { SqliteHandleRepository, type RuntimeHandleRecord } from "./handles.js";
 export { appliedMigrations, checksumSql, migrate } from "./migrate.js";
+export { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
 export { SqliteProjectRepository } from "./projects.js";
 export {
   SqliteApprovalRepository,
@@ -31,7 +32,7 @@ export {
   type RunRecord,
   type StartRunInput,
 } from "./runs.js";
-export { MIGRATIONS, MIGRATION_001_SQL, MIGRATION_002_SQL } from "./schema.js";
+export { MIGRATIONS, MIGRATION_001_SQL, MIGRATION_002_SQL, MIGRATION_003_SQL } from "./schema.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
 export { SqliteWorldSnapshot, type WorldEntitySnapshot } from "./world-snapshot.js";

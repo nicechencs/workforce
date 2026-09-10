@@ -5,8 +5,10 @@ import { join } from "node:path";
 import type {
   ApprovalRecord,
   ArtifactRecord,
+  BudgetRecord,
   NodeInstanceRecord,
   ProjectRecord,
+  ReservationRecord,
   TaskRecord,
   WorkflowGraph,
   WorkflowInstanceRecord,
@@ -209,6 +211,48 @@ describe("entity repositories", () => {
         db.nodeInstances.update(tx, next, 1);
       });
       expect(db.nodeInstances.get(node.id)?.status).toBe("active");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("inserts and updates a BudgetRecord, then drops released reservations", async () => {
+    const db = openDb();
+    db.seedMinimalGraph(ids, now);
+    const budget: BudgetRecord = {
+      id: "bdg_1",
+      projectId: ids.projectId,
+      currency: "USD",
+      limitMinor: 10_000,
+      reservedMinor: 0,
+      settledMinor: 0,
+      authorizationVersion: 1,
+    };
+    const reservation: ReservationRecord = {
+      id: "rsv_1",
+      budgetId: budget.id,
+      amountMinor: 100,
+      runId: "run_budget",
+    };
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.budgets.insert(tx, budget, now);
+        db.reservations.upsertActive(tx, reservation, now);
+      });
+      expect(db.budgets.get(budget.id)).toEqual(budget);
+      expect(db.reservations.get(reservation.id)).toEqual(reservation);
+
+      const next = { ...budget, reservedMinor: 100, authorizationVersion: 1 };
+      await db.uow.withTransaction(async (tx) => {
+        db.budgets.update(tx, next, now);
+      });
+      expect(db.budgets.get(budget.id)?.reservedMinor).toBe(100);
+
+      await db.uow.withTransaction(async (tx) => {
+        db.reservations.syncActive(tx, [], now);
+      });
+      expect(db.reservations.listActive()).toEqual([]);
+      expect(db.reservations.get(reservation.id)).toBeNull();
     } finally {
       db.close();
     }

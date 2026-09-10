@@ -494,6 +494,28 @@ export class SqliteUsageRepository {
     return row ? Number(row.n) : 0;
   }
 
+  listIdempotencyKeys(): string[] {
+    return this.db
+      .prepare("SELECT idempotency_key FROM usage_ledger ORDER BY created_at ASC, id ASC")
+      .all()
+      .map((row) => requiredText(cell(row, "idempotency_key"), "idempotency_key"));
+  }
+
+  putKeys(tx: Tx, input: { organizationId: string; keys: string[]; createdAt: string }): void {
+    for (const key of input.keys) {
+      this.append(tx, {
+        id: usageKeyRowId(key),
+        organizationId: input.organizationId,
+        metric: "idempotency",
+        quantity: 0,
+        amountMinor: 0,
+        currency: "USD",
+        idempotencyKey: key,
+        createdAt: input.createdAt,
+      });
+    }
+  }
+
   append(
     tx: Tx,
     input: {
@@ -527,6 +549,10 @@ export class SqliteUsageRepository {
       );
     return { inserted: Number(result.changes) === 1 };
   }
+}
+
+function usageKeyRowId(key: string): string {
+  return key.startsWith("usg_") ? key : `usg_${key}`;
 }
 
 export class SqliteResourceRepository {

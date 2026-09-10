@@ -31,6 +31,7 @@ export function reserveRunBudget(
   applyDecision(budget, ctx.engine.reserveBudget(budget, input.amount));
   const reservationId = ctx.world.ids.ulid("rsv_");
   ctx.world.reservations.set(reservationId, {
+    id: reservationId,
     budgetId: budget.id,
     amountMinor: input.amount.costMinor,
     ...(input.runId ? { runId: input.runId } : {}),
