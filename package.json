@@ -10,10 +10,12 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "check:docs": "node tooling/docs/check-docs.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:docs": "node --test tooling/docs/check-docs.test.mjs",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {

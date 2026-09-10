@@ -1,3 +1,11 @@
+---
+title: Workforce 文档索引
+type: navigation
+status: current
+owner: maintainers
+updated: 2026-09-10
+---
+
 # Workforce Documentation
 
 ## Directory plan
@@ -6,6 +14,8 @@
 docs/
 ├── blueprint/   # Product, architecture and MVP baseline
 ├── adr/         # Architecture Decision Records
+├── guides/      # Development Agent workflows and validation
+├── reference/   # Stable capability and tool references
 ├── protocols/   # Versioned JSON Schemas and protocol specifications
 └── operations/  # Development, release, diagnostics and support guides
 ```
@@ -32,6 +42,14 @@ Git does not retain empty directories. The `protocols` and `operations` director
 - [Decision register](planning/decision-register.md)
 - [Development task backlog](planning/02-development-task-backlog.md)
 - [Implementation status (verified)](planning/03-implementation-status.md)
+
+## Development Agent governance
+
+- Repository entry and red lines: [AGENTS.md](../AGENTS.md)
+- Delegation, handoff and independent review: [Agent workflow](guides/agent-workflow.md)
+- Test selection and evidence boundaries: [Testing and validation](guides/testing-and-validation.md)
+- Reasoning levels and tool evidence: [Agent capabilities and tools](reference/agent-runtime.md)
+- Documentation status and checks: [Documentation style and governance](STYLE.md)
 
 ## Document status
 

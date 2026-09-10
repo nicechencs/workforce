@@ -1,5 +1,15 @@
 # Contributing
 
+## Agent entry
+
+Development Agents start from [AGENTS.md](AGENTS.md), then read only the guides triggered by the current task. Agent roles, handoff, review, reasoning levels, and validation live in:
+
+- [Agent workflow](docs/guides/agent-workflow.md)
+- [Agent capabilities and tools](docs/reference/agent-runtime.md)
+- [Testing and validation](docs/guides/testing-and-validation.md)
+
+Before editing, record the current branch, HEAD, working-tree changes, task acceptance criteria, owned files, and prohibited files. Parallel Agents must use separate writable worktrees and non-overlapping write scopes.
+
 ## Toolchain
 
 - Package manager: pnpm 9.4.x (`packageManager` in the root `package.json`).
@@ -19,6 +29,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm check:docs
 ```
 
 CI runs `pnpm format:check` instead of rewriting files.
@@ -28,3 +39,13 @@ CI runs `pnpm format:check` instead of rewriting files.
 Each workspace package is private (`@workforce/<name>`), exports only its public `exports` map, and starts as an empty implementation. Import other packages by name, never by relative path across package boundaries.
 
 `packages/ui` and `apps/desktop/src/renderer` must stay browser-safe: Node built-ins such as `node:fs` are forbidden by ESLint. See the README for package ownership and the T02 schema-entry notes.
+
+## Review and delivery
+
+- The implementer runs module tests and records the exact commands and results.
+- Cross-package changes require the affected contract/integration tests and an independent review of the final diff or ArtifactVersion.
+- Review returns `APPROVED` or `CHANGES REQUIRED` with locations and evidence.
+- Mock, synthetic Artifact, or Runtime discovery results must not be reported as live Runtime proof.
+- Do not push, create a pull request, publish, or force-apply an integration conflict unless the current task explicitly authorizes it.
+
+New or substantially rewritten documentation follows [docs/STYLE.md](docs/STYLE.md) and must pass `pnpm check:docs`.
