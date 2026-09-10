@@ -189,7 +189,10 @@ function spawnShareNone(file) {
 function spawnCwdHold(dir) {
   const child = spawn(
     process.execPath,
-    ["-e", "setInterval(() => {}, 1 << 30); process.stdout.write('CWD_HOLD pid=' + process.pid + '\\n')"],
+    [
+      "-e",
+      "setInterval(() => {}, 1 << 30); process.stdout.write('CWD_HOLD pid=' + process.pid + '\\n')",
+    ],
     {
       cwd: dir,
       env: gitEnv,
@@ -251,7 +254,9 @@ function dumpWorktrees(label, cwd = mainRepo) {
   git(["worktree", "list", "--porcelain"], cwd);
   const gitDir = path.join(cwd, ".git");
   const wtMeta = path.join(gitDir, "worktrees");
-  log(`  worktrees metadata dir exists=${exists(wtMeta)} entries=${exists(wtMeta) ? listDir(wtMeta).join(",") : ""}`);
+  log(
+    `  worktrees metadata dir exists=${exists(wtMeta)} entries=${exists(wtMeta) ? listDir(wtMeta).join(",") : ""}`,
+  );
   if (exists(wtMeta)) {
     for (const name of listDir(wtMeta)) {
       const dir = path.join(wtMeta, name);
@@ -330,8 +335,12 @@ async function scenarioA() {
   heading("A. Clean repo: worktree add with spaces in path");
   const wt = path.join(tmpRoot, "wt a spaces");
   const rec = git(["worktree", "add", wt, "-b", "run-a"], mainRepo);
-  const readme = exists(path.join(wt, "README.md")) ? readText(path.join(wt, "README.md")).trim() : "<missing>";
-  const gitFile = exists(path.join(wt, ".git")) ? readText(path.join(wt, ".git")).trim() : "<missing>";
+  const readme = exists(path.join(wt, "README.md"))
+    ? readText(path.join(wt, "README.md")).trim()
+    : "<missing>";
+  const gitFile = exists(path.join(wt, ".git"))
+    ? readText(path.join(wt, ".git")).trim()
+    : "<missing>";
   log(`  worktree README=${JSON.stringify(readme)}`);
   log(`  worktree .git file=${JSON.stringify(gitFile)}`);
   git(["branch", "--show-current"], wt);
@@ -357,12 +366,18 @@ async function scenarioB() {
   git(["status", "--porcelain=v1"], mainRepo);
   const wt = path.join(tmpRoot, "wt-b-dirty");
   const rec = git(["worktree", "add", wt, "-b", "run-b"], mainRepo);
-  const wtReadme = exists(path.join(wt, "README.md")) ? readText(path.join(wt, "README.md")).trim() : "<missing>";
+  const wtReadme = exists(path.join(wt, "README.md"))
+    ? readText(path.join(wt, "README.md")).trim()
+    : "<missing>";
   const mainReadme = readText(path.join(mainRepo, "README.md")).trim();
   const leakUntracked = exists(path.join(wt, "untracked-only.txt"));
   git(["status", "--porcelain=v1"], wt);
   git(["status", "--porcelain=v1"], mainRepo);
-  const isolated = rec.exit === 0 && wtReadme === "committed-v1" && mainReadme === "DIRTY-MAIN-UNCOMMITTED" && !leakUntracked;
+  const isolated =
+    rec.exit === 0 &&
+    wtReadme === "committed-v1" &&
+    mainReadme === "DIRTY-MAIN-UNCOMMITTED" &&
+    !leakUntracked;
   note(
     "B",
     "worktree add succeeds while main is dirty; dirty/untracked files do not leak into the new worktree",
@@ -465,8 +480,12 @@ async function scenarioD() {
   git(["worktree", "add", wt, "-b", "run-d"], mainRepo);
   const lockedFile = path.join(wt, "src", "app.js");
   const locker = spawnLocker(lockedFile, "r+");
-  await waitFor(() => /LOCKED/.test(locker.getOut())).catch((err) => log(`  lock wait: ${err.message} out=${locker.getOut()} err=${locker.getErr()}`));
-  log(`  locker: ${locker.getOut() || locker.getErr() || "(no output yet)"} pid=${locker.child.pid}`);
+  await waitFor(() => /LOCKED/.test(locker.getOut())).catch((err) =>
+    log(`  lock wait: ${err.message} out=${locker.getOut()} err=${locker.getErr()}`),
+  );
+  log(
+    `  locker: ${locker.getOut() || locker.getErr() || "(no output yet)"} pid=${locker.child.pid}`,
+  );
 
   const removeLocked = git(["worktree", "remove", wt], mainRepo);
   const stillThere = exists(wt);
@@ -485,9 +504,13 @@ async function scenarioD() {
   const shareFile = path.join(wtShare, "src", "app.js");
   const shareLocker = spawnShareNone(shareFile);
   await waitFor(() => /LOCKED/.test(shareLocker.getOut())).catch((err) =>
-    log(`  share-none wait: ${err.message} out=${shareLocker.getOut()} err=${shareLocker.getErr()}`),
+    log(
+      `  share-none wait: ${err.message} out=${shareLocker.getOut()} err=${shareLocker.getErr()}`,
+    ),
   );
-  log(`  share-none: ${shareLocker.getOut() || shareLocker.getErr() || "(no output)"} pid=${shareLocker.child.pid}`);
+  log(
+    `  share-none: ${shareLocker.getOut() || shareLocker.getErr() || "(no output)"} pid=${shareLocker.child.pid}`,
+  );
   const removeShare = git(["worktree", "remove", wtShare], mainRepo);
   const shareExists = exists(wtShare);
   note(
@@ -507,7 +530,9 @@ async function scenarioD() {
   await new Promise((r) => setTimeout(r, 400));
   if (exists(wtShare)) {
     const retryShare = git(["worktree", "remove", "--force", wtShare], mainRepo);
-    log(`  retry after share-none kill: exit=${retryShare.exit} exists=${exists(wtShare)} stderr=${retryShare.stderr}`);
+    log(
+      `  retry after share-none kill: exit=${retryShare.exit} exists=${exists(wtShare)} stderr=${retryShare.stderr}`,
+    );
     if (exists(wtShare)) {
       const r = rmrf(wtShare);
       log(`  fs.rmSync after share-none: ok=${r.ok} ${r.error || ""}`);
@@ -519,7 +544,9 @@ async function scenarioD() {
   const wtCwd = path.join(tmpRoot, "wt-d-cwd");
   git(["worktree", "add", wtCwd, "-b", "run-d-cwd"], mainRepo);
   const holder = spawnCwdHold(wtCwd);
-  await waitFor(() => /CWD_HOLD/.test(holder.getOut())).catch((err) => log(`  cwd hold wait: ${err.message}`));
+  await waitFor(() => /CWD_HOLD/.test(holder.getOut())).catch((err) =>
+    log(`  cwd hold wait: ${err.message}`),
+  );
   log(`  cwd-holder pid=${holder.child.pid} out=${holder.getOut()}`);
   const removeCwd = git(["worktree", "remove", "--force", wtCwd], mainRepo);
   const cwdStill = exists(wtCwd);
@@ -533,7 +560,9 @@ async function scenarioD() {
   await new Promise((r) => setTimeout(r, 400));
   if (exists(wtCwd)) {
     const retry = git(["worktree", "remove", "--force", wtCwd], mainRepo);
-    log(`  retry after cwd-hold kill: exit=${retry.exit} exists=${exists(wtCwd)} stderr=${retry.stderr}`);
+    log(
+      `  retry after cwd-hold kill: exit=${retry.exit} exists=${exists(wtCwd)} stderr=${retry.stderr}`,
+    );
     if (exists(wtCwd)) {
       const r = rmrf(wtCwd);
       log(`  fs.rmSync after cwd-hold: ok=${r.ok} ${r.error || ""}`);
@@ -576,7 +605,12 @@ async function scenarioE() {
   const prune = git(["worktree", "prune", "-v"], mainRepo);
   dumpWorktrees("after prune");
   const metaDir = path.join(mainRepo, ".git", "worktrees");
-  const leftoverMeta = exists(metaDir) ? listDir(metaDir).filter((n) => n.startsWith("wt-e") || n.includes("run-e") || n.includes("crash") || n.includes("prune")) : [];
+  const leftoverMeta = exists(metaDir)
+    ? listDir(metaDir).filter(
+        (n) =>
+          n.startsWith("wt-e") || n.includes("run-e") || n.includes("crash") || n.includes("prune"),
+      )
+    : [];
   note(
     "E-prune",
     "after deleting a worktree dir without git worktree remove, list shows prunable; prune clears metadata",
@@ -626,7 +660,9 @@ async function scenarioF() {
   heading("F2b. FileShare.None on worktree index");
   fs.writeFileSync(path.join(wt, "README.md"), "f2b-dirty\n");
   const idxShare = spawnShareNone(indexPath);
-  await waitFor(() => /LOCKED/.test(idxShare.getOut())).catch((err) => log(`  ${err.message} err=${idxShare.getErr()}`));
+  await waitFor(() => /LOCKED/.test(idxShare.getOut())).catch((err) =>
+    log(`  ${err.message} err=${idxShare.getErr()}`),
+  );
   log(`  index share-none ${idxShare.getOut() || idxShare.getErr()}`);
   const addShare = git(["add", "README.md"], wt);
   const commitShare = git(["commit", "-m", "index share none"], wt);
@@ -737,7 +773,10 @@ async function scenarioG() {
     } catch (err) {
       log(`  mkdir failed: ${err.message}`);
     }
-    const rec = git(["-c", "core.longpaths=true", "worktree", "add", p, "-b", `run-glong-${n}`], mainRepo);
+    const rec = git(
+      ["-c", "core.longpaths=true", "worktree", "add", p, "-b", `run-glong-${n}`],
+      mainRepo,
+    );
     const added = rec.exit === 0 && exists(path.join(p, "README.md"));
     note(
       `G-longpaths-${n}`,
@@ -838,7 +877,11 @@ async function scenarioG() {
 
 async function scenarioHskip() {
   heading("H. Dirty submodule — skipped (too heavy for this spike)");
-  note("H", "skip dirty submodule worktree interactions unless already cheap", "skipped: no submodule fixture");
+  note(
+    "H",
+    "skip dirty submodule worktree interactions unless already cheap",
+    "skipped: no submodule fixture",
+  );
 }
 
 async function cleanup() {

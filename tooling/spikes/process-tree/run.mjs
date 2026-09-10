@@ -47,11 +47,11 @@ function isAlive(pid) {
 
 function tasklistLine(pid) {
   try {
-    const out = execFileSync(
-      "tasklist",
-      ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
-      { encoding: "utf8", windowsHide: true, timeout: 15_000 }
-    );
+    const out = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 15_000,
+    });
     return out.trim();
   } catch (err) {
     return `tasklist-error: ${err.message}`;
@@ -80,7 +80,7 @@ function queryTree(pids) {
     const raw = execFileSync(
       "pwsh",
       ["-NoProfile", "-File", queryTreePs1, "-ProcessIds", unique.join(",")],
-      { encoding: "utf8", windowsHide: true, timeout: 20_000 }
+      { encoding: "utf8", windowsHide: true, timeout: 20_000 },
     );
     return parseJsonArray(raw);
   } catch (err) {
@@ -162,7 +162,7 @@ async function waitForRoles(dir, roles, timeoutMs = 10_000) {
     await sleep(50);
   }
   throw new Error(
-    `timeout waiting for roles ${roles.join(", ")} in ${dir}; have ${JSON.stringify(readRolePids(dir))}`
+    `timeout waiting for roles ${roles.join(", ")} in ${dir}; have ${JSON.stringify(readRolePids(dir))}`,
   );
 }
 
@@ -174,7 +174,7 @@ function pidStatusTable(labelPids) {
   const timeByPid = new Map(times.filter((r) => r.pid).map((r) => [r.pid, r]));
   const owned = new Set(pids.filter((p) => p !== RUNNER_PID));
   const extras = snap.filter(
-    (r) => Number.isInteger(r.pid) && !pids.includes(r.pid) && owned.has(r.parentPid)
+    (r) => Number.isInteger(r.pid) && !pids.includes(r.pid) && owned.has(r.parentPid),
   );
   const rows = [];
   for (const [label, pid] of Object.entries(labelPids)) {
@@ -213,7 +213,7 @@ function formatTable(rows) {
   return rows
     .map(
       (r) =>
-        `  ${String(r.label).padEnd(22)} pid=${String(r.pid).padEnd(8)} alive=${String(r.alive).padEnd(5)} parent=${String(r.parentPid ?? "-").padEnd(8)} ${r.name ?? ""} ${r.startIdentity ?? ""}`
+        `  ${String(r.label).padEnd(22)} pid=${String(r.pid).padEnd(8)} alive=${String(r.alive).padEnd(5)} parent=${String(r.parentPid ?? "-").padEnd(8)} ${r.name ?? ""} ${r.startIdentity ?? ""}`,
     )
     .join("\n");
 }
@@ -277,24 +277,20 @@ function spawnLogged(command, args, options = {}) {
 function spawnTree({ dir, holdFile, detachedGrandchildren = false }) {
   ensureDir(dir);
   const pidFile = path.join(dir, "pids.txt");
-  const child = spawnLogged(
-    process.execPath,
-    [childTreePath],
-    {
-      cwd: dir,
-      env: {
-        ...process.env,
-        SPIKE_PID_FILE: pidFile,
-        SPIKE_ROLE: "parent",
-        ...(holdFile ? { SPIKE_HOLD_FILE: holdFile } : {}),
-        ...(detachedGrandchildren ? { SPIKE_GC_DETACHED: "1" } : {}),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      detached: false,
-      logPrefix: "tree",
-    }
-  );
+  const child = spawnLogged(process.execPath, [childTreePath], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      SPIKE_PID_FILE: pidFile,
+      SPIKE_ROLE: "parent",
+      ...(holdFile ? { SPIKE_HOLD_FILE: holdFile } : {}),
+      ...(detachedGrandchildren ? { SPIKE_GC_DETACHED: "1" } : {}),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    detached: false,
+    logPrefix: "tree",
+  });
   return { child, pidFile };
 }
 
@@ -330,7 +326,12 @@ function waitChildExit(child, timeoutMs) {
       return;
     }
     const timer = setTimeout(() => {
-      resolve({ timeout: true, exitCode: child.exitCode, signal: child.signalCode, killed: child.killed });
+      resolve({
+        timeout: true,
+        exitCode: child.exitCode,
+        signal: child.signalCode,
+        killed: child.killed,
+      });
     }, timeoutMs);
     child.once("exit", (code, signal) => {
       clearTimeout(timer);
@@ -452,11 +453,14 @@ async function experimentB() {
   log("after 2s:\n" + formatTable(after));
   const parentExit = await waitChildExit(child, 100);
   const signals = parsePidFile(path.join(dir, "pids.txt")).filter((x) => x.kind === "signal");
-  const orphans = ["grandchild-1", "grandchild-2"].filter((k) => after.find((r) => r.label === k)?.alive);
+  const orphans = ["grandchild-1", "grandchild-2"].filter(
+    (k) => after.find((r) => r.label === k)?.alive,
+  );
   const orphanSnap = processSnapshot(orphans.map((k) => roles[k]));
 
   const rec = {
-    method: "child.kill('SIGTERM')  // Node on Windows: TerminateProcess of that pid only; not a POSIX signal",
+    method:
+      "child.kill('SIGTERM')  // Node on Windows: TerminateProcess of that pid only; not a POSIX signal",
     before,
     after,
     parentExit,
@@ -500,7 +504,9 @@ async function experimentB2() {
     const after = pidStatusTable(roles);
     const parentExit = await waitChildExit(child, 100);
     const signals = parsePidFile(path.join(dir, "pids.txt")).filter((x) => x.kind === "signal");
-    log(`${method.name}: parentAlive=${after.find((r) => r.label === "parent")?.alive} gc1=${after.find((r) => r.label === "grandchild-1")?.alive} gc2=${after.find((r) => r.label === "grandchild-2")?.alive} signals=${JSON.stringify(signals)}`);
+    log(
+      `${method.name}: parentAlive=${after.find((r) => r.label === "parent")?.alive} gc1=${after.find((r) => r.label === "grandchild-1")?.alive} gc2=${after.find((r) => r.label === "grandchild-2")?.alive} signals=${JSON.stringify(signals)}`,
+    );
     recs.push({
       method: method.name,
       applyResult,
@@ -510,7 +516,9 @@ async function experimentB2() {
       parentExit,
       signalLog: signals,
       parentDied: !after.find((r) => r.label === "parent")?.alive,
-      grandchildrenSurvived: ["grandchild-1", "grandchild-2"].some((k) => after.find((r) => r.label === k)?.alive),
+      grandchildrenSurvived: ["grandchild-1", "grandchild-2"].some(
+        (k) => after.find((r) => r.label === k)?.alive,
+      ),
     });
     for (const k of Object.keys(roles)) forceKillPid(roles[k]);
   }
@@ -539,14 +547,19 @@ async function experimentB3() {
   const after = pidStatusTable(roles);
   log("after parent-only kill, detached gc:\n" + formatTable(after));
   const rec = {
-    method: "SPIKE_GC_DETACHED=1 (stdio:ignore, detached:true) then child.kill('SIGTERM') on parent only",
+    method:
+      "SPIKE_GC_DETACHED=1 (stdio:ignore, detached:true) then child.kill('SIGTERM') on parent only",
     before,
     childrenOfParent: kids,
     killReturned: sent,
     after,
     parentDied: after.find((r) => r.label === "parent")?.alive === false,
-    grandchildrenSurvived: ["grandchild-1", "grandchild-2"].some((k) => after.find((r) => r.label === k)?.alive),
-    surviving: ["grandchild-1", "grandchild-2"].filter((k) => after.find((r) => r.label === k)?.alive),
+    grandchildrenSurvived: ["grandchild-1", "grandchild-2"].some(
+      (k) => after.find((r) => r.label === k)?.alive,
+    ),
+    surviving: ["grandchild-1", "grandchild-2"].filter(
+      (k) => after.find((r) => r.label === k)?.alive,
+    ),
   };
   for (const k of Object.keys(roles)) forceKillPid(roles[k]);
   rec.cleaned = pidStatusTable(roles);
@@ -579,7 +592,9 @@ async function experimentC() {
     allDescendantsGone: after.every((r) => r.alive === false),
   };
 
-  log("==== C2: taskkill /PID parent /T /F after parent already dead (orphan hole, detached gc) ====");
+  log(
+    "==== C2: taskkill /PID parent /T /F after parent already dead (orphan hole, detached gc) ====",
+  );
   const dir2 = path.join(tmpRoot, "C2");
   fs.rmSync(dir2, { recursive: true, force: true });
   ensureDir(dir2);
@@ -608,7 +623,9 @@ async function experimentC() {
     afterParentKill: mid,
     lateTaskkillOnDeadParent: late,
     after: after2,
-    orphansStillAlive: ["grandchild-1", "grandchild-2"].some((k) => after2.find((r) => r.label === k)?.alive),
+    orphansStillAlive: ["grandchild-1", "grandchild-2"].some(
+      (k) => after2.find((r) => r.label === k)?.alive,
+    ),
   };
   for (const k of Object.keys(roles2)) forceKillPid(roles2[k]);
   for (const k of Object.keys(roles)) forceKillPid(roles[k]);
@@ -629,7 +646,11 @@ async function experimentD() {
   trackPid(sentinelPid);
 
   const { child } = spawnTree({ dir: path.join(dir, "tree") });
-  const roles = await waitForRoles(path.join(dir, "tree"), ["parent", "grandchild-1", "grandchild-2"]);
+  const roles = await waitForRoles(path.join(dir, "tree"), [
+    "parent",
+    "grandchild-1",
+    "grandchild-2",
+  ]);
   trackPid(roles["grandchild-1"]);
   trackPid(roles["grandchild-2"]);
 
@@ -641,7 +662,8 @@ async function experimentD() {
   log("before tree kill:\n" + formatTable(before));
 
   const imageNameNote = {
-    warning: "Adapter MUST NOT kill by image name (taskkill /IM node.exe). Tree, sentinel, runner, and often the IDE share ImageName=node.exe.",
+    warning:
+      "Adapter MUST NOT kill by image name (taskkill /IM node.exe). Tree, sentinel, runner, and often the IDE share ImageName=node.exe.",
     executed: false,
     nodeImageMatches: null,
   };
@@ -655,7 +677,9 @@ async function experimentD() {
     imageNameNote.nodeImageMatches = {
       count: lines.length,
       sample: lines.slice(0, 8),
-      includesRunner: lines.some((l) => l.includes(`"${RUNNER_PID}"`) || l.includes(`,${RUNNER_PID},`)),
+      includesRunner: lines.some(
+        (l) => l.includes(`"${RUNNER_PID}"`) || l.includes(`,${RUNNER_PID},`),
+      ),
       includesSentinel: lines.some((l) => l.includes(`"${sentinelPid}"`)),
       includesTreeParent: lines.some((l) => l.includes(`"${roles.parent}"`)),
     };
@@ -679,7 +703,9 @@ async function experimentD() {
     kill,
     after,
     imageNameNote,
-    treeDead: ["parent", "grandchild-1", "grandchild-2"].every((k) => after.find((r) => r.label === k)?.alive === false),
+    treeDead: ["parent", "grandchild-1", "grandchild-2"].every(
+      (k) => after.find((r) => r.label === k)?.alive === false,
+    ),
     sentinelAlive: after.find((r) => r.label === "sentinel")?.alive === true,
     runnerAlive: isAlive(RUNNER_PID),
   };
@@ -710,8 +736,18 @@ async function experimentE() {
   const statusFile = path.join(dir, "job-status.json");
   const jobProc = spawnLogged(
     "pwsh",
-    ["-NoProfile", "-File", jobObjectPs1, "-ProcessId", String(parentPid), "-CloseFlag", closeFlag, "-StatusFile", statusFile],
-    { logPrefix: "job", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: false }
+    [
+      "-NoProfile",
+      "-File",
+      jobObjectPs1,
+      "-ProcessId",
+      String(parentPid),
+      "-CloseFlag",
+      closeFlag,
+      "-StatusFile",
+      statusFile,
+    ],
+    { logPrefix: "job", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: false },
   );
 
   const jobWaitStart = Date.now();
@@ -768,10 +804,10 @@ async function experimentE() {
     assignedTable,
     childrenOfParent: kids,
     afterClose,
-    jobObjectWorked:
-      Boolean(jobStatus && jobStatus.ok && afterClose && afterClose.every((r) => r.alive === false)),
-    note:
-      "Node child_process cannot create a Win32 Job Object without native bindings. This spike uses PowerShell Add-Type P/Invoke (no npm). AssignProcessToJobObject fails when the process is already in a non-breakaway job (common under Windows Terminal, VS Code, Cursor).",
+    jobObjectWorked: Boolean(
+      jobStatus && jobStatus.ok && afterClose && afterClose.every((r) => r.alive === false),
+    ),
+    note: "Node child_process cannot create a Win32 Job Object without native bindings. This spike uses PowerShell Add-Type P/Invoke (no npm). AssignProcessToJobObject fails when the process is already in a non-breakaway job (common under Windows Terminal, VS Code, Cursor).",
   };
 
   for (const k of Object.keys(roles)) forceKillPid(roles[k]);
