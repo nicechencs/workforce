@@ -3,7 +3,7 @@
 **版本：** V0.1 Draft  
 **状态：** Product UI baseline  
 **日期：** 2026-09-10  
-**修订：** 澄清 §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性。V0.1 一级导航全部出现在左侧栏。
+**修订：** 澄清 §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性。V0.1 一级导航全部出现在左侧栏。工作流用户目的改为查看模板/版本/结构化步骤，避免「管理」暗示画布编辑。
 
 ## 1. 设计目标
 
@@ -28,7 +28,7 @@ UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime �
 | 执行节点 | ExecutionNode、RuntimeInstallation、Capacity | 查看本机与服务器执行能力 | P0 |
 | 审批中心 | Approval、PolicyDecision | 集中处理人工决策 | P0 |
 | 运行记录 | Run、Event、Usage | 查询执行历史和诊断问题 | P1 |
-| 工作流 | WorkflowDefinition、WorkflowVersion | 管理可复用流程 | P1 |
+| 工作流 | WorkflowDefinition、WorkflowVersion | 查看可复用模板、版本和结构化步骤 | P1 |
 | 设置 | Runtime、CredentialRef、Policy、Preferences | 配置运行环境与安全边界 | P0 |
 
 `V0.1` 列是**交付切片深度**，不是“是否出现在一级导航”：
@@ -177,6 +177,6 @@ V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续
 
 ### 6.2 工作流
 
-- 管理可复用 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤。
-- 无画布编辑器（能力矩阵：可视化 Workflow 编辑器 = later）。
+- 只读查看可复用 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤。
+- 不是完整流程管理，也无画布编辑器（能力矩阵：可视化 Workflow 编辑器 = later）。
 - 目录 API 未列入能力矩阵时，只读模板夹具；不发明 `GET /workflows`，不宣称真实 Runtime 可执行。

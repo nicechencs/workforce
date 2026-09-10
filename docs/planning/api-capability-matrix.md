@@ -3,7 +3,8 @@
 日期：2026-09-10  
 状态：**已冻结（首版按钮与 endpoint）**  
 权威：[decision-register.md](decision-register.md) D08。  
-未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。
+未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+页面范围补了一行 P1 壳导航说明，与 [IA §2](../product-ui/01-information-architecture.md) 对齐；**未新增 endpoint**。
 
 图例：
 
