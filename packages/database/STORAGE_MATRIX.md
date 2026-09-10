@@ -1,0 +1,22 @@
+# T04 storage matrix
+
+Verified on Windows + Node 24 (`node:sqlite`). macOS / Linux: untested.
+Power-loss durability: untested. Software abort + explicit ROLLBACK: enforced.
+
+This slice uses Node 24 `node:sqlite` (`DatabaseSync`). Drizzle / better-sqlite3 were not added; coordinator can add those later.
+
+| Record                            | Storage                                              | Unique constraint                                                                  | Recovery                                                              |
+| --------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| NodeInstance generation           | `node_instances.generation`                          | UNIQUE `(workflow_instance_id, workflow_node_id, generation)`                      | Load by workflow instance; resume highest generation                  |
+| Persistent Timer / retry          | `timers` + `payload_json`                            | PK `id`; index `(status, fire_at)`                                                 | `status='scheduled' AND fire_at <= now`                               |
+| Runtime Handle / process identity | `runtime_handles` + `handle_json`                    | PK `run_id`; index `start_identity`                                                | Load by `run_id`; inspect / safe terminate only                       |
+| Start command receipt             | `command_receipts`                                   | UNIQUE `(principal_id, client_id, canonical_operation, resource, idempotency_key)` | `get(scope)`; still queryable by `operation_id` after expiry          |
+| Pending approval digest           | `approvals.action_digest`                            | PK `id`                                                                            | List `status='pending'`; compare digest before consume                |
+| Artifact staging / output binding | `artifact_versions.staging_ref`, `output_bindings`   | UNIQUE `(artifact_id, version)`; PK `(task_id, slot_id)`                           | Staging without `available` is crash window 3                         |
+| Usage dedup / resource occupancy  | `usage_ledger`, `resource_allocations`               | UNIQUE `(organization_id, idempotency_key)`; UNIQUE `run_id`                       | `INSERT OR IGNORE`; release allocation with Run terminal status       |
+| SSE ingestion position            | `events.ingestion_position` INTEGER PK AUTOINCREMENT | Monotonic PK; **not** stream sequence                                              | High-water = `MAX(ingestion_position)`                                |
+| Task/Run/Project state            | entity tables + `state_revision` CAS                 | One active Run partial unique index; UNIQUE `(task_id, attempt)`                   | `UPDATE ... WHERE state_revision=?`; conflict rolls back Event/Outbox |
+| Event + Outbox                    | `events`, `outbox_messages` same Tx as state         | UNIQUE `(stream, sequence)`; outbox id = event id                                  | Unpublished outbox; never Event-replay spawn                          |
+| Inbox dedup                       | `inbox_receipts`                                     | PK `(consumer, message_id)`                                                        | `INSERT OR IGNORE`                                                    |
+
+Transaction rule: state + Event + Outbox in one `BEGIN IMMEDIATE`. Spawn / Git / files stay outside. Crash windows 1–2 are commit → spawn → later Handle commit.
