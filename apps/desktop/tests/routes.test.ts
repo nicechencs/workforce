@@ -10,9 +10,25 @@ describe("shell route registry", () => {
     expect(slots.has("tasks")).toBe(true);
     expect(slots.has("teams")).toBe(true);
     expect(slots.has("runs")).toBe(true);
+    expect(slots.has("workflows")).toBe(true);
     expect(slots.has("approvals")).toBe(true);
     expect(slots.has("nodes")).toBe(true);
     expect(slots.has("settings")).toBe(true);
+  });
+
+  it("resolves workflow list, detail, and version paths onto the workflows slot", () => {
+    const registry = createRouteRegistry();
+    expect(registry.resolve("/workflows")?.route.slot).toBe("workflows");
+    expect(registry.resolve("/workflows/software-development-team.feature-delivery")?.params).toEqual(
+      { workflowId: "software-development-team.feature-delivery" },
+    );
+    expect(
+      registry.resolve("/workflows/software-development-team.feature-delivery/versions/0.1.0")
+        ?.params,
+    ).toEqual({
+      workflowId: "software-development-team.feature-delivery",
+      versionId: "0.1.0",
+    });
   });
 
   it("lets feature modules register without editing the catalog", () => {

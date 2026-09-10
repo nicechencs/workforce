@@ -20,6 +20,8 @@ describe("hash route to slot", () => {
     expect(slotForHash("#/projects/p1", registry)).toBe("projects");
     expect(slotForHash("#/projects/p1/tasks/t1", registry)).toBe("tasks");
     expect(slotForHash("#/runs/r1", registry)).toBe("runs");
+    expect(slotForHash("#/workflows", registry)).toBe("workflows");
+    expect(slotForHash("#/workflows/wf_1/versions/0.1.0", registry)).toBe("workflows");
     expect(slotForHash("#/settings", registry)).toBe("settings");
   });
 });

@@ -10,7 +10,7 @@ describe("buildShellView", () => {
     expect(view.overlay).toBe("loading");
   });
 
-  it("enables P0 navigation when connected", () => {
+  it("enables primary navigation when connected", () => {
     const view = buildShellView({
       connection: { status: "online", protocolVersion: "0.1", mode: "spawn" },
       currentPath: "/projects",
@@ -22,8 +22,12 @@ describe("buildShellView", () => {
       "teams",
       "nodes",
       "approvals",
+      "runs",
+      "workflows",
       "settings",
     ]);
     expect(view.nav.find((item) => item.id === "projects")?.current).toBe(true);
+    expect(view.nav.find((item) => item.id === "runs")?.priority).toBe("p1");
+    expect(view.nav.find((item) => item.id === "workflows")?.priority).toBe("p1");
   });
 });
