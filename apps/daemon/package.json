@@ -27,7 +27,8 @@
     "@workforce/events": "workspace:*",
     "@workforce/protocol": "workspace:*",
     "@workforce/runtime-spi": "workspace:*",
-    "@workforce/workflow-engine": "workspace:*"
+    "@workforce/workflow-engine": "workspace:*",
+    "fastify": "5.6.1"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
