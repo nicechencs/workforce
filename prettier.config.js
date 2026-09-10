@@ -1,0 +1,7 @@
+/** @type {import("prettier").Config} */
+export default {
+  endOfLine: "lf",
+  printWidth: 100,
+  singleQuote: false,
+  trailingComma: "all",
+};
