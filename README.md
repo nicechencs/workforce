@@ -6,7 +6,7 @@ The project is currently in the V0.1 architecture and implementation-planning st
 
 ## Documentation
 
-- [V0.1 Blueprint](docs/blueprint/README.md)
+- [V0.1 Blueprint](docs/README.md)
 - Architecture decision records: `docs/adr/`
 - Protocol specifications and schemas: `docs/protocols/`
 - Operational guides: `docs/operations/`
@@ -23,4 +23,3 @@ The project is currently in the V0.1 architecture and implementation-planning st
 ## Status
 
 Design draft. The next step is initializing the monorepo and implementing the first deterministic vertical slice with a mock runtime.
-
