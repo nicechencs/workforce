@@ -31,6 +31,13 @@ P0 最小切片（M3 必须能走完主路径）：
 | AI 团队 | readonly | 预设 Software Development Team |
 | 设置 | 部分 | 本机 Runtime 探测、预算展示 |
 
+P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/01-information-architecture.md)）：
+
+| 页面 | M3 | 说明 |
+|---|---|---|
+| 运行记录列表 | 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
+| 工作流模板 / 版本 | readonly | IA P1；模板、版本、结构化步骤。无画布编辑器。矩阵未列目录 API，禁止前端发明 `GET /workflows` 并宣称已接通 |
+
 明确后置或示意：
 
 | 页面/动作 | 处理 |

@@ -2,7 +2,8 @@
 
 **版本：** V0.1 Draft  
 **状态：** Product UI baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-10  
+**修订：** 澄清 §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性。V0.1 一级导航全部出现在左侧栏。
 
 ## 1. 设计目标
 
@@ -30,6 +31,13 @@ UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime �
 | 工作流 | WorkflowDefinition、WorkflowVersion | 管理可复用流程 | P1 |
 | 设置 | Runtime、CredentialRef、Policy、Preferences | 配置运行环境与安全边界 | P0 |
 
+`V0.1` 列是**交付切片深度**，不是“是否出现在一级导航”：
+
+- **P0**：M3 主路径必须达到的页面深度（见 [api-capability-matrix.md](../planning/api-capability-matrix.md)）。
+- **P1**：仍是本表中的一级导航，**必须出现在左侧栏**；页面可以更薄（只读、夹具、无编辑器）。
+
+不要把 P1 理解成隐藏入口。线框若只画了部分 P1 项，以本表为准，并回改线框。壳实现用 `primary: true` 表示侧栏可见，用 `priority: "p0" | "p1"` 表示切片深度。
+
 V0.1 不建立大型可视化 Workflow 编辑器。工作流页面以模板、版本和结构化步骤为主。
 
 ## 3. 页面层级
@@ -41,10 +49,14 @@ flowchart TD
   Shell --> Teams[AI 团队]
   Shell --> Nodes[执行节点]
   Shell --> Approvals[审批中心]
+  Shell --> RunsNav[运行记录]
+  Shell --> Workflows[工作流]
+  Shell --> Settings[设置]
   Projects --> Project[项目详情]
   Project --> Task[任务详情]
   Task --> Run[Run 控制台]
   Run --> Artifact[Artifact 查看与审查]
+  RunsNav --> Run
 ```
 
 ## 4. P0 页面清单
@@ -154,3 +166,17 @@ V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续
 - 节点容量不足显示为排队，不计为执行失败。
 - Artifact 链接固定到版本或 commit SHA。
 - 客户端断线后，用户恢复连接可从 Event cursor 继续查看。
+
+## 6. P1 页面（一级导航，深度更薄）
+
+### 6.1 运行记录
+
+- 列表查询历史 Run、状态与用量；取消中不是已取消。
+- 详情复用 §4.5 Run 控制台。
+- 未知恢复状态不显示为失败，也不开放危险重跑。
+
+### 6.2 工作流
+
+- 管理可复用 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤。
+- 无画布编辑器（能力矩阵：可视化 Workflow 编辑器 = later）。
+- 目录 API 未列入能力矩阵时，只读模板夹具；不发明 `GET /workflows`，不宣称真实 Runtime 可执行。
