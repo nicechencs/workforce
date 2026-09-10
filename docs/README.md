@@ -3,7 +3,7 @@ title: Workforce 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Workforce Documentation
@@ -52,6 +52,10 @@ Git does not retain empty directories. The `protocols` and `operations` director
 - Test selection and evidence boundaries: [Testing and validation](guides/testing-and-validation.md)
 - Reasoning levels and tool evidence: [Agent capabilities and tools](reference/agent-runtime.md)
 - Documentation status and checks: [Documentation style and governance](STYLE.md)
+
+## Reference
+
+- [开源对标学习笔记](reference/open-source-benchmarks.md) — Eigent / OpenHands 深读指针；对照冻结决策，不表示将采用这些栈
 
 ## Document status
 
