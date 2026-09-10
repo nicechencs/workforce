@@ -187,7 +187,9 @@ describe("desktop project main path", () => {
         createButton.click();
       });
 
-      expect(document.querySelector('[data-testid="project-tab-panel-overview"]')).not.toBeNull();
+      await waitFor("overview-tab-panel", () =>
+        document.querySelector('[data-testid="project-tab-panel-overview"]'),
+      );
       expect(document.querySelector('[data-testid="project-bind-workspace"]')).toBeNull();
       expect(document.querySelector('[data-testid="project-task-list"]')).toBeNull();
 
