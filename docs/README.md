@@ -47,6 +47,7 @@ Git does not retain empty directories. The `protocols` and `operations` director
 ## Development Agent governance
 
 - Repository entry and red lines: [AGENTS.md](../AGENTS.md)
+- Named-bot PR pipeline (single source): [Collaboration and review](planning/04-collab-and-review.md)
 - Delegation, handoff and independent review: [Agent workflow](guides/agent-workflow.md)
 - Test selection and evidence boundaries: [Testing and validation](guides/testing-and-validation.md)
 - Reasoning levels and tool evidence: [Agent capabilities and tools](reference/agent-runtime.md)

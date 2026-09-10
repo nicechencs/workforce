@@ -10,6 +10,8 @@ updated: 2026-09-10
 
 本页规定开发 Agent 如何分工、交接和审查。产品运行时的 Task、Run、Artifact、Approval 和 DAG 契约仍以蓝图、协议和代码为准。
 
+命名 bot 的仓库 PR 管道（项目管理 / Coding / review / Test / UI审查）与对照决策登记的 `pass` / `conditional` / `reject` **只写在** [04-collab-and-review.md](../planning/04-collab-and-review.md)。本页的 Planner / Developer / Reviewer 和 `APPROVED` / `CHANGES REQUIRED` 是会话内委派与独立审查，不替代那条 PR 管道。
+
 ## 委派与并行
 
 开始任务时先判断是否存在至少两个已经就绪、互不依赖、文件范围不重叠的子任务。满足时才并行；单文件修改、共享契约设计、架构决定、敏感操作和最终验收由主 Agent 负责。

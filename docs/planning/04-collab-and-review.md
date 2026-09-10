@@ -1,7 +1,17 @@
 # V0.1 协作与评审流程
 
 日期：2026-09-10  
-目的：固定角色、PR 管道与评审红线，避免 agent 偏离已冻结规划。本文不改写决策；冲突以决策登记为准。
+目的：固定**命名 bot** 的仓库 PR 管道，以及对照冻结决策的评审红线。本文不改写决策；冲突以决策登记为准。
+
+通用仓库约定不在此重复：
+
+| 主题 | 权威页 |
+|---|---|
+| Agent 入口与红线 | [AGENTS.md](../../AGENTS.md) |
+| 委派、并行、交接、会话内审查 | [agent-workflow.md](../guides/agent-workflow.md) |
+| 验证命令与证据边界 | [testing-and-validation.md](../guides/testing-and-validation.md) |
+| 文档风格与 `pnpm check:docs` | [STYLE.md](../STYLE.md) |
+| 进度真相 | [03-implementation-status.md](03-implementation-status.md) |
 
 ## 1. 权威顺序
 
@@ -18,6 +28,8 @@
 
 ## 2. 角色
 
+命名 bot 的仓库职责只写在本表。会话内 Planner / Developer / Reviewer 见 [agent-workflow.md](../guides/agent-workflow.md)，不与下表混用同一套结论词。
+
 | 角色 | 职责 | 禁止 |
 |---|---|---|
 | **项目管理-bot** | 排期、边界、领取范围；`main` 的最终合入门禁 | 不写业务代码；不代替 review / headed 验收 |
@@ -26,14 +38,12 @@
 | **Test-bot** | 仅做真实 headed Electron / 桌面点击验收 | 不改代码；不做 PR 代码评审 |
 | **UI审查-bot** | UI 包或桌面页面变更时的视觉 / 交互审查 | 不替代 review-bot 的契约评审；不 merge |
 
-多人并行时仍遵守 backlog §6：一 agent 一分支/worktree，不共写同一 checkout。
-
 ## 3. PR 管道
 
 ```text
 从最新 main 开分支
   → 聚焦 PR（目录所有权见 README / backlog / 决策登记 §4）
-  → CI 绿：format:check、lint、typecheck、test
+  → CI 绿：format:check、lint、typecheck、test、build
   → review-bot 书面评审（对照冻结决策）
   → 项目管理-bot squash merge 进 main
   → 若本 PR 声称桌面主路径可用：Test-bot headed 验收（可选，但声称则必须）
@@ -42,15 +52,14 @@
 规则：
 
 - 分支从最新 `main` 拉出；合入前 rebase / 同步，不把过期基线当现状。
-- 一个 PR 只动本任务拥有的目录。公共类型缺口提契约变更，不复制类型、不改邻接模块。
 - Coding-bot 负责把 CI 修绿并处理冲突，然后停在待评审；**不自合**。
 - 合入 `main` 只用 squash merge，且仅项目管理-bot 执行。
 - UI 包 / `apps/desktop` 页面变更时，加 UI审查-bot；仅文档或非 UI 包可跳过。
-- 默认不自动 push 用户目标分支、不开 GitHub PR（产品行为，见决策登记 D10）。本仓库的协作 PR 由人/项目管理-bot 显式发起。
+- 本仓库的协作 PR 由人/项目管理-bot 显式发起。产品默认不自动 push、不开 GitHub PR（D10，见下表）。
 
 ## 4. 评审清单（不得回退）
 
-review-bot 对每个 PR 核对；任一项回归则 `reject` 或 `conditional`（写明必须改什么）。
+review-bot 对每个 PR 核对；任一项回归则 `reject` 或 `conditional`（写明必须改什么）。会话内独立审查的 `APPROVED` / `CHANGES REQUIRED` 见 [agent-workflow.md](../guides/agent-workflow.md)，不是本表结论。
 
 | 红线 | 对照 |
 |---|---|
@@ -73,9 +82,3 @@ review-bot 对每个 PR 核对；任一项回归则 `reject` 或 `conditional`�
 
 1. **Codex live exec**（T15：探测已有，`start` 仍拒绝；需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**
-
-## 6. 进度与证据
-
-- 写进度或验收句时，只陈述本 PR **实际跑过** 的命令与环境。
-- Headed 桌面与 Codex live 的完成权在 Test-bot / 专项卡，不在 CI 绿灯。
-- 更新 [03-implementation-status.md](03-implementation-status.md) 时同步证据；不要只改 backlog 状态字。
