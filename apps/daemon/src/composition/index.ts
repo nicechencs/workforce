@@ -13,6 +13,11 @@ export {
 } from "./catalog.js";
 export { createEnginePort } from "./engine.js";
 export {
+  CompositionPolicy,
+  createCompositionPolicy,
+  type CompositionStartRequest,
+} from "./policy.js";
+export {
   CompositionWorktreeHost,
   bindWorktreesToHost,
   type ProvisionedWorktree,

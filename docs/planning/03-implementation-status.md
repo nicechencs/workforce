@@ -20,7 +20,7 @@
 | T04 | 完成库并接入 composition | migration 002 + entity repos；重启以 SQLite 实体表为准，world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
-| T07 | 完成库，未接 composition | Policy/redaction 单测通过 |
+| T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest |
 | T08 | 完成库，部分接线 | `LocalArtifactStore` 打开；Mock 产物主要在 world snapshot |
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
@@ -50,7 +50,8 @@ pnpm exec vitest run      # 全量 unit + integration
    创建项目 → 绑定 workspace 授权引用 → `:start-planning`（空 body，内部填 Mock 预设）→ `:confirm-plan`（冻结 fixture：`dev_alpha` / `dev_bravo` / `review_integration`）→ `:start` → Mock 运行完成并绑定产物 → artifact 审批 consumed。  
    同 `stateDir` 重启后项目仍在；重放同一 `operationId` **不**新增 Run。  
    Mock pause → `422 unsupported_capability`。  
-   硬货币上限 → `422 unknown_cost_not_enforceable`。
+   硬货币上限 → `InMemoryPolicyEngine.decideStart` → `422 unknown_cost_not_enforceable`。  
+   计划审批 `actionDigest` 为 `plan.apply` 规范化 digest；digest 不一致的 confirm/approve → `409 conflict`。
 
 2. **Typed client**（`tests/integration/m3-mock-client.test.ts`）  
    `DesktopClient` + loopback 走同一条路径，重放 `:start` 不复制 Run。
@@ -83,11 +84,11 @@ Approval(gate=artifact)                     ✅
 ## 5. 剩余工作
 
 1. **Headed Electron 点击验收**：`pnpm --filter @workforce/desktop dev` 人工走主路径（本轮 SSE 已接到 Run 控制台，仍无 headed e2e）。  
-2. **Policy 接到 composition**：启动前拒绝 / 审批 digest 尚未用 `packages/policy`。  
-3. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
-4. **预算/reservation 落库**：仍在 sidecar JSON；实体已在 SQLite。  
-5. **T17** 打包。  
-6. 根 `tests/integration` 仍用相对导入解析 workspace 包。
+2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
+3. **预算/reservation 落库**：仍在 sidecar JSON；实体已在 SQLite。  
+4. **T17** 打包。  
+5. 根 `tests/integration` 仍用相对导入解析 workspace 包。  
+6. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
 
 ## 6. 如何跑
 

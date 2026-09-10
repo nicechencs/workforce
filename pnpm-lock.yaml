@@ -65,6 +65,9 @@ importers:
       '@workforce/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@workforce/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@workforce/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

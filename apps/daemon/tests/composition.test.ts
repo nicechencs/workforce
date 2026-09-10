@@ -5,7 +5,9 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { MOCK_PLAN_DOCUMENT } from "@workforce/application";
 import { WorkforceSqlite } from "@workforce/database";
+import { createCanonicalAction } from "@workforce/policy";
 
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
 import { sqlitePath } from "../src/composition/persist.js";
@@ -544,6 +546,86 @@ describe("composed M3 mock loop", () => {
     expect(items.some((item) => item.id === project.id && item.name === "SQLite authority")).toBe(
       true,
     );
+  });
+
+  it("stores a policy plan.apply digest and rejects confirm when it no longer matches", async () => {
+    const harness = await startComposed();
+    const { daemon, auth, services } = harness;
+    const created = await json(daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-pol"),
+      body: JSON.stringify({
+        name: "Policy digest",
+        objective: "gate confirm",
+        operationId: "op_pol_c",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(daemon.port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-pol", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_pol_p" }),
+    });
+    expect(planned.status).toBe(200);
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+
+    const listed = await json(daemon.port, `/api/v1/approvals?projectId=${project.id}`, {
+      headers: auth,
+    });
+    const planApproval = (
+      listed.body as {
+        items: Array<{
+          id: string;
+          gate: string;
+          status: string;
+          actionDigest: string;
+          resource: string;
+          artifactVersionId?: string;
+        }>;
+      }
+    ).items.find((item) => item.gate === "plan");
+    expect(planApproval).toBeTruthy();
+    if (!planApproval) {
+      throw new Error("expected a plan approval");
+    }
+    expect(planApproval.actionDigest).toBe(
+      createCanonicalAction({
+        type: "plan.apply",
+        resource: planApproval.resource,
+        params: MOCK_PLAN_DOCUMENT,
+        ...(planApproval.artifactVersionId !== undefined
+          ? { version: planApproval.artifactVersionId }
+          : {}),
+      }).digest,
+    );
+
+    const wrongApprove = await json(daemon.port, `/api/v1/approvals/${planApproval.id}:approve`, {
+      method: "POST",
+      headers: commandHeaders(auth, "approve-wrong", 1),
+      body: JSON.stringify({
+        decisionReason: "stale",
+        digest: "deadbeef",
+        operationId: "op_pol_wrong",
+      }),
+    });
+    expect(wrongApprove.status).toBe(409);
+    expect(wrongApprove.body).toMatchObject({ code: "conflict" });
+
+    const stored = services.app.world.approvals.get(planApproval.id);
+    if (!stored) {
+      throw new Error("expected stored plan approval");
+    }
+    stored.actionDigest = "tampered";
+    const confirmed = await json(daemon.port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-pol", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_pol_cf",
+      }),
+    });
+    expect(confirmed.status).toBe(409);
+    expect(confirmed.body).toMatchObject({ code: "conflict" });
   });
 
   it("integrates developer patches and exports a digest after artifact approval", async () => {
