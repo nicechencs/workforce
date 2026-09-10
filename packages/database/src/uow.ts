@@ -31,7 +31,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
   }
 
   private async execute<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-    if (this.db.isTransaction) {
+    if (this.db.isTransaction === true) {
       throw new Error("nested database transactions are not supported");
     }
     this.db.exec("BEGIN IMMEDIATE");
@@ -41,8 +41,10 @@ export class SqliteUnitOfWork implements UnitOfWork {
       this.db.exec("COMMIT");
       return result;
     } catch (error) {
-      if (this.db.isTransaction) {
+      try {
         this.db.exec("ROLLBACK");
+      } catch {
+        // Node 22.14 DatabaseSync has no isTransaction; ROLLBACK is harmless if idle.
       }
       throw error;
     }

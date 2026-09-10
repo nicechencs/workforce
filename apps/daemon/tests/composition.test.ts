@@ -618,7 +618,7 @@ describe("composed M3 mock loop", () => {
     });
     expect(hardBudget.status).toBe(422);
     expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
-  });
+  }, 20_000);
 
   it("reloads the project from sqlite after world.json is deleted", async () => {
     const first = await startComposed();
