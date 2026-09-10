@@ -397,6 +397,25 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  tests:
+    dependencies:
+      '@workforce/daemon':
+        specifier: workspace:*
+        version: link:../apps/daemon
+      '@workforce/desktop-client':
+        specifier: workspace:*
+        version: link:../packages/desktop-client
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.2
+        version: 22.20.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.2)(vite@8.2.2(@types/node@22.20.2))
+
   tooling/eslint:
     dependencies:
       '@eslint/js':
