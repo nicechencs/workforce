@@ -20,6 +20,12 @@ import type { SessionSecrets } from "./ipc/rest-proxy.js";
 import { establishSessionFromStateDir } from "./session.js";
 import { createSupervisorDeps, resolveDesktopStateDir } from "./supervisor-runtime.js";
 import { createMainWindowSpec, type BrowserWindowSpec } from "./windows/factory.js";
+import { runDesktopMainPathSmoke } from "./smoke-driver.js";
+import {
+  isDesktopSmokeEnabled,
+  isDesktopSmokeHeaded,
+  resolveSmokeResultPath,
+} from "./smoke-env.js";
 
 export interface DesktopWindowPort {
   loadURL(url: string): Promise<void>;
@@ -31,6 +37,7 @@ export interface DesktopWindowPort {
   onClosed(listener: () => void): void;
   send(channel: string, payload: unknown): void;
   openDevTools?(): void;
+  executeJavaScript?(code: string): Promise<unknown>;
 }
 
 export interface DesktopAppPorts {
@@ -151,7 +158,9 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
   await connect();
 
   const preloadPath = resolvePreloadPath(options.appRoot);
-  const spec = createMainWindowSpec(preloadPath);
+  const spec = createMainWindowSpec(preloadPath, {
+    show: !isDesktopSmokeEnabled(env) || isDesktopSmokeHeaded(env),
+  });
   windowPort = options.ports.createWindow(spec);
   windowPort.onClosed(() => {
     windowPort = null;
@@ -188,9 +197,27 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
   const load = resolveRendererLoadTarget(env, options.appRoot);
   if (load.kind === "url") {
     await windowPort.loadURL(load.target);
-    windowPort.openDevTools?.();
+    if (!isDesktopSmokeEnabled(env)) {
+      windowPort.openDevTools?.();
+    }
   } else {
     await windowPort.loadFile(load.target);
+  }
+
+  if (isDesktopSmokeEnabled(env)) {
+    const resultPath = resolveSmokeResultPath(env);
+    if (!resultPath) {
+      throw new Error("WORKFORCE_DESKTOP_SMOKE_OUT is required when WORKFORCE_DESKTOP_SMOKE=1");
+    }
+    const executeJavaScript = windowPort.executeJavaScript;
+    if (!executeJavaScript) {
+      throw new Error("Desktop smoke requires executeJavaScript on the window port");
+    }
+    await runDesktopMainPathSmoke({
+      executeJavaScript,
+      resultPath,
+      quit: options.ports.quit,
+    });
   }
 
   return { isPrimary: true };

@@ -99,6 +99,7 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
             type="submit"
             disabled={form.submitting}
             style={buttonStyle("primary", form.submitting)}
+            data-testid="project-create"
           >
             {form.submitting ? "创建中…" : "创建项目"}
           </button>

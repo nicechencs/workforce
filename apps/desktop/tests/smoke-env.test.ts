@@ -1,0 +1,67 @@
+import os from "node:os";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { isSmokeResultOk, serializeDesktopMainPathSmoke } from "../src/main/smoke-driver.js";
+import {
+  isDesktopSmokeEnabled,
+  isDesktopSmokeHeaded,
+  resolveDaemonLaunchArgs,
+  resolveSmokeResultPath,
+  resolveSmokeWorkspacePath,
+  shouldLaunchElectronHeadless,
+} from "../src/main/smoke-env.js";
+import { createMainWindowSpec } from "../src/main/windows/factory.js";
+
+describe("desktop smoke env", () => {
+  it("stays off for default pnpm test and requires an explicit opt-in", () => {
+    expect(isDesktopSmokeEnabled({})).toBe(false);
+    expect(isDesktopSmokeEnabled({ WORKFORCE_DESKTOP_SMOKE: "1" })).toBe(true);
+    expect(isDesktopSmokeHeaded({ WORKFORCE_DESKTOP_SMOKE_HEADED: "1" })).toBe(true);
+    expect(shouldLaunchElectronHeadless({ WORKFORCE_DESKTOP_SMOKE: "1" })).toBe(true);
+    expect(
+      shouldLaunchElectronHeadless({
+        WORKFORCE_DESKTOP_SMOKE: "1",
+        WORKFORCE_DESKTOP_SMOKE_HEADED: "1",
+      }),
+    ).toBe(false);
+  });
+
+  it("resolves an isolated workspace and result path without exposing a host prompt", () => {
+    const workspace = path.join(os.tmpdir(), "wf-smoke-ws");
+    expect(resolveSmokeWorkspacePath({ WORKFORCE_SMOKE_WORKSPACE: workspace })).toBe(
+      path.resolve(workspace),
+    );
+    expect(resolveSmokeWorkspacePath({})).toBeNull();
+    expect(resolveSmokeResultPath({ WORKFORCE_DESKTOP_SMOKE_OUT: "out.json" })).toBe(
+      path.resolve("out.json"),
+    );
+  });
+
+  it("adds type-stripping when the supervisor launches the TypeScript daemon entry", () => {
+    const tsArgs = resolveDaemonLaunchArgs("/app/daemon/src/index.ts", "/tmp/state");
+    expect(tsArgs[0]).toBe("--experimental-strip-types");
+    expect(tsArgs).toContain("/app/daemon/src/index.ts");
+    expect(resolveDaemonLaunchArgs("/app/daemon/dist/index.js", "/tmp/state")[0]).toBe(
+      "/app/daemon/dist/index.js",
+    );
+  });
+
+  it("hides the BrowserWindow during the default headless smoke", () => {
+    expect(createMainWindowSpec("preload.js", { show: false }).show).toBe(false);
+    expect(createMainWindowSpec("preload.js").show).toBe(true);
+  });
+
+  it("serializes a self-contained in-page driver with stable test ids", () => {
+    const source = serializeDesktopMainPathSmoke();
+    expect(source).toContain("project-create");
+    expect(source).toContain("project-action-startPlanning");
+    expect(source).toContain("project-action-confirmPlan");
+    expect(source).toContain("project-action-startProject");
+    expect(isSmokeResultOk({ ok: true, status: "执行中", tasks: ["Implement slice Alpha"] })).toBe(
+      true,
+    );
+    expect(isSmokeResultOk({ ok: true, status: "执行中", tasks: [] })).toBe(false);
+  });
+});

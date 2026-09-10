@@ -29,7 +29,17 @@ pnpm test
 pnpm build
 ```
 
-`pnpm test` runs unit tests across packages/apps plus the M3 Mock HTTP integration. It is not a headed Electron or live Codex proof. See `docs/planning/03-implementation-status.md`.
+`pnpm test` runs unit tests across packages/apps plus the M3 Mock HTTP integration and the **headless desktop renderer smoke** (create → bind workspace → plan → confirm → start against the composed Mock daemon). It is not a headed Electron window or live Codex proof.
+
+To exercise the same click path inside Electron (headless by default; does not run in `pnpm test`):
+
+```bash
+pnpm --filter @workforce/desktop smoke
+# watch the window:
+WORKFORCE_DESKTOP_SMOKE_HEADED=1 pnpm --filter @workforce/desktop smoke
+```
+
+The Electron command is opt-in so missing displays or extra GPU/sandbox setup cannot flake default CI. Details: `docs/planning/03-implementation-status.md`.
 
 ## Workspace layout
 
