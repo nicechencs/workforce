@@ -21,7 +21,8 @@ describe("workflow pages", () => {
     expect(model.hasCanvasEditor).toBe(false);
     expect(model.actions).toEqual([]);
     expect(model.source).toBe("preset");
-    expect(model.note).toContain("GET /workflows");
+    expect(model.note).toContain("不得发明 endpoint");
+    expect(model.note).toContain("IA §6.2");
     expect(model.note).toContain("不是可视化编辑器");
     expect(model.workflows).toEqual([FEATURE_DELIVERY_WORKFLOW]);
     expect(FEATURE_DELIVERY_WORKFLOW.id).toBe(FEATURE_DELIVERY_WORKFLOW_ID);
@@ -32,7 +33,7 @@ describe("workflow pages", () => {
     expect(rejectWorkflowCanvas().reason).toContain("结构化步骤");
   });
 
-  it("keeps live catalog rows read-only when GET /workflows exists", () => {
+  it("keeps live catalog rows read-only if a future typed catalog appears", () => {
     const model = workflowPageModel({
       liveWorkflows: [{ ...FEATURE_DELIVERY_WORKFLOW, name: "Live delivery" }],
     });

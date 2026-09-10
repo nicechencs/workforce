@@ -27,6 +27,10 @@ export interface ShellNavItem {
   primary: boolean;
 }
 
+/**
+ * Sidebar membership follows IA §2: every 一级导航 row is `primary`.
+ * `priority` is slice depth (P0 = M3 path, P1 = thinner V0.1 page), not visibility.
+ */
 export const SHELL_NAV_ITEMS: readonly ShellNavItem[] = [
   {
     id: "dashboard",

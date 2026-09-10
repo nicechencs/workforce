@@ -88,7 +88,7 @@ export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
 };
 
 export const LIVE_CATALOG_NOTE =
-  "Daemon 尚无 GET /workflows 目录时，显示软件开发团队已发布模板夹具。这不是可视化编辑器，也不表示真实 Runtime 已可执行。";
+  "能力矩阵未列 GET /workflows（D08：不得发明 endpoint）。显示软件开发团队已发布模板夹具。IA §6.2：结构化步骤，不是可视化编辑器，也不表示真实 Runtime 已可执行。";
 
 export type WorkflowActionId = "create" | "edit" | "canvas";
 

@@ -85,7 +85,7 @@ Approval(gate=artifact)                     ✅
 重启保留预算/reservation                     ✅ SQLite budgets / budget_reservations / usage_ledger
 ```
 
-壳导航现含 IA P1 **运行记录**与**工作流**（`primary: true`，优先级仍为 `p1`）。工作流页走 T12 只读目录模式：列表 + 版本/结构化步骤；Daemon 无 `GET /workflows` 时回退软件开发团队模板夹具。不宣称可视化编辑器或真实 Runtime 可执行。
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。**运行记录**与**工作流**为 P1 仍在侧栏；线框 §1 已补「工作流」。工作流页走 IA §6.2 / 能力矩阵：模板·版本·结构化步骤，夹具只读；不发明 `GET /workflows`，无画布编辑器，不宣称真实 Runtime 可执行。
 
 ## 5. 剩余工作
 

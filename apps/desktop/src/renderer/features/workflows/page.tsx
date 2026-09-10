@@ -158,7 +158,7 @@ function WorkflowDetailPage(props: {
         </div>
         <p style={mutedStyle}>{props.workflow.description}</p>
         <p style={mutedStyle}>
-          来源 {props.source === "live" ? "GET /workflows" : "模板夹具"} · 活动版本{" "}
+          来源 {props.source === "live" ? "typed catalog" : "模板夹具"} · 活动版本{" "}
           {props.workflow.activeVersionId}
         </p>
         {props.note ? <p style={mutedStyle}>{props.note}</p> : null}

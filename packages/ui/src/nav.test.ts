@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FEATURE_SLOTS, navItemByPath, primaryNavItems, SHELL_NAV_ITEMS } from "./nav.js";
 
 describe("shell navigation", () => {
-  it("keeps 运行记录 and 工作流 in the primary sidebar as P1", () => {
+  it("keeps IA §2 P1 运行记录 and 工作流 in the primary sidebar", () => {
     const labels = primaryNavItems().map((item) => item.label);
     expect(labels).toEqual([
       "工作台",
@@ -32,6 +32,7 @@ describe("shell navigation", () => {
     expect(FEATURE_SLOTS).toContain("workflows");
     expect(FEATURE_SLOTS).toContain("runs");
     expect(SHELL_NAV_ITEMS.find((item) => item.id === "settings")?.priority).toBe("p0");
+    // IA §2: P1 is depth, not hidden; every 一级导航 row is primary.
     expect(SHELL_NAV_ITEMS.filter((item) => !item.primary).map((item) => item.id)).toEqual([]);
   });
 });
