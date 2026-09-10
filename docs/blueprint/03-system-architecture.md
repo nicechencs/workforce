@@ -374,3 +374,41 @@ flowchart TD
 ## 15. 下一步
 
 下一份 `04 Repository Structure` 将把上述进程和模块映射到 pnpm/Turborepo 目录、package 边界、依赖规则、测试层级与构建产物。
+
+## 16. 混合与多节点执行拓扑
+
+```mermaid
+flowchart TB
+  Client[Desktop or Web Client] --> Control[Control Plane]
+  Control --> Scheduler[Scheduler and Lease Manager]
+  Scheduler --> Local[Local Execution Node]
+  Scheduler --> RemoteA[Remote Execution Node A]
+  Scheduler --> RemoteB[Remote Execution Node B]
+  Local --> Runs1[Isolated Runs]
+  RemoteA --> Runs2[Isolated Runs]
+  RemoteB --> Runs3[Isolated Runs]
+```
+
+每个 Execution Node 运行相同职责的 Node Agent：节点注册与身份、heartbeat、Runtime inventory、Workspace provision、进程或容器控制、事件缓冲、Artifact 上传和断线 reconcile。一台 Node 可以同时运行多个 Agent Run，但必须受 `maxConcurrentRuns`、CPU、内存、磁盘、GPU 和预算约束。
+
+Control Plane 是 Project、Task、Workflow、Placement 和 ExecutionLease 的权威来源；Execution Node 是 Runtime 进程事实与本地原始日志的权威来源。节点断网时不得领取新任务；已开始任务按策略继续并缓冲事件、暂停或安全取消。重新调度必须等待旧 Lease 失效并使用 fencing token。
+
+Git/GitHub 属于 Artifact Plane，不承担调度、心跳或事件总线职责。跨节点信息协同通过 Task、Event 和结构化 CoordinationMessage 完成，大内容只传 ArtifactRef。
+
+## 17. 技术栈复核
+
+混合与多节点需求不改变 V0.1 主技术栈，但调整长期职责边界：
+
+| 层 | V0.1 | 远程/规模化演进 |
+|---|---|---|
+| Desktop | Electron + React + TypeScript + Vite | 保持；Web Client 可复用 React UI |
+| Local Node / Daemon | Node.js + TypeScript | Node Agent 优先评估 Go 单 binary |
+| Control Plane | TypeScript + Fastify | 可继续使用；按负载拆服务 |
+| Node transport | 本地 HTTP/IPC + SSE/WebSocket | HTTPS + Connect/gRPC；双向认证 |
+| Local data | SQLite + Drizzle | 保持 |
+| Server data | PostgreSQL | 保持，增加 outbox/lease |
+| Workflow | 持久化状态机 | 复杂长流程再评估 Temporal |
+| Artifact | 本地目录/Git | S3-compatible object storage + Git |
+| Observability | Structured Event + OTel API | OTel Collector + metrics/traces/logs |
+
+不采用全面 Rust 重写。Rust/原生模块仅用于强沙箱、系统隔离和性能敏感能力。远程传输采用 schema-first 协议，业务语义不得依赖 Fastify、Electron、Node.js 或具体 RPC 框架。

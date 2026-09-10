@@ -1,0 +1,10 @@
+flowchart TB
+  Client[Desktop or Web Client] --> Control[Control Plane]
+  Control --> Scheduler[Scheduler and Lease Manager]
+  Scheduler --> Local[Local Execution Node]
+  Scheduler --> RemoteA[Remote Execution Node A]
+  Scheduler --> RemoteB[Remote Execution Node B]
+  Local --> L1[Run 1]
+  Local --> L2[Run 2]
+  RemoteA --> R1[Run 3]
+  RemoteB --> R2[Run 4]

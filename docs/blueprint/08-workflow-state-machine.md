@@ -530,3 +530,27 @@ flowchart TD
 - Database Schema：映射 WorkflowVersion、Instance、NodeInstance、Timer、Lease、Outbox 和 Checkpoint。
 - API Design：定义 validate/publish/start/pause/resume/cancel/retry/rework/approve 命令。
 - MVP Implementation Plan：将调度器、状态机与 reconcile 拆分为可测试里程碑。
+
+## 18. 调度与节点故障状态补充
+
+Run 在 `pending` 与 `starting` 之间增加调度语义，但不必增加公开终态：
+
+```text
+pending
+  → placement_pending
+  → leased
+  → starting
+  → running
+```
+
+实现可将 `placement_pending` 与 `leased` 作为调度子状态或独立 SchedulingRecord，避免破坏既有 RunStatus API。
+
+新增处理规则：
+
+- 无匹配节点：保持等待并报告 `NODE_CAPABILITY_UNAVAILABLE`。
+- 节点容量不足：排队，不计为 Run attempt 失败。
+- Lease 在启动前失效：释放分配并重新调度。
+- 运行中节点失联：进入 recovery/reconcile，不立即并发重跑。
+- 确认旧 Lease 失效后方可在新节点创建新 attempt。
+- draining 节点不接受新 Run，但允许现有 Run 安全结束。
+- 同一节点的并发 Run 必须拥有独立 WorkspaceInstance 和资源分配。

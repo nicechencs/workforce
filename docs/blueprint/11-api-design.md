@@ -404,3 +404,20 @@ Local 路径不得进入 Cloud DTO；改用 opaque WorkspaceRef/NodeRef。Cloud 
 - API handler 不得绕过 application ports；响应快照与对应 Event 的关联 ID 可追踪。
 
 满足以上条件后，API 可作为 Desktop UI 与 Local Daemon 并行开发的 V0.1 契约基线。
+
+## 16. Node 与调度 API 预留
+
+后续 Cloud/Private Control Plane 增加以下资源；V0.1 仅实现本地只读节点视图和 Mock 契约。
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/nodes` | 查询可见 Execution Node |
+| GET | `/nodes/{nodeId}` | 节点状态、容量和非敏感配置 |
+| POST | `/nodes:enroll` | 使用一次性注册凭证登记节点 |
+| POST | `/nodes/{nodeId}:heartbeat` | 上报 Session、容量和健康状态 |
+| POST | `/nodes/{nodeId}:drain` | 停止接受新 Run |
+| POST | `/nodes/{nodeId}:revoke` | 吊销节点身份和后续租约 |
+| GET | `/nodes/{nodeId}/runtimes` | Runtime inventory |
+| GET | `/runs/{runId}/placement` | 调度决策、节点与 Lease 摘要 |
+
+节点侧使用独立的机器身份和双向认证，不复用桌面用户 session token。Run DTO 返回 `nodeId`、`runtimeInstallationId`、`workspaceInstanceId` 与安全化 placement 信息；不得返回宿主绝对路径、Credential 或可重用节点密钥。

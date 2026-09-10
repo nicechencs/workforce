@@ -430,3 +430,59 @@ System Architecture 必须基于本模型划分以下组件：
 - Local SQLite 与可选 Cloud Control Plane
 
 后续 Task、Artifact、Runtime 与 Event Protocol 文档将把本模型中的接口展开为可验证 JSON Schema。
+
+## 10. Execution Node 与执行位置模型
+
+Execution Node 是能够承载 Runtime 和 Run 的机器级执行主体。本机与远程服务器使用同一模型。
+
+```ts
+interface ExecutionNode {
+  id: ExecutionNodeId;
+  organizationId: OrganizationId;
+  name: string;
+  kind: "local" | "remote" | "enterprise";
+  platform: "windows" | "macos" | "linux";
+  status: "enrolling" | "online" | "draining" | "offline" | "revoked";
+  capabilities: CapabilityRef[];
+  labels: Record<string, string>;
+  capacity: {
+    cpuCores: number;
+    memoryBytes: number;
+    diskAvailableBytes: number;
+    maxConcurrentRuns: number;
+  };
+  lastHeartbeatAt?: Timestamp;
+}
+
+interface RuntimeInstallation {
+  id: RuntimeInstallationId;
+  nodeId: ExecutionNodeId;
+  runtimeProfileId: RuntimeProfileId;
+  adapterVersion: string;
+  runtimeVersion?: string;
+  capabilities: RuntimeCapability[];
+  status: "available" | "busy" | "degraded" | "unavailable";
+}
+
+interface PlacementPolicy {
+  mode: "automatic" | "local_only" | "remote_only" | "specific_node";
+  nodeId?: ExecutionNodeId;
+  requiredLabels?: Record<string, string>;
+  preferredLabels?: Record<string, string>;
+  dataLocality?: "workspace_local" | "replicated" | "remote_access";
+}
+
+interface ExecutionLease {
+  id: ExecutionLeaseId;
+  runId: RunId;
+  nodeId: ExecutionNodeId;
+  fencingToken: number;
+  acquiredAt: Timestamp;
+  expiresAt: Timestamp;
+  renewedAt: Timestamp;
+}
+```
+
+Run 增加不可变的 `nodeId`、`runtimeInstallationId` 和 `placementSnapshot`。一个 Node 可承载多个 RuntimeInstallation 和并发 Run；每个 Run 必须拥有独立 WorkspaceInstance、进程树、PermissionGrant、日志流和资源配额。同一时刻一个 Run 只能由一个有效 ExecutionLease 执行。
+
+Workspace 拆分为逻辑 `WorkspaceBinding`、节点上的 `WorkspaceInstance` 和运行时不可变 `WorkspaceSnapshot`。RuntimeProfile 不再通过 executionMode 表达机器位置；进程、SDK、HTTP 是 Runtime transport，本地或远程是 Placement。

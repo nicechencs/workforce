@@ -610,3 +610,24 @@ Runtime Protocol V0.1 在以下条件满足时可冻结：
 - MVP Implementation Plan 将决定 Codex 的具体接入模式、三平台测试矩阵和安全限制。
 
 本协议的核心判断是：**Runtime 是可替换的执行引擎；Adapter 是受约束的翻译层；平台才拥有 Run 的事实与决策权。**
+
+## 18. Node-aware Runtime Binding
+
+Runtime transport 与执行位置是两个正交概念：`process | sdk | http` 描述 Adapter 如何调用 Runtime；`local | remote` 由 ExecutionNode 与 Placement 表达。
+
+`StartRunRequest` 增加：
+
+```ts
+interface NodeExecutionBinding {
+  nodeId: string;
+  nodeSessionId: string;
+  runtimeInstallationId: string;
+  executionLeaseId: string;
+  fencingToken: number;
+  workspaceInstanceId: string;
+}
+```
+
+RuntimeHandle 增加 `nodeId`、`nodeSessionId` 与 `runtimeInstallationId`。所有 start、input、pause、resume、cancel 和 reconcile 必须校验有效 Lease/fencing token，防止失联旧节点恢复后继续提交结果。同一节点可以托管多个 Handle；进程、容器、事件 cursor 和资源配额必须按 Handle 隔离。
+
+V0.1 的 Local Runtime Host 生成本地 NodeExecutionBinding；远程注册、网络 heartbeat 和分布式 Lease 延后实现，但契约字段与 Mock Node 测试现在保留。

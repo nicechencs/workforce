@@ -379,3 +379,31 @@ V0.1 只有在真实用户能够在至少一台 Windows、一台 macOS 和一台
 - 导出完整 Artifact 和审计记录
 
 完成后再启动第二条非软件 Workflow，用它验证领域模型的通用性。
+
+## 16. Local Node 兼容性修订
+
+V0.1 保持本地优先，不实现完整远程集群，但必须：
+
+- 将本机建模为默认 ExecutionNode。
+- 允许 Local Node 在资源与策略上限内并发执行多个隔离 Run。
+- 每个 Run 记录 nodeId、RuntimeInstallation 和 WorkspaceInstance。
+- Scheduler 通过 Node/Runtime ports 工作，不直接假设本机进程。
+- Mock Node 覆盖容量不足、并发 Run、Lease 失效、节点失联和重复事件。
+- Desktop 文案与 UI 不写死 Local Daemon；展示节点、Runtime 与 Run 的实际关系。
+- 新增协议兼容性 spike：验证 Local Node 抽象可在不修改 Domain/Task/Event Schema 的情况下替换为远程 Node。
+
+远程节点注册、跨服务器调度、GitHub 自动 PR 协作、Artifact 复制与故障转移仍不属于 V0.1 发布门槛。
+
+## 17. 技术路线结论
+
+本次复核不更换 V0.1 技术栈：
+
+- Electron + React + TypeScript 继续承担跨平台客户端。
+- Node.js + TypeScript 继续承担首版本地 Daemon/Local Node。
+- Fastify、SQLite、Drizzle、SSE/WebSocket 继续用于本地闭环。
+- PostgreSQL 继续作为服务器控制面数据库。
+- Go 作为未来独立 Node Agent 的优先候选，但迁移必须由部署、资源占用、并发和进程治理数据驱动。
+- Temporal 不进入 V0.1；当多节点长流程、补偿、信号和持久化定时器成为实际负担后再引入。
+- Rust 只用于强沙箱与必要的 OS 级组件。
+
+新增架构测试门槛：核心 domain/protocol 包不得依赖 Electron、Fastify、SQLite 或 Node-only 类型；远程 Node Mock 必须能使用生成协议类型完成 start、event、cancel、lease expiry 和 reconcile。

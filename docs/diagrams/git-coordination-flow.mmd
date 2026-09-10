@@ -1,0 +1,9 @@
+flowchart TD
+  Planner[Planner Run] --> Task[Task and Coordination Message]
+  Task --> Dev[Developer Run on Node A]
+  Task --> Docs[Documentation Run on Node B]
+  Dev --> CommitA[Commit or Pull Request A]
+  Docs --> CommitB[Commit or Pull Request B]
+  CommitA --> Review[Reviewer Run]
+  CommitB --> Review
+  Review --> Merge[Human or Merge Coordinator]

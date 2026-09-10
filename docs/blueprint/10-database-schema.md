@@ -324,3 +324,22 @@ V0.1 暂不实现：
 - Artifact 能向上追溯输入版本和创建它的 Task/Run。
 - 数据库备份可恢复，并能从上一发布 schema 无损升级。
 - schema/repository contract 测试同时覆盖 SQLite，PostgreSQL 适配开始后复用同一行为测试。
+
+## 18. Execution Node 数据表补充
+
+数据库模型增加：
+
+| 表 | 关键字段 | 用途 |
+|---|---|---|
+| `execution_nodes` | id, organization_id, kind, platform, status, labels, capacity, last_heartbeat_at | 节点身份与容量 |
+| `node_sessions` | id, node_id, started_at, expires_at, revoked_at | 节点连接会话 |
+| `runtime_installations` | id, node_id, runtime_profile_id, versions, capabilities, status | 节点 Runtime inventory |
+| `workspace_instances` | id, workspace_id, node_id, run_id, root_ref, isolation, status | Run 级实际 Workspace |
+| `scheduling_records` | id, run_id, placement_snapshot, state, reason | 调度决策与等待原因 |
+| `execution_leases` | id, run_id, node_id, fencing_token, acquired_at, renewed_at, expires_at | 单执行者保证 |
+| `resource_allocations` | id, run_id, node_id, cpu, memory, gpu, disk | 并发资源占用 |
+| `coordination_messages` | id, project_id, task_id, run_id, sender, recipients, kind, content_ref | Agent 结构化协作 |
+
+`runs` 增加 `node_id`、`runtime_installation_id`、`workspace_instance_id`、`placement_snapshot_json`。V0.1 为本机创建唯一 Local Node，并允许上述外键为空后逐步收紧；进入远程执行前必须设为强制。
+
+唯一性与并发约束至少包括：一个非终态 Run 只有一个有效 Lease；`(node_session_id, source_sequence)` 唯一；`(run_id, attempt)` 唯一；资源分配释放与 Run 终态在同一事务或可对账流程中完成。

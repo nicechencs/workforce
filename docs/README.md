@@ -31,3 +31,9 @@ Git does not retain empty directories. The `adr`, `protocols`, and `operations` 
 
 All blueprint documents are V0.1 drafts. Protocols and implementation details may change through Architecture Decision Records and reviewed pull requests.
 
+## 架构决策与流程图
+
+- [ADR 0001：混合与分布式执行模型](adr/0001-hybrid-distributed-execution.md)
+- [架构流程图索引](diagrams/README.md)
+
+- [ADR 0002：多节点技术栈与演进边界](adr/0002-multi-node-technology-strategy.md)

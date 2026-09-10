@@ -193,3 +193,14 @@ V0.1 成功不是功能数量，而是以下闭环可重复运行：
 10. MVP Implementation Plan
 
 完成以上蓝图并冻结关键接口后，初始化 `workforce` monorepo，关联 GitHub，建立 `main` 分支保护、PR 流程和 GitHub Actions。
+
+## 14. 混合与分布式执行补充
+
+Workforce 的长期产品形态是统一控制本机与远程服务器上的 Agent。客户端负责项目、团队、任务、审批和观测；实际执行由一个或多个 Execution Node 完成。
+
+- 本机与远程服务器使用相同的 Execution Node 抽象。
+- 一台 Execution Node 可以安装多个 Runtime，并并发执行多个相互隔离的 Run。
+- Worker 是角色配置，Runtime 是执行引擎，Execution Node 是实际机器，三者必须解耦。
+- Git/GitHub 用于代码和文档等 Artifact 的版本化协同；Task、Event 和结构化 Message 用于信息协同。
+- V0.1 仅实现 Local Node，但核心模型、协议和 UI 不得假设执行一定发生在客户端所在机器。
+- 多服务器调度、远程节点注册、故障转移和跨节点 Agent 通信属于后续阶段。

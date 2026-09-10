@@ -591,3 +591,26 @@ V0.1 明确不做：
 - Event Model 必须冻结本文件列出的事件 envelope、顺序和重放规则。
 - Database Schema 必须分离 Artifact、ArtifactVersion、StorageObject、LineageEdge 与 OutputBinding。
 - API Design 必须提供幂等注册、受控下载、版本查询、lineage 查询、归档和删除命令。
+
+## 18. 分布式 Artifact 与 Git 协同
+
+Artifact 必须显式记录内容位置与可用范围，不能假设内容与 Control Plane 位于同一机器。
+
+```ts
+interface ArtifactLocation {
+  kind: "node_local" | "git" | "object_store" | "external";
+  nodeId?: string;
+  storageRef: string;
+  availability: "local_only" | "replicating" | "shared" | "unavailable";
+}
+
+interface GitArtifactRef {
+  repositoryRef: string;
+  commitSha: string;
+  branch?: string;
+  pullRequestNumber?: number;
+  paths?: string[];
+}
+```
+
+代码与文档协同以固定 commit SHA、patch、PR 或受管 Artifact 交接，branch HEAD 不能作为不可变事实来源。每个并行 Run 使用独立 clone/worktree/container 与独立 branch；默认禁止直接推送主分支。大内容通过 ArtifactRef 传递，CoordinationMessage 不内嵌文件。

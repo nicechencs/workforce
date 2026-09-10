@@ -506,3 +506,36 @@ Repository Skeleton 完成时必须满足：
 ## 20. 下一步
 
 下一份 `05 Task Protocol` 将定义 Task envelope、输入输出、能力要求、约束、依赖、预算、验收、版本兼容和幂等规则，并给出正式 JSON Schema 方向。
+
+## 16. 分布式执行的目录预留
+
+长期模块边界预留如下；V0.1 可以只创建 package 接口或空实现，不启动远程服务。
+
+```text
+apps/
+├── desktop/
+├── daemon/                 # V0.1 本地控制面 + Local Node
+├── control-plane/          # 后续云端/私有控制面
+└── node-agent/             # 后续独立远程执行节点
+
+packages/
+├── node-protocol/          # 注册、心跳、inventory、lease
+├── scheduler/              # placement、容量与调度策略
+├── coordination/           # 结构化 Agent 消息与 handoff
+├── workspace/
+├── runtime-sdk/
+└── protocol/
+```
+
+`domain` 与 `protocol` 不得依赖本地路径、Electron 或具体网络传输。Daemon 的 V0.1 Local Node 实现必须通过 Node ports 调用 Runtime 和 Workspace，以便后续把同一接口移入独立 node-agent。
+
+## 17. 语言与框架边界
+
+Monorepo 继续以 TypeScript 为主，保持 pnpm + Turborepo。协议 Schema 是跨语言事实来源，不能只以 TypeScript interface 存在。
+
+- `apps/desktop`、`apps/web`、`apps/control-plane`：TypeScript。
+- `apps/daemon`：V0.1 TypeScript，实现 Local Node。
+- `apps/node-agent`：V0.1 只保留协议与 Mock；规模化阶段可采用 Go。
+- `packages/protocol`：JSON Schema/OpenAPI/AsyncAPI 或等价 schema-first 定义并生成 TS/Go 类型。
+- Rust/原生 helper 独立进程或窄 FFI，不进入领域与 Workflow 核心。
+- 不允许 Desktop、Control Plane 和 Node Agent 共享只在 Node.js 可执行的内部对象作为网络契约。

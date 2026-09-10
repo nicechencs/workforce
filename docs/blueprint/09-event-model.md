@@ -462,3 +462,21 @@ Event Model 达到可实现状态需满足：
 8. Schema contract tests 能阻止不兼容 Payload 发布。
 
 该协议使 Workforce 的执行过程从临时日志升级为可持久化、可追踪、可恢复和可治理的事实流，同时避免把 V0.1 过早建设成复杂的分布式 Event Sourcing 系统。
+
+## 18. 多节点事件来源与排序
+
+DomainEvent 增加可选来源字段：
+
+```ts
+interface EventOrigin {
+  sourceNodeId?: string;
+  sourceSessionId?: string;
+  sourceSequence?: number;
+  observedAt?: Timestamp;
+  ingestedAt: Timestamp;
+}
+```
+
+`occurredAt` 表示动作发生时间，`observedAt` 表示 Node Agent 捕获时间，`ingestedAt` 表示 Control Plane 持久化时间。不同节点的系统时钟不能用于严格全局排序；单 Handle sequence、单 Node Session sourceSequence、Control Plane ingestion sequence 与 causation/correlation 共同决定顺序。
+
+节点断线时事件在有界本地 outbox 缓冲，恢复后 at-least-once 补传；Control Plane 按 event ID 去重。Lease/fencing token 不匹配的迟到执行结果保留审计记录，但不得推进 Run 或 Task 状态。

@@ -707,3 +707,27 @@ packages/protocol/schemas/task/
 ```
 
 下一份 `06 Artifact Protocol` 将定义 Artifact identity、版本、存储引用、完整性、权限、生命周期、Evaluation 与 lineage。
+
+## 18. 执行位置与资源约束
+
+Task 增加可选、可版本化的执行位置要求；未提供时由 Scheduler 自动选择。
+
+```ts
+interface TaskPlacement {
+  mode: "automatic" | "local_only" | "remote_only" | "specific_node";
+  nodeId?: string;
+  requiredLabels?: Record<string, string>;
+  preferredLabels?: Record<string, string>;
+  requiredRuntime?: string;
+  resources?: {
+    cpuCores?: number;
+    memoryBytes?: number;
+    gpu?: string;
+    diskBytes?: number;
+  };
+  isolation?: "process" | "worktree" | "container";
+  dataLocality?: "workspace_local" | "replicated" | "remote_access";
+}
+```
+
+Task 只表达 placement intent；最终 `nodeId`、`runtimeInstallationId`、资源分配和 WorkspaceInstance 记录在 Run 快照。调度失败必须区分无匹配节点、容量不足、Runtime 不可用、Workspace 不可达和策略拒绝。
