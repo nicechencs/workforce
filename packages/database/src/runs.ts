@@ -80,6 +80,20 @@ export class SqliteRunRepository {
     return row ? rowToRun(row) : null;
   }
 
+  listByProject(projectId: string): RunRecord[] {
+    return this.db
+      .prepare(
+        `SELECT r.id, r.organization_id, r.task_id, r.operation_id, r.attempt, r.generation,
+                r.definition_revision, r.status, r.state_revision
+           FROM runs r
+           INNER JOIN tasks t ON t.id = r.task_id
+          WHERE t.project_id = ?
+          ORDER BY r.created_at ASC, r.id ASC`,
+      )
+      .all(projectId)
+      .map(rowToRun);
+  }
+
   /**
    * Insert a pending Run. Duplicate (task_id, attempt) or a second active Run
    * fails the whole caller transaction.
@@ -107,6 +121,49 @@ export class SqliteRunRepository {
         input.workspaceInstanceId ?? null,
         input.runtimeAdapter ?? null,
         input.snapshotRef ?? null,
+        input.createdAt,
+      );
+    } catch (error) {
+      if (isConstraintError(error)) {
+        throw new PersistenceError(
+          "conflict",
+          "run already exists or task already has an active run",
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Insert a Run at an arbitrary status (snapshot / recovery). The one-active-run
+   * partial unique index still applies.
+   */
+  insert(tx: Tx, input: StartRunInput & { status?: string; stateRevision?: number }): void {
+    const db = sqliteDbOf(tx);
+    try {
+      db.prepare(
+        `INSERT INTO runs (
+           id, organization_id, task_id, operation_id, attempt, generation,
+           definition_revision, status, state_revision,
+           execution_node_id, runtime_installation_id, workspace_instance_id,
+           runtime_adapter, snapshot_ref, cancel_requested_at, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        input.runId,
+        input.organizationId,
+        input.taskId,
+        input.operationId,
+        input.attempt,
+        input.generation,
+        input.definitionRevision,
+        input.status ?? "pending",
+        input.stateRevision ?? 1,
+        input.executionNodeId ?? null,
+        input.runtimeInstallationId ?? null,
+        input.workspaceInstanceId ?? null,
+        input.runtimeAdapter ?? null,
+        input.snapshotRef ?? null,
+        null,
         input.createdAt,
       );
     } catch (error) {

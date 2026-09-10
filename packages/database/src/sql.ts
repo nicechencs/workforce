@@ -49,6 +49,17 @@ export function parseJson(value: SqlValue | undefined, column: string): unknown 
   return JSON.parse(text) as unknown;
 }
 
+/** Omit null/undefined so application optional fields stay absent. */
+export function ifPresent<K extends string>(
+  key: K,
+  value: string | null | undefined,
+): Partial<Record<K, string>> {
+  if (value === null || value === undefined) {
+    return {};
+  }
+  return { [key]: value } as Record<K, string>;
+}
+
 export function cell(row: Record<string, unknown>, column: string): SqlValue | undefined {
   const value = row[column];
   if (value === undefined) {

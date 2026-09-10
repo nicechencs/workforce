@@ -5,6 +5,7 @@ import { openSqlite, type OpenSqliteOptions } from "./connection.js";
 import { SqliteEventStore } from "./event-store.js";
 import { SqliteHandleRepository } from "./handles.js";
 import { migrate } from "./migrate.js";
+import { SqliteProjectRepository } from "./projects.js";
 import {
   SqliteApprovalRepository,
   SqliteArtifactBindingRepository,
@@ -16,8 +17,11 @@ import {
 import { SqliteCommandReceiptRepository } from "./receipts.js";
 import { SqliteRunRepository } from "./runs.js";
 import { seedMinimalGraph, type SeededGraph } from "./seed.js";
+import { SqliteTaskRepository } from "./tasks.js";
 import { SqliteTimerRepository } from "./timers.js";
 import { SqliteUnitOfWork } from "./uow.js";
+import { SqliteWorkflowInstanceRepository } from "./workflows.js";
+import { SqliteWorldSnapshot } from "./world-snapshot.js";
 
 export interface OpenWorkforceDbOptions extends OpenSqliteOptions {
   migrate?: boolean;
@@ -27,6 +31,10 @@ export class WorkforceSqlite {
   readonly uow: SqliteUnitOfWork;
   readonly events: SqliteEventStore;
   readonly receipts: SqliteCommandReceiptRepository;
+  readonly projects: SqliteProjectRepository;
+  readonly tasks: SqliteTaskRepository;
+  readonly workflows: SqliteWorkflowInstanceRepository;
+  readonly worldSnapshot: SqliteWorldSnapshot;
   readonly runs: SqliteRunRepository;
   readonly handles: SqliteHandleRepository;
   readonly timers: SqliteTimerRepository;
@@ -44,6 +52,10 @@ export class WorkforceSqlite {
     this.uow = new SqliteUnitOfWork(connection);
     this.events = new SqliteEventStore(connection);
     this.receipts = new SqliteCommandReceiptRepository(connection);
+    this.projects = new SqliteProjectRepository(connection);
+    this.tasks = new SqliteTaskRepository(connection);
+    this.workflows = new SqliteWorkflowInstanceRepository(connection);
+    this.worldSnapshot = new SqliteWorldSnapshot(connection);
     this.runs = new SqliteRunRepository(connection);
     this.handles = new SqliteHandleRepository(connection);
     this.timers = new SqliteTimerRepository(connection);

@@ -528,4 +528,46 @@ CREATE INDEX idx_usage_org_created ON usage_ledger(organization_id, created_at);
 CREATE INDEX idx_handles_identity ON runtime_handles(start_identity);
 `;
 
-export const MIGRATIONS = [{ version: "001_init", sql: MIGRATION_001_SQL }] as const;
+/**
+ * Align entity tables with application ProjectRecord / TaskRecord /
+ * WorkflowInstanceRecord so SQLite can reload them after restart.
+ * Forward-only: do not rewrite 001_init.
+ */
+export const MIGRATION_002_SQL = `
+ALTER TABLE projects ADD COLUMN runtime_id TEXT;
+ALTER TABLE projects ADD COLUMN workspace_id TEXT;
+ALTER TABLE projects ADD COLUMN budget_id TEXT;
+ALTER TABLE projects ADD COLUMN execution_node_id TEXT;
+ALTER TABLE projects ADD COLUMN runtime_installation_id TEXT;
+ALTER TABLE projects ADD COLUMN workspace_instance_id TEXT;
+ALTER TABLE projects ADD COLUMN workflow_instance_id TEXT;
+ALTER TABLE projects ADD COLUMN plan_artifact_version_id TEXT;
+ALTER TABLE projects ADD COLUMN cancel_requested_at TEXT;
+
+ALTER TABLE tasks ADD COLUMN role TEXT;
+ALTER TABLE tasks ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE tasks ADD COLUMN max_rework_cycles INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE tasks ADD COLUMN requires_review INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN expected_outputs_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN output_bindings_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE tasks ADD COLUMN depends_on_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN input_artifact_version_ids_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN next_attempt_at TEXT;
+
+ALTER TABLE workflow_instances ADD COLUMN graph_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE workflow_instances ADD COLUMN cancel_requested_at TEXT;
+
+ALTER TABLE node_instances ADD COLUMN task_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_project
+  ON workflow_instances(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_project
+  ON approvals(project_id, status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_artifact_versions_task
+  ON artifact_versions(task_id);
+`;
+
+export const MIGRATIONS = [
+  { version: "001_init", sql: MIGRATION_001_SQL },
+  { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
+] as const;
