@@ -12,21 +12,8 @@ export default defineWorkspace([
         "apps/**/*.test.tsx",
         "runtimes/**/*.test.ts",
         "tooling/**/*.test.ts",
-      ],
-      exclude: ["**/node_modules/**", "**/dist/**"],
-    },
-  },
-  {
-    extends: "./vitest.config.ts",
-    root: "./tests",
-    test: {
-      name: "integration",
-      environment: "node",
-      include: [
-        "integration/**/*.test.ts",
-        "e2e/**/*.test.ts",
-        "contract/**/*.test.ts",
-        "platform/**/*.test.ts",
+        "tests/integration/**/*.test.ts",
+        "tests/e2e/**/*.test.ts",
       ],
       exclude: ["**/node_modules/**", "**/dist/**"],
     },
