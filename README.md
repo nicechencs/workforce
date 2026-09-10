@@ -135,6 +135,7 @@ The same `exports` rule applies to `domain`, `runtime-spi`, `application` ports,
 - Architecture decision records: `docs/adr/`
 - Protocol specifications and schemas: `docs/protocols/` (T02)
 - Operational guides: `docs/operations/` (later)
+- Collaboration and review: [docs/planning/04-collab-and-review.md](docs/planning/04-collab-and-review.md)
 
 ## Status
 

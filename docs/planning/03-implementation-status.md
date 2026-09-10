@@ -1,7 +1,7 @@
 # V0.1 实现进度（以代码与测试为准）
 
 日期：2026-09-10  
-权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。
+权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。
 
 ## 1. 本轮目标与结果
 

@@ -15,15 +15,16 @@
 
 先读取当前任务命中的最小文档范围，不为形式通读 `docs/`。
 
-| 触发条件                         | 必须读取                                                               |
-| -------------------------------- | ---------------------------------------------------------------------- |
-| 选择模型、推理等级或处理工具限制 | [Agent 能力与工具](docs/reference/agent-runtime.md)                    |
-| 委派、并行、交接或独立审查       | [Agent 协作指南](docs/guides/agent-workflow.md)                        |
-| 选择验证命令                     | [测试与验证](docs/guides/testing-and-validation.md)                    |
-| 新增或重写文档                   | [文档风格与治理](docs/STYLE.md) 与 [文档索引](docs/README.md)          |
-| 修改公共协议、状态或 API         | 对应 `docs/blueprint/`、`docs/protocols/`、ADR、状态矩阵和能力矩阵     |
-| 修改 T00–T17 负责范围或共享文件  | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
-| 判断当前完成度                   | [实现进度](docs/planning/03-implementation-status.md) 与当前源码、测试 |
+| 触发条件                             | 必须读取                                                               |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| 选择模型、推理等级或处理工具限制     | [Agent 能力与工具](docs/reference/agent-runtime.md)                    |
+| 委派、并行、交接或独立审查           | [Agent 协作指南](docs/guides/agent-workflow.md)                        |
+| 开 PR、rebase、书面评审或合入 `main` | [V0.1 协作与评审](docs/planning/04-collab-and-review.md)               |
+| 选择验证命令                         | [测试与验证](docs/guides/testing-and-validation.md)                    |
+| 新增或重写文档                       | [文档风格与治理](docs/STYLE.md) 与 [文档索引](docs/README.md)          |
+| 修改公共协议、状态或 API             | 对应 `docs/blueprint/`、`docs/protocols/`、ADR、状态矩阵和能力矩阵     |
+| 修改 T00–T17 负责范围或共享文件      | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
+| 判断当前完成度                       | [实现进度](docs/planning/03-implementation-status.md) 与当前源码、测试 |
 
 必读内容缺失、互相冲突或与代码不一致时，说明差异，只暂停依赖该结论的步骤，不自行补写事实。
 
@@ -50,6 +51,7 @@ git diff --cached --stat
 - 有依赖的实现、整合、审查和验收必须顺序执行。公共文件由指定负责人整合。
 - 主 Agent 负责范围、架构决定、敏感操作、结果整合和最终验收；自查不能称为独立审查。
 - 交接必须包含基线、实际差异、验证结果、未完成项和环境限制。详细格式见 [Agent 协作指南](docs/guides/agent-workflow.md)。
+- 命名 bot 的仓库 PR 管道（Coding / review / PM / Test）与决策红线只写在 [04-collab-and-review.md](docs/planning/04-collab-and-review.md)，此处不重复。
 
 ## 改动风险与最小验证
 

@@ -38,7 +38,7 @@ pnpm check:docs
 | Runtime SPI/Host/Adapter | contract suite + Host 场景；真实能力单独标记 |
 | SQLite、幂等、恢复或并发 | 失败/重放/重启/乱序测试 + 对应 integration |
 | worktree、进程或跨平台路径 | 包级测试 + 实际目标平台证据 |
-| 依赖、生产边界、打包或发布 | 完整 `format:check`、lint、typecheck、test、build 和发布专用检查 |
+| 依赖、生产边界、打包或发布 | 完整 `format:check`、lint、typecheck、test、build、`check:docs` 和发布专用检查 |
 
 可使用 Vitest 的文件或名称过滤运行相关测试。不要为了局部改动默认运行所有平台或真实付费 Runtime。
 
@@ -46,7 +46,7 @@ pnpm check:docs
 
 - Mock 通过只能证明 Mock 契约和组合路径，不能证明真实 Runtime 可执行。
 - Runtime `describe` 或 `validate` 通过不等于 `start/stream/cancel/reconcile` 已验证。
-- HTTP headless 流程不等于 headed Electron 人工路径通过。
+- HTTP headless 流程不等于 headed Electron 人工路径通过。声称桌面主路径可用时，真窗口验收由 [04-collab-and-review.md](../planning/04-collab-and-review.md) 的 Test-bot 执行，不在本页重复角色表。
 - 合成 patch/test/review Artifact 不能代替真实 worktree、测试命令和 Reviewer 输出。
 - 未执行的命令写“未运行”；失败命令保留原始用例、退出码和错误摘要。
 - 不通过放宽断言、跳过失败分支或静默回退 Mock 隐藏回归。

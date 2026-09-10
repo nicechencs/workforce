@@ -7,6 +7,7 @@ Development Agents start from [AGENTS.md](AGENTS.md), then read only the guides 
 - [Agent workflow](docs/guides/agent-workflow.md)
 - [Agent capabilities and tools](docs/reference/agent-runtime.md)
 - [Testing and validation](docs/guides/testing-and-validation.md)
+- Named-bot PR pipeline and decision red lines: [04-collab-and-review.md](docs/planning/04-collab-and-review.md)
 
 Before editing, record the current branch, HEAD, working-tree changes, task acceptance criteria, owned files, and prohibited files. Parallel Agents must use separate writable worktrees and non-overlapping write scopes.
 
@@ -44,7 +45,7 @@ Each workspace package is private (`@workforce/<name>`), exports only its public
 
 - The implementer runs module tests and records the exact commands and results.
 - Cross-package changes require the affected contract/integration tests and an independent review of the final diff or ArtifactVersion.
-- Review returns `APPROVED` or `CHANGES REQUIRED` with locations and evidence.
+- Session review returns `APPROVED` or `CHANGES REQUIRED` with locations and evidence. The named-bot PR verdict (`pass` / `conditional` / `reject`) lives only in [04-collab-and-review.md](docs/planning/04-collab-and-review.md).
 - Mock, synthetic Artifact, or Runtime discovery results must not be reported as live Runtime proof.
 - Do not push, create a pull request, publish, or force-apply an integration conflict unless the current task explicitly authorizes it.
 
