@@ -55,7 +55,8 @@ pnpm exec vitest run      # 全量 unit + integration
    计划审批 `actionDigest` 为 `plan.apply` 规范化 digest；digest 不一致的 confirm/approve → `409 conflict`。
 
 2. **Typed client**（`tests/integration/m3-mock-client.test.ts`）  
-   `DesktopClient` + loopback 走同一条路径，重放 `:start` 不复制 Run。
+   `DesktopClient` + loopback 走同一条路径，重放 `:start` 不复制 Run。  
+   `tests` 现为 workspace package（`@workforce/tests`），integration / 后续 sibling 通过 `@workforce/*` 公共导出导入，不再用相对路径或 eslint 豁免。
 
 3. **既有 Fake HTTP 契约**（`apps/daemon/tests/commands.test.ts` 等）仍通过。`startDaemon` 在未注入 `services` 时仍用 `FakeAppServices`；生产 `apps/daemon/src/index.ts` 使用 `createComposedAppServices`。
 
@@ -88,8 +89,7 @@ Approval(gate=artifact)                     ✅
 1. **Headed Electron 点击验收**：`pnpm --filter @workforce/desktop dev` 人工走主路径（本轮 SSE 已接到 Run 控制台，仍无 headed e2e）。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
 3. **T17** 打包。  
-4. 根 `tests/integration` 仍用相对导入解析 workspace 包。  
-5. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
+4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。
 
 ## 6. 如何跑
 
