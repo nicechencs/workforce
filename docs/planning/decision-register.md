@@ -297,14 +297,28 @@ RunStatus 仍为：`pending | starting | running | waiting_input | paused | succ
 
 重启不得重复创建 Run。同 operationId/key 返回原 Handle/收据。
 
-## 6. 明确不在本冻结内
+## 6. T03 已证实并回写的能力（Windows）
+
+来源：`task/t03-spikes` / `docs/spikes/README.md`。macOS/Linux 仍未测。
+
+| 项 | 冻结 |
+|---|---|
+| `lifecycle.pause` | 可选；默认关闭。本机 Codex 无 pause |
+| `event.resume`（cursor） | unsupported。Codex `resume` 是会话恢复，不得映射为 cursor |
+| `codex proto` | 不是 V0.1 必选传输；0.153.4 无该子命令 |
+| Windows 进程 identity | `win32:<pid>:<CreateTime UTC>`；mismatch 禁止杀进程 |
+| Windows cancel | Job Object `KILL_ON_JOB_CLOSE` 首选；根仍活时才可用 `taskkill /T /F` |
+| Codex 沙箱 | 本机默认 unrestricted；无法实施的硬限制必须 start 前拒绝 |
+| Daemon | 独立 detached 进程；关窗不得杀树 |
+
+## 7. 明确不在本冻结内
 
 - 真实 Codex 能力（T03 实测后才能写入能力矩阵的 live 列）
 - 三平台安装签名/公证（T17）
 - 远程节点控制面、云账号、GitHub PR、自动 push
 - 自定义 Team 编排、可视化 Workflow 编辑器、复杂仪表盘
 
-## 7. 交接
+## 8. 交接
 
 - 决策：本文
 - 状态： [state-matrix.md](state-matrix.md)

@@ -226,6 +226,9 @@ importers:
       '@workforce/domain':
         specifier: workspace:*
         version: link:../domain
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -262,6 +265,9 @@ importers:
 
   packages/testkit:
     dependencies:
+      '@workforce/application':
+        specifier: workspace:*
+        version: link:../application
       '@workforce/domain':
         specifier: workspace:*
         version: link:../domain
@@ -1210,6 +1216,9 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
 
   '@cacheable/memory@2.2.0':
@@ -1907,3 +1916,5 @@ snapshots:
   word-wrap@1.2.5: {}
 
   yocto-queue@0.1.0: {}
+
+  zod@3.25.76: {}

@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./ports": {
+      "types": "./src/ports/index.ts",
+      "default": "./src/ports/index.ts"
     }
   },
   "main": "./src/index.ts",
