@@ -50,6 +50,10 @@ export class EventSubscriptionHub {
     return this.#byId.size;
   }
 
+  list(): LiveSubscription[] {
+    return [...this.#byId.values()];
+  }
+
   clear(): void {
     this.#byKey.clear();
     this.#byId.clear();

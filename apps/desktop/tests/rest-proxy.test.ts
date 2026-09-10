@@ -28,4 +28,12 @@ describe("REST proxy", () => {
     expect(safe.path).toBe("/api/v1/runs/run_1");
     expect(safe.headers).toBeUndefined();
   });
+
+  it("preserves list query strings after allowlist checks", () => {
+    const safe = assertSafeApiRequest({
+      method: "GET",
+      path: "/api/v1/projects?limit=20&cursor=abc",
+    });
+    expect(safe.path).toBe("/api/v1/projects?limit=20&cursor=abc");
+  });
 });

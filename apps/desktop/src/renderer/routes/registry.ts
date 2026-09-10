@@ -73,6 +73,9 @@ export function createRouteRegistry(initial: readonly ShellRoute[] = SHELL_ROUTE
     isFeatureRegistered(slot: FeatureSlot): boolean {
       return modules.has(slot);
     },
+    getFeatureModule(slot: FeatureSlot): FeatureModule | undefined {
+      return modules.get(slot);
+    },
   };
 }
 

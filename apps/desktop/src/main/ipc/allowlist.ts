@@ -166,10 +166,12 @@ export function assertSafeApiRequest(request: ApiRequest): ApiRequest {
   if (bodyHasForbiddenKeys(request.body, 2)) {
     throw new Error("API request body includes forbidden host path or command fields");
   }
-  const path = normalizeApiPath(request.path);
-  if (!path) {
+  const pathname = normalizeApiPath(request.path);
+  if (!pathname) {
     throw new Error("API path is invalid");
   }
+  const queryIndex = request.path.indexOf("?");
+  const path = queryIndex === -1 ? pathname : `${pathname}${request.path.slice(queryIndex)}`;
   const headers = sanitizeRendererHeaders(request.headers);
   const safe: ApiRequest = { method: request.method, path };
   if (Object.keys(headers).length > 0) {

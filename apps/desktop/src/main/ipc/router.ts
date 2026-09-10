@@ -6,12 +6,17 @@ import {
   IpcAccessDeniedError,
   type IpcInvokeChannel,
 } from "../../preload/contracts.js";
-import { EventSubscriptionHub } from "./subscriptions.js";
+import type { EventSubscribeInput, LiveSubscription } from "./subscriptions.js";
 import {
   pickWorkspaceDirectory,
   type DirectoryDialog,
   WorkspaceGrantStore,
 } from "./workspace-picker.js";
+
+export interface EventSubscriptionPort {
+  subscribe(input: EventSubscribeInput): { subscription: LiveSubscription; created: boolean };
+  unsubscribe(subscriptionId: string): boolean;
+}
 
 export interface IpcRouterDeps {
   getConnection(): Promise<ConnectionSnapshot>;
@@ -19,7 +24,7 @@ export interface IpcRouterDeps {
   requestApi(input: ApiRequest): Promise<unknown>;
   dialog: DirectoryDialog;
   grants: WorkspaceGrantStore;
-  subscriptions: EventSubscriptionHub;
+  subscriptions: EventSubscriptionPort;
   quitUi(): Promise<void>;
 }
 
