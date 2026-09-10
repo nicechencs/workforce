@@ -1,2 +1,64 @@
 id: developer
-status: placeholder
+version: "0.1.0"
+status: published
+role: developer
+templateId: software-development-team
+runtime:
+  adapterId: mock
+  protocolVersion: "0.1"
+  snapshotRef: mock:success
+policyRef: software-development-team.default@0.1.0
+commandRefs:
+  start: run.start
+  cancel: run.cancel
+  captureDiff: workspace.captureDiff
+inputs:
+  - id: in_plan_node
+    name: Assigned plan node
+    kind: plan
+    required: true
+  - id: in_base_sha
+    name: Frozen baseline SHA
+    kind: data
+    required: true
+  - id: in_upstream_outputs
+    name: Upstream artifact versions
+    kind: code
+    required: false
+expectedOutputs:
+  - id: out_code_change
+    name: Code changes
+    kind: code
+    required: true
+    cardinality:
+      min: 1
+      max: 1
+    mediaTypes:
+      - application/vnd.workforce.patch
+    schema:
+      type: git_diff
+      baseRef: immutable-base
+  - id: out_test_result
+    name: Slice test result
+    kind: evaluation
+    required: true
+    mediaTypes:
+      - application/vnd.workforce.test-result+json
+acceptanceCriteria:
+  - id: ac_patch_schema
+    type: schema
+    schemaRef: https://workforce.local/protocols/v0.1/expected-output.schema.json
+  - id: ac_tests
+    type: test
+    commandRef: test.default
+executionPolicy:
+  maxAttempts: 3
+  maxReworkCycles: 2
+  timeoutSeconds: 1800
+  onUpstream: outputs_ready
+completion:
+  waitForReviewer: false
+  autoCompleteWhenOutputsReady: true
+notes: >
+  Developer Tasks complete when required outputs are registered. They do not wait
+  for Reviewer completed. Each Run uses an isolated worktree from the frozen baseline.

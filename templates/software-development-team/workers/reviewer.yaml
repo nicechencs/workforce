@@ -1,2 +1,51 @@
 id: reviewer
-status: placeholder
+version: "0.1.0"
+status: published
+role: reviewer
+templateId: software-development-team
+runtime:
+  adapterId: mock
+  protocolVersion: "0.1"
+  snapshotRef: mock:success
+policyRef: software-development-team.default@0.1.0
+commandRefs:
+  start: run.start
+  cancel: run.cancel
+inputs:
+  - id: in_integrated_digest
+    name: Integrated content digest
+    kind: code
+    required: true
+  - id: in_developer_outputs
+    name: Precise upstream ArtifactVersions
+    kind: code
+    required: true
+    cardinality:
+      min: 1
+expectedOutputs:
+  - id: out_review_report
+    name: Code review report
+    kind: evaluation
+    required: true
+    cardinality:
+      min: 1
+      max: 1
+    mediaTypes:
+      - application/vnd.workforce.review+json
+acceptanceCriteria:
+  - id: ac_review
+    type: review
+  - id: ac_digest_match
+    type: rule
+    commandRef: artifact.digest.match
+executionPolicy:
+  maxAttempts: 3
+  maxReworkCycles: 2
+  timeoutSeconds: 1800
+  onUpstream: outputs_ready
+completion:
+  requiresDeveloperCompleted: false
+  consumesFixedArtifactVersion: true
+notes: >
+  Reviewer depends on Developer output versions (outputs_ready), never on Developer
+  completed. Review and the human artifact gate must bind the same integrated digest.

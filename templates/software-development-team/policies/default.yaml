@@ -1,2 +1,46 @@
-id: default
-status: placeholder
+id: software-development-team.default
+version: "0.1.0"
+status: published
+protocolVersion: "0.1"
+description: Default Policy for software-development-team. Push and PR creation are denied.
+rules:
+  - id: allow-workspace-read
+    action: workspace.read
+    decision: allow
+  - id: allow-workspace-write
+    action: workspace.write
+    decision: allow
+  - id: allow-git-worktree
+    action: git.worktree
+    decision: allow
+  - id: allow-git-apply
+    action: git.apply
+    decision: allow
+  - id: deny-git-push
+    action: git.push
+    decision: deny
+    reason: Merging back to the user target branch is an explicit action and must not auto-push.
+  - id: deny-create-pull-request
+    action: git.create_pull_request
+    decision: deny
+    reason: Opening a pull request is out of V0.1 automatic delivery.
+  - id: require-plan-approval
+    action: plan.confirm
+    decision: require_approval
+    gate: plan
+  - id: require-artifact-approval
+    action: artifact.accept
+    decision: require_approval
+    gate: artifact
+  - id: deny-silent-overwrite
+    action: git.force_apply
+    decision: deny
+    reason: Integration conflicts require a human; patches must not be force-applied.
+  - id: deny-unbounded-split
+    action: plan.split
+    decision: deny
+    unless:
+      withinBounds: true
+enforcement:
+  policyVersion: "0.1.0"
+  digestBoundApprovals: true

@@ -1,2 +1,49 @@
 id: planner
-status: placeholder
+version: "0.1.0"
+status: published
+role: planner
+templateId: software-development-team
+runtime:
+  adapterId: mock
+  protocolVersion: "0.1"
+  snapshotRef: mock:success
+policyRef: software-development-team.default@0.1.0
+commandRefs:
+  start: run.start
+  cancel: run.cancel
+inputs:
+  - id: in_project_objective
+    name: Project objective
+    kind: document
+    required: true
+  - id: in_workspace_baseline
+    name: Frozen workspace baseline
+    kind: data
+    required: true
+expectedOutputs:
+  - id: out_plan
+    name: Software development plan
+    kind: plan
+    required: true
+    cardinality:
+      min: 1
+      max: 1
+    mediaTypes:
+      - application/vnd.workforce.plan+json
+acceptanceCriteria:
+  - id: ac_plan_schema
+    type: schema
+    schemaRef: urn:workforce:plan-artifact:0.1
+  - id: ac_plan_bounds
+    type: rule
+    commandRef: plan.bounds
+executionPolicy:
+  maxAttempts: 3
+  maxReworkCycles: 1
+  timeoutSeconds: 600
+bounds:
+  maxDepth: 4
+  maxTasks: 8
+notes: >
+  Planner is an ordinary Task/Run. It must not mutate an active execution graph.
+  M3 uses fixtures/mock-plan.json. A later slice may replace Mock with a live Planner.
