@@ -1,15 +1,17 @@
 import fs from "node:fs";
+import { realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createComposedAppServices } from "../src/composition/index.js";
+import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { commandHeaders, json, uniqueLockPath } from "./helpers.js";
 
 interface Harness {
   daemon: StartedDaemon;
+  services: ComposedAppServices;
   stateDir: string;
   auth: Record<string, string>;
 }
@@ -35,6 +37,7 @@ async function startComposed(stateDir?: string): Promise<Harness> {
   });
   const harness = {
     daemon,
+    services,
     stateDir: dir,
     auth: { authorization: `Bearer ${daemon.sessionToken}` },
   };
@@ -198,16 +201,53 @@ describe("composed M3 mock loop", () => {
       return succeeded.length >= 2 ? succeeded : undefined;
     });
 
-    await poll(async () => {
+    const boundArtifacts = await poll(async () => {
       const listed = await json(port, `/api/v1/artifacts?projectId=${project.id}`, {
         headers: auth,
       });
       const items = (
-        listed.body as { items: Array<{ logicalName: string; versions: Array<{ id: string }> }> }
+        listed.body as {
+          items: Array<{
+            id: string;
+            logicalName: string;
+            kind: string;
+            versions: Array<{ id: string }>;
+          }>;
+        }
       ).items;
       const bound = items.filter((item) => item.logicalName !== "plan");
-      return bound.length >= 2 ? bound : undefined;
+      const patches = bound.filter(
+        (item) =>
+          item.kind === "git_diff" ||
+          item.logicalName.includes("code") ||
+          item.logicalName.includes("change") ||
+          item.logicalName.includes("patch"),
+      );
+      return patches.length >= 2 ? bound : undefined;
     });
+    const patchArtifacts = boundArtifacts.filter(
+      (item) =>
+        item.kind === "git_diff" ||
+        item.logicalName.includes("code") ||
+        item.logicalName.includes("change") ||
+        item.logicalName.includes("patch"),
+    );
+    expect(patchArtifacts.length).toBeGreaterThanOrEqual(2);
+    const patchBodies: string[] = [];
+    for (const artifact of patchArtifacts) {
+      const versionId = artifact.versions[0]?.id;
+      expect(versionId).toBeTruthy();
+      const content = await fetch(
+        `http://127.0.0.1:${port}/api/v1/artifacts/${artifact.id}/versions/${versionId}/content`,
+        { headers: auth },
+      );
+      expect(content.ok).toBe(true);
+      const text = await content.text();
+      expect(text).toMatch(/diff --git /);
+      patchBodies.push(text);
+    }
+    expect(patchBodies.some((body) => body.includes("dev_alpha"))).toBe(true);
+    expect(patchBodies.some((body) => body.includes("dev_bravo"))).toBe(true);
 
     const artifactApproval = await poll(async () => {
       const listed = await json(port, `/api/v1/approvals?projectId=${project.id}`, {
@@ -396,5 +436,80 @@ describe("composed M3 mock loop", () => {
     });
     expect(paused.status).toBe(422);
     expect(paused.body).toMatchObject({ code: "unsupported_capability" });
+  });
+
+  it("provisions isolated worktrees for developer A and B", async () => {
+    const harness = await startComposed();
+    const { daemon, auth, services } = harness;
+    const port = daemon.port;
+
+    const created = await json(port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-iso"),
+      body: JSON.stringify({
+        name: "Isolated worktrees",
+        objective: "two developers",
+        operationId: "op_create_iso",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-iso", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_plan_iso" }),
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await json(port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-iso", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_confirm_iso",
+      }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+    await json(port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "start-iso", ready.stateRevision),
+      body: JSON.stringify({ operationId: "op_start_iso" }),
+    });
+
+    await poll(async () => {
+      const listed = await json(port, `/api/v1/runs?projectId=${project.id}`, { headers: auth });
+      const items = (listed.body as { items: Array<{ status: string }> }).items;
+      const succeeded = items.filter((item) => item.status === "succeeded");
+      return succeeded.length >= 2 ? succeeded : undefined;
+    });
+
+    const trees = await poll(() => {
+      const developers = services.worktrees.developerWorktrees(project.id);
+      return developers.length >= 2 ? developers : undefined;
+    });
+    const alpha = trees.find((item) => item.nodeId === "dev_alpha");
+    const bravo = trees.find((item) => item.nodeId === "dev_bravo");
+    expect(alpha).toBeTruthy();
+    expect(bravo).toBeTruthy();
+    if (!alpha || !bravo) {
+      throw new Error("expected developer worktrees for dev_alpha and dev_bravo");
+    }
+
+    const realA = await realpath(alpha.worktreePath);
+    const realB = await realpath(bravo.worktreePath);
+    expect(realA).not.toBe(realB);
+    expect(realA).not.toBe(await realpath(services.worktrees.repoPath));
+    expect(realB).not.toBe(await realpath(services.worktrees.repoPath));
+
+    expect(fs.existsSync(path.join(realA, "dev_alpha.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(realB, "dev_bravo.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(realA, "dev_bravo.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(realB, "dev_alpha.ts"))).toBe(false);
+
+    await writeFile(path.join(realA, "shared.txt"), "edited-in-alpha");
+    await writeFile(path.join(realB, "shared.txt"), "edited-in-bravo");
+    expect(fs.readFileSync(path.join(realA, "shared.txt"), "utf8")).toBe("edited-in-alpha");
+    expect(fs.readFileSync(path.join(realB, "shared.txt"), "utf8")).toBe("edited-in-bravo");
+    expect(fs.readFileSync(path.join(services.worktrees.repoPath, "shared.txt"), "utf8")).toBe(
+      "shared-base\n",
+    );
   });
 });

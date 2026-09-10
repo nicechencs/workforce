@@ -71,6 +71,7 @@ import {
   pageOf,
   unknownProjectBudget,
 } from "./catalog.js";
+import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
 import { createEnginePort } from "./engine.js";
 import { ComposedMockHost, type RunTerminalEvent } from "./mock-host.js";
 import {
@@ -83,6 +84,7 @@ import {
   sqlitePath,
   type ArtifactContentRecord,
 } from "./persist.js";
+import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 
 const encoder = new TextEncoder();
 
@@ -98,6 +100,7 @@ export class ComposedAppServices implements AppServices {
   readonly host: ComposedMockHost;
   readonly sqlite: WorkforceSqlite;
   readonly artifacts: LocalArtifactStore;
+  readonly worktrees: CompositionWorktreeHost;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly operations = new Map<string, CommandReceipt>();
@@ -115,6 +118,7 @@ export class ComposedAppServices implements AppServices {
     hostStore: JsonRuntimeHostStore;
     sqlite: WorkforceSqlite;
     artifacts: LocalArtifactStore;
+    worktrees: CompositionWorktreeHost;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -122,6 +126,7 @@ export class ComposedAppServices implements AppServices {
     this.hostStore = input.hostStore;
     this.sqlite = input.sqlite;
     this.artifacts = input.artifacts;
+    this.worktrees = input.worktrees;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -140,6 +145,7 @@ export class ComposedAppServices implements AppServices {
 
     const engine = createEnginePort();
     const composed: { services?: ComposedAppServices } = {};
+    const worktrees = await CompositionWorktreeHost.open({ stateDir: options.stateDir });
     const host = new ComposedMockHost({
       store: hostStore,
       completeAfterMs: options.completeAfterMs ?? 10,
@@ -153,7 +159,11 @@ export class ComposedAppServices implements AppServices {
     });
     const app = createWorkforceApp({
       engine,
-      host,
+      host: bindWorktreesToHost({
+        inner: host,
+        worktrees,
+        resolveTask: (taskId) => composed.services?.app.world.tasks.get(taskId),
+      }),
       principalId,
       clientId,
     });
@@ -164,6 +174,7 @@ export class ComposedAppServices implements AppServices {
       hostStore,
       sqlite,
       artifacts,
+      worktrees,
     });
     composed.services = services;
 
@@ -180,6 +191,9 @@ export class ComposedAppServices implements AppServices {
       }
       const clock = app.world.clock as unknown as { current: Date };
       clock.current = new Date();
+      for (const workspace of services.workspaces.values()) {
+        await services.worktrees.bindProject(workspace.projectId);
+      }
     }
 
     try {
@@ -296,6 +310,7 @@ export class ComposedAppServices implements AppServices {
       project.workspaceInstanceId = this.app.world.ids.ulid("wsi_");
       project.stateRevision += 1;
       project.updatedAt = now;
+      await this.worktrees.bindProject(project.id);
       this.persist();
       return { status: 201, body: workspace, revision: project.stateRevision };
     });
@@ -369,7 +384,7 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
-      const workspace = this.workspaceFor(project);
+      const workspace = await this.workspaceFor(project);
       const planDigest = sha256Hex(canonicalJson(MOCK_PLAN_DOCUMENT));
       const started = await this.app.startPlanning({
         operationId: ctx.operationId,
@@ -830,6 +845,7 @@ export class ComposedAppServices implements AppServices {
     try {
       await this.host.dispose();
     } finally {
+      await this.worktrees.dispose();
       this.persist();
       this.sqlite.close();
     }
@@ -909,21 +925,21 @@ export class ComposedAppServices implements AppServices {
     slotId: string,
   ): Promise<ArtifactContentRecord> {
     const nodeId = task.workflowNodeId ?? task.title;
-    const synthetic = syntheticOutput(slotId, nodeId);
+    const produced = await this.produceOutput(task, run, slotId, nodeId);
     let versionId = this.app.world.ids.ulid("arv_");
     let artifactId = this.app.world.ids.ulid("art_");
-    let hash = artifactSha256(synthetic.body);
-    if (synthetic.kind === "git_diff" || synthetic.kind === "test_result") {
+    let hash = artifactSha256(produced.body);
+    if (produced.kind === "git_diff" || produced.kind === "test_result") {
       try {
         const stored = await this.artifacts.register({
           slotId,
-          mediaType: synthetic.mediaType,
-          kind: synthetic.kind,
-          body: synthetic.body,
+          mediaType: produced.mediaType,
+          kind: produced.kind,
+          body: produced.body,
           taskId: task.id,
           runId: run.id,
           name: slotId,
-          ...(synthetic.metadata ? { metadata: synthetic.metadata } : {}),
+          ...(produced.metadata ? { metadata: produced.metadata } : {}),
         });
         versionId = stored.artifactVersionId;
         artifactId = stored.artifactId;
@@ -936,12 +952,12 @@ export class ComposedAppServices implements AppServices {
       artifactId,
       versionId,
       logicalName: slotId,
-      kind: synthetic.kind,
-      mediaType: synthetic.mediaType,
+      kind: produced.kind,
+      mediaType: produced.mediaType,
       hash,
-      size: synthetic.body.byteLength,
+      size: produced.body.byteLength,
       createdAt: this.app.world.nowIso(),
-      bodyBase64: Buffer.from(synthetic.body).toString("base64"),
+      bodyBase64: Buffer.from(produced.body).toString("base64"),
       projectId: task.projectId,
       taskId: task.id,
       slotId,
@@ -1027,16 +1043,48 @@ export class ComposedAppServices implements AppServices {
     });
   }
 
-  private workspaceFor(project: ProjectRecord): WorkspaceDto {
+  private async produceOutput(
+    task: TaskRecord,
+    _run: RunRecord,
+    slotId: string,
+    nodeId: string,
+  ): Promise<{
+    mediaType: string;
+    kind: "git_diff" | "test_result" | "evaluation";
+    body: Uint8Array;
+    metadata?: Record<string, unknown>;
+  }> {
+    void _run;
+    if (isGitDiffSlot(slotId)) {
+      const provisioned = this.worktrees.getForTask(task.id, task.attempt);
+      if (!provisioned) {
+        throw new Error(
+          `missing isolated worktree for ${task.workflowNodeId ?? task.id} attempt ${task.attempt}`,
+        );
+      }
+      const captured = await captureMockPatch({
+        git: this.worktrees.git,
+        instanceId: provisioned.workspaceInstanceId,
+        worktreePath: provisioned.worktreePath,
+        nodeId: provisioned.nodeId,
+      });
+      return gitDiffArtifactFromCapture(captured, provisioned.nodeId);
+    }
+    return syntheticOutput(slotId, nodeId);
+  }
+
+  private async workspaceFor(project: ProjectRecord): Promise<WorkspaceDto> {
     if (project.workspaceId) {
       const existing = this.workspaces.get(project.workspaceId);
       if (existing) {
+        await this.worktrees.bindProject(project.id);
         return existing;
       }
     }
     const bound = [...this.workspaces.values()].find((item) => item.projectId === project.id);
     if (bound) {
       project.workspaceId = bound.id;
+      await this.worktrees.bindProject(project.id);
       return bound;
     }
     const workspace: WorkspaceDto = {
@@ -1049,6 +1097,7 @@ export class ComposedAppServices implements AppServices {
     };
     this.workspaces.set(workspace.id, workspace);
     project.workspaceId = workspace.id;
+    await this.worktrees.bindProject(project.id);
     return workspace;
   }
 

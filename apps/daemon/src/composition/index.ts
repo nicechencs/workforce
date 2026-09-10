@@ -12,3 +12,9 @@ export {
   mockPlanGraph,
 } from "./catalog.js";
 export { createEnginePort } from "./engine.js";
+export {
+  CompositionWorktreeHost,
+  bindWorktreesToHost,
+  type ProvisionedWorktree,
+} from "./worktree-host.js";
+export { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
