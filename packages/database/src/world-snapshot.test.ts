@@ -122,7 +122,7 @@ describe("SqliteWorldSnapshot", () => {
           {
             ...reserved,
             budgets: reserved.budgets.map((budget) => ({ ...budget, reservedMinor: 0 })),
-            reservations: [],
+            reservations: [], // intended: release every active reservation
             usageKeys: ["usage-1", "usage-2"],
           },
           now,

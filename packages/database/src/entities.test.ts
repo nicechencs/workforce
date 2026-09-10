@@ -249,6 +249,7 @@ describe("entity repositories", () => {
       expect(db.budgets.get(budget.id)?.reservedMinor).toBe(100);
 
       await db.uow.withTransaction(async (tx) => {
+        // Empty snapshot is intended to release every active reservation.
         db.reservations.syncActive(tx, [], now);
       });
       expect(db.reservations.listActive()).toEqual([]);

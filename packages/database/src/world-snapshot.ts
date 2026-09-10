@@ -149,6 +149,7 @@ export class SqliteWorldSnapshot {
     for (const budget of snapshot.budgets) {
       this.budgets.upsert(tx, budget, at);
     }
+    // Whole-world call: empty snapshot.reservations releases all actives.
     this.reservations.syncActive(tx, snapshot.reservations, at);
     const organizationId =
       snapshot.projects[0]?.organizationId ??

@@ -143,8 +143,10 @@ export class SqliteReservationRepository {
   }
 
   /**
-   * Persist the in-memory reservation map: upsert actives, release rows that
-   * disappeared from the snapshot (application deletes on release).
+   * Persist the in-memory reservation map as a whole-world snapshot: upsert
+   * every active record, then release rows missing from `records`.
+   * `syncActive([])` releases all currently active reservations — intended,
+   * matching MemoryWorld deleting released entries from the map.
    */
   syncActive(tx: Tx, records: ReservationRecord[], at: string): void {
     const keep = new Set(records.map((record) => record.id));
