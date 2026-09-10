@@ -34,7 +34,7 @@
 2. 已 Accepted 的 ADR
 3. `packages/protocol` 生成的 schema / DTO / OpenAPI（T02 落地后）
 4. 蓝图正文：领域不变量看 `02`，状态机看 `08`，Task 看 `05`，Artifact 看 `06`，Runtime SPI 看 `07`，Event envelope 看 `09`，存储意图看 `10`，HTTP 资源看 `11`
-5. Product UI 只约束页面能力，不发明 API 或状态值
+5. Product UI 只约束页面能力，不发明 API 或状态值。项目详情六标签、页头与标签职责以 [01-information-architecture.md](../product-ui/01-information-architecture.md) §4.3 为准；线框 §3 若与 IA 冲突，以 IA 为准。
 6. 架构概览 `03`、仓库结构 `04`、MVP 计划 `12` 是方向文档
 
 **类型分层，禁止混用同一组字段名：**
@@ -75,7 +75,7 @@ SSE `data` 必须是完整 `WorkforceEvent` JSON，或明确的投影 DTO；禁�
 
 ### D02 / R02 — Planner 与不可变 DAG
 
-1. 新建 Project 先进入 `draft`：绑定 Workspace、预设 Team、Runtime、权限、预算。配置未完成不得启动 Planner。
+1. 新建 Project 先进入 `draft`：绑定 Workspace、预设 Team、Runtime、权限、预算。配置未完成不得启动 Planner。桌面 V0.1：WorkspaceBinding 写入在项目详情 Settings；页头只读展示绑定状态；开始规划 / 确认计划 / 开始执行留在页头（IA §4.3.4）。
 2. 配置齐备后进入 `planning`。Planner 是普通 Task/Run（Mock 或真实），产出不可变 **Plan Artifact**（精确 ArtifactVersion）。
 3. 用户确认指定 Plan 版本（gate 类型 `plan`）。确认成功后原子发布/引用 **执行 WorkflowVersion**，Project 进入 `ready`。
 4. 开发 DAG 只绑定已发布 WorkflowVersion。Planner **不得**修改活动执行图。

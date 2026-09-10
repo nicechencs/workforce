@@ -1,9 +1,9 @@
 # Workforce 页面信息架构
 
 **版本：** V0.1 Draft  
-**状态：** Product UI baseline  
+**状态：** Product UI baseline（§4.3 为项目详情现行规范）  
 **日期：** 2026-09-10  
-**修订：** 澄清 §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性。V0.1 一级导航全部出现在左侧栏。工作流用户目的改为查看模板/版本/结构化步骤，避免「管理」暗示画布编辑。
+**修订：** 2026-09-10 — §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性；一级导航全部出现在左侧栏。§4.3 从“建议标签”改为现行条款，并消解与线框 §3 的冲突。
 
 ## 1. 设计目标
 
@@ -87,16 +87,48 @@ flowchart TD
 
 ### 4.3 项目详情
 
-建议使用页面内标签：
+项目详情**必须**使用页面内六标签。禁止用单页平铺（概览卡片 + 任务列表 + 绑定区）代替标签结构。
 
-| 标签 | 内容 |
-|---|---|
-| 概览 | 目标、状态、Team、节点范围、进度 |
-| Tasks | DAG/列表、负责人、状态、依赖 |
-| Runs | 当前和历史执行 |
-| Artifacts | 代码、文档、报告和外部资源 |
-| Activity | Project Event 时间线 |
-| Settings | WorkspaceBinding、预算和策略 |
+权威关系：本节约束页面能力与分区，不发明 API 或状态值（[决策登记 D01](../planning/decision-register.md)）。`03-p0-wireframes.md` §3 是页头与默认画布的示意；若线框把标签写成 Overview、把 Task DAG 画在默认画布、或把 WorkspaceBinding 画成页头可写控件，**以本节为准**。
+
+#### 4.3.1 页头（所有标签可见）
+
+页头不随标签卸载，并承载：
+
+- 项目名称与状态
+- 项目命令：开始规划、确认计划、开始执行、取消（按[能力矩阵](../planning/api-capability-matrix.md)显隐；不支持的能力不得渲染为可点击成功态）
+- 只读摘要：目标摘要、Team、Workspace **展示标签**、预算展示
+
+页头可以只读展示 Workspace / 预算，**不得**作为 WorkspaceBinding 写入面。不展示宿主绝对路径。
+
+#### 4.3.2 标签
+
+稳定 `id` 用于深链。可见标签文案固定为下表，不得改成全英文 Overview。
+
+| id | 标签 | 内容 | 明确排除 |
+|---|---|---|---|
+| `overview` | 概览 | 目标（draft/planning 可编辑名称与目标）、状态、Team、节点范围、进度计数、planning 时的 Plan 版本说明 | Task DAG/列表；WorkspaceBinding 写入 |
+| `tasks` | Tasks | DAG 或按依赖可解释的列表；负责人、状态、依赖 | 把 Run 状态写成 Task 状态 |
+| `runs` | Runs | 当前执行与历史执行 | 混用 Task / Run 状态词 |
+| `artifacts` | Artifacts | 代码、文档、报告和外部资源 | 使用 `latest` 或无版本内容路径 |
+| `activity` | Activity | Project Event 时间线 | 空列表时伪造“最近动态” |
+| `settings` | Settings | WorkspaceBinding 写入、预算说明、策略说明 | 把开始规划/确认计划/开始执行藏进本标签 |
+
+V0.1 诚实空态：公开 Task DTO 未返回 `dependsOn` 时写“依赖：未返回”，不编造 DAG 边；公开 API 未提供可写项目策略时只读说明，不假装保存成功；节点范围在仅 Local Node 时标明本机，不伪造远程节点可选。
+
+#### 4.3.3 深链
+
+标签查询写在 hash 上：`#/projects/{id}?tab={id}`。应用壳 hash 路由只解析 path（去掉 `?` 之后）；`tab` 由项目详情读取。缺省或非法 `tab` 回退到 `overview`。`overview` 可省略查询。
+
+#### 4.3.4 与 create→plan→start 的关系
+
+决策登记 D02：draft 先完成 Workspace / 预设 Team / Runtime / 预算配置，才能开始规划。桌面 V0.1 映射：
+
+1. 列表创建项目后进入详情（默认 `overview`）。
+2. 打开 Settings，完成 WorkspaceBinding（稳定 test id：`project-bind-workspace`）。
+3. 页头执行开始规划 → 确认计划 → 开始执行。这些命令留在页头，不因切换标签消失。
+
+绑定动作不得为了迁就旧平铺页而复制到概览。
 
 ### 4.4 Task 详情
 
@@ -158,6 +190,7 @@ V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续
 
 ## 5. 全局交互规则
 
+- 项目详情分区遵守 §4.3；线框不得覆盖标签职责。
 - 所有任务状态进入 Task；所有执行细节进入 Run。
 - 所有机器位置统一称为“执行节点”。
 - 所有危险动作展示 actor、node、resource 和 impact。

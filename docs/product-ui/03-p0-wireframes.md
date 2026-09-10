@@ -3,7 +3,7 @@
 **版本：** V0.1 Draft  
 **状态：** Ready for visual design  
 **日期：** 2026-09-10  
-**修订：** 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；并增加只读工作流页线框（模板 / 版本 / 结构化步骤，无画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
+**修订：** 2026-09-10 — 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；§3 与 IA §4.3 对齐（概览不是 Overview；Task DAG 不在默认画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
 
 ## 1. 全局框架
 
@@ -55,20 +55,23 @@
 
 ## 3. 项目详情
 
+标签文案与分区以 [01-information-architecture.md](01-information-architecture.md) §4.3 为准。下图是页头 + 默认 **概览** 画布，不是把 Task DAG 画进概览的许可。
+
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ Workforce V0.1       Running       Pause   More            │
-│ 目标摘要 / Team / Workspace / Budget                       │
+│ 项目名称                 执行中     开始执行 / 取消         │
+│ 目标摘要 / Team / Workspace标签 / 预算（只读）              │
 ├────────────────────────────────────────────────────────────┤
-│ Overview | Tasks | Runs | Artifacts | Activity | Settings  │
+│ 概览 | Tasks | Runs | Artifacts | Activity | Settings      │
 ├────────────────────────────────────┬───────────────────────┤
-│ Task 流程/列表                     │ 项目摘要              │
-│ ✓ 需求分析                         │ Team: Software Dev    │
-│ ● 系统架构                         │ Nodes: Auto (2)       │
-│ ○ 核心开发                         │ Budget: 42%           │
-│ ○ 审查                             │ Approvals: 1          │
+│ 目标、状态、Team、节点范围、进度计数 │ 只读摘要              │
+│ （不是 Task DAG）                  │ Approvals: 1          │
 └────────────────────────────────────┴───────────────────────┘
 ```
+
+- WorkspaceBinding 写入、预算说明和策略说明在 **Settings**。
+- Task DAG/列表、负责人、状态、依赖在 **Tasks**。
+- 项目命令留在页头。
 
 ## 4. Run 控制台
 

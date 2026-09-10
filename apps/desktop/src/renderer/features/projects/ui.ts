@@ -102,6 +102,26 @@ export const warningStyle: CSSProperties = {
   color: "var(--wf-color-warning, #c2410c)",
 };
 
+export const tabListStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "var(--wf-space-xs, 4px)",
+  borderBottom: "1px solid var(--wf-color-border, #d1d5db)",
+  marginBottom: "var(--wf-space-lg, 16px)",
+};
+
+export function tabButtonStyle(active: boolean): CSSProperties {
+  return {
+    fontSize: "var(--wf-font-label, 14px)",
+    padding: "var(--wf-space-sm, 8px) var(--wf-space-md, 12px)",
+    border: "none",
+    borderBottom: active ? "2px solid var(--wf-color-primary, #1d4ed8)" : "2px solid transparent",
+    background: "transparent",
+    color: active ? "var(--wf-color-primary, #1d4ed8)" : "var(--wf-color-text, #111827)",
+    cursor: "pointer",
+  };
+}
+
 export const badgeStyle = (tone: "health" | "warning" | "danger" | "muted"): CSSProperties => {
   const color =
     tone === "health"

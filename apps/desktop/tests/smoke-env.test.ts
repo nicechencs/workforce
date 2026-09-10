@@ -67,6 +67,9 @@ describe("desktop smoke env", () => {
   it("serializes a self-contained in-page driver with stable test ids", () => {
     const source = serializeDesktopMainPathSmoke();
     expect(source).toContain("project-create");
+    expect(source).toContain("project-tab-settings");
+    expect(source).toContain("project-bind-workspace");
+    expect(source).toContain("project-tab-tasks");
     expect(source).toContain("project-action-startPlanning");
     expect(source).toContain("project-action-confirmPlan");
     expect(source).toContain("project-action-startProject");

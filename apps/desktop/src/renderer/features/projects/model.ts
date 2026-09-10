@@ -1,5 +1,14 @@
-import type { CapabilitiesDto, ProjectDto } from "@workforce/desktop-client";
+import type {
+  ArtifactDto,
+  ArtifactVersionSummaryDto,
+  CapabilitiesDto,
+  ProjectDto,
+  RunDto,
+  TaskDto,
+} from "@workforce/desktop-client";
 
+import { isActiveRun } from "../runs/model.js";
+import { sortRunsNewestFirst } from "../tasks/model.js";
 import { errorMessage, isRevisionConflict, revisionConflictMessage } from "./command.js";
 import { PRESET_RUNTIME_ID, PRESET_TEAM, PRESET_TEAM_ID } from "../teams/model.js";
 
@@ -274,6 +283,72 @@ export function presetTeamCopy(): { id: string; name: string; runtime: string } 
 
 export function defaultDraftSelection(): { teamId: string; runtimeId: string } {
   return { teamId: PRESET_TEAM_ID, runtimeId: PRESET_RUNTIME_ID };
+}
+
+export function nodeScopeLabel(): string {
+  return "本机 Local Node（V0.1 仅本机，远程节点未接入）";
+}
+
+export function projectProgressLabel(tasks: Array<Pick<TaskDto, "status">>): string {
+  if (tasks.length === 0) {
+    return "进度：尚无已发布任务";
+  }
+  const completed = tasks.filter((task) => task.status === "completed").length;
+  const running = tasks.filter(
+    (task) => task.status === "running" || task.status === "queued",
+  ).length;
+  const runningNote = running > 0 ? ` · ${running} 进行中` : "";
+  return `进度：${completed}/${tasks.length} 已完成${runningNote}`;
+}
+
+export function taskOwnerLabel(task: Pick<TaskDto, "role">): string {
+  return task.role && task.role.length > 0 ? task.role : "未指定";
+}
+
+export function taskDependencyLabel(): string {
+  return "依赖：未返回";
+}
+
+export function emptyTasksCopy(status: string): string {
+  if (status === "draft" || status === "planning") {
+    return "确认计划后才会发布执行任务图。";
+  }
+  return "暂无任务。";
+}
+
+export function splitProjectRuns(runs: RunDto[]): { current: RunDto[]; history: RunDto[] } {
+  const sorted = sortRunsNewestFirst(runs);
+  return {
+    current: sorted.filter((run) => isActiveRun(run)),
+    history: sorted.filter((run) => !isActiveRun(run)),
+  };
+}
+
+const ARTIFACT_KIND_LABELS: Record<string, string> = {
+  git_diff: "代码",
+  plan: "文档",
+  document: "文档",
+  evaluation: "报告",
+  test_result: "报告",
+  report: "报告",
+  external: "外部资源",
+};
+
+export function artifactKindLabel(kind: string): string {
+  return ARTIFACT_KIND_LABELS[kind] ?? kind;
+}
+
+export function pinnedArtifactVersion(
+  artifact: Pick<ArtifactDto, "versions">,
+): ArtifactVersionSummaryDto | null {
+  if (artifact.versions.length === 0) {
+    return null;
+  }
+  return [...artifact.versions].sort((left, right) => right.version - left.version)[0] ?? null;
+}
+
+export function projectPolicyCopy(capabilities: CapabilitiesDto["project"]): string {
+  return `项目策略写入尚未接入公开 API。当前能力：暂停 ${capabilities.pause ? "支持" : "不支持"}，继续 ${capabilities.resume ? "支持" : "不支持"}，归档 ${capabilities.archive ? "支持" : "不支持"}（归档按钮仍不渲染）。`;
 }
 
 export function projectFromDto(

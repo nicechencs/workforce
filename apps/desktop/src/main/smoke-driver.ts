@@ -108,6 +108,11 @@ export async function driveDesktopMainPathInPage(): Promise<DesktopMainPathSmoke
     );
     create.click();
 
+    const settingsTab = await waitFor("settings-tab", () =>
+      page.document.querySelector('[data-testid="project-tab-settings"]'),
+    );
+    settingsTab.click();
+
     const bind = await waitFor("bind-workspace", () =>
       page.document.querySelector('[data-testid="project-bind-workspace"]'),
     );
@@ -137,8 +142,14 @@ export async function driveDesktopMainPathInPage(): Promise<DesktopMainPathSmoke
       return text === "执行中" || text === "已完成" ? text : null;
     });
 
+    const tasksTab = await waitFor("tasks-tab", () =>
+      page.document.querySelector('[data-testid="project-tab-tasks"]'),
+    );
+    tasksTab.click();
+
     const tasks = await waitFor("published-tasks", () => {
-      const text = bodyText();
+      const list = page.document.querySelector('[data-testid="project-task-list"]');
+      const text = list?.textContent ?? bodyText();
       if (!text.includes("dev_alpha") || !text.includes("dev_bravo")) {
         return null;
       }
