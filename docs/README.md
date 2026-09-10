@@ -10,7 +10,7 @@ docs/
 └── operations/  # Development, release, diagnostics and support guides
 ```
 
-Git does not retain empty directories. The `adr`, `protocols`, and `operations` directories will be added with their first real documents.
+Git does not retain empty directories. The `protocols` and `operations` directories will be added with their first real documents; `adr` already contains accepted decisions.
 
 ## V0.1 Blueprint
 
@@ -42,3 +42,10 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [页面信息架构](product-ui/01-information-architecture.md)
 - [核心用户流程](product-ui/02-core-user-flows.md)
 - [P0 页面线框规范](product-ui/03-p0-wireframes.md)
+
+## 设计评审与开发任务
+
+- [V0.1 设计评审与待冻结决策](planning/01-design-review.md)
+- [开发任务清单与 agent 交接模板](planning/02-development-task-backlog.md)
+
+以上为开发前评审与任务规划；不代表代码已经实现，也不自动替代已接受 ADR。
