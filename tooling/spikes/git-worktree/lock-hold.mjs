@@ -15,9 +15,7 @@ if (!file) {
 }
 
 const fd = fs.openSync(file, flags);
-process.stdout.write(
-  `LOCKED pid=${process.pid} fd=${fd} flags=${flags} file=${file}\n`,
-);
+process.stdout.write(`LOCKED pid=${process.pid} fd=${fd} flags=${flags} file=${file}\n`);
 
 const timer = setInterval(() => {}, 1 << 30);
 

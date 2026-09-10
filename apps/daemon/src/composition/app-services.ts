@@ -15,6 +15,7 @@ import {
 } from "@workforce/application";
 import { LocalArtifactStore, sha256Hex as artifactSha256 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
+import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
 import { InvalidTransitionError } from "@workforce/workflow-engine";
 
@@ -87,6 +88,7 @@ import {
   type ArtifactContentRecord,
 } from "./persist.js";
 import { MemoryIntegrationStore } from "./integration-store.js";
+import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 
 const encoder = new TextEncoder();
@@ -96,6 +98,7 @@ export interface ComposedAppServicesOptions {
   principalId?: string;
   clientId?: string;
   completeAfterMs?: number;
+  policyEngine?: InMemoryPolicyEngine;
 }
 
 export class ComposedAppServices implements AppServices {
@@ -104,6 +107,7 @@ export class ComposedAppServices implements AppServices {
   readonly sqlite: WorkforceSqlite;
   readonly artifacts: LocalArtifactStore;
   readonly worktrees: CompositionWorktreeHost;
+  readonly policy: CompositionPolicy;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly operations = new Map<string, CommandReceipt>();
@@ -124,6 +128,7 @@ export class ComposedAppServices implements AppServices {
     sqlite: WorkforceSqlite;
     artifacts: LocalArtifactStore;
     worktrees: CompositionWorktreeHost;
+    policy: CompositionPolicy;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -132,6 +137,7 @@ export class ComposedAppServices implements AppServices {
     this.sqlite = input.sqlite;
     this.artifacts = input.artifacts;
     this.worktrees = input.worktrees;
+    this.policy = input.policy;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -149,6 +155,9 @@ export class ComposedAppServices implements AppServices {
     });
 
     const engine = createEnginePort();
+    const policy = options.policyEngine
+      ? new CompositionPolicy(options.policyEngine)
+      : createCompositionPolicy({ principalId });
     const composed: { services?: ComposedAppServices } = {};
     const worktrees = await CompositionWorktreeHost.open({ stateDir: options.stateDir });
     const host = new ComposedMockHost({
@@ -180,6 +189,7 @@ export class ComposedAppServices implements AppServices {
       sqlite,
       artifacts,
       worktrees,
+      policy,
     });
     composed.services = services;
 
@@ -424,6 +434,7 @@ export class ComposedAppServices implements AppServices {
           children: [],
         });
       }
+      this.bindPlanApprovalDigest(id);
       this.persist();
       return {
         status: 200,
@@ -451,6 +462,15 @@ export class ComposedAppServices implements AppServices {
       if (!approval) {
         throw new AppError("not_found", "Plan approval not found");
       }
+      const action = this.planCanonicalAction(approval);
+      this.policy.assertDigestMatch(approval.actionDigest, action.digest);
+      if (approval.status === "pending") {
+        await this.policy.consumeGrant({
+          action,
+          gate: "plan",
+          ...(approval.expiresAt !== undefined ? { expiresAt: approval.expiresAt } : {}),
+        });
+      }
       const confirmed = await this.app.confirmPlan({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
@@ -474,14 +494,15 @@ export class ComposedAppServices implements AppServices {
     input: StartProjectInput,
   ): Promise<CommandResult<ProjectDto>> {
     return this.exclusive(async () => {
-      if (input.budgetHardLimitMinor !== undefined) {
-        throw new AppError(
-          "unknown_cost_not_enforceable",
-          "Mock run cost is unknown and cannot enforce a hard currency limit",
-        );
-      }
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
+      await this.policy.assertStartAllowed({
+        runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
+        resource: `project:${project.id}`,
+        ...(input.budgetHardLimitMinor !== undefined
+          ? { budgetHardLimitMinor: input.budgetHardLimitMinor }
+          : {}),
+      });
       const started = await this.app.start({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
@@ -629,6 +650,7 @@ export class ComposedAppServices implements AppServices {
       });
       const live = this.requireTask(id);
       if (live.status === "ready") {
+        await this.assertRuntimeStartAllowed(this.requireProject(live.projectId));
         await this.app.startRun({
           operationId: runOperationId(live),
           idempotencyKey: runOperationId(live),
@@ -732,7 +754,9 @@ export class ComposedAppServices implements AppServices {
 
   pauseRun(_ctx: CommandContext, id: string): Promise<CommandResult<CommandAcceptedDto | RunDto>> {
     return this.exclusive(async () => {
-      this.requireRun(id);
+      const run = this.requireRun(id);
+      const project = this.requireProject(run.projectId);
+      await this.policy.assertPauseAllowed(project.runtimeId ?? MOCK_RUNTIME_ID);
       await this.app.pauseRun(id);
       throw new AppError("unsupported_capability", "lifecycle.pause is unsupported");
     });
@@ -963,6 +987,7 @@ export class ComposedAppServices implements AppServices {
       if (hasAttemptRun(this.app.world.runs, task)) {
         continue;
       }
+      await this.assertRuntimeStartAllowed(this.requireProject(projectId));
       await this.app.startRun({
         operationId: runOperationId(task),
         idempotencyKey: runOperationId(task),
@@ -1141,12 +1166,17 @@ export class ComposedAppServices implements AppServices {
         continue;
       }
       const content = this.artifactContents.get(versionId);
-      const digest = content?.hash ?? versionId;
+      const action = this.policy.artifactPublishAction({
+        resource: `artifactVersion:${versionId}`,
+        version: versionId,
+        hash: content?.hash ?? versionId,
+        ...(content?.slotId !== undefined ? { slotId: content.slotId } : {}),
+      });
       await this.app.createApproval({
         projectId,
         gate: "artifact",
-        actionDigest: digest,
-        resource: `artifactVersion:${versionId}`,
+        actionDigest: action.digest,
+        resource: action.resource,
         artifactVersionId: versionId,
         taskId: review.id,
       });
@@ -1165,15 +1195,24 @@ export class ComposedAppServices implements AppServices {
         throw new AppError("not_found", `Approval ${id} not found`);
       }
       this.assertMatch(approval.stateRevision, ctx.ifMatch);
-      if (input.digest !== undefined && input.digest !== approval.actionDigest) {
-        throw new AppError("conflict", "Approval digest does not match the canonical action");
+      const action = this.canonicalActionFor(approval);
+      if (input.digest !== undefined) {
+        this.policy.assertDigestMatch(input.digest, action.digest);
       }
+      this.policy.assertDigestMatch(approval.actionDigest, action.digest);
       if (
         input.artifactVersionId !== undefined &&
         approval.artifactVersionId !== undefined &&
         input.artifactVersionId !== approval.artifactVersionId
       ) {
         throw new AppError("conflict", "Approval artifact version does not match");
+      }
+      if (decision === "approve" && approval.status === "pending") {
+        await this.policy.consumeGrant({
+          action,
+          gate: approval.gate,
+          ...(approval.expiresAt !== undefined ? { expiresAt: approval.expiresAt } : {}),
+        });
       }
       const decided = await this.app.decideApproval({
         operationId: ctx.operationId,
@@ -1255,6 +1294,58 @@ export class ComposedAppServices implements AppServices {
     return [...this.app.world.approvals.values()].find(
       (approval) => approval.projectId === projectId && approval.gate === "plan",
     );
+  }
+
+  private bindPlanApprovalDigest(projectId: string): void {
+    const approval = this.planApprovalFor(projectId);
+    if (!approval) {
+      return;
+    }
+    approval.actionDigest = this.planCanonicalAction(approval).digest;
+  }
+
+  private planCanonicalAction(approval: ApprovalRecord): CanonicalAction {
+    return this.policy.planApplyAction({
+      resource: approval.resource,
+      plan: this.planDocumentFor(approval),
+      ...(approval.artifactVersionId !== undefined ? { version: approval.artifactVersionId } : {}),
+    });
+  }
+
+  private planDocumentFor(approval: ApprovalRecord): unknown {
+    const content = approval.artifactVersionId
+      ? this.artifactContents.get(approval.artifactVersionId)
+      : undefined;
+    if (content) {
+      try {
+        return JSON.parse(Buffer.from(content.bodyBase64, "base64").toString("utf8"));
+      } catch {
+        return { hash: content.hash };
+      }
+    }
+    return MOCK_PLAN_DOCUMENT;
+  }
+
+  private canonicalActionFor(approval: ApprovalRecord): CanonicalAction {
+    if (approval.gate === "plan") {
+      return this.planCanonicalAction(approval);
+    }
+    const versionId =
+      approval.artifactVersionId ?? approval.resource.replace(/^artifactVersion:/u, "");
+    const content = this.artifactContents.get(versionId);
+    return this.policy.artifactPublishAction({
+      resource: approval.resource,
+      version: versionId,
+      hash: content?.hash ?? versionId,
+      ...(content?.slotId !== undefined ? { slotId: content.slotId } : {}),
+    });
+  }
+
+  private async assertRuntimeStartAllowed(project: ProjectRecord): Promise<void> {
+    await this.policy.assertStartAllowed({
+      runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
+      resource: `runtime:${project.runtimeId ?? MOCK_RUNTIME_ID}`,
+    });
   }
 
   private persist(): void {

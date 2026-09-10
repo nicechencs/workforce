@@ -26,6 +26,7 @@
     "@workforce/database": "workspace:*",
     "@workforce/domain": "workspace:*",
     "@workforce/events": "workspace:*",
+    "@workforce/policy": "workspace:*",
     "@workforce/protocol": "workspace:*",
     "@workforce/runtime-mock": "workspace:*",
     "@workforce/runtime-sdk": "workspace:*",
