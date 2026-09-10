@@ -46,7 +46,7 @@ pnpm exec vitest run      # 全量 unit + integration
 
 关键场景：
 
-1. **Daemon HTTP M3**（`apps/daemon/tests/composition.test.ts`，3 tests）  
+1. **Daemon HTTP M3**（`apps/daemon/tests/composition.test.ts`）  
    创建项目 → 绑定 workspace 授权引用 → `:start-planning`（空 body，内部填 Mock 预设）→ `:confirm-plan`（冻结 fixture：`dev_alpha` / `dev_bravo` / `review_integration`）→ `:start` → Mock 运行完成并绑定产物 → artifact 审批 consumed。  
    同 `stateDir` 重启后项目仍在；重放同一 `operationId` **不**新增 Run。  
    Mock pause → `422 unsupported_capability`。  
