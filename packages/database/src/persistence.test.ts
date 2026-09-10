@@ -8,7 +8,7 @@ import { WorkforceSqlite } from "./database.js";
 import { PersistenceError } from "./errors.js";
 import { tableExists, unpublishedOutboxCount } from "./event-store.js";
 import { appliedMigrations, checksumSql, migrate } from "./migrate.js";
-import { MIGRATION_001_SQL, SCHEMA_MIGRATIONS_DDL } from "./schema.js";
+import { MIGRATION_001_SQL, MIGRATION_002_SQL, SCHEMA_MIGRATIONS_DDL } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
 import { STORAGE_MATRIX } from "./storage-matrix.js";
 
@@ -44,6 +44,7 @@ describe("WorkforceSqlite", () => {
       const applied = appliedMigrations(db.connection);
       expect(applied.has("001_init")).toBe(true);
       expect(applied.has("002_entity_alignment")).toBe(true);
+      expect(applied.has("003_budget_alignment")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -67,7 +68,7 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("001_init", checksumSql(MIGRATION_001_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["002_entity_alignment"]);
+      expect(ran).toEqual(["002_entity_alignment", "003_budget_alignment"]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       const columns = db.connection.prepare("PRAGMA table_info(projects)").all();
@@ -79,6 +80,44 @@ describe("WorkforceSqlite", () => {
           "plan_artifact_version_id",
           "execution_node_id",
         ]),
+      );
+      const budgetColumns = db.connection.prepare("PRAGMA table_info(budgets)").all();
+      expect(budgetColumns.map((column) => column.name)).toEqual(
+        expect.arrayContaining([
+          "project_id",
+          "limit_minor",
+          "reserved_minor",
+          "settled_minor",
+          "authorization_version",
+        ]),
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("applies 003 on a database that already has 001 and 002 without rewriting them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      db.connection.exec(MIGRATION_001_SQL);
+      db.connection.exec(MIGRATION_002_SQL);
+      db.connection
+        .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+        .run("001_init", checksumSql(MIGRATION_001_SQL), now);
+      db.connection
+        .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+        .run("002_entity_alignment", checksumSql(MIGRATION_002_SQL), now);
+      const ran = migrate(db.connection);
+      expect(ran).toEqual(["003_budget_alignment"]);
+      const applied = appliedMigrations(db.connection);
+      expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
+      expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));
+      const budgetColumns = db.connection.prepare("PRAGMA table_info(budgets)").all();
+      expect(budgetColumns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(["project_id", "limit_minor", "reserved_minor", "settled_minor"]),
       );
     } finally {
       db.close();
@@ -363,6 +402,7 @@ describe("WorkforceSqlite", () => {
         "pending approval action digest",
         "Artifact staging / output binding",
         "usage dedup and resource occupancy",
+        "Budget / reservation / usage key",
         "SSE ingestion position",
       ]),
     );

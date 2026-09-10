@@ -41,3 +41,11 @@ export {
   resolveDaemonEntry,
   resolveDesktopStateDir,
 } from "./supervisor-runtime.js";
+export {
+  DESKTOP_SMOKE_ENV,
+  isDesktopSmokeEnabled,
+  resolveDaemonLaunchArgs,
+  resolveSmokeDirectoryOverride,
+  resolveSmokeWorkspacePath,
+  shouldLaunchElectronHeadless,
+} from "./smoke-env.js";

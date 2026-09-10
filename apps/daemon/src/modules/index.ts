@@ -143,5 +143,9 @@ export interface AppServices {
   listEvents(query: EventListQuery): PageDto<WorkforceEvent>;
   highWaterMark(): number;
   trimHorizon(): number;
+  exportProject(
+    ctx: CommandContext,
+    id: string,
+  ): MaybeAsync<CommandResult<import("./dto.js").ExportBundleDto>>;
   close?(): Promise<void> | void;
 }

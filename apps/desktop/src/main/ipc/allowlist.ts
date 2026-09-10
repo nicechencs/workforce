@@ -19,6 +19,7 @@ export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[]
   { method: "POST", path: "/api/v1/projects/{id}:pause" },
   { method: "POST", path: "/api/v1/projects/{id}:resume" },
   { method: "POST", path: "/api/v1/projects/{id}:cancel" },
+  { method: "POST", path: "/api/v1/projects/{id}:export" },
   { method: "POST", path: "/api/v1/projects/{id}/workspaces" },
   { method: "GET", path: "/api/v1/tasks" },
   { method: "GET", path: "/api/v1/tasks/{id}" },

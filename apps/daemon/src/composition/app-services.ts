@@ -7,6 +7,7 @@ import {
   UseCaseError,
   WorkforceApp,
   createWorkforceApp,
+  integratePatches,
   type ApprovalRecord,
   type ProjectRecord,
   type RunRecord,
@@ -14,6 +15,7 @@ import {
 } from "@workforce/application";
 import { LocalArtifactStore, sha256Hex as artifactSha256 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
+import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
 import { InvalidTransitionError } from "@workforce/workflow-engine";
 
@@ -35,6 +37,7 @@ import type {
   CreateProjectInput,
   CreateWorkspaceInput,
   EventListQuery,
+  ExportBundleDto,
   ListQuery,
   NodeDto,
   PageDto,
@@ -79,11 +82,13 @@ import {
   dumpWorld,
   hydrateWorld,
   JsonRuntimeHostStore,
-  loadSnapshot,
+  loadComposition,
   persistSnapshot,
   sqlitePath,
   type ArtifactContentRecord,
 } from "./persist.js";
+import { MemoryIntegrationStore } from "./integration-store.js";
+import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 
 const encoder = new TextEncoder();
@@ -93,6 +98,7 @@ export interface ComposedAppServicesOptions {
   principalId?: string;
   clientId?: string;
   completeAfterMs?: number;
+  policyEngine?: InMemoryPolicyEngine;
 }
 
 export class ComposedAppServices implements AppServices {
@@ -101,6 +107,7 @@ export class ComposedAppServices implements AppServices {
   readonly sqlite: WorkforceSqlite;
   readonly artifacts: LocalArtifactStore;
   readonly worktrees: CompositionWorktreeHost;
+  readonly policy: CompositionPolicy;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly operations = new Map<string, CommandReceipt>();
@@ -108,7 +115,9 @@ export class ComposedAppServices implements AppServices {
   private readonly workspaces = new Map<string, WorkspaceDto>();
   private readonly decisionReasons = new Map<string, string>();
   private readonly synced = { eventIds: new Set<string>(), operationIds: new Set<string>() };
+  private readonly integrations = new MemoryIntegrationStore();
   private writeChain: Promise<void> = Promise.resolve();
+  private sqliteWrite: Promise<void> = Promise.resolve();
   private closed = false;
 
   private constructor(input: {
@@ -119,6 +128,7 @@ export class ComposedAppServices implements AppServices {
     sqlite: WorkforceSqlite;
     artifacts: LocalArtifactStore;
     worktrees: CompositionWorktreeHost;
+    policy: CompositionPolicy;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -127,23 +137,27 @@ export class ComposedAppServices implements AppServices {
     this.sqlite = input.sqlite;
     this.artifacts = input.artifacts;
     this.worktrees = input.worktrees;
+    this.policy = input.policy;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
     fs.mkdirSync(options.stateDir, { recursive: true });
     const principalId = options.principalId ?? loadOrCreatePrincipalId(options.stateDir);
     const clientId = options.clientId ?? loadOrCreateClientId(options.stateDir);
-    const snapshot = loadSnapshot(options.stateDir);
+    const sqlite = WorkforceSqlite.open(sqlitePath(options.stateDir));
+    const snapshot = await loadComposition(options.stateDir, sqlite);
     const hostStore = new JsonRuntimeHostStore();
     if (snapshot?.host) {
       hostStore.load(snapshot.host);
     }
-    const sqlite = WorkforceSqlite.open(sqlitePath(options.stateDir));
     const artifacts = await LocalArtifactStore.open({
       root: path.join(options.stateDir, "artifacts"),
     });
 
     const engine = createEnginePort();
+    const policy = options.policyEngine
+      ? new CompositionPolicy(options.policyEngine)
+      : createCompositionPolicy({ principalId });
     const composed: { services?: ComposedAppServices } = {};
     const worktrees = await CompositionWorktreeHost.open({ stateDir: options.stateDir });
     const host = new ComposedMockHost({
@@ -175,6 +189,7 @@ export class ComposedAppServices implements AppServices {
       sqlite,
       artifacts,
       worktrees,
+      policy,
     });
     composed.services = services;
 
@@ -419,6 +434,7 @@ export class ComposedAppServices implements AppServices {
           children: [],
         });
       }
+      this.bindPlanApprovalDigest(id);
       this.persist();
       return {
         status: 200,
@@ -446,6 +462,15 @@ export class ComposedAppServices implements AppServices {
       if (!approval) {
         throw new AppError("not_found", "Plan approval not found");
       }
+      const action = this.planCanonicalAction(approval);
+      this.policy.assertDigestMatch(approval.actionDigest, action.digest);
+      if (approval.status === "pending") {
+        await this.policy.consumeGrant({
+          action,
+          gate: "plan",
+          ...(approval.expiresAt !== undefined ? { expiresAt: approval.expiresAt } : {}),
+        });
+      }
       const confirmed = await this.app.confirmPlan({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
@@ -469,14 +494,15 @@ export class ComposedAppServices implements AppServices {
     input: StartProjectInput,
   ): Promise<CommandResult<ProjectDto>> {
     return this.exclusive(async () => {
-      if (input.budgetHardLimitMinor !== undefined) {
-        throw new AppError(
-          "unknown_cost_not_enforceable",
-          "Mock run cost is unknown and cannot enforce a hard currency limit",
-        );
-      }
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
+      await this.policy.assertStartAllowed({
+        runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
+        resource: `project:${project.id}`,
+        ...(input.budgetHardLimitMinor !== undefined
+          ? { budgetHardLimitMinor: input.budgetHardLimitMinor }
+          : {}),
+      });
       const started = await this.app.start({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
@@ -528,6 +554,71 @@ export class ComposedAppServices implements AppServices {
     });
   }
 
+  exportProject(ctx: CommandContext, id: string): Promise<CommandResult<ExportBundleDto>> {
+    return this.exclusive(async () => {
+      const project = this.requireProject(id);
+      this.assertMatch(project.stateRevision, ctx.ifMatch);
+      const approved = [...this.app.world.approvals.values()].find(
+        (approval) =>
+          approval.projectId === id &&
+          approval.gate === "artifact" &&
+          (approval.status === "consumed" || approval.status === "approved"),
+      );
+      if (!approved) {
+        throw new AppError("invalid_transition", "Export requires a consumed artifact approval");
+      }
+      const integrated = this.integrations.latest(id);
+      const digest =
+        (integrated?.outcome.status === "integrated"
+          ? integrated.outcome.contentDigest
+          : undefined) ?? approved.actionDigest;
+      const report = {
+        projectId: project.id,
+        projectStatus: project.status,
+        ...(integrated?.outcome.status === "integrated"
+          ? { integratedDigest: integrated.outcome.contentDigest }
+          : {}),
+        approvedDigest: approved.actionDigest,
+        artifacts: [...this.artifactContents.values()]
+          .filter((item) => item.projectId === id)
+          .map((item) => ({
+            versionId: item.versionId,
+            hash: item.hash,
+            ...(item.slotId ? { slotId: item.slotId } : {}),
+          })),
+      };
+      const body = encoder.encode(`${JSON.stringify({ digest, ...report }, null, 2)}\n`);
+      const record: ArtifactContentRecord = {
+        artifactId: this.app.world.ids.ulid("art_"),
+        versionId: this.app.world.ids.ulid("arv_"),
+        logicalName: "report",
+        kind: "evaluation",
+        mediaType: "application/json",
+        hash: artifactSha256(body),
+        size: body.byteLength,
+        createdAt: this.app.world.nowIso(),
+        bodyBase64: Buffer.from(body).toString("base64"),
+        projectId: id,
+        slotId: "report",
+        parents: approved.artifactVersionId ? [approved.artifactVersionId] : [],
+        children: [],
+      };
+      this.putContent(record);
+      this.persist();
+      return {
+        status: 200,
+        body: {
+          projectId: id,
+          digest: record.hash,
+          artifactVersionId: record.versionId,
+          status: "exported",
+          report,
+        },
+        revision: project.stateRevision,
+      };
+    });
+  }
+
   listTasks(query: ListQuery): PageDto<TaskDto> {
     return paginate(
       this.filter(
@@ -559,6 +650,7 @@ export class ComposedAppServices implements AppServices {
       });
       const live = this.requireTask(id);
       if (live.status === "ready") {
+        await this.assertRuntimeStartAllowed(this.requireProject(live.projectId));
         await this.app.startRun({
           operationId: runOperationId(live),
           idempotencyKey: runOperationId(live),
@@ -662,7 +754,9 @@ export class ComposedAppServices implements AppServices {
 
   pauseRun(_ctx: CommandContext, id: string): Promise<CommandResult<CommandAcceptedDto | RunDto>> {
     return this.exclusive(async () => {
-      this.requireRun(id);
+      const run = this.requireRun(id);
+      const project = this.requireProject(run.projectId);
+      await this.policy.assertPauseAllowed(project.runtimeId ?? MOCK_RUNTIME_ID);
       await this.app.pauseRun(id);
       throw new AppError("unsupported_capability", "lifecycle.pause is unsupported");
     });
@@ -847,6 +941,7 @@ export class ComposedAppServices implements AppServices {
     } finally {
       await this.worktrees.dispose();
       this.persist();
+      await this.sqliteWrite.catch(() => undefined);
       this.sqlite.close();
     }
   }
@@ -873,6 +968,7 @@ export class ComposedAppServices implements AppServices {
       if (event.status === "succeeded") {
         this.app.recordRunSucceeded(run.id);
         await this.bindRequiredOutputs(run);
+        await this.maybeIntegrate(run.projectId);
         await this.maybeCreateArtifactApproval(run.projectId);
         await this.dispatchReadyTasks(run.projectId);
       } else if (event.status === "failed") {
@@ -891,6 +987,7 @@ export class ComposedAppServices implements AppServices {
       if (hasAttemptRun(this.app.world.runs, task)) {
         continue;
       }
+      await this.assertRuntimeStartAllowed(this.requireProject(projectId));
       await this.app.startRun({
         operationId: runOperationId(task),
         idempotencyKey: runOperationId(task),
@@ -968,6 +1065,84 @@ export class ComposedAppServices implements AppServices {
     return record;
   }
 
+  private async maybeIntegrate(projectId: string): Promise<void> {
+    if (this.integrations.latest(projectId)?.outcome.status === "integrated") {
+      return;
+    }
+    const developers = this.app.world
+      .tasksForProject(projectId)
+      .filter((task) => task.role === "developer");
+    if (developers.length === 0) {
+      return;
+    }
+    const contributions = [];
+    for (const task of developers) {
+      const slot = task.expectedOutputs.find((output) => isGitDiffSlot(output.id));
+      const versionId = slot ? task.outputBindings[slot.id] : undefined;
+      const content = versionId ? this.artifactContents.get(versionId) : undefined;
+      if (!slot || !versionId || !content) {
+        return;
+      }
+      contributions.push({
+        nodeId: task.workflowNodeId ?? task.id,
+        runId:
+          [...this.app.world.runs.values()].find((run) => run.taskId === task.id)?.id ?? task.id,
+        artifactVersionId: versionId,
+        patch: Buffer.from(content.bodyBase64, "base64").toString("utf8"),
+        changedPaths: [],
+        baseSha: this.worktrees.baseSha,
+      });
+    }
+    const project = this.requireProject(projectId);
+    await this.workspaceFor(project);
+    const { gitWorkspaceId } = await this.worktrees.bindProject(projectId);
+    const review = this.app.world
+      .tasksForProject(projectId)
+      .find((task) => task.role === "reviewer");
+    const result = await integratePatches(
+      {
+        operationId: `op_integrate_${projectId}`,
+        projectId,
+        workspaceId: gitWorkspaceId,
+        integrationTaskId: review?.id ?? `integrate_${projectId}`,
+        baseSha: this.worktrees.baseSha,
+        workflowVersionId: project.workflowVersionId ?? "wfv_software",
+        contributions,
+      },
+      { workspace: this.worktrees.git, store: this.integrations },
+      { bindToNodeIds: ["review_integration", "approve_delivery"] },
+    );
+    if (!result.ok || result.outcome.status !== "integrated") {
+      return;
+    }
+    const patchBody = encoder.encode(
+      result.outcome.patch.endsWith("\n") ? result.outcome.patch : `${result.outcome.patch}\n`,
+    );
+    const record: ArtifactContentRecord = {
+      artifactId: this.app.world.ids.ulid("art_"),
+      versionId: this.app.world.ids.ulid("arv_"),
+      logicalName: "integrated",
+      kind: "git_diff",
+      mediaType: "text/x-diff",
+      hash: result.outcome.contentDigest,
+      size: patchBody.byteLength,
+      createdAt: this.app.world.nowIso(),
+      bodyBase64: Buffer.from(patchBody).toString("base64"),
+      projectId,
+      slotId: "integrated",
+      parents: contributions.map((item) => item.artifactVersionId),
+      children: [],
+    };
+    this.putContent(record);
+    this.app.world.artifacts.set(record.versionId, {
+      artifactVersionId: record.versionId,
+      projectId,
+      slotId: "integrated",
+      digest: record.hash,
+      status: "available",
+    });
+  }
+
   private async maybeCreateArtifactApproval(projectId: string): Promise<void> {
     const reviewers = this.app.world
       .tasksForProject(projectId)
@@ -991,12 +1166,17 @@ export class ComposedAppServices implements AppServices {
         continue;
       }
       const content = this.artifactContents.get(versionId);
-      const digest = content?.hash ?? versionId;
+      const action = this.policy.artifactPublishAction({
+        resource: `artifactVersion:${versionId}`,
+        version: versionId,
+        hash: content?.hash ?? versionId,
+        ...(content?.slotId !== undefined ? { slotId: content.slotId } : {}),
+      });
       await this.app.createApproval({
         projectId,
         gate: "artifact",
-        actionDigest: digest,
-        resource: `artifactVersion:${versionId}`,
+        actionDigest: action.digest,
+        resource: action.resource,
         artifactVersionId: versionId,
         taskId: review.id,
       });
@@ -1015,15 +1195,24 @@ export class ComposedAppServices implements AppServices {
         throw new AppError("not_found", `Approval ${id} not found`);
       }
       this.assertMatch(approval.stateRevision, ctx.ifMatch);
-      if (input.digest !== undefined && input.digest !== approval.actionDigest) {
-        throw new AppError("conflict", "Approval digest does not match the canonical action");
+      const action = this.canonicalActionFor(approval);
+      if (input.digest !== undefined) {
+        this.policy.assertDigestMatch(input.digest, action.digest);
       }
+      this.policy.assertDigestMatch(approval.actionDigest, action.digest);
       if (
         input.artifactVersionId !== undefined &&
         approval.artifactVersionId !== undefined &&
         input.artifactVersionId !== approval.artifactVersionId
       ) {
         throw new AppError("conflict", "Approval artifact version does not match");
+      }
+      if (decision === "approve" && approval.status === "pending") {
+        await this.policy.consumeGrant({
+          action,
+          gate: approval.gate,
+          ...(approval.expiresAt !== undefined ? { expiresAt: approval.expiresAt } : {}),
+        });
       }
       const decided = await this.app.decideApproval({
         operationId: ctx.operationId,
@@ -1107,6 +1296,58 @@ export class ComposedAppServices implements AppServices {
     );
   }
 
+  private bindPlanApprovalDigest(projectId: string): void {
+    const approval = this.planApprovalFor(projectId);
+    if (!approval) {
+      return;
+    }
+    approval.actionDigest = this.planCanonicalAction(approval).digest;
+  }
+
+  private planCanonicalAction(approval: ApprovalRecord): CanonicalAction {
+    return this.policy.planApplyAction({
+      resource: approval.resource,
+      plan: this.planDocumentFor(approval),
+      ...(approval.artifactVersionId !== undefined ? { version: approval.artifactVersionId } : {}),
+    });
+  }
+
+  private planDocumentFor(approval: ApprovalRecord): unknown {
+    const content = approval.artifactVersionId
+      ? this.artifactContents.get(approval.artifactVersionId)
+      : undefined;
+    if (content) {
+      try {
+        return JSON.parse(Buffer.from(content.bodyBase64, "base64").toString("utf8"));
+      } catch {
+        return { hash: content.hash };
+      }
+    }
+    return MOCK_PLAN_DOCUMENT;
+  }
+
+  private canonicalActionFor(approval: ApprovalRecord): CanonicalAction {
+    if (approval.gate === "plan") {
+      return this.planCanonicalAction(approval);
+    }
+    const versionId =
+      approval.artifactVersionId ?? approval.resource.replace(/^artifactVersion:/u, "");
+    const content = this.artifactContents.get(versionId);
+    return this.policy.artifactPublishAction({
+      resource: approval.resource,
+      version: versionId,
+      hash: content?.hash ?? versionId,
+      ...(content?.slotId !== undefined ? { slotId: content.slotId } : {}),
+    });
+  }
+
+  private async assertRuntimeStartAllowed(project: ProjectRecord): Promise<void> {
+    await this.policy.assertStartAllowed({
+      runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
+      resource: `runtime:${project.runtimeId ?? MOCK_RUNTIME_ID}`,
+    });
+  }
+
   private persist(): void {
     if (this.closed) {
       try {
@@ -1127,7 +1368,9 @@ export class ComposedAppServices implements AppServices {
       workspaces: [...this.workspaces.values()],
     });
     persistSnapshot(this.stateDir, { world, host: this.hostStore.dump() });
-    void dualWriteSqlite(this.sqlite, world, this.synced).catch(() => undefined);
+    this.sqliteWrite = this.sqliteWrite
+      .then(() => dualWriteSqlite(this.sqlite, world, this.synced))
+      .catch(() => undefined);
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {

@@ -1,5 +1,6 @@
 import type { CapabilitiesDto, RunDto } from "@workforce/desktop-client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import type { WorkforcePreloadApi } from "@workforce/ui";
 
 import type { FeaturePageProps } from "../contract.js";
 import {
@@ -23,6 +24,7 @@ import {
   shouldShowPause,
   shouldShowResume,
   shouldShowTakeOver,
+  mergeEventLists,
   timelineFromEvents,
   type TimelineRow,
 } from "./model.js";
@@ -108,6 +110,32 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [liveEvents, setLiveEvents] = useState<unknown[]>([]);
+
+  useEffect(() => {
+    setLiveEvents([]);
+    const api = (globalThis as { window?: { workforce?: WorkforcePreloadApi } }).window?.workforce;
+    if (!api) {
+      return;
+    }
+    let subscriptionId: string | undefined;
+    let cancelled = false;
+    void api.api.subscribeEvents({}).then((ref) => {
+      if (!cancelled) {
+        subscriptionId = ref.subscriptionId;
+      }
+    });
+    const unsubscribe = api.api.onEvent((event) => {
+      setLiveEvents((current) => [...current, event]);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (subscriptionId) {
+        void api.api.unsubscribeEvents(subscriptionId);
+      }
+    };
+  }, [props.runId]);
 
   const snapshot = query.data;
   const run = snapshot?.run ?? null;
@@ -169,7 +197,7 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
       {run ? (
         <RunConsoleView
           run={run}
-          events={snapshot?.events ?? []}
+          events={mergeEventLists(snapshot?.events ?? [], liveEvents)}
           capabilities={snapshot?.capabilities ?? null}
           cancelAccepted={cancelAccepted}
           busy={busy}

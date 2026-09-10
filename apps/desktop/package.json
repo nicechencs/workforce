@@ -19,7 +19,8 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node ./scripts/bundle-preload.mjs && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "dev": "node ./scripts/dev.mjs",
-    "start": "pnpm run build && electron ./dist/main/electron-main.js"
+    "start": "pnpm run build && electron ./dist/main/electron-main.js",
+    "smoke": "node ./scripts/smoke.mjs"
   },
   "dependencies": {
     "@workforce/desktop-client": "workspace:*",

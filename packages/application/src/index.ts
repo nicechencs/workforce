@@ -26,5 +26,3 @@ export type {
   ProjectSnapshot,
 } from "./use-cases/planning/index.js";
 export * from "./use-cases/delivery/index.js";
-
-

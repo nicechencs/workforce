@@ -5,15 +5,8 @@ import { randomBytes } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-/* T16 root tests are not a workspace package, so public @workforce/* names do not resolve. */
-/* eslint-disable no-restricted-imports */
-import { createComposedAppServices } from "../../apps/daemon/src/composition/index.js";
-import { startDaemon, type StartedDaemon } from "../../apps/daemon/src/bootstrap/index.js";
-import {
-  createDesktopClient,
-  createLoopbackTransport,
-} from "../../packages/desktop-client/src/index.js";
-/* eslint-enable no-restricted-imports */
+import { createComposedAppServices, startDaemon, type StartedDaemon } from "@workforce/daemon";
+import { createDesktopClient, createLoopbackTransport } from "@workforce/desktop-client";
 
 function uniqueLockPath(): string {
   const id = randomBytes(6).toString("hex");

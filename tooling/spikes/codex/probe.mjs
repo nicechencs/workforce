@@ -211,9 +211,7 @@ function pathEntries() {
 
 function scanPathForCodex() {
   const hits = [];
-  const names = isWin
-    ? ["codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex"]
-    : ["codex"];
+  const names = isWin ? ["codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex"] : ["codex"];
   for (const dir of pathEntries()) {
     if (!exists(dir)) continue;
     for (const name of names) {
@@ -431,7 +429,9 @@ async function main() {
   log(`node: ${process.version}`);
   log(`npm: ${cmdVersion("npm", ["-v"])}`);
   log(`git: ${cmdVersion("git", ["--version"])}`);
-  log(`pwsh: ${cmdVersion("pwsh", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"])}`);
+  log(
+    `pwsh: ${cmdVersion("pwsh", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"])}`,
+  );
   log(`cwd: ${process.cwd()}`);
   log(`home: ${home}`);
   log(`macOS: 未测`);
@@ -443,8 +443,12 @@ async function main() {
   heading("where/which codex");
   const whereCodex = whereCommand("codex");
   const whereCodexC = whereCommand("Codex");
-  log(`where codex status=${whereCodex.status} paths=${JSON.stringify(whereCodex.paths)} stderr=${whereCodex.stderr || whereCodex.error || ""}`);
-  log(`where Codex status=${whereCodexC.status} paths=${JSON.stringify(whereCodexC.paths)} stderr=${whereCodexC.stderr || whereCodexC.error || ""}`);
+  log(
+    `where codex status=${whereCodex.status} paths=${JSON.stringify(whereCodex.paths)} stderr=${whereCodex.stderr || whereCodex.error || ""}`,
+  );
+  log(
+    `where Codex status=${whereCodexC.status} paths=${JSON.stringify(whereCodexC.paths)} stderr=${whereCodexC.stderr || whereCodexC.error || ""}`,
+  );
 
   heading("PATH scan for *codex*");
   const pathHits = scanPathForCodex();
@@ -510,7 +514,9 @@ async function main() {
   heading("Preferred executable");
   if (!preferred) {
     log("NOT FOUND: no Codex CLI on PATH, LocalAppData hashed bin, or MSIX resources.");
-    log("Mark Codex runtime ops unsupported on this host until an executable is installed or configured.");
+    log(
+      "Mark Codex runtime ops unsupported on this host until an executable is installed or configured.",
+    );
   } else {
     log(`source: ${preferred.source}`);
     log(`path: ${preferred.path}`);
@@ -526,7 +532,9 @@ async function main() {
     const help = await runTimed(preferred.path, ["--help"], HELP_TIMEOUT_MS);
     log("");
     log(`$ ${preferred.path} --help`);
-    log(`timedOut=${help.timedOut} code=${help.code} error=${help.error || ""} stdoutChars=${(help.stdout || "").length} stderrChars=${(help.stderr || "").length}`);
+    log(
+      `timedOut=${help.timedOut} code=${help.code} error=${help.error || ""} stdoutChars=${(help.stdout || "").length} stderrChars=${(help.stderr || "").length}`,
+    );
     if (help.stdout) log(trimBlock(help.stdout, 8000));
     if (help.stderr) {
       log("--- stderr ---");
@@ -538,7 +546,9 @@ async function main() {
   heading("Notes");
   log("- Probe is report-only and exits 0 even when Codex is missing.");
   log("- Do not parse ~/.codex/auth.json; use `codex login status` for auth (see --deep).");
-  log("- Do not auto-select third-party bundled copies (e.g. AionUi) unless explicitly configured.");
+  log(
+    "- Do not auto-select third-party bundled copies (e.g. AionUi) unless explicitly configured.",
+  );
   log("- `--help` must be read asynchronously; a sync pipe+wait deadlocks on large help text.");
   log(`- Deep mode: ${deep ? "on" : "off"} (pass --deep for login status and subcommand --help).`);
 }

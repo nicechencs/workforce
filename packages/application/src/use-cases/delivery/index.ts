@@ -7,6 +7,7 @@ export type {
   IntegratePatchesCommand,
   IntegratePatchesDeps,
   IntegrationOutcome,
+  IntegrationRecord,
   IntegrationStore,
   IntegrationWorkspacePort,
   PatchContribution,

@@ -216,6 +216,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (budget !== undefined) input.budgetHardLimitMinor = budget;
     return deps.services.startProject(ctx, id, input);
   });
+  registerProjectCommand(app, cmd, "export", (ctx, id, body) => {
+    rejectUnknownFields(body, ["operationId"]);
+    return deps.services.exportProject(ctx, id);
+  });
   registerProjectCommand(app, cmd, "cancel", (ctx, id, body) => {
     rejectUnknownFields(body, ["reason", "mode", "operationId"]);
     const input: { reason?: string; mode?: string } = {};

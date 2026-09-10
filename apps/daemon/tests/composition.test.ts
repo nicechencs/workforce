@@ -5,7 +5,12 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { MOCK_PLAN_DOCUMENT } from "@workforce/application";
+import { WorkforceSqlite } from "@workforce/database";
+import { createCanonicalAction } from "@workforce/policy";
+
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
+import { sqlitePath } from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { commandHeaders, json, uniqueLockPath } from "./helpers.js";
 
@@ -511,5 +516,302 @@ describe("composed M3 mock loop", () => {
     expect(fs.readFileSync(path.join(services.worktrees.repoPath, "shared.txt"), "utf8")).toBe(
       "shared-base\n",
     );
+  });
+
+  it("reloads budget and reservation from sqlite after world.json is deleted", async () => {
+    const first = await startComposed();
+    const created = await json(first.daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(first.auth, "create-bdg"),
+      body: JSON.stringify({
+        name: "Budget authority",
+        objective: "survive budget without world.json",
+        operationId: "op_bdg",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(first.daemon.port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "plan-bdg", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_bdg_plan" }),
+    });
+    expect(planned.status).toBe(200);
+    const planning = planned.body as { stateRevision: number };
+    const budgetId = first.services.app.world.projects.get(project.id)?.budgetId;
+    expect(budgetId).toBeTruthy();
+
+    const reserved = first.services.app.reserveBudget({
+      budgetId: budgetId!,
+      amount: { costMinor: 250, currency: "USD", kind: "estimated" },
+      runId: "run_budget_persist",
+    });
+    first.services.app.settleUsage({
+      budgetId: budgetId!,
+      amount: { costMinor: 80, currency: "USD", kind: "settled" },
+      usageKey: "usage-persist-1",
+    });
+    expect(reserved.budget.reservedMinor).toBe(170);
+
+    const before = await json(first.daemon.port, `/api/v1/projects/${project.id}/budget`, {
+      headers: first.auth,
+    });
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      kind: "estimated",
+      estimatedLimitMinor: 1_000_000,
+      reservedMinor: 170,
+      settledMinor: 80,
+      authorizationVersion: 1,
+    });
+
+    await first.daemon.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const db = WorkforceSqlite.open(sqlitePath(first.stateDir));
+    const entities = db.worldSnapshot.load();
+    expect(entities.budgets.some((item) => item.id === budgetId && item.settledMinor === 80)).toBe(
+      true,
+    );
+    expect(
+      entities.reservations.some((item) => item.budgetId === budgetId && item.amountMinor === 250),
+    ).toBe(true);
+    expect(entities.usageKeys).toContain("usage-persist-1");
+    db.close();
+    fs.unlinkSync(path.join(first.stateDir, "world.json"));
+
+    const second = await startComposed(first.stateDir);
+    const budget = await json(second.daemon.port, `/api/v1/projects/${project.id}/budget`, {
+      headers: second.auth,
+    });
+    expect(budget.status).toBe(200);
+    expect(budget.body).toMatchObject({
+      kind: "estimated",
+      estimatedLimitMinor: 1_000_000,
+      reservedMinor: 170,
+      settledMinor: 80,
+    });
+    expect(second.services.app.world.usageKeys.has("usage-persist-1")).toBe(true);
+    expect(
+      [...second.services.app.world.reservations.values()].some(
+        (item) => item.budgetId === budgetId && item.amountMinor === 250,
+      ),
+    ).toBe(true);
+    expect(
+      second.services.app.settleUsage({
+        budgetId: budgetId!,
+        amount: { costMinor: 80, currency: "USD", kind: "settled" },
+        usageKey: "usage-persist-1",
+      }).settledMinor,
+    ).toBe(80);
+    expect(() =>
+      second.services.app.reserveBudget({
+        budgetId: budgetId!,
+        amount: { costMinor: 0, currency: "USD", kind: "unknown" },
+      }),
+    ).toThrow(/unknown cost/);
+
+    const hardBudget = await json(second.daemon.port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(second.auth, "start-bdg-hard", planning.stateRevision),
+      body: JSON.stringify({ budgetHardLimitMinor: 100, operationId: "op_bdg_hard" }),
+    });
+    expect(hardBudget.status).toBe(422);
+    expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
+  }, 20_000);
+
+  it("reloads the project from sqlite after world.json is deleted", async () => {
+    const first = await startComposed();
+    const created = await json(first.daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(first.auth, "create-sql"),
+      body: JSON.stringify({
+        name: "SQLite authority",
+        objective: "survive without world.json",
+        operationId: "op_sql",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string };
+    await first.daemon.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const db = WorkforceSqlite.open(sqlitePath(first.stateDir));
+    expect(db.worldSnapshot.load().projects.some((item) => item.id === project.id)).toBe(true);
+    db.close();
+    fs.unlinkSync(path.join(first.stateDir, "world.json"));
+
+    const second = await startComposed(first.stateDir);
+    const listed = await json(second.daemon.port, "/api/v1/projects", { headers: second.auth });
+    expect(listed.status).toBe(200);
+    const items = (listed.body as { items: Array<{ id: string; name: string }> }).items;
+    expect(items.some((item) => item.id === project.id && item.name === "SQLite authority")).toBe(
+      true,
+    );
+  });
+
+  it("stores a policy plan.apply digest and rejects confirm when it no longer matches", async () => {
+    const harness = await startComposed();
+    const { daemon, auth, services } = harness;
+    const created = await json(daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-pol"),
+      body: JSON.stringify({
+        name: "Policy digest",
+        objective: "gate confirm",
+        operationId: "op_pol_c",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(daemon.port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-pol", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_pol_p" }),
+    });
+    expect(planned.status).toBe(200);
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+
+    const listed = await json(daemon.port, `/api/v1/approvals?projectId=${project.id}`, {
+      headers: auth,
+    });
+    const planApproval = (
+      listed.body as {
+        items: Array<{
+          id: string;
+          gate: string;
+          status: string;
+          actionDigest: string;
+          resource: string;
+          artifactVersionId?: string;
+        }>;
+      }
+    ).items.find((item) => item.gate === "plan");
+    expect(planApproval).toBeTruthy();
+    if (!planApproval) {
+      throw new Error("expected a plan approval");
+    }
+    expect(planApproval.actionDigest).toBe(
+      createCanonicalAction({
+        type: "plan.apply",
+        resource: planApproval.resource,
+        params: MOCK_PLAN_DOCUMENT,
+        ...(planApproval.artifactVersionId !== undefined
+          ? { version: planApproval.artifactVersionId }
+          : {}),
+      }).digest,
+    );
+
+    const wrongApprove = await json(daemon.port, `/api/v1/approvals/${planApproval.id}:approve`, {
+      method: "POST",
+      headers: commandHeaders(auth, "approve-wrong", 1),
+      body: JSON.stringify({
+        decisionReason: "stale",
+        digest: "deadbeef",
+        operationId: "op_pol_wrong",
+      }),
+    });
+    expect(wrongApprove.status).toBe(409);
+    expect(wrongApprove.body).toMatchObject({ code: "conflict" });
+
+    const stored = services.app.world.approvals.get(planApproval.id);
+    if (!stored) {
+      throw new Error("expected stored plan approval");
+    }
+    stored.actionDigest = "tampered";
+    const confirmed = await json(daemon.port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-pol", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_pol_cf",
+      }),
+    });
+    expect(confirmed.status).toBe(409);
+    expect(confirmed.body).toMatchObject({ code: "conflict" });
+  });
+
+  it("integrates developer patches and exports a digest after artifact approval", async () => {
+    const harness = await startComposed();
+    const { daemon, auth } = harness;
+    const port = daemon.port;
+    const created = await json(port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-exp"),
+      body: JSON.stringify({
+        name: "Export path",
+        objective: "integrate then export",
+        operationId: "op_exp_c",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-exp", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_exp_p" }),
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await json(port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-exp", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_exp_cf",
+      }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+    await json(port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "start-exp", ready.stateRevision),
+      body: JSON.stringify({ operationId: "op_exp_s" }),
+    });
+
+    const artifactApproval = await poll(async () => {
+      const listed = await json(port, `/api/v1/approvals?projectId=${project.id}`, {
+        headers: auth,
+      });
+      return (
+        listed.body as {
+          items: Array<{
+            id: string;
+            gate: string;
+            status: string;
+            actionDigest: string;
+            artifactVersionId?: string;
+            stateRevision: number;
+          }>;
+        }
+      ).items.find((item) => item.gate === "artifact" && item.status === "pending");
+    }, 4000);
+
+    const approved = await json(port, `/api/v1/approvals/${artifactApproval.id}:approve`, {
+      method: "POST",
+      headers: commandHeaders(auth, "approve-exp", artifactApproval.stateRevision),
+      body: JSON.stringify({
+        decisionReason: "accept integrated digest",
+        digest: artifactApproval.actionDigest,
+        ...(artifactApproval.artifactVersionId
+          ? { artifactVersionId: artifactApproval.artifactVersionId }
+          : {}),
+        operationId: "op_exp_a",
+      }),
+    });
+    expect(approved.status).toBe(200);
+
+    const live = await json(port, `/api/v1/projects/${project.id}`, { headers: auth });
+    const liveProject = live.body as { stateRevision: number };
+    const exported = await json(port, `/api/v1/projects/${project.id}:export`, {
+      method: "POST",
+      headers: commandHeaders(auth, "export-1", liveProject.stateRevision),
+      body: JSON.stringify({ operationId: "op_export" }),
+    });
+    expect(exported.status).toBe(200);
+    const bundle = exported.body as {
+      digest: string;
+      artifactVersionId: string;
+      report: { projectId: string; approvedDigest?: string; integratedDigest?: string };
+    };
+    expect(bundle.digest.length).toBeGreaterThan(8);
+    expect(bundle.report.projectId).toBe(project.id);
+    expect(bundle.report.approvedDigest).toBe(artifactApproval.actionDigest);
   });
 });

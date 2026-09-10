@@ -50,6 +50,15 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
       "staging rows without available status are crash window 3; bind after metadata commit",
   },
   {
+    record: "Budget / reservation / usage key",
+    location:
+      "budgets columns (limit/reserved/settled/authorization); budget_reservations; usage_ledger.idempotency_key",
+    uniqueness:
+      "PK budgets.id; PK budget_reservations.id; UNIQUE (organization_id, idempotency_key)",
+    recovery:
+      "load budgets + active reservations + usage keys after restart; world.json is sidecar only",
+  },
+  {
     record: "usage dedup and resource occupancy",
     location: "usage_ledger.idempotency_key; resource_allocations (tables)",
     uniqueness: "UNIQUE (organization_id, idempotency_key); UNIQUE run_id on allocations",

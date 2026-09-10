@@ -115,7 +115,7 @@ export type CatalogClient = {
   getProjectBudget?: (id: string) => Promise<unknown>;
   createProjectWorkspace?: (
     projectId: string,
-    input: { authorizationId: string },
+    input: { authorizationRef: string },
     options: CommandOptions,
   ) => Promise<unknown>;
 };

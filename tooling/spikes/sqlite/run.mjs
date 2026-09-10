@@ -147,9 +147,12 @@ function initDb(file, { wal = false, synchronous, seed = true } = {}) {
       "queued",
       1,
     );
-    db.prepare(
-      "INSERT INTO events (id, run_id, sequence, type) VALUES (?, ?, ?, ?)",
-    ).run("seed-ev", "seed-run", 1, "seeded");
+    db.prepare("INSERT INTO events (id, run_id, sequence, type) VALUES (?, ?, ?, ?)").run(
+      "seed-ev",
+      "seed-run",
+      1,
+      "seeded",
+    );
   }
   const info = pragmas(db);
   db.close();
@@ -158,12 +161,18 @@ function initDb(file, { wal = false, synchronous, seed = true } = {}) {
 
 function snapshot(db) {
   return {
-    runs: db.prepare("SELECT * FROM runs ORDER BY id").all().map((r) => ({ ...r })),
+    runs: db
+      .prepare("SELECT * FROM runs ORDER BY id")
+      .all()
+      .map((r) => ({ ...r })),
     events: db
       .prepare("SELECT * FROM events ORDER BY run_id, sequence")
       .all()
       .map((r) => ({ ...r })),
-    outbox: db.prepare("SELECT * FROM outbox ORDER BY id").all().map((r) => ({ ...r })),
+    outbox: db
+      .prepare("SELECT * FROM outbox ORDER BY id")
+      .all()
+      .map((r) => ({ ...r })),
   };
 }
 
@@ -200,15 +209,21 @@ function insertRun(db, id, status, revision) {
 }
 
 function insertEvent(db, id, runId, sequence, type) {
-  db.prepare(
-    "INSERT INTO events (id, run_id, sequence, type) VALUES (?, ?, ?, ?)",
-  ).run(id, runId, sequence, type);
+  db.prepare("INSERT INTO events (id, run_id, sequence, type) VALUES (?, ?, ?, ?)").run(
+    id,
+    runId,
+    sequence,
+    type,
+  );
 }
 
 function insertOutbox(db, id, runId, eventId, topic) {
-  db.prepare(
-    "INSERT INTO outbox (id, run_id, event_id, topic) VALUES (?, ?, ?, ?)",
-  ).run(id, runId, eventId, topic);
+  db.prepare("INSERT INTO outbox (id, run_id, event_id, topic) VALUES (?, ?, ?, ?)").run(
+    id,
+    runId,
+    eventId,
+    topic,
+  );
 }
 
 function spawnChild(argList, { timeoutMs = 20_000, stdio = "pipe" } = {}) {
@@ -458,9 +473,10 @@ function exp3Constraint() {
   const afterRollback = snapshot(db);
 
   db.exec("BEGIN IMMEDIATE");
-  db.prepare(
-    "UPDATE runs SET status = ?, state_revision = state_revision + 1 WHERE id = ?",
-  ).run("running", "seed-run");
+  db.prepare("UPDATE runs SET status = ?, state_revision = state_revision + 1 WHERE id = ?").run(
+    "running",
+    "seed-run",
+  );
   let naiveErr;
   try {
     insertEvent(db, "ev-dup-2", "seed-run", 1, "duplicate-seq");
@@ -587,9 +603,7 @@ async function exp5CrashWal() {
   const exitTest = await crashOnce({ name: "5-crash-wal-exit", wal: true, mode: "exit" });
   const killTest = await crashOnce({ name: "5-crash-wal-kill", wal: true, mode: "kill" });
   const sawWal =
-    (killTest.crash.filesInTxn ?? killTest.filesAfterCrash).some((f) =>
-      f.name.endsWith("-wal"),
-    ) ||
+    (killTest.crash.filesInTxn ?? killTest.filesAfterCrash).some((f) => f.name.endsWith("-wal")) ||
     killTest.filesAfterCrash.some((f) => f.name.endsWith("-wal")) ||
     exitTest.filesAfterCrash.some((f) => f.name.endsWith("-wal"));
   return {
@@ -871,8 +885,12 @@ function sqlite3Cli() {
 }
 
 function printSummary(report) {
-  console.log(`SPIKE sqlite  node ${report.env.node}  sqlite ${report.env.sqliteBundled}  ${report.env.platform}`);
-  console.log(`sqlite3 CLI: ${report.env.sqlite3Cli.found ? report.env.sqlite3Cli.path : "not found"}`);
+  console.log(
+    `SPIKE sqlite  node ${report.env.node}  sqlite ${report.env.sqliteBundled}  ${report.env.platform}`,
+  );
+  console.log(
+    `sqlite3 CLI: ${report.env.sqlite3Cli.found ? report.env.sqlite3Cli.path : "not found"}`,
+  );
   console.log("");
   for (const exp of report.experiments) {
     const mark = exp.pass ? "PASS" : "FAIL";

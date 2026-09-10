@@ -10,6 +10,7 @@ import {
   runStatusLabel,
   shouldShowInput,
   shouldShowPause,
+  mergeEventLists,
   timelineFromEvents,
 } from "./model.js";
 
@@ -91,6 +92,36 @@ describe("run timeline", () => {
     ]);
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.key)).toEqual(["id:evt_1", "pos:2"]);
+  });
+
+  it("merges snapshot and live SSE events without duplicating ids", () => {
+    const snapshot = [
+      {
+        id: "evt_1",
+        type: "run.status_changed",
+        ingestionPosition: 1,
+        time: "2026-09-10T00:00:01.000Z",
+        data: { to: "running" },
+      },
+    ];
+    const live = [
+      {
+        id: "evt_1",
+        type: "run.status_changed",
+        ingestionPosition: 1,
+        time: "2026-09-10T00:00:01.000Z",
+        data: { to: "running" },
+      },
+      {
+        id: "evt_2",
+        type: "run.status_changed",
+        ingestionPosition: 2,
+        time: "2026-09-10T00:00:02.000Z",
+        data: { to: "succeeded" },
+      },
+    ];
+    const rows = timelineFromEvents(mergeEventLists(snapshot, live));
+    expect(rows.map((row) => row.id)).toEqual(["evt_1", "evt_2"]);
   });
 
   it("renders a single timeline row when the same event is ingested twice", () => {
