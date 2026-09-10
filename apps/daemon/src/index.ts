@@ -1,10 +1,13 @@
 import { startDaemon, parseDaemonArgs, isEntrypoint } from "./bootstrap/index.js";
+import { createComposedAppServices } from "./composition/index.js";
 
 export const packageName = "@workforce/daemon" as const;
 export { startDaemon, parseDaemonArgs, isEntrypoint } from "./bootstrap/index.js";
 export type { DaemonOptions, StartedDaemon } from "./bootstrap/index.js";
 export { FakeAppServices } from "./modules/fake-app-services.js";
 export type { AppServices } from "./modules/index.js";
+export { createComposedAppServices } from "./composition/index.js";
+export type { ComposedAppServicesOptions } from "./composition/index.js";
 
 async function main(): Promise<void> {
   const args = parseDaemonArgs(process.argv.slice(2));
@@ -12,8 +15,10 @@ async function main(): Promise<void> {
     process.stderr.write("daemon: --state-dir is required\n");
     process.exit(2);
   }
+  const services = await createComposedAppServices({ stateDir: args.stateDir });
   const started = await startDaemon({
     stateDir: args.stateDir,
+    services,
     ...(args.protocolVersion !== undefined ? { protocolVersion: args.protocolVersion } : {}),
     ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
   });

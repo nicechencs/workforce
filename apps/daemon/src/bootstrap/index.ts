@@ -124,6 +124,9 @@ export async function startDaemon(options: DaemonOptions): Promise<StartedDaemon
 
   const close = async (): Promise<void> => {
     await app.close();
+    if (typeof services.close === "function") {
+      await services.close();
+    }
     await new Promise<void>((resolve) => lock.close(() => resolve()));
   };
 

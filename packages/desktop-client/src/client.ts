@@ -13,21 +13,28 @@ import type {
   CommandOptions,
   ConfirmPlanInput,
   CreateProjectInput,
+  CreateWorkspaceInput,
   EventListQuery,
   HealthDto,
   ListQuery,
+  NodeDto,
   OperationDto,
   PageDto,
   PatchProjectInput,
   ProblemDetails,
+  ProjectBudgetDto,
   ProjectDto,
   ReadyDto,
   RunDto,
   RunInputBody,
+  RuntimeCapabilitiesDto,
+  RuntimeDto,
   SessionDto,
   StartProjectInput,
   TaskDto,
+  TeamDto,
   VersionDto,
+  WorkspaceDto,
 } from "./types.js";
 
 export interface DesktopClientOptions {
@@ -115,6 +122,46 @@ export class DesktopClient {
     input: CancelInput = {},
   ): Promise<CommandAcceptedDto | ProjectDto> {
     return this.send("POST", paths.projectCancel(id), options, withOperation(input, options));
+  }
+
+  listTeams(query?: ListQuery): Promise<PageDto<TeamDto>> {
+    return this.get(paths.teams(query));
+  }
+
+  getTeam(id: string): Promise<TeamDto> {
+    return this.get(paths.team(id));
+  }
+
+  listNodes(query?: ListQuery): Promise<PageDto<NodeDto>> {
+    return this.get(paths.nodes(query));
+  }
+
+  getNode(id: string): Promise<NodeDto> {
+    return this.get(paths.node(id));
+  }
+
+  listRuntimes(query?: ListQuery): Promise<PageDto<RuntimeDto>> {
+    return this.get(paths.runtimes(query));
+  }
+
+  getRuntime(id: string): Promise<RuntimeDto> {
+    return this.get(paths.runtime(id));
+  }
+
+  getRuntimeCapabilities(id: string): Promise<RuntimeCapabilitiesDto> {
+    return this.get(paths.runtimeCapabilities(id));
+  }
+
+  getProjectBudget(id: string): Promise<ProjectBudgetDto> {
+    return this.get(paths.projectBudget(id));
+  }
+
+  createProjectWorkspace(
+    id: string,
+    input: CreateWorkspaceInput,
+    options: CommandOptions,
+  ): Promise<WorkspaceDto> {
+    return this.send("POST", paths.projectWorkspaces(id), options, withOperation(input, options));
   }
 
   listTasks(query?: ListQuery): Promise<PageDto<TaskDto>> {

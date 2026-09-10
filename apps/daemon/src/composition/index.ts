@@ -1,0 +1,14 @@
+export {
+  ComposedAppServices,
+  createComposedAppServices,
+  type ComposedAppServicesOptions,
+} from "./app-services.js";
+export {
+  LOCAL_NODE_ID,
+  MOCK_RUNTIME_ID,
+  SOFTWARE_TEAM,
+  TEAM_ID,
+  TEAM_VERSION_ID,
+  mockPlanGraph,
+} from "./catalog.js";
+export { createEnginePort } from "./engine.js";

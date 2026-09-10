@@ -18,5 +18,9 @@ describe("desktop-client paths", () => {
     expect(paths.projectStartPlanning("prj_1")).toBe("/api/v1/projects/prj_1:start-planning");
     expect(paths.runCancel("run_1")).toBe("/api/v1/runs/run_1:cancel");
     expect(paths.approvalRequestChanges("apr_1")).toBe("/api/v1/approvals/apr_1:request-changes");
+    expect(paths.teams()).toBe("/api/v1/teams");
+    expect(paths.runtimeCapabilities("mock")).toBe("/api/v1/runtimes/mock/capabilities");
+    expect(paths.projectBudget("prj_1")).toBe("/api/v1/projects/prj_1/budget");
+    expect(paths.projectWorkspaces("prj_1")).toBe("/api/v1/projects/prj_1/workspaces");
   });
 });

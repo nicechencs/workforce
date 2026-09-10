@@ -9,6 +9,17 @@ import {
 } from "@workforce/workflow-engine";
 
 import { sha256Hex } from "./digest.js";
+import {
+  LOCAL_NODE,
+  LOCAL_NODE_ID,
+  MOCK_RUNTIME,
+  MOCK_RUNTIME_CAPABILITIES,
+  MOCK_RUNTIME_ID,
+  SOFTWARE_TEAM,
+  TEAM_ID,
+  pageOf,
+  unknownProjectBudget,
+} from "../composition/catalog.js";
 import type {
   ApprovalDecisionInput,
   ApprovalDto,
@@ -22,15 +33,22 @@ import type {
   CommandContext,
   ConfirmPlanInput,
   CreateProjectInput,
+  CreateWorkspaceInput,
   EventListQuery,
   ListQuery,
+  NodeDto,
   PageDto,
   PatchProjectInput,
+  ProjectBudgetDto,
   ProjectDto,
   RunDto,
   RunInputBody,
+  RuntimeCapabilitiesDto,
+  RuntimeDto,
   StartProjectInput,
   TaskDto,
+  TeamDto,
+  WorkspaceDto,
 } from "./dto.js";
 import { AppError } from "./errors.js";
 import { createIdFactory, prefixes, type IdFactory } from "./ids.js";
@@ -135,6 +153,73 @@ export class FakeAppServices implements AppServices {
 
   rememberOperation(receipt: CommandReceipt): void {
     this.operations.set(receipt.operationId, receipt);
+  }
+
+  async close(): Promise<void> {
+    return;
+  }
+
+  listTeams(_query: ListQuery): PageDto<TeamDto> {
+    void _query;
+    return pageOf([SOFTWARE_TEAM]);
+  }
+
+  getTeam(id: string): TeamDto | null {
+    return id === TEAM_ID ? SOFTWARE_TEAM : null;
+  }
+
+  listNodes(_query: ListQuery): PageDto<NodeDto> {
+    void _query;
+    return pageOf([LOCAL_NODE]);
+  }
+
+  getNode(id: string): NodeDto | null {
+    return id === LOCAL_NODE_ID ? LOCAL_NODE : null;
+  }
+
+  listRuntimes(_query: ListQuery): PageDto<RuntimeDto> {
+    void _query;
+    return pageOf([MOCK_RUNTIME]);
+  }
+
+  getRuntime(id: string): RuntimeDto | null {
+    return id === MOCK_RUNTIME_ID ? MOCK_RUNTIME : null;
+  }
+
+  getRuntimeCapabilities(id: string): RuntimeCapabilitiesDto | null {
+    return id === MOCK_RUNTIME_ID ? MOCK_RUNTIME_CAPABILITIES : null;
+  }
+
+  getProjectBudget(id: string): ProjectBudgetDto | null {
+    if (!this.projects.has(id)) {
+      return null;
+    }
+    return unknownProjectBudget(id);
+  }
+
+  createProjectWorkspace(
+    ctx: CommandContext,
+    id: string,
+    input: CreateWorkspaceInput,
+  ): CommandResult<WorkspaceDto> {
+    const record = this.requireProject(id);
+    this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
+    const ts = this.timestamp();
+    const authorizationRef =
+      input.authorizationRef.startsWith("/") ||
+      /^[a-zA-Z]:[\\/]/.test(input.authorizationRef) ||
+      input.authorizationRef.startsWith("\\\\")
+        ? `ref_${sha256Hex(input.authorizationRef).slice(0, 16)}`
+        : input.authorizationRef;
+    const dto: WorkspaceDto = {
+      id: this.ids(prefixes.workspace),
+      projectId: record.dto.id,
+      status: "bound",
+      kind: "local",
+      authorizationRef,
+      createdAt: ts,
+    };
+    return { status: 201, body: dto, revision: record.dto.stateRevision };
   }
 
   listProjects(query: ListQuery): PageDto<ProjectDto> {
@@ -461,6 +546,11 @@ export class FakeAppServices implements AppServices {
       },
       revision: next.stateRevision,
     };
+  }
+
+  pauseRun(_ctx: CommandContext, id: string): CommandResult<CommandAcceptedDto | RunDto> {
+    this.requireRun(id);
+    throw new AppError("unsupported_capability", "lifecycle.pause is unsupported");
   }
 
   sendRunInput(ctx: CommandContext, id: string, input: RunInputBody): CommandResult<RunDto> {

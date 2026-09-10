@@ -65,6 +65,8 @@ export interface TaskDto {
   cancelRequested: boolean;
   createdAt: string;
   updatedAt: string;
+  role?: string;
+  workflowNodeId?: string;
 }
 
 export interface RunDto {
@@ -199,4 +201,76 @@ export interface CommandContext {
   clientId: string;
   operationId: string;
   ifMatch?: number;
+}
+
+export interface TeamRoleDto {
+  id: string;
+  role: string;
+  version: string;
+}
+
+export interface TeamDto {
+  id: string;
+  name: string;
+  version: string;
+  status: "published";
+  protocolVersion: "0.1";
+  roles: TeamRoleDto[];
+}
+
+export interface NodeDto {
+  id: string;
+  kind: "local";
+  status: "online" | "offline";
+  platform: "windows" | "macos" | "linux";
+  displayName: string;
+  capacity: { maxConcurrentRuns: number };
+}
+
+export interface RuntimeDto {
+  id: string;
+  displayName: string;
+  adapterId: string;
+  version: string;
+  protocolVersion: "0.1";
+  transport: "sdk";
+}
+
+export interface RuntimeCapabilityItemDto {
+  name: string;
+  version: string;
+  available: boolean;
+}
+
+export interface RuntimeCapabilitiesDto {
+  runtimeId: string;
+  input: boolean;
+  pause: boolean;
+  resume: boolean;
+  takeOver: boolean;
+  capabilities: RuntimeCapabilityItemDto[];
+}
+
+export interface ProjectBudgetDto {
+  projectId: string;
+  currency: string;
+  kind: "unknown" | "estimated" | "settled";
+  reservedMinor: number;
+  settledMinor: number;
+  authorizationVersion: number;
+  estimatedLimitMinor?: number;
+  settledLimitMinor?: number;
+}
+
+export interface WorkspaceDto {
+  id: string;
+  projectId: string;
+  status: string;
+  kind: "local";
+  authorizationRef: string;
+  createdAt: string;
+}
+
+export interface CreateWorkspaceInput {
+  authorizationRef: string;
 }

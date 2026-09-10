@@ -132,12 +132,50 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   app.get("/api/v1/projects", async (request) => deps.services.listProjects(listQuery(request)));
 
+  app.get("/api/v1/teams", async (request) => deps.services.listTeams(listQuery(request)));
+  app.get("/api/v1/teams/:id", async (request) =>
+    requireFound(deps.services.getTeam(param(request, "id")), "Team not found"),
+  );
+  app.get("/api/v1/nodes", async (request) => deps.services.listNodes(listQuery(request)));
+  app.get("/api/v1/nodes/:id", async (request) =>
+    requireFound(deps.services.getNode(param(request, "id")), "Node not found"),
+  );
+  app.get("/api/v1/runtimes", async (request) => deps.services.listRuntimes(listQuery(request)));
+  app.get("/api/v1/runtimes/:id", async (request) =>
+    requireFound(deps.services.getRuntime(param(request, "id")), "Runtime not found"),
+  );
+  app.get("/api/v1/runtimes/:id/capabilities", async (request) =>
+    requireFound(deps.services.getRuntimeCapabilities(param(request, "id")), "Runtime not found"),
+  );
+
   app.get("/api/v1/projects/:id", async (request, reply) => {
     const project = requireFound(
       deps.services.getProject(param(request, "id")),
       "Project not found",
     );
     sendDto(reply, 200, project, project.stateRevision);
+  });
+
+  app.get("/api/v1/projects/:id/budget", async (request) =>
+    requireFound(deps.services.getProjectBudget(param(request, "id")), "Project not found"),
+  );
+
+  app.post("/api/v1/projects/:id/workspaces", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /projects/{id}/workspaces",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["authorizationRef", "operationId"]);
+        return deps.services.createProjectWorkspace(ctx, param(request, "id"), {
+          authorizationRef: requiredString(body, "authorizationRef"),
+        });
+      },
+    );
   });
 
   app.patch("/api/v1/projects/:id", async (request, reply) => {
@@ -235,6 +273,22 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/v1/runs/:id", async (request, reply) => {
     const run = requireFound(deps.services.getRun(param(request, "id")), "Run not found");
     sendDto(reply, 200, run, run.stateRevision);
+  });
+
+  app.post(commandRoute("runs", "pause"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /runs/{id}:pause",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.pauseRun(ctx, param(request, "id"));
+      },
+    );
   });
 
   app.post(commandRoute("runs", "cancel"), async (request, reply) => {
@@ -372,7 +426,11 @@ function registerProjectCommand(
   app: FastifyInstance,
   cmd: CommandFn,
   action: string,
-  run: (ctx: CommandContext, id: string, body: Record<string, unknown>) => CommandOutcome,
+  run: (
+    ctx: CommandContext,
+    id: string,
+    body: Record<string, unknown>,
+  ) => CommandOutcome | Promise<CommandOutcome>,
 ): void {
   app.post(commandRoute("projects", action), async (request, reply) => {
     await cmd(
