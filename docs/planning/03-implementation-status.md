@@ -25,7 +25,7 @@
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob |
-| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流（模板·版本·结构化步骤，夹具；无画布编辑器） |
+| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流（模板·版本·结构化步骤，夹具；无画布编辑器）；项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **本轮起步** | detect/describe/validate；**拒绝** live start |
@@ -62,7 +62,8 @@ pnpm exec vitest run      # 全量 unit + integration + happy-dom 页 driver
 
 4. **桌面**  
    `apps/desktop` unit tests 覆盖 IPC 白名单、hash 路由、feature glob、SSE 解析、页面 view-model（412 保留表单、取消中、未知成本非 0、pause 隐藏）。  
-   **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → 绑定工作区（测试 preload 假 picker）→ 开始规划 → 确认计划 → 开始执行。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
+   **项目详情标签：** 对照修订后的 IA §4.3.1–§4.3.4：页头保留项目命令与只读摘要；六标签为 概览 / Tasks / Runs / Artifacts / Activity / Settings。WorkspaceBinding 写入只在 Settings（`project-bind-workspace`）；概览只有进度计数，不含 Task DAG。Tasks / Runs / Artifacts / Activity 复用 `listTasks` / `listRuns` / `listArtifacts` / `listEvents`；公开 Task DTO 无 `dependsOn` 时显示“依赖：未返回”。深链 `#/projects/:id?tab=` 由项目页读取（壳路由仍只解析 path）。  
+   **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → Settings 绑定工作区（测试 preload 假 picker）→ 页头开始规划 → 确认计划 → 开始执行 → Tasks 核对 `dev_alpha` / `dev_bravo`。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **Codex**  
@@ -73,7 +74,7 @@ pnpm exec vitest run      # 全量 unit + integration + happy-dom 页 driver
 
 ```text
 创建 Project(draft)                         ✅ HTTP + 项目页
-绑定 Workspace + 预设 Team + Mock + 预算     ✅ 默认填充；UI 可选目录授权
+绑定 Workspace + 预设 Team + Mock + 预算     ✅ 默认填充；UI 在 Settings 选目录授权（IA §4.3.4）
 Project(planning) + Plan Artifact           ✅ fixture，无真实 Planner Run
 Approval(gate=plan)                         ✅ start-planning 创建，confirm 消费
 发布执行图，Project(ready/running)           ✅
@@ -89,11 +90,12 @@ Approval(gate=artifact)                     ✅
 
 ## 5. 剩余工作
 
-1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台与视觉。  
+1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
 3. **T17** 打包。  
 4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。  
-5. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。
+5. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。  
+6. 项目详情 Tasks 依赖边、可写项目策略与远程节点范围仍缺公开 DTO/API，UI 只展示诚实空态或只读说明，未伪造已接入。
 
 ## 6. 如何跑
 

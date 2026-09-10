@@ -187,6 +187,16 @@ describe("desktop project main path", () => {
         createButton.click();
       });
 
+      expect(document.querySelector('[data-testid="project-tab-panel-overview"]')).not.toBeNull();
+      expect(document.querySelector('[data-testid="project-bind-workspace"]')).toBeNull();
+      expect(document.querySelector('[data-testid="project-task-list"]')).toBeNull();
+
+      const settingsTab = await waitFor("settings-tab", () =>
+        document.querySelector<HTMLButtonElement>('[data-testid="project-tab-settings"]'),
+      );
+      await act(async () => {
+        settingsTab.click();
+      });
       const bindButton = await waitFor("bind-workspace", () =>
         document.querySelector<HTMLButtonElement>('[data-testid="project-bind-workspace"]'),
       );
@@ -234,14 +244,35 @@ describe("desktop project main path", () => {
         const text = document.querySelector('[data-testid="project-status"]')?.textContent?.trim();
         return text === "执行中" || text === "已完成" ? text : null;
       });
+      const tasksTab = await waitFor("tasks-tab", () =>
+        document.querySelector<HTMLButtonElement>('[data-testid="project-tab-tasks"]'),
+      );
+      await act(async () => {
+        tasksTab.click();
+      });
       const tasks = await waitFor("published-tasks", () => {
-        const text = document.body.innerText;
+        const text =
+          document.querySelector('[data-testid="project-task-list"]')?.textContent ??
+          document.body.innerText;
         return text.includes("dev_alpha") && text.includes("dev_bravo") ? text : null;
       });
 
       expect(status === "执行中" || status === "已完成").toBe(true);
       expect(tasks).toContain("dev_alpha");
       expect(tasks).toContain("dev_bravo");
+
+      for (const id of ["overview", "tasks", "runs", "artifacts", "activity", "settings"]) {
+        const button = await waitFor(`project-tab-${id}`, () =>
+          document.querySelector<HTMLButtonElement>(`[data-testid="project-tab-${id}"]`),
+        );
+        await act(async () => {
+          button.click();
+        });
+        expect(document.querySelector(`[data-testid="project-tab-panel-${id}"]`)).not.toBeNull();
+      }
+      expect(document.querySelector('[data-testid="project-detail-tabs"]')?.textContent).toContain(
+        "概览",
+      );
     },
   );
 });

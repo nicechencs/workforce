@@ -23,7 +23,7 @@ P0 最小切片（M3 必须能走完主路径）：
 |---|---|---|
 | 应用壳 / 连接状态 | 必须 | Daemon 健康、重连、版本不兼容错误 |
 | 工作台 | 部分 | 待审批、运行中 Run、活跃项目；不做复杂统计 |
-| 项目列表 / 创建 / 详情 | 必须 | 创建、配置、规划确认、Task DAG |
+| 项目列表 / 创建 / 详情 | 必须 | 创建、配置、规划确认、Task DAG。详情分区见 IA §4.3：配置写入在 Settings，DAG 在 Tasks，项目命令在页头 |
 | Task 详情 | 必须 | 依赖、验收、Run 历史 |
 | Run 控制台 | 必须 | 时间线、日志、取消、用量（未知成本展示） |
 | Artifact 查看 | 必须 | 固定版本 diff/内容/Evaluation |
@@ -129,7 +129,7 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 
 | Method | Path | M3 | 说明 |
 |---|---|---|---|
-| POST | `/projects/{id}/workspaces` | 必须 | Main 传入一次性授权引用 |
+| POST | `/projects/{id}/workspaces` | 必须 | 项目详情 Settings；Main 传入一次性授权引用 |
 | GET | `/workspaces/{id}` | 必须 | 安全化元数据，无宿主绝对路径明文（内部 token 可有） |
 | POST | `/workspaces/{id}:validate` | 必须 | — |
 | POST | `/workspaces/{id}:provision` | 必须 | Mock 可用临时目录 |
@@ -144,7 +144,7 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | GET | `/teams` | 必须 | 预设列表 |
 | GET | `/teams/{id}` | 必须 | 只读 Worker 版本 |
 | POST/PATCH `/teams` | — | later | 无写接口 |
-| GET | `/projects/{id}/budget` | 必须 | unknown/estimated/settled |
+| GET | `/projects/{id}/budget` | 必须 | 页头只读 + Settings；unknown/estimated/settled |
 | POST | `/projects/{id}/budget:raise` | M5 | 需 budget gate |
 
 ## 3. 错误与并发（T02 生成）
@@ -179,7 +179,7 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | 用户动作 | Command | 前置 |
 |---|---|---|
 | 新建项目 | `POST /projects` | — |
-| 选择仓库 | 原生 dialog → `POST .../workspaces` | draft |
+| 选择仓库 | 项目详情 Settings → 原生 dialog → `POST .../workspaces` | draft |
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
 | 开始规划 | `:start-planning` | 配置齐 |
 | 确认计划 | `:confirm-plan` 或 `approvals/:approve` gate=plan | Plan Artifact available |

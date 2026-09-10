@@ -1,19 +1,38 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { ArtifactDto, RunDto } from "@workforce/desktop-client";
 
 import { problemFrom } from "./command.js";
 import {
   applyFormFailure,
   applyProjectRefresh,
+  artifactKindLabel,
   budgetPlaceholder,
   emptyCreateForm,
+  emptyTasksCopy,
   hiddenIllegalActions,
   isDraftConfigComplete,
+  nodeScopeLabel,
+  pinnedArtifactVersion,
+  projectPolicyCopy,
+  projectProgressLabel,
   projectStatusLabel,
   publicWorkspaceLabel,
   reduceCreateProjectForm,
+  splitProjectRuns,
+  taskDependencyLabel,
+  taskOwnerLabel,
   visibleProjectActions,
   type ProjectActionInput,
 } from "./model.js";
+import {
+  hashWithProjectTab,
+  parseProjectDetailTab,
+  parseTabFromHash,
+  PROJECT_DETAIL_TAB_LABELS,
+  PROJECT_DETAIL_TABS,
+} from "./tabs.js";
 
 function actions(partial: Partial<ProjectActionInput> & Pick<ProjectActionInput, "status">) {
   const input: ProjectActionInput = {
@@ -164,5 +183,124 @@ describe("draft config and budget", () => {
     expect(publicWorkspaceLabel(null)).toBe("未绑定");
     expect(publicWorkspaceLabel({ displayLabel: "repo" })).toBe("repo");
     expect(publicWorkspaceLabel({ displayLabel: "repo" })).not.toContain("/");
+  });
+});
+
+describe("project detail tabs", () => {
+  it("accepts the six IA §4.3 tabs and defaults unknown values to 概览", () => {
+    expect(PROJECT_DETAIL_TABS).toEqual([
+      "overview",
+      "tasks",
+      "runs",
+      "artifacts",
+      "activity",
+      "settings",
+    ]);
+    expect(PROJECT_DETAIL_TAB_LABELS.overview).toBe("概览");
+    expect(parseProjectDetailTab("runs")).toBe("runs");
+    expect(parseProjectDetailTab("nope")).toBe("overview");
+    expect(parseProjectDetailTab(undefined)).toBe("overview");
+  });
+
+  it("reads and writes a hash query tab without changing the project path", () => {
+    expect(parseTabFromHash("#/projects/prj_1")).toBe("overview");
+    expect(parseTabFromHash("#/projects/prj_1?tab=tasks")).toBe("tasks");
+    expect(parseTabFromHash("#/projects/prj_1?tab=bogus")).toBe("overview");
+    expect(hashWithProjectTab("/projects/prj_1", "overview")).toBe("#/projects/prj_1");
+    expect(hashWithProjectTab("/projects/prj_1", "activity")).toBe("#/projects/prj_1?tab=activity");
+  });
+
+  it("renders IA tab labels in the page chrome", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        "nav",
+        { "data-testid": "project-detail-tabs" },
+        PROJECT_DETAIL_TABS.map((id) =>
+          createElement(
+            "button",
+            { key: id, "data-testid": `project-tab-${id}` },
+            PROJECT_DETAIL_TAB_LABELS[id],
+          ),
+        ),
+      ),
+    );
+    expect(html).toContain("概览");
+    expect(html).toContain("Tasks");
+    expect(html).toContain("Runs");
+    expect(html).toContain("Artifacts");
+    expect(html).toContain("Activity");
+    expect(html).toContain("Settings");
+    expect(html).toContain('data-testid="project-tab-settings"');
+  });
+});
+
+describe("project detail tab models", () => {
+  it("summarizes progress and honest owner/deps copy", () => {
+    expect(projectProgressLabel([])).toBe("进度：尚无已发布任务");
+    expect(
+      projectProgressLabel([{ status: "completed" }, { status: "running" }, { status: "ready" }]),
+    ).toBe("进度：1/3 已完成 · 1 进行中");
+    expect(taskOwnerLabel({})).toBe("未指定");
+    expect(taskOwnerLabel({ role: "developer" })).toBe("developer");
+    expect(taskDependencyLabel()).toBe("依赖：未返回");
+    expect(emptyTasksCopy("draft")).toContain("确认计划");
+    expect(emptyTasksCopy("running")).toBe("暂无任务。");
+    expect(nodeScopeLabel()).toContain("本机");
+    expect(projectPolicyCopy({ pause: false, resume: false, archive: false })).toContain(
+      "尚未接入",
+    );
+  });
+
+  it("splits current and historical runs and pins the highest artifact version", () => {
+    const run = (id: string, status: string, createdAt: string): RunDto => ({
+      id,
+      taskId: "tsk_1",
+      projectId: "prj_1",
+      status,
+      stateRevision: 1,
+      definitionRevision: 1,
+      generation: 1,
+      attempt: 1,
+      protocolVersion: "0.1",
+      cancelRequested: false,
+      usage: { costMinor: 0, currency: "USD", kind: "unknown" },
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const split = splitProjectRuns([
+      run("run_old", "succeeded", "2026-09-10T00:00:00.000Z"),
+      run("run_now", "running", "2026-09-10T01:00:00.000Z"),
+    ]);
+    expect(split.current.map((item) => item.id)).toEqual(["run_now"]);
+    expect(split.history.map((item) => item.id)).toEqual(["run_old"]);
+
+    const artifact: ArtifactDto = {
+      id: "art_1",
+      projectId: "prj_1",
+      logicalName: "diff",
+      kind: "git_diff",
+      createdAt: "2026-09-10T00:00:00.000Z",
+      versions: [
+        {
+          id: "arv_1",
+          version: 1,
+          status: "available",
+          hash: "sha256:aaa",
+          size: 10,
+          createdAt: "2026-09-10T00:00:00.000Z",
+        },
+        {
+          id: "arv_2",
+          version: 2,
+          status: "available",
+          hash: "sha256:bbb",
+          size: 12,
+          createdAt: "2026-09-10T01:00:00.000Z",
+        },
+      ],
+    };
+    expect(artifactKindLabel("git_diff")).toBe("代码");
+    expect(pinnedArtifactVersion(artifact)?.id).toBe("arv_2");
+    expect(pinnedArtifactVersion({ versions: [] })).toBeNull();
   });
 });
