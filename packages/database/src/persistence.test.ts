@@ -56,6 +56,35 @@ describe("WorkforceSqlite", () => {
     }
   });
 
+  it("applies 002 on a database that already has 001 without rewriting 001", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      db.connection.exec(MIGRATION_001_SQL);
+      db.connection
+        .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+        .run("001_init", checksumSql(MIGRATION_001_SQL), now);
+      const ran = migrate(db.connection);
+      expect(ran).toEqual(["002_entity_alignment"]);
+      const applied = appliedMigrations(db.connection);
+      expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
+      const columns = db.connection.prepare("PRAGMA table_info(projects)").all();
+      expect(columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining([
+          "workspace_id",
+          "runtime_id",
+          "budget_id",
+          "plan_artifact_version_id",
+          "execution_node_id",
+        ]),
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   it("rolls back state, event, and outbox together", async () => {
     const db = openDb();
     db.seedMinimalGraph(ids, now);
