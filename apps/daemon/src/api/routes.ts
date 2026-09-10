@@ -1,0 +1,443 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import "./fastify-augment.js";
+
+import { AppError } from "../modules/errors.js";
+import type { AppServices, CommandContext, ListQuery } from "../modules/index.js";
+import type { IdFactory } from "../modules/ids.js";
+import type { MemoryReceiptStore } from "../modules/receipts.js";
+import type { SessionRegistry } from "./auth.js";
+import {
+  asObject,
+  optionalInt,
+  optionalString,
+  parseLimit,
+  queryString,
+  queryStringList,
+  rejectUnknownFields,
+  requiredString,
+} from "./body.js";
+import { executeCommand, type CommandOutcome, type CommandSpec } from "./commands.js";
+import { commandRoute } from "./rewrite.js";
+
+interface RouteDeps {
+  services: AppServices;
+  receipts: MemoryReceiptStore;
+  sessions: SessionRegistry;
+  ids: IdFactory;
+  now: () => Date;
+}
+
+function param(request: FastifyRequest, name: string): string {
+  const value = (request.params as Record<string, string | undefined>)[name];
+  if (value === undefined || value.length === 0) {
+    throw new AppError("validation_failed", `${name} is required`);
+  }
+  return value;
+}
+
+function listQuery(request: FastifyRequest): ListQuery {
+  const query = request.query as Record<string, unknown>;
+  const parsed: ListQuery = { limit: parseLimit(query.limit) };
+  const cursor = queryString(query.cursor);
+  const projectId = queryString(query.projectId);
+  const taskId = queryString(query.taskId);
+  const runId = queryString(query.runId);
+  const status = queryString(query.status);
+  if (cursor !== undefined) parsed.cursor = cursor;
+  if (projectId !== undefined) parsed.projectId = projectId;
+  if (taskId !== undefined) parsed.taskId = taskId;
+  if (runId !== undefined) parsed.runId = runId;
+  if (status !== undefined) parsed.status = status;
+  return parsed;
+}
+
+function sendDto(reply: FastifyReply, status: number, body: unknown, revision?: number): void {
+  if (revision !== undefined) {
+    void reply.header("etag", `"${revision}"`);
+  }
+  void reply.code(status).send(body);
+}
+
+function requireFound<T>(value: T | null, message: string): T {
+  if (value === null) {
+    throw new AppError("not_found", message);
+  }
+  return value;
+}
+
+function commandDeps(request: FastifyRequest, deps: RouteDeps) {
+  const session = request.session;
+  if (!session) {
+    throw new AppError("unauthenticated", "Session is required");
+  }
+  return {
+    session,
+    receipts: deps.receipts,
+    services: deps.services,
+    ids: deps.ids,
+    now: deps.now,
+  };
+}
+
+type CommandFn = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  spec: CommandSpec,
+  run: (
+    ctx: CommandContext,
+    body: Record<string, unknown>,
+  ) => CommandOutcome | Promise<CommandOutcome>,
+) => Promise<void>;
+
+export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const cmd: CommandFn = (request, reply, spec, run) =>
+    executeCommand(request, reply, commandDeps(request, deps), spec, run);
+
+  app.get("/api/v1/capabilities", async () => deps.services.capabilities());
+  app.get("/capabilities", async () => deps.services.capabilities());
+
+  app.get("/api/v1/operations/:operationId", async (request) => {
+    const session = request.session;
+    if (!session) {
+      throw new AppError("unauthenticated", "Session is required");
+    }
+    const operationId = param(request, "operationId");
+    const stored = deps.receipts.getByOperationId(operationId);
+    if (stored && stored.receipt.scope.principalId === session.principalId) {
+      return stored.receipt;
+    }
+    const receipt = deps.services.getOperation(operationId, session.principalId);
+    return requireFound(receipt, `Operation ${operationId} not found`);
+  });
+
+  app.post("/api/v1/projects", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /projects",
+        resource: () => "projects",
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["name", "objective", "operationId"]);
+        return deps.services.createProject(ctx, {
+          name: requiredString(body, "name"),
+          objective: requiredString(body, "objective"),
+        });
+      },
+    );
+  });
+
+  app.get("/api/v1/projects", async (request) => deps.services.listProjects(listQuery(request)));
+
+  app.get("/api/v1/projects/:id", async (request, reply) => {
+    const project = requireFound(
+      deps.services.getProject(param(request, "id")),
+      "Project not found",
+    );
+    sendDto(reply, 200, project, project.stateRevision);
+  });
+
+  app.patch("/api/v1/projects/:id", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /projects/{id}",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["name", "objective", "operationId"]);
+        const input: { name?: string; objective?: string } = {};
+        const name = optionalString(body, "name");
+        const objective = optionalString(body, "objective");
+        if (name !== undefined) input.name = name;
+        if (objective !== undefined) input.objective = objective;
+        return deps.services.patchProject(ctx, param(request, "id"), input);
+      },
+    );
+  });
+
+  registerProjectCommand(app, cmd, "start-planning", (ctx, id, body) => {
+    rejectUnknownFields(body, ["operationId"]);
+    return deps.services.startPlanning(ctx, id);
+  });
+  registerProjectCommand(app, cmd, "confirm-plan", (ctx, id, body) => {
+    rejectUnknownFields(body, ["planArtifactVersionId", "operationId"]);
+    return deps.services.confirmPlan(ctx, id, {
+      planArtifactVersionId: requiredString(body, "planArtifactVersionId"),
+    });
+  });
+  registerProjectCommand(app, cmd, "start", (ctx, id, body) => {
+    rejectUnknownFields(body, ["operationId", "budgetHardLimitMinor"]);
+    const input: { budgetHardLimitMinor?: number } = {};
+    const budget = optionalInt(body, "budgetHardLimitMinor");
+    if (budget !== undefined) input.budgetHardLimitMinor = budget;
+    return deps.services.startProject(ctx, id, input);
+  });
+  registerProjectCommand(app, cmd, "cancel", (ctx, id, body) => {
+    rejectUnknownFields(body, ["reason", "mode", "operationId"]);
+    const input: { reason?: string; mode?: string } = {};
+    const reason = optionalString(body, "reason");
+    const mode = optionalString(body, "mode");
+    if (reason !== undefined) input.reason = reason;
+    if (mode !== undefined) input.mode = mode;
+    return deps.services.cancelProject(ctx, id, input);
+  });
+
+  app.get("/api/v1/tasks", async (request) => deps.services.listTasks(listQuery(request)));
+  app.get("/api/v1/tasks/:id", async (request, reply) => {
+    const task = requireFound(deps.services.getTask(param(request, "id")), "Task not found");
+    sendDto(reply, 200, task, task.stateRevision);
+  });
+
+  app.post(commandRoute("tasks", "retry"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /tasks/{id}:retry",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.retryTask(ctx, param(request, "id"));
+      },
+    );
+  });
+
+  app.post(commandRoute("tasks", "cancel"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /tasks/{id}:cancel",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["reason", "mode", "operationId"]);
+        const input: { reason?: string; mode?: string } = {};
+        const reason = optionalString(body, "reason");
+        const mode = optionalString(body, "mode");
+        if (reason !== undefined) input.reason = reason;
+        if (mode !== undefined) input.mode = mode;
+        return deps.services.cancelTask(ctx, param(request, "id"), input);
+      },
+    );
+  });
+
+  app.get("/api/v1/runs", async (request) => deps.services.listRuns(listQuery(request)));
+  app.get("/api/v1/runs/:id", async (request, reply) => {
+    const run = requireFound(deps.services.getRun(param(request, "id")), "Run not found");
+    sendDto(reply, 200, run, run.stateRevision);
+  });
+
+  app.post(commandRoute("runs", "cancel"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /runs/{id}:cancel",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["reason", "mode", "operationId"]);
+        const input: { reason?: string; mode?: string } = {};
+        const reason = optionalString(body, "reason");
+        const mode = optionalString(body, "mode");
+        if (reason !== undefined) input.reason = reason;
+        if (mode !== undefined) input.mode = mode;
+        return deps.services.cancelRun(ctx, param(request, "id"), input);
+      },
+    );
+  });
+
+  app.post(commandRoute("runs", "input"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /runs/{id}:input",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["text", "payload", "operationId"]);
+        const input: { text?: string; payload?: Record<string, unknown> } = {};
+        const text = optionalString(body, "text");
+        if (text !== undefined) input.text = text;
+        if (body.payload !== undefined) {
+          if (
+            typeof body.payload !== "object" ||
+            body.payload === null ||
+            Array.isArray(body.payload)
+          ) {
+            throw new AppError("validation_failed", "payload must be an object");
+          }
+          input.payload = body.payload as Record<string, unknown>;
+        }
+        return deps.services.sendRunInput(ctx, param(request, "id"), input);
+      },
+    );
+  });
+
+  app.get("/api/v1/runs/:id/events", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    return deps.services.listRunEvents(param(request, "id"), {
+      limit: parseLimit(query.limit),
+      afterIngestionPosition: 0,
+      runId: param(request, "id"),
+    });
+  });
+
+  app.get("/api/v1/approvals", async (request) => deps.services.listApprovals(listQuery(request)));
+  app.get("/api/v1/approvals/:id", async (request, reply) => {
+    const approval = requireFound(
+      deps.services.getApproval(param(request, "id")),
+      "Approval not found",
+    );
+    sendDto(reply, 200, approval, approval.stateRevision);
+  });
+
+  registerApprovalCommand(app, deps, cmd, "approve");
+  registerApprovalCommand(app, deps, cmd, "reject");
+  registerApprovalCommand(app, deps, cmd, "request-changes");
+
+  app.get("/api/v1/artifacts", async (request) => deps.services.listArtifacts(listQuery(request)));
+  app.get("/api/v1/artifacts/:id", async (request) =>
+    requireFound(deps.services.getArtifact(param(request, "id")), "Artifact not found"),
+  );
+  app.get("/api/v1/artifacts/:id/versions/:versionId", async (request) =>
+    requireFound(
+      deps.services.getArtifactVersion(param(request, "id"), param(request, "versionId")),
+      "Artifact version not found",
+    ),
+  );
+  app.get("/api/v1/artifacts/:id/versions/:versionId/content", async (request, reply) => {
+    const content = requireFound(
+      deps.services.readArtifactContent(param(request, "id"), param(request, "versionId")),
+      "Artifact version not found",
+    );
+    void reply
+      .header("content-type", content.mediaType)
+      .header("x-content-type-options", "nosniff")
+      .send(Buffer.from(content.body));
+  });
+  app.get("/api/v1/artifacts/:id/versions/:versionId/lineage", async (request) =>
+    requireFound(
+      deps.services.getArtifactLineage(param(request, "id"), param(request, "versionId")),
+      "Artifact version not found",
+    ),
+  );
+
+  app.get("/api/v1/events", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    const types = queryStringList(query.types);
+    const eventQuery: Parameters<AppServices["listEvents"]>[0] = {
+      limit: parseLimit(query.limit),
+      afterIngestionPosition: Number(queryString(query.after) ?? "0") || 0,
+    };
+    const projectId = queryString(query.projectId);
+    const runId = queryString(query.runId);
+    if (projectId !== undefined) eventQuery.projectId = projectId;
+    if (runId !== undefined) eventQuery.runId = runId;
+    if (types !== undefined) eventQuery.types = types;
+    return deps.services.listEvents(eventQuery);
+  });
+
+  app.post("/api/v1/session", async (request, reply) => {
+    const body = asObject(request.body, true);
+    rejectUnknownFields(body, ["bootstrapToken"]);
+    const bootstrap = optionalString(body, "bootstrapToken");
+    if (request.session) {
+      const rotated = deps.sessions.rotate();
+      return { sessionToken: rotated.token, principalId: rotated.principalId };
+    }
+    if (bootstrap === undefined || bootstrap !== request.bootstrapToken) {
+      throw new AppError("unauthenticated", "Valid bootstrapToken is required");
+    }
+    const current = deps.sessions.getCurrent();
+    void reply;
+    return { sessionToken: current.token, principalId: current.principalId };
+  });
+}
+
+function registerProjectCommand(
+  app: FastifyInstance,
+  cmd: CommandFn,
+  action: string,
+  run: (ctx: CommandContext, id: string, body: Record<string, unknown>) => CommandOutcome,
+): void {
+  app.post(commandRoute("projects", action), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: `POST /projects/{id}:${action}`,
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => run(ctx, param(request, "id"), body),
+    );
+  });
+}
+
+function registerApprovalCommand(
+  app: FastifyInstance,
+  deps: RouteDeps,
+  cmd: CommandFn,
+  action: "approve" | "reject" | "request-changes",
+): void {
+  app.post(commandRoute("approvals", action), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: `POST /approvals/{id}:${action}`,
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, [
+          "decisionReason",
+          "digest",
+          "artifactVersionId",
+          "requestedChanges",
+          "operationId",
+        ]);
+        const input: {
+          decisionReason: string;
+          digest?: string;
+          artifactVersionId?: string;
+          requestedChanges?: Array<{ criterionId: string; instruction: string }>;
+        } = { decisionReason: requiredString(body, "decisionReason") };
+        const digest = optionalString(body, "digest");
+        const artifactVersionId = optionalString(body, "artifactVersionId");
+        if (digest !== undefined) input.digest = digest;
+        if (artifactVersionId !== undefined) input.artifactVersionId = artifactVersionId;
+        if (body.requestedChanges !== undefined) {
+          if (!Array.isArray(body.requestedChanges)) {
+            throw new AppError("validation_failed", "requestedChanges must be an array");
+          }
+          input.requestedChanges = body.requestedChanges.map((item) => {
+            const row = asObject(item, false);
+            rejectUnknownFields(row, ["criterionId", "instruction"]);
+            return {
+              criterionId: requiredString(row, "criterionId"),
+              instruction: requiredString(row, "instruction"),
+            };
+          });
+        }
+        if (action === "approve") return deps.services.approve(ctx, param(request, "id"), input);
+        if (action === "reject") return deps.services.reject(ctx, param(request, "id"), input);
+        return deps.services.requestChanges(ctx, param(request, "id"), input);
+      },
+    );
+  });
+}
