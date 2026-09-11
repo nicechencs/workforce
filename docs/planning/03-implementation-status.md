@@ -16,21 +16,21 @@
 |---|---|---|
 | T00 | 完成 | 决策登记 / 状态矩阵 / 能力矩阵已冻结 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
-| T02 | 完成（M3 字段） | `packages/protocol` + contract tests；公开 `TaskDto.dependsOn` 映射已发布执行 DAG（无依赖为 `[]`） |
+| T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
 | T04 | 完成库并接入 composition | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
-| T08 | 完成库并接入 Mock composition | `LocalArtifactStore`（`stateDir/artifacts`）是 Mock 产物字节与登记元数据的权威；公开 content 读精确 `artifactVersionId`；`world.json` 仅 sidecar，不写 `bodyBase64` |
+| T08 | 完成库并接入 Mock composition（本切片权威） | 所有权仍是 `packages/artifacts`（不是 Daemon 私有第二套规则）。composition 以 `LocalArtifactStore` 为 Mock 产物字节/元数据权威；公开 content 读精确 `artifactVersionId`。**不是**未开始，也**不是** world.json / `bodyBase64` 权威 |
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
-| T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
+| T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；`taskDto()` 填公开 `dependsOn`；Mock 产物经 `LocalArtifactStore` `register`；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob |
 | T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流目录（`GET /workflows` 已发布模板·版本·结构化步骤；无画布编辑器，空目录诚实空态）；项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定）；Tasks 展示已发布 `dependsOn` 边 |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
-| T16 | **本轮起步** | HTTP M3 + typed client；桌面 happy-dom 页 driver（非真窗口） |
+| T16 | **本轮起步** | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口） |
 | T17 | 未开始 | 打包/签名 |
 
 ## 3. 实际验证
@@ -78,13 +78,14 @@ pnpm check:docs
 
 2. **Typed client**（`tests/integration/m3-mock-client.test.ts`）  
    `DesktopClient` + loopback 走同一条路径，重放 `:start` 不复制 Run。  
+   `listTasks` / `getTask` 的公开 `TaskDto.dependsOn` 与 HTTP 一致（review → alpha/bravo，`outputs_ready`），不是内部 DAG 私有字段。  
    `tests` 现为 workspace package（`@workforce/tests`），integration / 后续 sibling 通过 `@workforce/*` 公共导出导入，不再用相对路径或 eslint 豁免。
 
 3. **既有 Fake HTTP 契约**（`apps/daemon/tests/commands.test.ts` 等）仍通过。`startDaemon` 在未注入 `services` 时仍用 `FakeAppServices`；生产 `apps/daemon/src/index.ts` 使用 `createComposedAppServices`。
 
 4. **桌面**  
    `apps/desktop` unit tests 覆盖 IPC 白名单、hash 路由、feature glob、SSE 解析、页面 view-model（412 保留表单、取消中、未知成本非 0、pause 隐藏）。  
-   **项目详情标签：** 对照修订后的 IA §4.3.1–§4.3.4：页头保留项目命令与只读摘要；六标签为 概览 / Tasks / Runs / Artifacts / Activity / Settings。WorkspaceBinding 写入只在 Settings（`project-bind-workspace`）；概览只有进度计数，不含 Task DAG。Tasks / Runs / Artifacts / Activity 复用 `listTasks` / `listRuns` / `listArtifacts` / `listEvents`。已发布执行图的公开 Task DTO **返回** `dependsOn`；Tasks 展示真实依赖边（无依赖写「依赖：无」）。仅当字段缺失（旧客户端/夹具）时写「依赖：未返回」。深链 `#/projects/:id?tab=` 由项目页读取（壳路由仍只解析 path）。  
+   **项目详情标签：** 对照修订后的 IA §4.3.1–§4.3.4：页头保留项目命令与只读摘要；六标签为 概览 / Tasks / Runs / Artifacts / Activity / Settings。WorkspaceBinding 写入只在 Settings（`project-bind-workspace`）；概览只有进度计数（DAG 边在 Tasks 标签，不在概览）。Tasks / Runs / Artifacts / Activity 复用 `listTasks` / `listRuns` / `listArtifacts` / `listEvents`。composed API 的公开 Task DTO **始终**带 `dependsOn`；Tasks 展示真实依赖边（无依赖写「依赖：无」）。「依赖：未返回」只是旧客户端/夹具缺字段时的 UI 回退，不表示现行协议仍是内部-only。深链 `#/projects/:id?tab=` 由项目页读取（壳路由仍只解析 path）。  
    **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → Settings 绑定工作区（测试 preload 假 picker）→ 页头开始规划 → 确认计划 → 开始执行 → Tasks 核对 `dev_alpha` / `dev_bravo` 及依赖文案（`outputs_ready` 或「依赖：无」）。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
@@ -129,7 +130,7 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 4. 工作流目录已提供只读 `GET /workflows`（及模板/版本详情）；仍无画布编辑器或写接口，目录接通不等于 Mock/Codex Runtime 可执行这些定义。  
 5. 可写项目策略与远程节点 enrollment 仍无公开 API；UI 只读说明，未伪造已接入。  
 6. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
-7. T08 完整 Evaluation / quarantine / 保留策略的 M5 验收仍未宣称；Mock 主路径不依赖 world snapshot 存产物字节。
+7. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。
 
 ## 6. 如何跑
 
