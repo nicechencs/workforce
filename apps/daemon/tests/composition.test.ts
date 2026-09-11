@@ -131,6 +131,61 @@ async function poll<T>(
   throw new Error(`timed out after ${timeoutMs}ms (last=${JSON.stringify(last)})`);
 }
 
+async function startRunningRun(
+  harness: InjectHarness,
+  suffix: string,
+): Promise<{
+  projectId: string;
+  run: { id: string; status: string; stateRevision: number };
+}> {
+  const created = await injectJson(harness, "/api/v1/projects", {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `create-${suffix}`),
+    body: JSON.stringify({
+      name: "Cancel settlement",
+      objective: "wait for runtime confirmation",
+      operationId: `op_create_${suffix}`,
+    }),
+  });
+  expect(created.status).toBe(201);
+  const project = created.body as { id: string; stateRevision: number };
+  const planned = await injectJson(harness, `/api/v1/projects/${project.id}:start-planning`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `plan-${suffix}`, project.stateRevision),
+    body: JSON.stringify({ operationId: `op_plan_${suffix}` }),
+  });
+  expect(planned.status).toBe(200);
+  const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+  const confirmed = await injectJson(harness, `/api/v1/projects/${project.id}:confirm-plan`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `confirm-${suffix}`, planning.stateRevision),
+    body: JSON.stringify({
+      planArtifactVersionId: planning.planArtifactVersionId,
+      operationId: `op_confirm_${suffix}`,
+    }),
+  });
+  expect(confirmed.status).toBe(200);
+  const ready = confirmed.body as { stateRevision: number };
+  const started = await injectJson(harness, `/api/v1/projects/${project.id}:start`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `start-${suffix}`, ready.stateRevision),
+    body: JSON.stringify({ operationId: `op_start_${suffix}` }),
+  });
+  expect(started.status).toBe(200);
+
+  const run = await poll(async () => {
+    const listed = await injectJson(harness, `/api/v1/runs?projectId=${project.id}`, {
+      headers: harness.auth,
+    });
+    return (
+      listed.body as {
+        items: Array<{ id: string; status: string; stateRevision: number }>;
+      }
+    ).items.find((item) => item.status === "running");
+  });
+  return { projectId: project.id, run };
+}
+
 describe("composed M3 mock loop", () => {
   it("walks create → plan → confirm → start over HTTP with mock completion", async () => {
     const harness = await startComposed();
@@ -379,48 +434,7 @@ describe("composed M3 mock loop", () => {
   it("settles a run only after the Host confirms cancellation and persists it idempotently", async () => {
     const first = await startInjected(undefined, 60_000);
     const { auth, services, stateDir } = first;
-
-    const created = await injectJson(first, "/api/v1/projects", {
-      method: "POST",
-      headers: commandHeaders(auth, "create-cancel"),
-      body: JSON.stringify({
-        name: "Cancel settlement",
-        objective: "wait for runtime confirmation",
-        operationId: "op_create_cancel",
-      }),
-    });
-    const project = created.body as { id: string; stateRevision: number };
-    const planned = await injectJson(first, `/api/v1/projects/${project.id}:start-planning`, {
-      method: "POST",
-      headers: commandHeaders(auth, "plan-cancel", project.stateRevision),
-      body: JSON.stringify({ operationId: "op_plan_cancel" }),
-    });
-    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
-    const confirmed = await injectJson(first, `/api/v1/projects/${project.id}:confirm-plan`, {
-      method: "POST",
-      headers: commandHeaders(auth, "confirm-cancel", planning.stateRevision),
-      body: JSON.stringify({
-        planArtifactVersionId: planning.planArtifactVersionId,
-        operationId: "op_confirm_cancel",
-      }),
-    });
-    const ready = confirmed.body as { stateRevision: number };
-    await injectJson(first, `/api/v1/projects/${project.id}:start`, {
-      method: "POST",
-      headers: commandHeaders(auth, "start-cancel", ready.stateRevision),
-      body: JSON.stringify({ operationId: "op_start_cancel" }),
-    });
-
-    const running = await poll(async () => {
-      const listed = await injectJson(first, `/api/v1/runs?projectId=${project.id}`, {
-        headers: auth,
-      });
-      return (
-        listed.body as {
-          items: Array<{ id: string; status: string; stateRevision: number }>;
-        }
-      ).items.find((item) => item.status === "running");
-    });
+    const { run: running } = await startRunningRun(first, "cancel");
     const accepted = await injectJson(first, `/api/v1/runs/${running.id}:cancel`, {
       method: "POST",
       headers: commandHeaders(auth, "cancel-run", running.stateRevision),
@@ -478,6 +492,52 @@ describe("composed M3 mock loop", () => {
     expect(restored.body).toMatchObject({
       status: "cancelled",
       stateRevision: settled.stateRevision,
+      cancelRequested: true,
+    });
+  });
+
+  it("preserves a pending cancellation through restart without dispatching another run", async () => {
+    const first = await startInjected(undefined, 60_000);
+    const { services, stateDir } = first;
+    const { projectId, run } = await startRunningRun(first, "cancel-restart");
+    const handleId = services.app.world.runs.get(run.id)?.handleId;
+    expect(handleId).toBeTruthy();
+
+    const accepted = await injectJson(first, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "cancel-before-restart", run.stateRevision),
+      body: JSON.stringify({ reason: "restart", operationId: "op_cancel_before_restart" }),
+    });
+    expect(accepted.status).toBe(202);
+    const pending = await injectJson(first, `/api/v1/runs/${run.id}`, {
+      headers: first.auth,
+    });
+    expect(pending.body).toMatchObject({ status: "running", cancelRequested: true });
+
+    const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+      headers: first.auth,
+    });
+    const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+      (item) => item.id,
+    );
+    await expect(services.host.inspect(handleId!)).resolves.toMatchObject({ status: "running" });
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${run.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({ status: "cancelled", cancelRequested: true });
+
+    const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+      headers: second.auth,
+    });
+    const afterIds = (after.body as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    expect(afterIds.sort()).toEqual(beforeIds.sort());
+    await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "unknown",
     });
   });
 
