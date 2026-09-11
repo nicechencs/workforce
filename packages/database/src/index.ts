@@ -13,7 +13,11 @@ export {
   type PersistenceErrorCode,
 } from "./errors.js";
 export { SqliteEventStore, highWaterMark, unpublishedOutboxCount } from "./event-store.js";
-export { SqliteHandleRepository, type RuntimeHandleRecord } from "./handles.js";
+export {
+  SqliteHandleRepository,
+  type RuntimeHandleByOperationRecord,
+  type RuntimeHandleRecord,
+} from "./handles.js";
 export { appliedMigrations, checksumSql, migrate } from "./migrate.js";
 export { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
 export { SqliteProjectRepository } from "./projects.js";

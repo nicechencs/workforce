@@ -292,13 +292,15 @@ describe("WorkforceSqlite", () => {
         definitionRevision: 1,
         createdAt: now,
       });
-      db.handles.put(tx, {
-        runId: "run_h",
-        pid: 4242,
-        startIdentity: "start-xyz",
-        handle: { adapter: "mock", ref: "h1" },
-        recordedAt: now,
-      });
+      expect(
+        db.handles.putByOperation(tx, {
+          operationId: "op_h",
+          pid: 4242,
+          startIdentity: "start-xyz",
+          handle: { adapter: "mock", ref: "h1" },
+          recordedAt: now,
+        }),
+      ).toBe(true);
       db.timers.put(tx, {
         id: "tmr_1",
         scopeType: "run",
@@ -315,6 +317,14 @@ describe("WorkforceSqlite", () => {
     const reopened = WorkforceSqlite.open(path);
     try {
       expect(reopened.handles.get("run_h")?.startIdentity).toBe("start-xyz");
+      expect(reopened.handles.list()).toEqual([
+        expect.objectContaining({
+          runId: "run_h",
+          pid: 4242,
+          startIdentity: "start-xyz",
+          handle: { adapter: "mock", ref: "h1" },
+        }),
+      ]);
       expect(reopened.timers.get("tmr_1")?.kind).toBe("timeout");
       expect(reopened.timers.dueAt("2026-09-10T10:06:00.000Z")).toHaveLength(1);
     } finally {

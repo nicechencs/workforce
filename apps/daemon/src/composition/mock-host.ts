@@ -28,6 +28,7 @@ export interface ComposedMockHostOptions {
 export class ComposedMockHost implements RuntimeHostPort {
   readonly adapter: MockRuntimeAdapter;
   readonly host: LocalNodeHost;
+  private readonly store: RuntimeHostStore;
   private readonly onTerminal: (event: RunTerminalEvent) => Promise<void>;
   private readonly watching = new Set<string>();
   private readonly handles = new Map<string, RuntimeHandle>();
@@ -42,6 +43,7 @@ export class ComposedMockHost implements RuntimeHostPort {
       store: options.store,
       nodeId: options.nodeId ?? LOCAL_NODE_ID,
     });
+    this.store = options.store;
     this.onTerminal = options.onTerminal;
   }
 
@@ -100,6 +102,9 @@ export class ComposedMockHost implements RuntimeHostPort {
   }
 
   async recover(): Promise<void> {
+    for (const stored of await this.store.listHandles()) {
+      this.handles.set(stored.handle.handleId, stored.handle);
+    }
     await this.host.recover();
   }
 

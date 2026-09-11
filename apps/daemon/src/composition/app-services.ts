@@ -84,6 +84,7 @@ import {
   hydrateWorld,
   JsonRuntimeHostStore,
   loadComposition,
+  persistRuntimeHandle,
   persistSnapshot,
   sqlitePath,
   type ArtifactContentRecord,
@@ -156,7 +157,9 @@ export class ComposedAppServices implements AppServices {
     const clientId = options.clientId ?? loadOrCreateClientId(options.stateDir);
     const sqlite = WorkforceSqlite.open(sqlitePath(options.stateDir));
     const snapshot = await loadComposition(options.stateDir, sqlite);
-    const hostStore = new JsonRuntimeHostStore();
+    const hostStore = new JsonRuntimeHostStore(async (handle) => {
+      await persistRuntimeHandle(sqlite, handle);
+    });
     if (snapshot?.host) {
       hostStore.load(snapshot.host);
     }
@@ -235,7 +238,9 @@ export class ComposedAppServices implements AppServices {
       const handleId =
         run.handleId ??
         snapshot?.host.operations.find((operation) => operation.operationId === run.operationId)
-          ?.handleId;
+          ?.handleId ??
+        snapshot?.host.handles.find((handle) => handle.request.operationId === run.operationId)
+          ?.handle.handleId;
       if (!handleId) {
         app.markRunUnknown(run.id);
         continue;
@@ -1407,9 +1412,10 @@ export class ComposedAppServices implements AppServices {
       artifactContents: [...this.artifactContents.values()],
       workspaces: [...this.workspaces.values()],
     });
-    persistSnapshot(this.stateDir, { world, host: this.hostStore.dump() });
+    const host = this.hostStore.dump();
+    persistSnapshot(this.stateDir, { world, host });
     const committed = this.sqliteWrite.then(() =>
-      this.sqliteWriter(this.sqlite, world, this.synced),
+      this.sqliteWriter(this.sqlite, world, this.synced, host.handles),
     );
     this.sqliteWrite = committed.catch(() => undefined);
     return committed;

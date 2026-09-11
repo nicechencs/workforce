@@ -10,12 +10,19 @@ import { MOCK_PLAN_DOCUMENT } from "@workforce/application";
 import { WorkforceSqlite } from "@workforce/database";
 import { createCanonicalAction } from "@workforce/policy";
 import { protocolVersion } from "@workforce/protocol";
+import type { StoredHandle } from "@workforce/runtime-sdk";
+import type { RuntimeHandle } from "@workforce/runtime-spi";
 
 import { buildApi } from "../src/api/index.js";
 import { SessionRegistry } from "../src/api/auth.js";
 import { createComposedAppServicesForTest } from "../src/composition/app-services.js";
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
-import { dualWriteSqlite, sqlitePath } from "../src/composition/persist.js";
+import {
+  dualWriteSqlite,
+  hostStorePath,
+  sqlitePath,
+  worldPath,
+} from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { createIdFactory } from "../src/modules/ids.js";
 import { MemoryReceiptStore } from "../src/modules/receipts.js";
@@ -554,6 +561,118 @@ describe("composed M3 mock loop", () => {
     });
   });
 
+  it.each(["deleted", "corrupt", "stale"] as const)(
+    "restores handle identity from SQLite when JSON sidecars are %s",
+    async (sidecarState) => {
+      const first = await startInjected(undefined, 60_000);
+      const { projectId, run } = await startRunningRun(first, `sqlite-handle-${sidecarState}`);
+      const handleId = first.services.app.world.runs.get(run.id)?.handleId;
+      expect(handleId).toBeTruthy();
+
+      const durable = await poll(() => first.services.sqlite.handles.get(run.id) ?? undefined);
+      const durableStored = durable.handle as StoredHandle;
+      expect(durable.runId).toBe(run.id);
+      expect(durableStored.handle.handleId).toBe(handleId);
+      expect(durableStored.handle.process?.startIdentity).toBe(durable.startIdentity);
+
+      const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+        headers: first.auth,
+      });
+      const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+        (item) => item.id,
+      );
+      const stateDir = first.stateDir;
+      await first.api.close();
+      await first.services.close();
+      injectedApis.splice(injectedApis.indexOf(first), 1);
+
+      if (sidecarState === "stale") {
+        const sidecar = JSON.parse(fs.readFileSync(hostStorePath(stateDir), "utf8")) as {
+          handles: StoredHandle[];
+        };
+        const stale = sidecar.handles.find(
+          (record) => record.request.operationId === durableStored.request.operationId,
+        );
+        expect(stale).toBeTruthy();
+        stale!.handle.handleId = "hdl_stale_sidecar";
+        stale!.handle.process = {
+          pid: (durable.pid ?? 0) + 1,
+          startIdentity: "stale-sidecar-identity",
+        };
+        fs.writeFileSync(hostStorePath(stateDir), JSON.stringify(sidecar), "utf8");
+      } else {
+        for (const sidecar of [worldPath(stateDir), hostStorePath(stateDir)]) {
+          if (sidecarState === "deleted") {
+            fs.unlinkSync(sidecar);
+          } else {
+            fs.writeFileSync(sidecar, "{not-json", "utf8");
+          }
+        }
+      }
+
+      const second = await startInjected(stateDir, 60_000);
+      const restoredRun = second.services.app.world.runs.get(run.id);
+      expect(restoredRun?.handleId).toBe(handleId);
+      const reopened = second.services.sqlite.handles.get(run.id);
+      expect(reopened?.startIdentity).toBe(durable.startIdentity);
+      expect((reopened?.handle as StoredHandle).handle.handleId).toBe(handleId);
+
+      let inspectedHandle: RuntimeHandle | undefined;
+      second.services.host.adapter.inspect = async (handle) => {
+        inspectedHandle = structuredClone(handle as RuntimeHandle);
+        return {
+          handle: { handleId: handle.handleId, runId: handle.runId },
+          status: "running",
+        };
+      };
+      await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+        status: "running",
+      });
+      expect(inspectedHandle).toMatchObject({
+        handleId,
+        process: {
+          pid: durable.pid,
+          startIdentity: durable.startIdentity,
+        },
+      });
+
+      let cancelledHandle: RuntimeHandle | undefined;
+      second.services.host.adapter.cancel = async (handle) => {
+        cancelledHandle = structuredClone(handle as RuntimeHandle);
+        return { operationId: `cancel:${handle.handleId}`, accepted: true };
+      };
+      const current = await injectJson(second, `/api/v1/runs/${run.id}`, {
+        headers: second.auth,
+      });
+      const cancelled = await injectJson(second, `/api/v1/runs/${run.id}:cancel`, {
+        method: "POST",
+        headers: commandHeaders(
+          second.auth,
+          `cancel-sqlite-${sidecarState}`,
+          (current.body as { stateRevision: number }).stateRevision,
+        ),
+        body: JSON.stringify({ operationId: `op_cancel_sqlite_${sidecarState}` }),
+      });
+      expect(cancelled.status).toBe(202);
+      expect(cancelledHandle).toMatchObject({
+        handleId,
+        process: {
+          pid: durable.pid,
+          startIdentity: durable.startIdentity,
+        },
+      });
+
+      const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+        headers: second.auth,
+      });
+      const afterIds = (after.body as { items: Array<{ id: string }> }).items.map(
+        (item) => item.id,
+      );
+      expect(afterIds.sort()).toEqual(beforeIds.sort());
+    },
+    20_000,
+  );
+
   it("does not acknowledge cancel when its SQLite commit fails and keeps the queue retryable", async () => {
     let failNextWrite = false;
     const sqliteWriter: typeof dualWriteSqlite = async (...args) => {
@@ -604,7 +723,7 @@ describe("composed M3 mock loop", () => {
     const failureTarget: { runId?: string } = {};
     let pendingWriteFailures = 0;
     let terminalWriteFailures = 0;
-    const sqliteWriter: typeof dualWriteSqlite = async (sqlite, world, synced) => {
+    const sqliteWriter: typeof dualWriteSqlite = async (sqlite, world, synced, handles) => {
       const target = failureTarget.runId
         ? world.runs.find((item) => item.id === failureTarget.runId)
         : undefined;
@@ -616,7 +735,7 @@ describe("composed M3 mock loop", () => {
         pendingWriteFailures += 1;
         throw new Error("injected pending SQLite write failure");
       }
-      await dualWriteSqlite(sqlite, world, synced);
+      await dualWriteSqlite(sqlite, world, synced, handles);
     };
     const first = await startInjected(undefined, 60_000, sqliteWriter);
     const { services, stateDir } = first;
