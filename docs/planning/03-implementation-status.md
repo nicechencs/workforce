@@ -79,7 +79,10 @@ pnpm check:docs
    **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → Settings 绑定工作区（测试 preload 假 picker）→ 页头开始规划 → 确认计划 → 开始执行 → Tasks 核对 `dev_alpha` / `dev_bravo`。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
-5. **Codex**  
+5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client）  
+   `GET /workflows` / `{id}` / `{id}/versions/{versionId}` 返回已发布 `software-development-team.feature-delivery` 模板、不可变版本和结构化步骤。桌面页走 `listWorkflows`，空目录/失败用诚实文案，不再用夹具冒充已接通。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。
+
+6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
    `start/stream/cancel` 走注入的 captured Process：CLI + validate + `resolveStart` 齐备时 `spawnCaptured`；缺 CLI 为 `validation_failed`；缺 Process/`resolveStart`/不完整 context/win32 capture 为 `unsupported_capability`。  
    证据（2026-09-11，Linux，Node v22.14.0，pnpm 9.4.0）：  
