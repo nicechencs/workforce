@@ -162,11 +162,7 @@ export class InMemoryPolicyEngine implements PolicyEngine {
     principalId?: string;
     policyVersion?: string;
   }): Promise<ApprovalGrant> {
-    const store = this.grants;
-    const id =
-      store instanceof InMemoryGrantStore
-        ? store.nextId()
-        : `apr_${input.action.digest.slice(0, 12)}`;
+    const id = this.grants.nextId();
     const grant: ApprovalGrant = {
       id,
       actionType: input.action.type,

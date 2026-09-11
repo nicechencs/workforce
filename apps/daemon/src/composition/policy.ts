@@ -28,7 +28,8 @@ export function createCompositionPolicy(
 /**
  * Production adapter over `@workforce/policy`. Does not invent rules: start uses
  * `decideStart` + DEFAULT_RULES, approvals use `createCanonicalAction` types
- * already declared as `plan.apply` / `artifact.publish`.
+ * already declared as `plan.apply` / `artifact.publish`. Composition supplies
+ * `SqliteGrantStore` so grants survive restart; this class does not add gates.
  */
 export class CompositionPolicy {
   constructor(readonly engine: InMemoryPolicyEngine) {}

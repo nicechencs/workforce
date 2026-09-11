@@ -187,6 +187,12 @@ importers:
       '@workforce/application':
         specifier: workspace:*
         version: link:../application
+      '@workforce/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@workforce/policy':
+        specifier: workspace:*
+        version: link:../policy
     devDependencies:
       '@types/node':
         specifier: 22.20.2
