@@ -71,9 +71,16 @@ describe("desktop-client", () => {
     );
     await client.publishWorkflowVersion("wfd_1", "wfv_1", options);
     await client.createTeam({ name: "Squad" }, { idempotencyKey: "k3" });
+    await client.patchTeam("tm_1", { name: "Renamed" }, options);
     await client.createTeamVersion(
       "tm_1",
       { members: [{ role: "developer", runtimeProfileId: "mock", quantity: 1 }] },
+      options,
+    );
+    await client.patchTeamVersion(
+      "tm_1",
+      "tmv_1",
+      { members: [{ role: "developer", runtimeProfileId: "mock", quantity: 2 }] },
       options,
     );
     await client.publishTeamVersion("tm_1", "tmv_1", options);
@@ -84,7 +91,9 @@ describe("desktop-client", () => {
       "PATCH /api/v1/workflows/wfd_1/versions/wfv_1",
       "POST /api/v1/workflows/wfd_1/versions/wfv_1:publish",
       "POST /api/v1/teams",
+      "PATCH /api/v1/teams/tm_1",
       "POST /api/v1/teams/tm_1/versions",
+      "PATCH /api/v1/teams/tm_1/versions/tmv_1",
       "POST /api/v1/teams/tm_1/versions/tmv_1:publish",
       "GET /api/v1/teams/tm_software_development/versions/tmv_software_development_0_1_0",
     ]);

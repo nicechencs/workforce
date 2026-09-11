@@ -171,6 +171,12 @@ describe("draft config and budget", () => {
     ).toBe(true);
   });
 
+  it("does not treat an unpublished or unbound custom team as draft-config complete", () => {
+    expect(
+      isDraftConfigComplete({ workspaceBound: true, teamSelected: false, runtimeSelected: true }),
+    ).toBe(false);
+  });
+
   it("does not display unknown budget as 0", () => {
     expect(budgetPlaceholder(null)).not.toMatch(/\b0\b/);
     expect(budgetPlaceholder({ kind: "unknown", currency: "USD", costMinor: 0 })).toContain("未知");

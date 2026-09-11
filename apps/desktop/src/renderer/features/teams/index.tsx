@@ -7,4 +7,4 @@ export const feature: WorkforceFeatureModule = {
   Page: TeamsPage,
 };
 
-export { TeamsPage };
+export { ProjectTeamBindingField, TeamsPage } from "./page.js";

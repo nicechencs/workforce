@@ -110,6 +110,21 @@ export function getWorkforceClient(): DesktopClient {
 export type CatalogClient = {
   listTeams?: (query?: ListQuery) => Promise<PageDto<unknown>>;
   getTeam?: (id: string) => Promise<unknown>;
+  getTeamVersion?: (id: string, versionId: string) => Promise<unknown>;
+  createTeam?: (input: { name: string }, options: CommandOptions) => Promise<unknown>;
+  patchTeam?: (id: string, input: { name?: string }, options: CommandOptions) => Promise<unknown>;
+  createTeamVersion?: (
+    id: string,
+    input: { members: unknown[] },
+    options: CommandOptions,
+  ) => Promise<unknown>;
+  patchTeamVersion?: (
+    id: string,
+    versionId: string,
+    input: { members?: unknown[] },
+    options: CommandOptions,
+  ) => Promise<unknown>;
+  publishTeamVersion?: (id: string, versionId: string, options: CommandOptions) => Promise<unknown>;
   listWorkflows?: (query?: ListQuery) => Promise<PageDto<unknown>>;
   getWorkflow?: (id: string) => Promise<unknown>;
   listRuntimes?: () => Promise<PageDto<unknown>>;

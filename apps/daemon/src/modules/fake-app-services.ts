@@ -69,6 +69,7 @@ import { paginate } from "./paginate.js";
 import {
   assertBindableTeamVersionId,
   createAuthoringCatalog,
+  listedDraftTeams,
   listedTeams,
   listedWorkflows,
   resolveTeam,
@@ -188,8 +189,10 @@ export class FakeAppServices implements AppServices {
     return;
   }
 
-  listTeams(_query: ListQuery): PageDto<TeamDto> {
-    void _query;
+  listTeams(query: ListQuery): PageDto<TeamDto> {
+    if (query.status === "draft") {
+      return pageOf(listedDraftTeams(this.authoring));
+    }
     return pageOf(listedTeams(this.authoring));
   }
 

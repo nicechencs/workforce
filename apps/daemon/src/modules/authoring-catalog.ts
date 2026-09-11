@@ -63,6 +63,13 @@ export function listedTeams(service: CatalogService): TeamDto[] {
   return [SOFTWARE_TEAM, ...custom];
 }
 
+export function listedDraftTeams(service: CatalogService): TeamDto[] {
+  return service.catalog
+    .listTeams()
+    .filter((item) => item.status === "draft")
+    .map((record) => teamDtoFromCatalog(service.catalog, record));
+}
+
 export function resolveTeam(service: CatalogService, id: string): TeamDto | null {
   const seeded = findPublishedTeam(id);
   if (seeded) {

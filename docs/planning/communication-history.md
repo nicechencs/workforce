@@ -119,3 +119,51 @@ updated: 2026-09-12
 - **决定：** Review 有条件通过 #22。Test 报告 `WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md` 将 headed Electron 真窗 create/edit/save/publish 记为 **PASS**。验证 head 为 `fbe13dea`；之后 rebase 到 `c1c86ef` 的 tip（`3d0bd971`）只是文档/小清理，行为未回退。不因此宣称 M7 完成，也不宣称 T19 / T20 / T21、远程 enrollment 或容器 runner 已完成。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) 将 T18 headed 从「未复验 / 待复测」改为 **PASS**，并写清验证 head 与 tip 关系。
 - **状态：** T18 画布 UI + 草稿保存 + headed 真窗 create/edit/save/publish **implemented**。M7 / T19 / T20 / T21 / D19 远程与容器仍 **planned**。
+
+---
+
+## 2026-09-11（Asia/Taipei）T19 桌面自定义 Team 写面挂上 #23 写 API
+
+- **决定：** 兑现 D16 的桌面写面，并把 `createTeam` / `patchTeam` / `createTeamVersion` / `patchTeamVersion` 挂到同一 typed client：草稿保存必须真实持久化，reload 后仍在（`GET /teams/{id}`，因 `listTeams` 只含已发布）。Publish / 自定义绑定仅在写 API 与规则允许时启用，**无假 publish/bind**。预设 Software Development Team 保留。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T19 / 目标段：UI + 草稿写 API 已接线；publish 状态诚实。
+- **状态：** 桌面写面 + 草稿写 API **implemented**。Publish/bind 按规则诚实。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#21 rebase 到 #23 squash tip `15c058f`
+
+- **决定：** #23 已 squash 合入 `main`（`15c058f`）。#21 丢掉叠在旧 #23 上的写 API 提交，只保留 T19 Team 写面 UI 与 `GET /teams/{id}` 草稿持久化。不发明 chat / `executionMode` / enrollment endpoint。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 写明写契约已在 main；T19 是可写 Team UI；M7 未完成；T20 / T21 不由本 PR 宣称完成。
+- **状态：** T19 UI **implemented**（本 PR）。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T19 草稿 reload：list 只含 published，改走 status=draft
+
+- **决定：** 真窗 FAIL（`dc509c1`）根因是 #23 约定 `GET /teams` 只回 published。create/patch 已写库；save 后内存列表有草稿，Ctrl+R 后默认 list 丢草稿。不改默认 list（绑定/探活仍只见 published）。UI 用已有 `ListQuery.status`：`GET /teams?status=draft` 拉草稿，详情仍 `GET /teams/{id}`。无假 publish/bind，不塞假 RuntimeProfile。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T19：草稿持久化已修。
+- **状态：** 草稿 list/reload **implemented**。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#21 rebase 到 D19 tip `c1c86ef` 并修 lint
+
+- **决定：** #20 已 squash 合入 `main`（`c1c86ef`，D19 placement：本机默认 + 远程 + 容器）。#21 rebase 到该 tip：保留 main 的 D19 诚实表述（远程/容器 **未实现**）；保留 T19 写面与 `GET /teams?status=draft` reload。修 eslint `no-useless-assignment`（`loadTeamCatalog` 的 `drafts`）。不发明 endpoint，不宣称 M7 / T20 / T21 完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 D19 与 T19。
+- **状态：** lint 修复 + rebase **implemented**。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T19 headed 真窗草稿持久化 PASS
+
+- **决定：** Test-bot 在 `406ee6d2` 复测 save→reload：草稿仍在（`WORKFORCE-PR21-406ee6d2-DRAFT-PERSIST-RETEST.md`）。只把这一条 headed 路径记为 **PASS**。不把完整 headed 套件、publish 真窗或 M7 / T20 / T21 写成完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T19 / 修订段 / 剩余工作第 5 条：headed 草稿持久化 PASS（验证 head `406ee6d2`）。
+- **状态：** T19 草稿持久化 headed **implemented**（已复验）。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#21 rebase 到 T18 tip `6eeea107`
+
+- **决定：** #22（T18 画布）已 squash 合入 `main`（`6eeea107`）。#21 rebase 到该 tip：同时保留 T18（画布接线 + headed create/edit/save/publish PASS）与 T19（Team 写面 + `GET /teams?status=draft` reload + headed 草稿持久化 PASS）。不改默认 `GET /teams`（仍只回 published）。无假 publish/bind。不发明 endpoint。不宣称 M7 / T20 / T21 完成，也不宣称远程 enrollment / 容器 runner 已实现。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 T18 与 T19；T20 / T21 / D19 远程与容器仍未实现。
+- **状态：** T18 **implemented**（main）。T19 **implemented**（本 PR）。M7 **未完成**。
