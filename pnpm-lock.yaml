@@ -364,6 +364,9 @@ importers:
 
   runtimes/codex:
     dependencies:
+      '@workforce/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@workforce/runtime-sdk':
         specifier: workspace:*
         version: link:../../packages/runtime-sdk

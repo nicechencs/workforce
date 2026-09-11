@@ -4,7 +4,7 @@
 - Platform: Windows 10.0.19045 (AMD64)
 - Environment versions: Node v24.19.0, npm 12.0.2, git 2.55.0.windows.3, PowerShell 7.6.6, OS Microsoft Windows NT 10.0.19045.0 (Windows 10 Pro for Workstations)
 - macOS: 未测
-- Linux: 未测
+- Linux: 见文末 2026-09-11 follow-up；CLI/帮助已测，live exec 在模型响应前受环境阻塞
 
 ## Commands
 
@@ -154,7 +154,7 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 
 ## Limits
 
-- macOS and Linux were not tested.
+- macOS was not tested. Linux follow-up evidence is recorded below.
 - No live `codex exec` / model turn: event JSONL schema, live usage fields, approval prompts, cancel of a running exec tree, and resume-after-kill are unverified. Persisted rollout files on this host do contain `token_usage_record` / `token_count` (keys only sampled); that is not a live exec fixture.
 - `app-server` / `exec-server` transports were help-only; no stdio session was opened.
 - `Get-AppxPackage` from PowerShell 7 fails (`Operation is not supported on this platform`); Windows PowerShell 5.1 via `powershell.exe` works. Probe uses `powershell.exe` and directory listing of `WindowsApps`.
@@ -190,6 +190,74 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 
 ### 契约变更请求
 
-无必须立刻改协议的项。`RuntimeConfig.executable` 已足够作为显式路径；Windows MSIX / LocalAppData 发现属于 T15 内部实现。
+The executable path itself needs no common-contract change: `RuntimeConfig.executable` already
+covers it, and Windows discovery stays internal to T15. Production execution does have two
+blocking contract requests:
 
-可选（非阻塞）说明给 T00/T02：不要在示例或 SPI 注释里把 `codex proto` 写成 V0.1 必选传输；本机 0.153.4 没有该子命令。`resume` 语义是会话恢复，不能映射为 `event.resume` cursor。`lifecycle.pause` 保持可选且默认关闭。
+1. **T02 / Runtime SPI:** provide an SPI-only resolved start context rather than making the
+   Adapter interpret opaque `snapshotRef` or `workspaceInstanceId` values. A compatible shape is
+   `ResolvedStartRunRequest = { command: StartRunRequest; workspace: WorkspaceGrant; context:
+   { prompt: string }; permission: { sandbox: "read-only" | "workspace-write"; approval:
+   "never" | "on-request" }; environment: Record<string, string>; deadline?: string }`. Existing
+   protocol fields remain unchanged; the Host constructs this internal value after Workspace and
+   Policy checks. Without it, T15 cannot select `cwd`, obtain the prompt, or enforce sandbox and
+   approval settings.
+2. **T06 / Process port:** add a captured-process operation, for example
+   `spawnCaptured({ argv, cwd, env, stdin }): Promise<{ handle: ProcessHandle; stdout:
+   AsyncIterable<Uint8Array>; stderr: AsyncIterable<Uint8Array>; wait(): Promise<{ exitCode:
+   number | null; signal?: string }> }>` plus a documented durable-output/re-attach behavior for
+   Daemon restart. The current `spawn` discards stdout/stderr, exposes no stdin write or exit
+   result, and `inspect` only reports `alive`; T15 therefore cannot stream JSONL, distinguish
+   success/failure, or reconcile remaining events without opening a second process-control path.
+
+Compatibility impact: both can be additive at the TypeScript port level, but changing
+`RuntimeAdapter.start` requires coordinated T02/T05/T15 consumer updates and contract tests. The
+captured-process API can be additive to `ProcessController`; T06 remains the only implementation
+owner.
+
+Non-blocking note for T00/T02: do not make `codex proto` a V0.1 requirement. The measured CLI has
+no such command. Session `resume` is not an `event.resume` cursor, and `lifecycle.pause` must stay
+optional and disabled.
+
+## Linux follow-up: authorized live probe (2026-09-11)
+
+Environment: Linux `6.12.94+` x86_64, Node `v22.23.2`, git `2.47.3`, pnpm `9.15.9`.
+The installed executable was `/home/box/.local/bin/codex`; `codex --version` reported
+`codex-cli 0.154.0` (exit 0). Both `codex --help` and `codex exec --help` exited 0.
+
+The fixture was a new Git repository at `/tmp/workforce-codex-probe.9Sgo0w` containing only
+`PROBE.txt` with the public text `SAFE_PROBE_INPUT`. No auth file, token, environment value, or
+user data was read or printed.
+
+The first command used exec-local placement for `-a`/`-s`:
+
+```text
+codex exec --json --ephemeral --ignore-user-config --ignore-rules --color never -s read-only -a never -C /tmp/workforce-codex-probe.9Sgo0w "Read only PROBE.txt in this fixture. Do not inspect any other paths, credentials, environment variables, or user data. Do not modify files. Reply exactly SAFE_PROBE_OK."
+```
+
+It exited 2 before any model request or JSON event. Despite `codex exec --help` listing these
+options, the parser rejected `-a` after `exec` (`unexpected argument '-a'`). The coordinator
+explicitly classified this as a preflight failure and authorized one corrected live retry.
+
+The only corrected live retry used global placement:
+
+```text
+codex -a never -s read-only -C /tmp/workforce-codex-probe.9Sgo0w exec --ephemeral --ignore-user-config --ignore-rules --color never --json "Read only PROBE.txt in this fixture. Do not inspect any other paths, credentials, environment variables, or user data. Do not modify files. Reply exactly SAFE_PROBE_OK."
+```
+
+It exited 1 before a model response:
+
+```text
+Reading additional input from stdin...
+Error: failed to initialize in-process app-server client: Read-only file system (os error 30)
+```
+
+The warning preceding both attempts said PATH aliases could not be created on the read-only file
+system. The corrected retry emitted **zero stdout JSONL events**, so there is no live event schema,
+usage record, thread id, or terminal event to claim from this host. No further live retry was run.
+
+The parser fixture in `runtimes/codex` is therefore based on the official non-interactive-mode
+documentation's published JSONL examples (`thread.started`, `turn.started`, `item.*`,
+`turn.completed`, `turn.failed`, `error`), not mislabeled as live evidence. Production
+`start/stream/cancel/reconcile` remains blocked until the Process port captures stdout/stderr,
+stdin and exit, and the start contract supplies resolved Workspace/Policy/context inputs.
