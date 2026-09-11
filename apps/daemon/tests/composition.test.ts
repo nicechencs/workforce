@@ -13,8 +13,12 @@ import { protocolVersion } from "@workforce/protocol";
 
 import { buildApi } from "../src/api/index.js";
 import { SessionRegistry } from "../src/api/auth.js";
-import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
-import { sqlitePath } from "../src/composition/persist.js";
+import {
+  ComposedAppServices,
+  createComposedAppServices,
+  type ComposedAppServicesOptions,
+} from "../src/composition/index.js";
+import { dualWriteSqlite, sqlitePath } from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { createIdFactory } from "../src/modules/ids.js";
 import { MemoryReceiptStore } from "../src/modules/receipts.js";
@@ -69,9 +73,17 @@ async function startComposed(stateDir?: string): Promise<Harness> {
   return harness;
 }
 
-async function startInjected(stateDir?: string, completeAfterMs = 5): Promise<InjectHarness> {
+async function startInjected(
+  stateDir?: string,
+  completeAfterMs = 5,
+  sqliteWriter?: ComposedAppServicesOptions["sqliteWriter"],
+): Promise<InjectHarness> {
   const dir = stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "wf-t10-inject-"));
-  const services = await createComposedAppServices({ stateDir: dir, completeAfterMs });
+  const services = await createComposedAppServices({
+    stateDir: dir,
+    completeAfterMs,
+    ...(sqliteWriter ? { sqliteWriter } : {}),
+  });
   const sessions = new SessionRegistry("usr_test", "cli_test");
   const session = sessions.issue();
   const api = buildApi({
@@ -442,6 +454,10 @@ describe("composed M3 mock loop", () => {
     });
     expect(accepted.status).toBe(202);
     expect(accepted.body).toMatchObject({ resource: { type: "run", id: running.id } });
+    const durableRun = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === running.id);
+    expect(durableRun?.cancelRequestedAt).toBeTruthy();
 
     const pending = await injectJson(first, `/api/v1/runs/${running.id}`, { headers: auth });
     expect(pending.body).toMatchObject({ status: "running", cancelRequested: true });
@@ -529,7 +545,8 @@ describe("composed M3 mock loop", () => {
     const restored = await injectJson(second, `/api/v1/runs/${run.id}`, {
       headers: second.auth,
     });
-    expect(restored.body).toMatchObject({ status: "cancelled", cancelRequested: true });
+    expect(restored.body).toMatchObject({ status: "running", cancelRequested: true });
+    expect(second.services.app.world.runs.get(run.id)?.handleId).toBe(handleId);
 
     const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
       headers: second.auth,
@@ -539,6 +556,48 @@ describe("composed M3 mock loop", () => {
     await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
       status: "unknown",
     });
+  });
+
+  it("does not acknowledge cancel when its SQLite commit fails and keeps the queue retryable", async () => {
+    let failNextWrite = false;
+    const sqliteWriter: NonNullable<ComposedAppServicesOptions["sqliteWriter"]> = async (
+      ...args
+    ) => {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error("injected SQLite write failure");
+      }
+      await dualWriteSqlite(...args);
+    };
+    const harness = await startInjected(undefined, 60_000, sqliteWriter);
+    const { services } = harness;
+    const { run } = await startRunningRun(harness, "cancel-write-failure");
+    await poll(() =>
+      services.sqlite.worldSnapshot.load().runs.some((item) => item.id === run.id)
+        ? true
+        : undefined,
+    );
+
+    failNextWrite = true;
+    const failed = await injectJson(harness, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "cancel-write-failure", run.stateRevision),
+      body: JSON.stringify({ operationId: "op_cancel_write_failure" }),
+    });
+    expect(failed.status).toBe(500);
+    const afterFailure = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === run.id);
+    expect(afterFailure?.cancelRequestedAt).toBeUndefined();
+
+    const retried = await injectJson(harness, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "cancel-write-retry", run.stateRevision),
+      body: JSON.stringify({ operationId: "op_cancel_write_retry" }),
+    });
+    expect(retried.status).toBe(202);
+    const durableRun = services.sqlite.worldSnapshot.load().runs.find((item) => item.id === run.id);
+    expect(durableRun?.cancelRequestedAt).toBeTruthy();
   });
 
   it("rehydrates the same project and does not duplicate runs on replay", async () => {

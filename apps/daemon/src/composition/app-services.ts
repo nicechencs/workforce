@@ -93,6 +93,7 @@ import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 
 const encoder = new TextEncoder();
+type SqliteWriter = typeof dualWriteSqlite;
 
 export interface ComposedAppServicesOptions {
   stateDir: string;
@@ -100,6 +101,7 @@ export interface ComposedAppServicesOptions {
   clientId?: string;
   completeAfterMs?: number;
   policyEngine?: InMemoryPolicyEngine;
+  sqliteWriter?: SqliteWriter;
 }
 
 export class ComposedAppServices implements AppServices {
@@ -111,6 +113,7 @@ export class ComposedAppServices implements AppServices {
   readonly policy: CompositionPolicy;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
+  private readonly sqliteWriter: SqliteWriter;
   private readonly operations = new Map<string, CommandReceipt>();
   private readonly artifactContents = new Map<string, ArtifactContentRecord>();
   private readonly workspaces = new Map<string, WorkspaceDto>();
@@ -130,6 +133,7 @@ export class ComposedAppServices implements AppServices {
     artifacts: LocalArtifactStore;
     worktrees: CompositionWorktreeHost;
     policy: CompositionPolicy;
+    sqliteWriter: SqliteWriter;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -139,6 +143,7 @@ export class ComposedAppServices implements AppServices {
     this.artifacts = input.artifacts;
     this.worktrees = input.worktrees;
     this.policy = input.policy;
+    this.sqliteWriter = input.sqliteWriter;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -191,6 +196,7 @@ export class ComposedAppServices implements AppServices {
       artifacts,
       worktrees,
       policy,
+      sqliteWriter: options.sqliteWriter ?? dualWriteSqlite,
     });
     composed.services = services;
 
@@ -216,6 +222,32 @@ export class ComposedAppServices implements AppServices {
       await host.recover();
     } catch {
       // Mock adapter does not keep live processes across process restarts.
+    }
+    for (const run of app.world.runs.values()) {
+      if (isTerminalRun(run)) {
+        continue;
+      }
+      const handleId =
+        run.handleId ??
+        snapshot?.host.operations.find((operation) => operation.operationId === run.operationId)
+          ?.handleId;
+      if (!handleId) {
+        app.markRunUnknown(run.id);
+        continue;
+      }
+      run.handleId = handleId;
+      try {
+        const observed = await host.inspect(handleId);
+        if (
+          observed.status === "unknown" ||
+          observed.status === "orphaned" ||
+          (run.cancelRequestedAt !== undefined && observed.status !== "cancelled")
+        ) {
+          app.markRunUnknown(run.id);
+        }
+      } catch {
+        app.markRunUnknown(run.id);
+      }
     }
     for (const project of app.world.projects.values()) {
       await app.reconcile(project.id);
@@ -740,7 +772,7 @@ export class ComposedAppServices implements AppServices {
         idempotencyKey: ctx.operationId,
         runId: id,
       });
-      this.persist();
+      await this.persistDurably();
       return {
         status: 202,
         body: {
@@ -1354,16 +1386,20 @@ export class ComposedAppServices implements AppServices {
   private persist(): void {
     if (this.closed) {
       try {
-        this.writeSnapshot();
+        void this.writeSnapshot().catch(() => undefined);
       } catch {
         return;
       }
       return;
     }
-    this.writeSnapshot();
+    void this.writeSnapshot().catch(() => undefined);
   }
 
-  private writeSnapshot(): void {
+  private persistDurably(): Promise<void> {
+    return this.writeSnapshot();
+  }
+
+  private writeSnapshot(): Promise<void> {
     const world = dumpWorld({
       world: this.app.world,
       operations: [...this.operations.values()],
@@ -1371,9 +1407,11 @@ export class ComposedAppServices implements AppServices {
       workspaces: [...this.workspaces.values()],
     });
     persistSnapshot(this.stateDir, { world, host: this.hostStore.dump() });
-    this.sqliteWrite = this.sqliteWrite
-      .then(() => dualWriteSqlite(this.sqlite, world, this.synced))
-      .catch(() => undefined);
+    const committed = this.sqliteWrite.then(() =>
+      this.sqliteWriter(this.sqlite, world, this.synced),
+    );
+    this.sqliteWrite = committed.catch(() => undefined);
+    return committed;
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -1605,6 +1643,15 @@ function hasAttemptRun(runs: Map<string, RunRecord>, task: TaskRecord): boolean 
 
 function latestRun(runs: Map<string, RunRecord>, taskId: string): RunRecord | undefined {
   return [...runs.values()].filter((run) => run.taskId === taskId).at(-1);
+}
+
+function isTerminalRun(run: RunRecord): boolean {
+  return (
+    run.status === "succeeded" ||
+    run.status === "failed" ||
+    run.status === "cancelled" ||
+    run.status === "timed_out"
+  );
 }
 
 function publicAuthorizationRef(value: string): string {
