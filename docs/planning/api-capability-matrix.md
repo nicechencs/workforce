@@ -4,9 +4,9 @@
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — 补 D19：Placement kind = `local`（默认）/ `remote` / `container`。本矩阵**不增加** enrollment、远程 lease 或 Docker/K8s path；`GET /nodes` 仍仅 Local Node。同日主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
+修订：2026-09-11 — T20 作者面壳 + 写 API 落草稿写入本矩阵对话行，仍**不发明** chat path。同日补 D19：Placement kind = `local`（默认）/ `remote` / `container`。本矩阵**不增加** enrollment、远程 lease 或 Docker/K8s path；`GET /nodes` 仍仅 Local Node。同日主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
 
-**项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布或对话生成并编辑 Workflow」。M8 补齐「Agent 跟随已发布工作流或直接执行」。对话生成与双执行 **均未实现**。
+**项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布或对话生成并编辑 Workflow」。M8 补齐「Agent 跟随已发布工作流或直接执行」。对话会话协议与双执行 **仍未实现**；T20 仅有作者面壳。
 
 图例：
 
@@ -43,12 +43,12 @@ P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-
 | 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
 | 工作流目录 / 画布 / 对话生成 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口 + 对话生成草稿（D15/D17）。目录不是可执行 Runtime |
 
-M7 必达——补齐项目制循环（当前**未实现**；未领取前不要塞进随机 PR）：
+M7 必达——补齐项目制循环（写 API + T18 画布 + T19 Team 写面已接线；对话会话协议与整体 M7 **未完成**；不要在普通 PR 里顺便发明 chat / enrollment / `executionMode`）：
 
 | 页面/动作 | 处理 |
 |---|---|
 | 可视化工作流画布编辑器 | 为项目编排 Workflow；与只读目录共用「工作流」入口 |
-| 对话生成工作流草稿 | M7 planned（D17）。用户对话生成 bot/角色/流程/任务草稿，再进画布编辑。无冻结 chat endpoint；不得假成功 |
+| 对话生成工作流草稿 | M7 planned（D17）。用户对话生成 bot/角色/流程/任务草稿，再进画布编辑。无冻结 chat endpoint；作者面壳不得假成功 |
 | 自定义 Team 编排 | 为项目配团队；M3 只读预设仍必须可用 |
 
 M8 必达——双执行模式（当前**未实现**；未领取前不要塞进随机 PR）：
@@ -223,7 +223,7 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | 选择仓库 | 项目详情 Settings → 原生 dialog → `POST .../workspaces` | draft |
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
-| 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话协议待 T02 | M7 planned（D17）。**未实现**。无冻结 chat path |
+| 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话协议待 T02 | M7 planned（D17）。Desktop **作者面壳 + 写 API 落草稿**已有；**无冻结 chat path**，不得假 Agent 成功 |
 | 发布工作流版本 | `/workflows/{id}/versions/{versionId}:publish` | M7；有限 DAG 校验通过 |
 | 选择绑定工作流或直接执行 | 待 T02 的启动字段 + `GET /capabilities` | M8 planned（D18）。**未实现**。无能力则禁用 |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
@@ -247,5 +247,5 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 - 不改 OpenAPI / protocol（缺口交 T02）
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
-- T18/T19 未领取前，不实现画布或 Team 写接口；只读目录实现不得宣称画布已完成
-- T20/T21 未领取且 T02 未冻结会话/mode 字段前，不实现对话生成或 direct 按钮；不得假 mode
+- T18 画布与 T19 Team 写面已在 main 接线；只读目录或作者面壳不得宣称画布 / 自定义 Team / M7 完成
+- T20 作者面壳不得渲染假 Agent 成功；T02 未冻结会话 DTO 前不发明 chat path。T21 未领取且 T02 未冻结 mode 字段前，不实现 direct 按钮；不得假 mode

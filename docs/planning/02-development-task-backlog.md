@@ -1,7 +1,7 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18–T21 代码均未实现**。  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T21 代码未实现。** T20 仅有 Desktop UI shell + 写 API 落草稿，会话协议仍 planned，不得写成对话编排完成。
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -83,7 +83,7 @@ flowchart TD
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
-| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
+| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通。UI shell 已开工，会话协议仍是缺口 | 高 / 中 |
 | T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `executionMode`（或等价）后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。

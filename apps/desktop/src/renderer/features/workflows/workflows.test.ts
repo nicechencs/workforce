@@ -108,10 +108,14 @@ describe("workflow pages", () => {
     expect(html).toContain("workflow-new-canvas");
     expect(html).toContain("项目制循环");
     expect(html).toContain("workflow-loading");
+    expect(html).toContain("对话生成");
+    expect(html).toContain("workflow-authoring-chat-disabled");
+    expect(html).toContain("用对话生成");
     expect(html).not.toContain("workflow-empty");
     expect(html).not.toContain("不得发明 endpoint");
     expect(html).not.toContain("可视化编辑器已可用且已接通写接口");
     expect(html).not.toContain("已发布为不可变版本");
+    expect(html).not.toContain("会话已接通");
   });
 
   it("opens the canvas authoring route for /workflows/new", () => {
