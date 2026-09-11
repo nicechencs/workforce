@@ -192,8 +192,13 @@ export class CompositionWorktreeHost {
         await this.git.releaseInstance(record.workspaceInstanceId, {
           requiredArtifactsPersisted: true,
         });
-      } catch {
-        // Directory removal of stateDir is the fallback.
+      } catch (error) {
+        // Do not swallow: a worktree that is not released keeps Windows state dirs locked and
+        // would otherwise only show up as an unexplained teardown failure.
+        console.error(
+          `[workforce] failed to release workspace instance ${record.workspaceInstanceId}`,
+          error,
+        );
       }
     }
   }
