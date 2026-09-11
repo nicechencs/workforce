@@ -22,7 +22,6 @@ describe("buildCodexExecArgv", () => {
       "exec",
       "--ephemeral",
       "--ignore-user-config",
-      "--ignore-rules",
       "--color",
       "never",
       "--json",
@@ -39,5 +38,6 @@ describe("buildCodexExecArgv", () => {
     });
     expect(argv.at(-1)).toBe("-");
     expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(argv).not.toContain("--ignore-rules");
   });
 });

@@ -31,7 +31,6 @@ export function buildCodexExecArgv(command: CodexExecCommand): string[] {
     "exec",
     "--ephemeral",
     "--ignore-user-config",
-    "--ignore-rules",
     "--color",
     "never",
     "--json",
