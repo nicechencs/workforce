@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { mergeMinimalEnv } from "./env.js";
 import { identityMismatchError } from "./start-identity.js";
-import type { TrackedProcess } from "./tracked.js";
+import { captureChildOutput, observeChild, type TrackedProcess } from "./tracked.js";
 import {
   pollUntil,
   queryWin32StartIdentity,
@@ -54,14 +54,17 @@ export async function spawnWindows(req: {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  capture?: boolean;
 }): Promise<TrackedProcess> {
-  try {
-    const job = await trySpawnInJob(req);
-    if (job) {
-      return job;
+  if (!req.capture) {
+    try {
+      const job = await trySpawnInJob(req);
+      if (job) {
+        return job;
+      }
+    } catch {
+      // Job Object path is preferred but not required; fall back to spawn + taskkill.
     }
-  } catch {
-    // Job Object path is preferred but not required; fall back to spawn + taskkill.
   }
   return spawnFallback(req);
 }
@@ -237,6 +240,7 @@ async function spawnFallback(req: {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  capture?: boolean;
 }): Promise<TrackedProcess> {
   const exe = req.argv[0];
   if (exe === undefined) {
@@ -247,8 +251,10 @@ async function spawnFallback(req: {
     env: req.env,
     windowsHide: true,
     detached: false,
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: ["pipe", req.capture ? "pipe" : "ignore", req.capture ? "pipe" : "ignore"],
   });
+  const output = req.capture ? captureChildOutput(child) : undefined;
+  const completion = observeChild(child);
   await waitForChildSpawn(child);
   if (child.pid === undefined) {
     throw new Error("windows spawn produced no pid");
@@ -260,6 +266,8 @@ async function spawnFallback(req: {
     descendants: [],
     usedJob: false,
     child,
+    completion,
+    ...output,
   };
 }
 
@@ -271,9 +279,12 @@ async function waitForStartIdentity(pid: number): Promise<string> {
       return id;
     }
     if (!tasklistHasPid(pid)) {
-      break;
+      return `win32:${pid}:unresolved`;
     }
     await sleep(50);
+  }
+  if (tasklistHasPid(pid)) {
+    taskkillPid(pid, true);
   }
   throw new Error(`failed to read startIdentity for pid ${pid}`);
 }

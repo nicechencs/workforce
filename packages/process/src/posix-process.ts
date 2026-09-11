@@ -3,7 +3,7 @@ import fs from "node:fs";
 import process from "node:process";
 
 import { identityMismatchError } from "./start-identity.js";
-import type { TrackedProcess } from "./tracked.js";
+import { captureChildOutput, observeChild, type TrackedProcess } from "./tracked.js";
 
 // POSIX process-group cancel is untested (see UNTESTED_PROCESS_PLATFORMS).
 
@@ -11,6 +11,7 @@ export async function spawnPosix(req: {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  capture?: boolean;
 }): Promise<TrackedProcess> {
   const exe = req.argv[0];
   if (exe === undefined) {
@@ -20,8 +21,10 @@ export async function spawnPosix(req: {
     cwd: req.cwd,
     env: req.env,
     detached: true,
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: ["pipe", req.capture ? "pipe" : "ignore", req.capture ? "pipe" : "ignore"],
   });
+  const output = req.capture ? captureChildOutput(child) : undefined;
+  const completion = observeChild(child);
   await waitForChildSpawn(child);
   if (child.pid === undefined) {
     throw new Error("posix spawn produced no pid");
@@ -33,6 +36,8 @@ export async function spawnPosix(req: {
     descendants: [],
     usedJob: false,
     child,
+    completion,
+    ...output,
   };
 }
 

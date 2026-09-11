@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { formatWin32StartIdentity, UNTESTED_PROCESS_PLATFORMS } from "./start-identity.js";
+import {
+  formatWin32StartIdentity,
+  UNTESTED_CAPTURED_PROCESS_PLATFORMS,
+  UNTESTED_PROCESS_PLATFORMS,
+} from "./start-identity.js";
 
 describe("formatWin32StartIdentity", () => {
   it("encodes pid and UTC create time as win32:<pid>:<CreateTime>", () => {
@@ -19,5 +23,11 @@ describe("formatWin32StartIdentity", () => {
 describe("UNTESTED_PROCESS_PLATFORMS", () => {
   it("documents darwin and linux as untested", () => {
     expect(UNTESTED_PROCESS_PLATFORMS).toEqual(["darwin", "linux"]);
+  });
+});
+
+describe("UNTESTED_CAPTURED_PROCESS_PLATFORMS", () => {
+  it("documents Windows and macOS as untested for captured processes", () => {
+    expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32", "darwin"]);
   });
 });
