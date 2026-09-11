@@ -1,3 +1,6 @@
+import type { CanvasGraph } from "./graph/types.js";
+import { parseGraphRecord } from "./graph/parse.js";
+
 export const FEATURE_DELIVERY_WORKFLOW_ID = "software-development-team.feature-delivery" as const;
 export const FEATURE_DELIVERY_VERSION = "0.1.0" as const;
 
@@ -17,9 +20,12 @@ export interface WorkflowVersionView {
   id: string;
   version: string;
   status: "published" | "draft";
-  immutable: true;
+  immutable: boolean;
   entry: string;
   steps: WorkflowStepView[];
+  graph?: CanvasGraph;
+  executionFrozen: boolean;
+  stateRevision?: number;
 }
 
 export interface WorkflowTemplateView {
@@ -29,6 +35,8 @@ export interface WorkflowTemplateView {
   activeVersionId: string;
   versions: WorkflowVersionView[];
   readonly: true;
+  status?: "draft" | "published";
+  stateRevision?: number;
 }
 
 export const FEATURE_DELIVERY_STEPS: WorkflowStepView[] = [
@@ -76,6 +84,7 @@ export const FEATURE_DELIVERY_VERSION_VIEW: WorkflowVersionView = {
   immutable: true,
   entry: "planning",
   steps: FEATURE_DELIVERY_STEPS,
+  executionFrozen: true,
 };
 
 export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
@@ -90,19 +99,19 @@ export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
 
 export const CATALOG_LOADING_NOTE = "正在读取已发布工作流目录…";
 export const LIVE_CATALOG_NOTE =
-  "只读已发布模板与结构化步骤。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。";
+  "只读已发布模板与结构化步骤仍可浏览。新建/编辑走画布上的未发布 WorkflowVersion。未发布图不会被 Mock/Codex Runtime 执行。";
 export const EMPTY_CATALOG_NOTE =
-  "已发布工作流目录为空。此页只读展示已发布模板、版本和结构化步骤，不会回退本地夹具冒充已接通。";
+  "已发布工作流目录为空。可以新建空白画布；不会回退本地夹具冒充已接通，未发布草稿也不会被 Runtime 执行。";
 export const UNAVAILABLE_CATALOG_NOTE =
   "无法读取 GET /workflows。目录未加载；不回退到本地夹具冒充已接通。";
 
-export type WorkflowActionId = "create" | "edit" | "canvas";
+export type WorkflowActionId = "create" | "edit" | "canvas" | "saveDraft" | "publish";
 
 export interface WorkflowPageModel {
   readonly: true;
-  canCreate: false;
-  canEdit: false;
-  hasCanvasEditor: false;
+  canCreate: true;
+  canEditPublishedInPlace: false;
+  hasCanvasEditor: true;
   actions: WorkflowActionId[];
   workflows: WorkflowTemplateView[];
   source: WorkflowCatalogSource;
@@ -130,10 +139,10 @@ export function workflowPageModel(
 ): WorkflowPageModel {
   const base = {
     readonly: true as const,
-    canCreate: false as const,
-    canEdit: false as const,
-    hasCanvasEditor: false as const,
-    actions: [] as WorkflowActionId[],
+    canCreate: true as const,
+    canEditPublishedInPlace: false as const,
+    hasCanvasEditor: true as const,
+    actions: ["create", "canvas"] as WorkflowActionId[],
   };
   const live = input.liveWorkflows;
   if (live && live.length > 0) {
@@ -156,7 +165,8 @@ export function workflowPageModel(
 export function rejectWorkflowCanvas(): { ok: false; reason: string } {
   return {
     ok: false,
-    reason: "V0.1 不提供可视化 Workflow 编辑器；页面只展示模板、版本和结构化步骤。",
+    reason:
+      "已发布版本与确认计划后的活动执行图不可在画布上原地改（D02）。请新建未发布 version，或从模板复制到画布。",
   };
 }
 
@@ -178,7 +188,7 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
   const fallback = versions[0]?.id ?? "";
   const activeVersionId =
     typeof record.activeVersionId === "string" ? record.activeVersionId : fallback;
-  return {
+  const view: WorkflowTemplateView = {
     id: record.id,
     name,
     description,
@@ -186,9 +196,16 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
     versions,
     readonly: true,
   };
+  if (record.status === "draft" || record.status === "published") {
+    view.status = record.status;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
+  }
+  return view;
 }
 
-function asVersionView(value: unknown): WorkflowVersionView | null {
+export function asVersionView(value: unknown): WorkflowVersionView | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -204,14 +221,35 @@ function asVersionView(value: unknown): WorkflowVersionView | null {
         .map((item) => asStepView(item))
         .filter((item): item is WorkflowStepView => item !== null)
     : [];
-  return {
+  const graph = parseOptionalGraph(record);
+  const executionFrozen =
+    record.executionFrozen === true || status === "published" || record.immutable === true;
+  const view: WorkflowVersionView = {
     id,
     version,
     status,
-    immutable: true,
+    immutable: status === "published" || record.immutable === true,
     entry: typeof record.entry === "string" ? record.entry : "",
     steps,
+    executionFrozen,
   };
+  if (graph) {
+    view.graph = graph;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
+  }
+  return view;
+}
+
+function parseOptionalGraph(record: Record<string, unknown>): CanvasGraph | undefined {
+  if (record.graph !== undefined) {
+    return parseGraphRecord(record.graph) ?? undefined;
+  }
+  if (Array.isArray(record.nodes) && Array.isArray(record.edges)) {
+    return parseGraphRecord(record) ?? undefined;
+  }
+  return undefined;
 }
 
 function asStepView(value: unknown): WorkflowStepView | null {

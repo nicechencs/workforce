@@ -3,12 +3,12 @@ title: 产品沟通历史
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # 产品沟通历史
 
-日期：2026-09-11  
+日期：2026-09-12  
 时区：**Asia/Taipei**  
 状态：现行、只追加  
 权威：本文记录驱动规划文档的**用户产品决定**与 PM 澄清。已冻结规则仍以 [decision-register.md](decision-register.md) 为准；实现真相以 [03-implementation-status.md](03-implementation-status.md) 为准。本文不发明 API，也不把 planned 写成已实现。
@@ -87,3 +87,35 @@ updated: 2026-09-11
 - **决定：** 产品必须支持在**容器**中工作。容器是与本机、远程并列的 Placement kind（`container`），不是 D10 worktree 隔离的别名，也不是 `transport`，也不是把 core-user-flows「独立 worktree/目录/容器」一语当成已落地 runner。容器 Run 仍绑定某个 ExecutionNode（本机或远程宿主机）上的 WorkspaceInstance；`container` 不是第四种机器类型。
 - **文档影响：** [decision-register.md](decision-register.md) **D19** 冻结 `container`；D07 / D10 写明与 isolation、enrollment、控制面的边界；IA §4.7、核心流程 §2/§3、能力矩阵 later 表与实现进度写明 runner **未实现**，不发明 Docker / K8s / 编排 endpoint。本条不领取画布 UI / 可写 Team UI，不改 Daemon。M7 写 API + 协议已由 #23 接通，本条不回退该结论，也不把写接口写成画布或 M7 完成。
 - **状态：** 产品模型 **planned 已冻结**。容器 runner / 编排 **未实现**。不得写成已完成。
+
+---
+
+## 2026-09-12（Asia/Taipei）T18 画布接线：草稿保存走 #23 写 API
+
+- **决定：** 合前验收要求 create + edit + **save** 必须过。画布不得再因 typed client 写 path 未挂载而禁用保存，也不得假成功 toast。保存必须真实 POST/PATCH 未发布 version；reload 后仍能看到同名草稿与 nodes/edges。发布走 `publishWorkflowVersion`；非法图/空图诚实失败。依赖已合并的写契约（PR #23 / `cursor/m7-write-contracts-f059`），不另开 PR。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 将 T18 改为「画布 UI 已接线且草稿保存走写 API（依赖 #23）」；明确 headed 真窗 `WORKFORCE-PR22-62b1e620-CANVAS-TRUEWINDOW` 尚未复验通过。去掉「保存因 client 未挂载而禁用」。
+- **状态：** 画布 UI + 草稿写路径 **implemented**（headless / Electron proxy）。headed 真窗 **planned**（待复测）。T19/T20/T21 与 M7 整体仍 **planned**。远程 enrollment 与容器 runner 仍 **未实现**（D19）。
+
+---
+
+## 2026-09-12（Asia/Taipei）T18 rebase 到 #23 squash tip
+
+- **决定：** #23 写 API 已 squash 合入 `main` `15c058f`。T18（#22）不再叠 squash 前的写 API commit，只保留画布 UI + desktop write-client 接线。不发明 chat / `executionMode` / enrollment endpoint。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 写明 T18 画布已接线且草稿保存走已合入的写 API；M7 未完成；T19/T20/T21 仍未实现；headed 真窗待复测。
+- **状态：** T18 画布接线 **implemented**（headless / proxy）。headed 真窗 **planned**。M7 / T19 / T20 / T21 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T18 rebase 到 #20 D19 squash tip
+
+- **决定：** #20（D19 Placement：本机默认 / 远程 / 容器）已 squash 合入 `main` `c1c86ef`。T18 叠在该 tip 上，保留 D19 产品模型与「远程 enrollment / 容器 runner 未实现」；保留画布 UI + 草稿保存接线。不发明 enrollment / Docker / 编排 endpoint，不宣称 M7 完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 D19 实现深度与 T18 已接线（headed 未宣称 PASS）。
+- **状态：** T18 **implemented**（headless / proxy）。headed **planned**。D19 远程/容器 **planned**。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T18 headed 真窗 create/edit/save/publish PASS
+
+- **决定：** Review 有条件通过 #22。Test 报告 `WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md` 将 headed Electron 真窗 create/edit/save/publish 记为 **PASS**。验证 head 为 `fbe13dea`；之后 rebase 到 `c1c86ef` 的 tip（`3d0bd971`）只是文档/小清理，行为未回退。不因此宣称 M7 完成，也不宣称 T19 / T20 / T21、远程 enrollment 或容器 runner 已完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 将 T18 headed 从「未复验 / 待复测」改为 **PASS**，并写清验证 head 与 tip 关系。
+- **状态：** T18 画布 UI + 草稿保存 + headed 真窗 create/edit/save/publish **implemented**。M7 / T19 / T20 / T21 / D19 远程与容器仍 **planned**。
