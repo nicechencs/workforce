@@ -11,8 +11,17 @@ import {
   listStyle,
   mutedStyle,
   pageStyle,
+  rowStyle,
   titleStyle,
 } from "../projects/ui.js";
+import { WorkflowCanvasPage, shouldOpenCanvas } from "./canvas/page.js";
+import {
+  CANVAS_DRAFT_VERSION_ID,
+  canvasCreatePath,
+  canvasDraftPath,
+  rejectInPlaceCanvasEdit,
+} from "./canvas/model.js";
+import { PROJECT_LOOP_NOTE } from "./canvas/copy.js";
 import {
   asWorkflowView,
   catalogListCard,
@@ -34,8 +43,16 @@ export function WorkflowsPage(props: FeaturePageProps) {
   const [note, setNote] = useState(initial.note);
   const [source, setSource] = useState<WorkflowCatalogSource>(initial.source);
 
+  const openCanvas = shouldOpenCanvas({
+    workflowId: props.params.workflowId,
+    versionId: props.params.versionId,
+  });
+
   useEffect(() => {
     let cancelled = false;
+    if (props.params.workflowId === "new") {
+      return;
+    }
     void (async () => {
       try {
         if (props.params.workflowId) {
@@ -78,9 +95,35 @@ export function WorkflowsPage(props: FeaturePageProps) {
     };
   }, [client, props.params.workflowId]);
 
+  if (openCanvas) {
+    const workflowId = props.params.workflowId ?? "new";
+    return (
+      <WorkflowCanvasPage
+        workflowId={workflowId}
+        versionId={props.params.versionId}
+        navigate={props.navigate}
+      />
+    );
+  }
+
   const workflowId = props.params.workflowId;
   if (workflowId) {
     const workflow = workflowById(workflows, workflowId);
+    if (
+      shouldOpenCanvas({
+        workflowId,
+        versionId: props.params.versionId,
+        workflow,
+      })
+    ) {
+      return (
+        <WorkflowCanvasPage
+          workflowId={workflowId}
+          versionId={props.params.versionId}
+          navigate={props.navigate}
+        />
+      );
+    }
     return (
       <WorkflowDetailPage
         workflow={workflow}
@@ -96,7 +139,19 @@ export function WorkflowsPage(props: FeaturePageProps) {
     <main style={pageStyle}>
       <h1 style={titleStyle}>工作流</h1>
       <p style={mutedStyle}>{note}</p>
-      <p style={mutedStyle}>模板、版本和结构化步骤。V0.1 没有画布编辑器。</p>
+      <p style={mutedStyle} data-testid="workflow-loop-note">
+        {PROJECT_LOOP_NOTE}
+      </p>
+      <div style={rowStyle}>
+        <button
+          type="button"
+          data-testid="workflow-new-canvas"
+          style={buttonStyle("primary")}
+          onClick={() => props.navigate(canvasCreatePath())}
+        >
+          新建画布
+        </button>
+      </div>
       <section style={cardStyle}>
         {workflows.length === 0 ? (
           <CatalogListStatus source={source} />
@@ -161,10 +216,14 @@ function WorkflowDetailPage(props: {
   }
 
   const selected = versionById(props.workflow, props.versionId);
-  const canvas = rejectWorkflowCanvas();
+  const inPlace = rejectWorkflowCanvas();
   const versionRoute = Boolean(props.versionId);
   const sourceLabel =
     props.source === "live" ? "GET /workflows" : props.source === "empty" ? "空目录" : "目录未加载";
+  const draft = props.workflow.versions.find((item) => item.status === "draft");
+  const editTarget = draft
+    ? canvasDraftPath(props.workflow.id, draft.id)
+    : canvasDraftPath(props.workflow.id, CANVAS_DRAFT_VERSION_ID);
 
   return (
     <main style={pageStyle}>
@@ -182,14 +241,26 @@ function WorkflowDetailPage(props: {
       <section style={cardStyle} data-testid="workflow-detail">
         <h1 style={titleStyle}>{props.workflow.name}</h1>
         <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-          <span style={badgeStyle("muted")}>只读</span>
+          <span style={badgeStyle("muted")}>已发布目录只读</span>
         </div>
         <p style={mutedStyle}>{props.workflow.description}</p>
         <p style={mutedStyle}>
           来源 {sourceLabel} · 活动版本 {props.workflow.activeVersionId}
         </p>
         <p style={mutedStyle}>{props.note}</p>
-        <p style={mutedStyle}>{canvas.reason}</p>
+        <p style={mutedStyle} data-testid="workflow-inplace-reject">
+          {inPlace.reason}
+        </p>
+        <div style={rowStyle}>
+          <button
+            type="button"
+            data-testid="workflow-edit-canvas"
+            style={buttonStyle("primary")}
+            onClick={() => props.navigate(editTarget)}
+          >
+            在画布中编辑
+          </button>
+        </div>
         <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>版本</h2>
         <ul style={listStyle}>
           {props.workflow.versions.map((version) => (
@@ -198,19 +269,35 @@ function WorkflowDetailPage(props: {
               style={listItemStyle}
               data-testid={`workflow-version-${version.id}`}
               onClick={() =>
-                props.navigate(`/workflows/${props.workflow?.id}/versions/${version.id}`)
+                props.navigate(
+                  version.status === "draft"
+                    ? canvasDraftPath(props.workflow?.id ?? "", version.id)
+                    : `/workflows/${props.workflow?.id}/versions/${version.id}`,
+                )
               }
             >
               <strong>
                 {version.version} · {version.status === "published" ? "已发布" : "草稿"}
               </strong>
               <div style={mutedStyle}>
-                不可变 · 入口 {version.entry} · {version.steps.length} 步
+                {version.status === "published" ? "不可变 · " : "未发布，Runtime 不会执行 · "}
+                入口 {version.entry} · {version.steps.length} 步
               </div>
             </li>
           ))}
         </ul>
-        {selected ? <StructuredSteps version={selected} /> : <p>未找到该版本。</p>}
+        {selected ? (
+          selected.status === "draft" ? null : (
+            <StructuredSteps version={selected} />
+          )
+        ) : (
+          <p>未找到该版本。</p>
+        )}
+        {selected && selected.status === "published" ? (
+          <p style={mutedStyle} data-testid="workflow-d02-freeze">
+            {rejectInPlaceCanvasEdit(selected).reason}
+          </p>
+        ) : null}
       </section>
     </main>
   );
