@@ -530,8 +530,19 @@ a {
   box-shadow: var(--wf-shadow-xs);
 }
 
+/* 直接相邻的卡片默认 12px。只在没有容器 gap 的页面（Card 直接放在 .wf-page 下）
+   作为唯一间距来源，见 docs/product-ui/04-design-system.md §2.3「不要叠加多个 margin」。 */
 .wf-card + .wf-card {
   margin-top: var(--wf-space-12);
+}
+
+/* 已经用 gap 排版的容器不再叠加相邻卡片 margin：在 grid 里它会把第二张起的卡片
+   整块向下顶 12px（与首张错位、且被压矮），换行或单列时又会把 12px 缝变成 24px。 */
+.wf-stack > .wf-card + .wf-card,
+.wf-split > .wf-card + .wf-card,
+.wf-metric-grid > .wf-card + .wf-card,
+.wf-card-list > .wf-card + .wf-card {
+  margin-top: 0;
 }
 
 .wf-card-plain {
@@ -589,6 +600,9 @@ a {
   display: grid;
   gap: var(--wf-space-12);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  /* 指标格子里可以混入内容更高的卡片（如执行节点）；默认 stretch 会把只有
+     标签 + 数值的 Kpi 拉成同样高度、底部留一大片空白。 */
+  align-items: start;
 }
 
 .wf-split {
@@ -1214,7 +1228,10 @@ a {
   color: inherit;
 }
 
-.wf-list-row:last-child {
+/* 分隔线只去掉列表最后一行的：可点击行是 `li > button.wf-list-row`，
+   对 button 直接写 :last-child 会让每一行都命中（button 是 li 的唯一子元素）。 */
+.wf-list > .wf-list-row:last-child,
+.wf-list > li:last-child > .wf-list-row {
   border-bottom: 0;
 }
 
