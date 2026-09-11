@@ -247,3 +247,20 @@ updated: 2026-09-12
 - **决定：** #26 tip `f3b2045` 上项目「开始执行」`orchestrationMode` UI / start path 的 true-window smoke 已 **PASS**（`WORKFORCE-TIP-f3b2045-ORCHESTRATION-START-SMOKE.md`：direct 诚实 disabled；`workflow_bound` 能启动 Run）。只覆盖该启动面，不代替其余真窗路径，也不把 Task 详情重新挂上未接线控件。#28 composed 透传仍只以 unit / composed 为证，**不**把该 smoke 算作 #28 headed PASS。不宣称完整 headed 套件、M8 调度或生产 Codex direct。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 UI / start path 不再写「headed 未跑」；T21 行区分 #26 smoke 与 #28 透传证据。
 - **状态：** 项目启动面 headed smoke **implemented**（`f3b2045`）。#28 透传 headed / 完整 headed 套件 / M8 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）冻结 D17 V0.1 会话传输为 Desktop-local（非发送、非 Agent、非 M7）
+
+- **决定：** #27 已把 `AuthoringSessionDto` / `AuthoringDraftDto` 合入 `main`。在该 DTO 之上冻结 **单一传输**：V0.1 作者会话是 **Desktop-local / in-process**，对照已冻结 DTO；**无** Daemon chat 资源。能力矩阵继续**不列**公开 chat HTTP path。后续 T20 发送接线 = Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput`；编排 Agent 回复仍 planned。`CHAT_SESSION_PROTOCOL_FROZEN` **保持 false**。不实现编排 Agent / LLM、假 Agent 成功、Daemon 路由、OpenAPI live chat path 或会成功的 client 方法。不发明 enrollment / 容器 / `:direct` endpoint。不宣称 M7 / M8 / 对话生成完成。Placement 默认仍是本机。
+- **文档影响：** [decision-register.md](decision-register.md) D17 与冻结总表写入 Desktop-local 传输；[api-capability-matrix.md](api-capability-matrix.md) 命名该传输、**仍不增加** chat 资源；[03-implementation-status.md](03-implementation-status.md) 诚实记录（传输冻结；发送未接线；M7 未完成）；[02-development-task-backlog.md](02-development-task-backlog.md) T20 验收改为「DTO + 传输已冻结，发送仍 off」；[04-collab-and-review.md](04-collab-and-review.md) 仍禁止假对话成功；[02-core-user-flows.md](../product-ui/02-core-user-flows.md) §9 同步；协议注释澄清传输，不把 `CHAT_SESSION_PROTOCOL_FROZEN` 翻成 true。
+- **状态：** DTO **implemented**。V0.1 传输决策 **frozen**（Desktop-local / in-process）。T20 发送 / 编排 Agent / 对话生成 / M7 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#29 rebase 到 #28 tip `1653354`
+
+- **决定：** #28（T21 composed `:start` 透传）已 squash 合入 `main` `1653354`。#29 rebase 到该 tip：同时保留 T21 项目启动面探针 + composed start/Run 透传（#26 headed smoke PASS；#28 仅 unit/composed；Task 详情不挂未接线控件；无 M8 调度）与 D17 V0.1 Desktop-local / in-process 传输冻结。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。不发明 chat / `:direct` / enrollment / 容器 path。不宣称对话生成、T20 发送、M7 或 M8 完成。
+- **文档影响：** 冲突页同时保留 #28 T21 现行透传表述与 D17 Desktop-local 传输冻结。
+- **状态：** T21 composed 透传 **implemented**（main，unit/composed）。V0.1 传输决策 **frozen**（Desktop-local）。T20 发送 / 编排 Agent / M7 / M8 **planned**。
+
