@@ -18,9 +18,19 @@ import {
  */
 export const DESKTOP_LOCAL_AUTHORING_PROJECT_ID = "prj_desktop_local";
 
+/** Renderer-local snapshot key. Survives Electron Ctrl+R; not a Daemon chat resource. */
+export const AUTHORING_SESSION_STORAGE_KEY = "workforce.d17.authoring-sessions.v0.1";
+
+export interface AuthoringSessionStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 export interface InProcessAuthoringSessionStoreOptions {
   now?: () => string;
   id?: (prefix: string) => string;
+  storage?: AuthoringSessionStorage | null;
 }
 
 export class AuthoringSessionNotFoundError extends Error {
@@ -44,18 +54,22 @@ export class AuthoringSessionClosedError extends Error {
 }
 
 /**
- * In-process / Desktop-local session store keyed by authoring session id.
+ * Desktop-local session store keyed by authoring session id.
  * Holds messages + draft projection against the frozen D17 DTOs.
+ * Optional localStorage snapshot survives Electron renderer reload.
  * No Daemon chat resource, no HTTP path, no Agent/LLM reply loop.
  */
 export class InProcessAuthoringSessionStore {
   readonly #sessions = new Map<string, AuthoringSessionDto>();
   readonly #now: () => string;
   readonly #id: (prefix: string) => string;
+  readonly #storage: AuthoringSessionStorage | null;
 
   constructor(options: InProcessAuthoringSessionStoreOptions = {}) {
     this.#now = options.now ?? defaultNow;
     this.#id = options.id ?? defaultId;
+    this.#storage = options.storage ?? null;
+    this.#hydrate();
   }
 
   create(input: CreateAuthoringSessionInput): AuthoringSessionDto {
@@ -76,6 +90,7 @@ export class InProcessAuthoringSessionStore {
       updatedAt: now,
     });
     this.#sessions.set(session.id, session);
+    this.#persist();
     return cloneSession(session);
   }
 
@@ -109,6 +124,7 @@ export class InProcessAuthoringSessionStore {
       updatedAt: now,
     });
     this.#sessions.set(next.id, next);
+    this.#persist();
     return cloneSession(next);
   }
 
@@ -126,6 +142,7 @@ export class InProcessAuthoringSessionStore {
       updatedAt: now,
     });
     this.#sessions.set(next.id, next);
+    this.#persist();
     return cloneSession(next);
   }
 
@@ -141,22 +158,126 @@ export class InProcessAuthoringSessionStore {
       createdAt,
     };
   }
+
+  #hydrate(): void {
+    if (!this.#storage) {
+      return;
+    }
+    let raw: string | null;
+    try {
+      raw = this.#storage.getItem(AUTHORING_SESSION_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) {
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return;
+    }
+    const snapshot = parsed as { protocolVersion?: unknown; sessions?: unknown };
+    if (snapshot.protocolVersion !== "0.1" || !Array.isArray(snapshot.sessions)) {
+      return;
+    }
+    for (const item of snapshot.sessions) {
+      try {
+        const session = parseAuthoringSession(item);
+        this.#sessions.set(session.id, session);
+      } catch {
+        // Skip corrupt rows. Do not invent an Agent success session.
+      }
+    }
+  }
+
+  #persist(): void {
+    if (!this.#storage) {
+      return;
+    }
+    try {
+      this.#storage.setItem(
+        AUTHORING_SESSION_STORAGE_KEY,
+        JSON.stringify({
+          protocolVersion: "0.1",
+          sessions: [...this.#sessions.values()],
+        }),
+      );
+    } catch {
+      // Best-effort local snapshot. In-memory session remains; no Agent reply.
+    }
+  }
 }
 
 let defaultStore: InProcessAuthoringSessionStore | undefined;
 
 export function getDefaultAuthoringSessionStore(): InProcessAuthoringSessionStore {
-  defaultStore ??= new InProcessAuthoringSessionStore();
+  defaultStore ??= new InProcessAuthoringSessionStore({ storage: resolveDefaultStorage() });
   return defaultStore;
 }
 
 export function resetDefaultAuthoringSessionStoreForTests(): void {
-  defaultStore = new InProcessAuthoringSessionStore();
+  const storage = resolveDefaultStorage();
+  try {
+    storage?.removeItem(AUTHORING_SESSION_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  defaultStore = new InProcessAuthoringSessionStore({ storage });
+}
+
+/** Simulate Electron renderer reload: new store instance, same local snapshot. */
+export function reloadDefaultAuthoringSessionStoreForTests(): void {
+  defaultStore = new InProcessAuthoringSessionStore({ storage: resolveDefaultStorage() });
 }
 
 export function resolveAuthoringProjectId(projectId?: string): string {
   const trimmed = projectId?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : DESKTOP_LOCAL_AUTHORING_PROJECT_ID;
+}
+
+export function createMemoryAuthoringSessionStorage(
+  initial: Record<string, string> = {},
+): AuthoringSessionStorage {
+  const data = new Map(Object.entries(initial));
+  return {
+    getItem(key: string): string | null {
+      return data.has(key) ? (data.get(key) ?? null) : null;
+    },
+    setItem(key: string, value: string): void {
+      data.set(key, value);
+    },
+    removeItem(key: string): void {
+      data.delete(key);
+    },
+  };
+}
+
+export function resolveDefaultStorage(): AuthoringSessionStorage | null {
+  try {
+    const fromWindow =
+      typeof window !== "undefined" && "localStorage" in window ? window.localStorage : undefined;
+    const fromGlobal =
+      typeof globalThis !== "undefined" && "localStorage" in globalThis
+        ? globalThis.localStorage
+        : undefined;
+    const candidate = fromWindow ?? fromGlobal;
+    if (
+      candidate &&
+      typeof candidate.getItem === "function" &&
+      typeof candidate.setItem === "function" &&
+      typeof candidate.removeItem === "function"
+    ) {
+      return candidate;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function defaultNow(): string {

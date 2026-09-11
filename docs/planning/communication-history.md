@@ -272,3 +272,11 @@ updated: 2026-09-12
 - **文档影响：** [decision-register.md](decision-register.md) D17 写明传输已冻结且本机会话存储 + 用户 append 已接线、Agent 仍 planned；[api-capability-matrix.md](api-capability-matrix.md) 仍**不增加** chat 资源；[03-implementation-status.md](03-implementation-status.md) T20 改为会话存储 + 用户 append，M7 / Agent 未完成；[02-development-task-backlog.md](02-development-task-backlog.md) T20 现行验收同步；[04-collab-and-review.md](04-collab-and-review.md) 仍禁止假 Agent 成功；[02-core-user-flows.md](../product-ui/02-core-user-flows.md) §9 同步。
 - **状态：** Desktop-local 会话存储 + 仅用户 append **implemented**（unit / happy-dom）。编排 Agent / 对话生成 / M7 / M8 **planned**。
 
+---
+
+## 2026-09-12（Asia/Taipei）T20 本机会话补 renderer-reload 持久化（#31 headed FAIL）
+
+- **决定：** Test 真窗报告 `WORKFORCE-PR31-31d669be-AUTHORING-SESSION-STORE.md`（head `31d669be`）记为 **FAIL**：用户 append 在 SPA 导航后仍在（进程内 Map OK）；Electron renderer reload（Ctrl+R / 整页 remount）后会话与用户消息丢失。无假 Agent 回复；草稿深链 OK。修复是把 Desktop-local 会话快照写入 renderer **`localStorage`**（键 `workforce.d17.authoring-sessions.v0.1`），新进程内 store 启动时 hydrate。仍只追加用户消息，**不**做编排 Agent / LLM，**不**发明 Daemon chat path 或 desktop-client chat HTTP 方法。`CHAT_SESSION_PROTOCOL_FROZEN=true` 仍只表示本机用户 append + 本地存储。不宣称 M7 / M8 / 对话生成完成。**headed 未复测，不得写成 PASS**。#30 docs sync 仍 OPEN，未 rebase。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T20 写明 `31d669be` FAIL 与 localStorage 修复、headed 未复测；本历史追加本条。
+- **状态：** reload 持久化 **implemented**（unit / happy-dom 模拟 renderer remount）。headed 复测 **planned**。编排 Agent / M7 / M8 **planned**。
+

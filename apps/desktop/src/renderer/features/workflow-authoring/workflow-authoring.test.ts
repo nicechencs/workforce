@@ -28,8 +28,10 @@ import {
 } from "./model.js";
 import { WorkflowAuthoringPage } from "./page.js";
 import {
+  AUTHORING_SESSION_STORAGE_KEY,
   DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
   InProcessAuthoringSessionStore,
+  createMemoryAuthoringSessionStorage,
 } from "./session-store.js";
 
 function filledForm() {
@@ -339,6 +341,70 @@ describe("in-process authoring session store", () => {
     ).toThrow(/不存在/);
     expect(store.load(created.id)?.messages).toEqual([]);
     expect(store.load("cas_missing")).toBeUndefined();
+  });
+
+  it("rehydrates the same session id and user messages from a local snapshot", () => {
+    const storage = createMemoryAuthoringSessionStorage();
+    const first = new InProcessAuthoringSessionStore({
+      storage,
+      now: () => "2026-09-12T01:00:00.000Z",
+      id: (prefix) => `${prefix}reload`,
+    });
+    const created = first.create({ projectId: "prj_reload" });
+    first.appendUserMessage({
+      sessionId: created.id,
+      role: "user",
+      content: "reload 后还要在",
+    });
+    expect(storage.getItem(AUTHORING_SESSION_STORAGE_KEY)).toContain("reload 后还要在");
+
+    const reloaded = new InProcessAuthoringSessionStore({ storage });
+    const loaded = reloaded.load(created.id);
+    expect(loaded?.id).toBe(created.id);
+    expect(loaded?.projectId).toBe("prj_reload");
+    expect(loaded?.messages.map((message) => message.content)).toEqual(["reload 后还要在"]);
+    expect(loaded?.messages.every((message) => message.role === "user")).toBe(true);
+    expect(reloaded.list()).toHaveLength(1);
+  });
+
+  it("skips corrupt snapshots instead of inventing an Agent success session", () => {
+    const storage = createMemoryAuthoringSessionStorage({
+      [AUTHORING_SESSION_STORAGE_KEY]: "{not-json",
+    });
+    expect(new InProcessAuthoringSessionStore({ storage }).list()).toEqual([]);
+
+    storage.setItem(
+      AUTHORING_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        protocolVersion: "0.1",
+        sessions: [
+          { id: "cas_bad" },
+          {
+            id: "cas_ok",
+            projectId: "prj_1",
+            protocolVersion: "0.1",
+            status: "open",
+            messages: [
+              {
+                id: "cam_ok",
+                role: "user",
+                content: "有效用户消息",
+                createdAt: "2026-09-12T00:00:00.000Z",
+              },
+            ],
+            stateRevision: 1,
+            createdAt: "2026-09-12T00:00:00.000Z",
+            updatedAt: "2026-09-12T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    const recovered = new InProcessAuthoringSessionStore({ storage });
+    expect(recovered.list().map((session) => session.id)).toEqual(["cas_ok"]);
+    expect(recovered.load("cas_ok")?.messages[0]?.role).toBe("user");
+    expect(
+      recovered.load("cas_ok")?.messages.some((message) => message.role === "authoring_agent"),
+    ).toBe(false);
   });
 });
 

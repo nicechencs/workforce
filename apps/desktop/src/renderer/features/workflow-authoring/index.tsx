@@ -20,8 +20,11 @@ export {
   rejectChatSubmit,
 } from "./model.js";
 export {
+  AUTHORING_SESSION_STORAGE_KEY,
   DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
   InProcessAuthoringSessionStore,
+  createMemoryAuthoringSessionStorage,
   getDefaultAuthoringSessionStore,
+  reloadDefaultAuthoringSessionStoreForTests,
   resetDefaultAuthoringSessionStoreForTests,
 } from "./session-store.js";

@@ -25,7 +25,7 @@ export type { AuthoringDraftDto, AuthoringSessionDto, AuthoringSessionMessageDto
 export const CHAT_SESSION_PROTOCOL_FROZEN = true;
 
 export const CHAT_SESSION_GAP =
-  "Desktop-local / in-process 会话存储已接线：用户消息按 AppendAuthoringSessionMessageInput 追加，对照已冻结 AuthoringSessionDto / AuthoringDraftDto。能力矩阵仍不列 chat endpoint / Daemon chat 资源。编排 Agent 回复仍 planned，禁止把假回复渲染成生成成功。";
+  "Desktop-local / in-process 会话存储已接线：用户消息按 AppendAuthoringSessionMessageInput 追加，对照已冻结 AuthoringSessionDto / AuthoringDraftDto；快照写入本机 localStorage，跨 renderer reload 仍可恢复。能力矩阵仍不列 chat endpoint / Daemon chat 资源。编排 Agent 回复仍 planned，禁止把假回复渲染成生成成功。";
 
 export const AGENT_REPLY_GAP =
   "编排 Agent 回复仍 planned。本页不会生成或渲染假装成功的 Agent 气泡，用户消息也不是 Task/Run 完成。";

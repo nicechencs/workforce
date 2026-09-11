@@ -378,7 +378,7 @@ flowchart TD
 - 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成。
 - 对话回复不得写成 Task/Run 完成。
 
-**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput` 已接线（`CHAT_SESSION_PROTOCOL_FROZEN=true` 只表示该本机切片）。编排 Agent 仍 planned。未实现 Agent 时无生成成功态。不得把 Mock 聊天或用户消息冒充 Agent 已实现。headed 未跑不得宣称对话编排可用。desktop-client **只导出类型**，无 chat HTTP 方法。
+**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput` 已接线（`CHAT_SESSION_PROTOCOL_FROZEN=true` 只表示该本机切片）；快照写入本机 `localStorage`，应对 renderer reload。编排 Agent 仍 planned。未实现 Agent 时无生成成功态。不得把 Mock 聊天或用户消息冒充 Agent 已实现。#31 `31d669be` headed **FAIL**（reload 丢会话）后已补持久化，复测前不得宣称 headed PASS。desktop-client **只导出类型**，无 chat HTTP 方法。
 **完整卡验收（仍未到）：** 编排 Agent 生成草稿 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。Agent 回复与 M7 完成不在本切片。
 
 **集成依赖：** T02 会话/草稿契约 **已冻结**（`AuthoringSessionDto` / `AuthoringDraftDto`）。V0.1 传输 **已冻结**（Desktop-local / in-process）。本机会话存储 + 用户 append **已接线**。仍需编排 Agent、T18 画布、T10 写 API、T19 若生成 Team 草稿。不发明 chat path。

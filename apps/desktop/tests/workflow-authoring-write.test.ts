@@ -22,7 +22,10 @@ import {
   AGENT_REPLY_GAP,
   CHAT_SESSION_GAP,
 } from "../src/renderer/features/workflow-authoring/model.js";
-import { resetDefaultAuthoringSessionStoreForTests } from "../src/renderer/features/workflow-authoring/session-store.js";
+import {
+  reloadDefaultAuthoringSessionStoreForTests,
+  resetDefaultAuthoringSessionStoreForTests,
+} from "../src/renderer/features/workflow-authoring/session-store.js";
 import { WorkflowsPage } from "../src/renderer/features/workflows/page.js";
 import { installHappyDom, uninstallHappyDom } from "./install-happy-dom.js";
 
@@ -407,6 +410,8 @@ describe("workflow authoring write path", () => {
       );
       expect(sessionLabel).toContain("cas_");
       expect(sessionLabel).toContain("Desktop-local");
+      const sessionId = sessionLabel.match(/cas_[A-Za-z0-9]+/)?.[0];
+      expect(sessionId).toBeTruthy();
 
       const send = await waitFor("enabled user append", () => {
         const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
@@ -455,6 +460,7 @@ describe("workflow authoring write path", () => {
         root.unmount();
       });
       roots.pop();
+      reloadDefaultAuthoringSessionStoreForTests();
       const remount = document.createElement("div");
       document.body.append(remount);
       const remountRoot = createRoot(remount);
@@ -472,10 +478,13 @@ describe("workflow authoring write path", () => {
         );
       });
       const reloaded = await waitFor(
-        "reloaded user message",
+        "reloaded user message after renderer-store rebuild",
         () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
       );
       expect(reloaded).toContain("请记下这段用户意图");
+      expect(
+        document.querySelector('[data-testid="workflow-authoring-session-id"]')?.textContent,
+      ).toContain(sessionId);
       expect(document.body.innerText).not.toContain("Agent 已生成");
     },
   );
