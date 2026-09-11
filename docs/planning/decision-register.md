@@ -437,7 +437,7 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 **M7 起变为必需：**
 
 - 对话生成草稿后，用户能打开画布编辑并发布（依赖 T18 写接口）。
-- 会话协议 / 草稿 DTO 由 T02 冻结后写入能力矩阵；领取前本登记与矩阵只标 **planned**，不列虚构 path。
+- T02 已冻结会话 / 草稿 DTO：`AuthoringSessionDto`、`AuthoringDraftDto`（`packages/protocol`）。能力矩阵命名该 DTO，**不列** chat HTTP path。DTO 冻结 ≠ 对话发送、编排 Agent 或 M7 完成；T20 发送仍禁用直至后续接线。
 - 生成失败、空意图、校验失败必须诚实错误，不回退夹具冒充已生成。
 
 **非目标：**
@@ -521,4 +521,4 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 UI / 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。
+T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`），**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针/部分接线，M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。

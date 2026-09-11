@@ -44,4 +44,11 @@ describe("desktop-client paths", () => {
     expect(paths.projectBudget("prj_1")).toBe("/api/v1/projects/prj_1/budget");
     expect(paths.projectWorkspaces("prj_1")).toBe("/api/v1/projects/prj_1/workspaces");
   });
+
+  it("does not invent a D17 conversational authoring HTTP path", () => {
+    const names = Object.keys(paths);
+    expect(names.some((name) => /authoring|chat/i.test(name))).toBe(false);
+    const serialized = JSON.stringify(paths);
+    expect(serialized).not.toMatch(/authoring-session|\/chat|conversational/i);
+  });
 });

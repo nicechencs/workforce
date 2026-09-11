@@ -215,3 +215,19 @@ updated: 2026-09-12
 - **决定：** PM UI P1 打回 #26：Task 详情上的 `orchestrationMode` 控件未接到 start 命令，属于假按钮风险。同 PR 删除该挂载，只保留已接到 `POST /projects/{id}:start` 的项目「开始执行」面。不发明 `/runs/{id}:direct`，不宣称 M8 / Codex direct / headed。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 行改为「项目启动面部分接线；Task 详情不挂未接线控件」。
 - **状态：** T21 UI **部分接线**（项目 `:start`）。Task 详情无 mode 控件。M8 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）冻结 D17 会话 / 草稿 DTO（非 T20 发送、非 M7）
+
+- **决定：** 把 D17 对话式作者会话与未发布草稿投影冻结为 **`AuthoringSessionDto`** / **`AuthoringDraftDto`**（及 user-only `AppendAuthoringSessionMessageInput`）。权威位置是 `packages/protocol`；JSON Schema 为 `docs/protocols/v0.1/authoring-session.schema.json`。草稿复用已有 Workflow / Team 写 payload，禁止 `published`、`executionMode`、`orchestrationMode`、Run/Task 完成字段。desktop-client **只导出类型**，不增加 chat HTTP path 或 client 方法。T20 可编译对照该 DTO，但 **`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false**，发送保持禁用。本切片不实现编排 Agent / LLM 循环、假 Agent 回复、Daemon 新路由，也不宣称 M7 / 对话生成完成。Placement 默认仍是本机；不发明 enrollment 或容器编排 API。
+- **文档影响：** [decision-register.md](decision-register.md) D17 写明 DTO 已冻结且不列 chat path；[api-capability-matrix.md](api-capability-matrix.md) 命名该 DTO、**不增加** chat 资源；[03-implementation-status.md](03-implementation-status.md) T02/T20 诚实记录（DTO 冻结；发送未接线；M7 未完成）；[02-development-task-backlog.md](02-development-task-backlog.md) T20 会话契约依赖已满足、发送仍是缺口；[04-collab-and-review.md](04-collab-and-review.md) 仍禁止假对话成功；[docs/protocols](../protocols/README.md) 增加 `authoring-session.schema.json`；[02-core-user-flows.md](../product-ui/02-core-user-flows.md) §9 同步。
+- **状态：** protocol 会话 / 草稿 DTO **implemented**。T20 发送 / 编排 Agent / 对话生成 / M7 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#27 rebase 到 T21 tip `f3b2045`
+
+- **决定：** #26（T21 `orchestrationMode` 启动面 + capability gating）已 squash 合入 `main` `f3b2045`。#27 rebase 到该 tip：同时保留 T21 项目启动面探针/部分接线（Task 详情不挂未接线控件；M8 未完成）与 D17 `AuthoringSessionDto` / `AuthoringDraftDto` 协议冻结。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。不发明 chat / `:direct` / enrollment / 容器 path。不宣称对话生成、T20 发送、M7 或 M8 完成。
+- **文档影响：** 冲突页同时保留 T21 现行部分接线表述与 D17 会话 DTO 冻结表述。
+- **状态：** T21 UI **部分接线**（main）。会话 / 草稿 DTO **implemented**。T20 发送 / 编排 Agent / M7 / M8 **planned**。

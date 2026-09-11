@@ -216,6 +216,11 @@ export interface SessionDto {
 }
 
 export type {
+  AppendAuthoringSessionMessageInput,
+  AuthoringDraftDto,
+  AuthoringSessionDto,
+  AuthoringSessionMessageDto,
+  CreateAuthoringSessionInput,
   CreateTeamInput,
   CreateTeamVersionInput,
   CreateWorkflowInput,

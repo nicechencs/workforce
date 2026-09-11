@@ -235,7 +235,7 @@ describe("workflow authoring write path", () => {
         "empty intent",
         () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
       );
-      expect(empty).toContain("会话协议未冻结");
+      expect(empty).toContain("发送未接线");
       expect(
         document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
           ?.value,
