@@ -68,7 +68,10 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
           name: "usage.reporting",
           version: "0.1",
           available: false,
-          constraints: { tokenCounts: "documented_not_live_verified", monetaryCost: "unknown" },
+          constraints: {
+            tokenCounts: "host_probe_verified_adapter_not_wired",
+            monetaryCost: "unknown",
+          },
         },
       ],
     };
