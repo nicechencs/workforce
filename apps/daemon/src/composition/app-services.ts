@@ -94,6 +94,7 @@ import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js
 
 const encoder = new TextEncoder();
 type SqliteWriter = typeof dualWriteSqlite;
+const sqliteWriterOption = Symbol("sqliteWriter");
 
 export interface ComposedAppServicesOptions {
   stateDir: string;
@@ -101,8 +102,11 @@ export interface ComposedAppServicesOptions {
   clientId?: string;
   completeAfterMs?: number;
   policyEngine?: InMemoryPolicyEngine;
-  sqliteWriter?: SqliteWriter;
 }
+
+type InternalComposedAppServicesOptions = ComposedAppServicesOptions & {
+  [sqliteWriterOption]?: SqliteWriter;
+};
 
 export class ComposedAppServices implements AppServices {
   readonly app: WorkforceApp;
@@ -196,7 +200,8 @@ export class ComposedAppServices implements AppServices {
       artifacts,
       worktrees,
       policy,
-      sqliteWriter: options.sqliteWriter ?? dualWriteSqlite,
+      sqliteWriter:
+        (options as InternalComposedAppServicesOptions)[sqliteWriterOption] ?? dualWriteSqlite,
     });
     composed.services = services;
 
@@ -238,11 +243,7 @@ export class ComposedAppServices implements AppServices {
       run.handleId = handleId;
       try {
         const observed = await host.inspect(handleId);
-        if (
-          observed.status === "unknown" ||
-          observed.status === "orphaned" ||
-          (run.cancelRequestedAt !== undefined && observed.status !== "cancelled")
-        ) {
+        if (observed.status === "unknown" || observed.status === "orphaned") {
           app.markRunUnknown(run.id);
         }
       } catch {
@@ -1619,6 +1620,18 @@ export async function createComposedAppServices(
   options: ComposedAppServicesOptions,
 ): Promise<ComposedAppServices> {
   return ComposedAppServices.open(options);
+}
+
+/** Internal test seam; intentionally not re-exported from composition/index.ts or the package root. */
+export async function createComposedAppServicesForTest(
+  options: ComposedAppServicesOptions,
+  sqliteWriter: SqliteWriter,
+): Promise<ComposedAppServices> {
+  const internalOptions: InternalComposedAppServicesOptions = {
+    ...options,
+    [sqliteWriterOption]: sqliteWriter,
+  };
+  return ComposedAppServices.open(internalOptions);
 }
 
 function optionalRevision(expectedStateRevision: number | undefined): {

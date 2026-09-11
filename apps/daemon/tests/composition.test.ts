@@ -13,11 +13,8 @@ import { protocolVersion } from "@workforce/protocol";
 
 import { buildApi } from "../src/api/index.js";
 import { SessionRegistry } from "../src/api/auth.js";
-import {
-  ComposedAppServices,
-  createComposedAppServices,
-  type ComposedAppServicesOptions,
-} from "../src/composition/index.js";
+import { createComposedAppServicesForTest } from "../src/composition/app-services.js";
+import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
 import { dualWriteSqlite, sqlitePath } from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
 import { createIdFactory } from "../src/modules/ids.js";
@@ -76,14 +73,13 @@ async function startComposed(stateDir?: string): Promise<Harness> {
 async function startInjected(
   stateDir?: string,
   completeAfterMs = 5,
-  sqliteWriter?: ComposedAppServicesOptions["sqliteWriter"],
+  sqliteWriter?: typeof dualWriteSqlite,
 ): Promise<InjectHarness> {
   const dir = stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "wf-t10-inject-"));
-  const services = await createComposedAppServices({
-    stateDir: dir,
-    completeAfterMs,
-    ...(sqliteWriter ? { sqliteWriter } : {}),
-  });
+  const options = { stateDir: dir, completeAfterMs };
+  const services = sqliteWriter
+    ? await createComposedAppServicesForTest(options, sqliteWriter)
+    : await createComposedAppServices(options);
   const sessions = new SessionRegistry("usr_test", "cli_test");
   const session = sessions.issue();
   const api = buildApi({
@@ -560,9 +556,7 @@ describe("composed M3 mock loop", () => {
 
   it("does not acknowledge cancel when its SQLite commit fails and keeps the queue retryable", async () => {
     let failNextWrite = false;
-    const sqliteWriter: NonNullable<ComposedAppServicesOptions["sqliteWriter"]> = async (
-      ...args
-    ) => {
+    const sqliteWriter: typeof dualWriteSqlite = async (...args) => {
       if (failNextWrite) {
         failNextWrite = false;
         throw new Error("injected SQLite write failure");
@@ -603,6 +597,95 @@ describe("composed M3 mock loop", () => {
     expect(retried.status).toBe(202);
     const durableRun = services.sqlite.worldSnapshot.load().runs.find((item) => item.id === run.id);
     expect(durableRun?.cancelRequestedAt).toBeTruthy();
+  });
+
+  // Requires T09 reconcile to persist an honest recovery-time cancelRequestedAt from Host facts.
+  it("recovers a Host-confirmed cancellation after pending and terminal SQLite writes fail", async () => {
+    const failureTarget: { runId?: string } = {};
+    let pendingWriteFailures = 0;
+    let terminalWriteFailures = 0;
+    const sqliteWriter: typeof dualWriteSqlite = async (sqlite, world, synced) => {
+      const target = failureTarget.runId
+        ? world.runs.find((item) => item.id === failureTarget.runId)
+        : undefined;
+      if (target?.status === "cancelled") {
+        terminalWriteFailures += 1;
+        throw new Error("injected terminal SQLite write failure");
+      }
+      if (target?.cancelRequestedAt) {
+        pendingWriteFailures += 1;
+        throw new Error("injected pending SQLite write failure");
+      }
+      await dualWriteSqlite(sqlite, world, synced);
+    };
+    const first = await startInjected(undefined, 60_000, sqliteWriter);
+    const { services, stateDir } = first;
+    const { projectId, run } = await startRunningRun(first, "cancel-terminal-write-failure");
+    const handleId = services.app.world.runs.get(run.id)?.handleId;
+    expect(handleId).toBeTruthy();
+    await poll(() =>
+      services.sqlite.worldSnapshot.load().runs.some((item) => item.id === run.id)
+        ? true
+        : undefined,
+    );
+    failureTarget.runId = run.id;
+
+    const failed = await injectJson(first, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "cancel-terminal-write-failure", run.stateRevision),
+      body: JSON.stringify({ operationId: "op_cancel_terminal_write_failure" }),
+    });
+    expect(failed.status).toBe(500);
+    expect(pendingWriteFailures).toBe(1);
+
+    await poll(async () => {
+      const current = await injectJson(first, `/api/v1/runs/${run.id}`, {
+        headers: first.auth,
+      });
+      return (current.body as { status: string }).status === "cancelled" ? true : undefined;
+    });
+    await poll(() => (terminalWriteFailures > 0 ? true : undefined));
+    await expect(services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    const staleSqliteRun = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === run.id);
+    expect(staleSqliteRun).toMatchObject({ status: "running" });
+    expect(staleSqliteRun?.cancelRequestedAt).toBeUndefined();
+
+    const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+      headers: first.auth,
+    });
+    const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+      (item) => item.id,
+    );
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${run.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({ status: "cancelled", cancelRequested: true });
+    const restoredRun = second.services.app.world.runs.get(run.id);
+    expect(restoredRun?.handleId).toBe(handleId);
+    expect(restoredRun?.cancelRequestedAt).toBeTruthy();
+    await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    await poll(() => {
+      const persisted = second.services.sqlite.worldSnapshot
+        .load()
+        .runs.find((item) => item.id === run.id);
+      return persisted?.status === "cancelled" && persisted.cancelRequestedAt ? true : undefined;
+    });
+    const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+      headers: second.auth,
+    });
+    const afterIds = (after.body as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    expect(afterIds.sort()).toEqual(beforeIds.sort());
   });
 
   it("rehydrates the same project and does not duplicate runs on replay", async () => {
