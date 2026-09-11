@@ -13,6 +13,7 @@ export {
   type PersistenceErrorCode,
 } from "./errors.js";
 export { SqliteEventStore, highWaterMark, unpublishedOutboxCount } from "./event-store.js";
+export { SqliteGrantStore } from "./grants.js";
 export {
   SqliteHandleRepository,
   type RuntimeHandleByOperationRecord,
@@ -36,7 +37,13 @@ export {
   type RunRecord,
   type StartRunInput,
 } from "./runs.js";
-export { MIGRATIONS, MIGRATION_001_SQL, MIGRATION_002_SQL, MIGRATION_003_SQL } from "./schema.js";
+export {
+  MIGRATIONS,
+  MIGRATION_001_SQL,
+  MIGRATION_002_SQL,
+  MIGRATION_003_SQL,
+  MIGRATION_004_SQL,
+} from "./schema.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
 export { SqliteWorldSnapshot, type WorldEntitySnapshot } from "./world-snapshot.js";

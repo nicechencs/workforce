@@ -95,6 +95,7 @@ export interface GrantKey {
 }
 
 export interface GrantStore {
+  nextId(): string;
   put(grant: ApprovalGrant): Promise<void>;
   find(key: GrantKey): Promise<ApprovalGrant | undefined>;
   consume(id: string, consumedAt: string): Promise<boolean>;

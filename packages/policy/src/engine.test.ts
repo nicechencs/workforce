@@ -198,6 +198,34 @@ describe("InMemoryPolicyEngine.decide", () => {
     });
   });
 
+  it("uses GrantStore.nextId instead of a digest-derived id", async () => {
+    const calls: string[] = [];
+    const inner = new InMemoryGrantStore();
+    const grants = {
+      nextId(): string {
+        const id = "apr_custom_store";
+        calls.push(id);
+        return id;
+      },
+      put: inner.put.bind(inner),
+      find: inner.find.bind(inner),
+      consume: inner.consume.bind(inner),
+    };
+    const engine = testEngine({ grants });
+    const action = createCanonicalAction({
+      type: "git.push",
+      resource: "origin",
+      params: { branch: "main" },
+    });
+    const recorded = await engine.recordGrant({
+      action,
+      gate: "action",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    expect(recorded.id).toBe("apr_custom_store");
+    expect(calls).toEqual(["apr_custom_store"]);
+  });
+
   it("does not reuse a grant after the policy version changes", async () => {
     const grants = new InMemoryGrantStore();
     const v1 = testEngine({ policyVersion: "0.1.0", grants });

@@ -586,8 +586,31 @@ CREATE INDEX IF NOT EXISTS idx_budget_reservations_budget_status
   ON budget_reservations(budget_id, status);
 `;
 
+/**
+ * Persist Policy GrantStore rows so consume-once grants survive restart.
+ * Distinct from `approvals` (project gate records + action digest).
+ * Forward-only: do not rewrite 001–003.
+ */
+export const MIGRATION_004_SQL = `
+CREATE TABLE policy_grants (
+  id TEXT PRIMARY KEY,
+  action_type TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '',
+  principal_id TEXT NOT NULL,
+  policy_version TEXT NOT NULL,
+  gate TEXT NOT NULL CHECK (gate IN ('plan','artifact','action','budget')),
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (action_type, digest, resource, version, principal_id, policy_version)
+);
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
   { version: "003_budget_alignment", sql: MIGRATION_003_SQL },
+  { version: "004_policy_grants", sql: MIGRATION_004_SQL },
 ] as const;

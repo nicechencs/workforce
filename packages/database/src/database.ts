@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { backupDatabase } from "./backup.js";
 import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
+import { SqliteGrantStore } from "./grants.js";
 import { openSqlite, type OpenSqliteOptions } from "./connection.js";
 import { SqliteEventStore } from "./event-store.js";
 import { SqliteHandleRepository } from "./handles.js";
@@ -47,6 +48,7 @@ export class WorkforceSqlite {
   readonly reservations: SqliteReservationRepository;
   readonly resources: SqliteResourceRepository;
   readonly inbox: SqliteInbox;
+  readonly grants: SqliteGrantStore;
 
   private constructor(
     readonly path: string,
@@ -70,6 +72,7 @@ export class WorkforceSqlite {
     this.reservations = new SqliteReservationRepository(connection);
     this.resources = new SqliteResourceRepository(connection);
     this.inbox = new SqliteInbox(connection);
+    this.grants = new SqliteGrantStore(connection);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {
