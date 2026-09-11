@@ -4,6 +4,11 @@ import type { WorkflowDto } from "@workforce/desktop-client";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
 import {
+  WorkflowAuthoringEntry,
+  WorkflowAuthoringPage,
+  isWorkflowAuthoringHash,
+} from "../workflow-authoring/index.js";
+import {
   badgeStyle,
   buttonStyle,
   cardStyle,
@@ -42,6 +47,20 @@ export function WorkflowsPage(props: FeaturePageProps) {
   const [workflows, setWorkflows] = useState<WorkflowTemplateView[]>(initial.workflows);
   const [note, setNote] = useState(initial.note);
   const [source, setSource] = useState<WorkflowCatalogSource>(initial.source);
+  const [authoring, setAuthoring] = useState(() =>
+    typeof window === "undefined" ? false : isWorkflowAuthoringHash(window.location.hash),
+  );
+
+  useEffect(() => {
+    const sync = (): void => {
+      setAuthoring(isWorkflowAuthoringHash(window.location.hash));
+    };
+    window.addEventListener("hashchange", sync);
+    sync();
+    return () => {
+      window.removeEventListener("hashchange", sync);
+    };
+  }, []);
 
   const openCanvas = shouldOpenCanvas({
     workflowId: props.params.workflowId,
@@ -107,6 +126,9 @@ export function WorkflowsPage(props: FeaturePageProps) {
   }
 
   const workflowId = props.params.workflowId;
+  if (authoring && !workflowId) {
+    return <WorkflowAuthoringPage {...props} />;
+  }
   if (workflowId) {
     const workflow = workflowById(workflows, workflowId);
     if (
@@ -152,6 +174,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
           新建画布
         </button>
       </div>
+      <WorkflowAuthoringEntry navigate={props.navigate} />
       <section style={cardStyle}>
         {workflows.length === 0 ? (
           <CatalogListStatus source={source} />

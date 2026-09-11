@@ -167,3 +167,19 @@ updated: 2026-09-12
 - **决定：** #22（T18 画布）已 squash 合入 `main`（`6eeea107`）。#21 rebase 到该 tip：同时保留 T18（画布接线 + headed create/edit/save/publish PASS）与 T19（Team 写面 + `GET /teams?status=draft` reload + headed 草稿持久化 PASS）。不改默认 `GET /teams`（仍只回 published）。无假 publish/bind。不发明 endpoint。不宣称 M7 / T20 / T21 完成，也不宣称远程 enrollment / 容器 runner 已实现。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 T18 与 T19；T20 / T21 / D19 远程与容器仍未实现。
 - **状态：** T18 **implemented**（main）。T19 **implemented**（本 PR）。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20 rebase 到 T18 squash tip（#22 / `6eeea107`）
+
+- **决定：** #22 画布已 squash 合入 `main` `6eeea107`。T20 只做诚实作者面壳 + 结构化写 API 落草稿，叠在该 tip 上：保留 T18 画布入口与 headed PASS 结论；「对话生成」发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；有结构化名称才 `POST /workflows` 写未发布草稿，并深链已存在的 T18 画布路由。不发明 chat / enrollment / Docker / `executionMode` endpoint。D19 远程/容器仍未实现。不宣称 M7 完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 T18 headed PASS 与 T20 UI shell；会话协议仍 planned。
+- **状态：** T18 **implemented**（含 headed PASS）。T20 UI shell + 写 API 落草稿 **implemented**（happy-dom / unit，非 headed 对话）。会话协议、编排 Agent、T21、M7、D19 远程/容器 **planned**。当时 T19 尚未进 main。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20 rebase 到 T19 squash tip（#21 / `0e2a156`）
+
+- **决定：** #21（T19 自定义 Team 写面 + 草稿 persist）已 squash 合入 `main` `0e2a156`（父提交为 T18 `6eeea107`）。同一 PR #24 继续 rebase 到该 tip：T18+T19 视为已在 main 实现（含各自 headed PASS 报告）；T20 仍只是作者面 UI 壳 + 已有 M7 write API 落未发布草稿。会话发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）。不发明 chat / enrollment / Docker / `executionMode` endpoint。不宣称 M7 / T21 / 对话编排完成，也不宣称 D19 远程/容器已实现。Test-bot 作者面壳 headed PASS 仅引用 `7f85c503` / `WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md`，不代替完整 headed 套件。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md)、[02-development-task-backlog.md](02-development-task-backlog.md)、[api-capability-matrix.md](api-capability-matrix.md)、[04-collab-and-review.md](04-collab-and-review.md) 去掉「T19 未实现 / 未领取」的现行概括；T20 保持 UI shell + write-API 草稿。
+- **状态：** T18 **implemented**（main）。T19 **implemented**（main）。T20 UI shell + 写 API 落草稿 **implemented**（叠 T19 tip）。会话协议、编排 Agent、T21、M7、D19 远程/容器 **planned**。
