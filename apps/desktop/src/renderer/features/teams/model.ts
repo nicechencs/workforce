@@ -37,7 +37,13 @@ export interface TeamView {
 }
 
 export const PRESET_MEMBERS: TeamMemberView[] = [
-  { id: "planner", role: "planner", title: "Planner", runtimeProfile: PRESET_RUNTIME_ID, quantity: 1 },
+  {
+    id: "planner",
+    role: "planner",
+    title: "Planner",
+    runtimeProfile: PRESET_RUNTIME_ID,
+    quantity: 1,
+  },
   {
     id: "developer",
     role: "developer",
@@ -45,7 +51,13 @@ export const PRESET_MEMBERS: TeamMemberView[] = [
     runtimeProfile: PRESET_RUNTIME_ID,
     quantity: 1,
   },
-  { id: "reviewer", role: "reviewer", title: "Reviewer", runtimeProfile: PRESET_RUNTIME_ID, quantity: 1 },
+  {
+    id: "reviewer",
+    role: "reviewer",
+    title: "Reviewer",
+    runtimeProfile: PRESET_RUNTIME_ID,
+    quantity: 1,
+  },
 ];
 
 export const PRESET_TEAM: TeamView = {
@@ -229,7 +241,9 @@ export function teamPageModel(
     actions,
     teams: [PRESET_TEAM],
     source: "preset",
-    note: writeSupport.create ? LIVE_CATALOG_NOTE : `${LIVE_CATALOG_NOTE} ${TEAM_WRITE_API_MISSING}`,
+    note: writeSupport.create
+      ? LIVE_CATALOG_NOTE
+      : `${LIVE_CATALOG_NOTE} ${TEAM_WRITE_API_MISSING}`,
     writeSupport,
   };
 }
@@ -335,8 +349,9 @@ export function interpretPublishResponse(
     return {
       ok: false,
       published: false,
-      reason: rejectCustomTeamPublish(supportFromFlags({ methodsPresent: true, versionRead: true, bindMethod: true }))
-        .reason,
+      reason: rejectCustomTeamPublish(
+        supportFromFlags({ methodsPresent: true, versionRead: true, bindMethod: true }),
+      ).reason,
     };
   }
   const record = value as Record<string, unknown>;
@@ -354,7 +369,10 @@ export function canBindTeamVersion(team: Pick<TeamView, "status" | "kind">): boo
   return team.status === "published";
 }
 
-export function rejectUnpublishedBind(team: Pick<TeamView, "status">): { ok: boolean; reason: string | null } {
+export function rejectUnpublishedBind(team: Pick<TeamView, "status">): {
+  ok: boolean;
+  reason: string | null;
+} {
   if (team.status !== "published") {
     return { ok: false, reason: UNPUBLISHED_BIND_REASON };
   }
@@ -559,7 +577,9 @@ export function draftFormFromTeam(team: TeamView): TeamDraftForm {
     members: team.members.map((member) => ({ ...member })),
     teamId: team.id,
     versionId: team.status === "draft" ? team.versionId : null,
-    ...(team.definitionRevision !== undefined ? { definitionRevision: team.definitionRevision } : {}),
+    ...(team.definitionRevision !== undefined
+      ? { definitionRevision: team.definitionRevision }
+      : {}),
     error: null,
     needsRefresh: false,
     submitting: false,
@@ -569,14 +589,23 @@ export function draftFormFromTeam(team: TeamView): TeamDraftForm {
   };
 }
 
-export function reduceTeamDraftForm(state: TeamDraftForm, event: TeamDraftFormEvent): TeamDraftForm {
+export function reduceTeamDraftForm(
+  state: TeamDraftForm,
+  event: TeamDraftFormEvent,
+): TeamDraftForm {
   switch (event.type) {
     case "changeName":
       return { ...state, name: event.value, error: null, published: false };
     case "setMembers":
       return { ...state, members: event.members, error: null, published: false, saved: false };
     case "submit":
-      return { ...state, submitting: true, error: null, needsRefresh: false, lastAction: event.action };
+      return {
+        ...state,
+        submitting: true,
+        error: null,
+        needsRefresh: false,
+        lastAction: event.action,
+      };
     case "saved":
       return {
         ...state,

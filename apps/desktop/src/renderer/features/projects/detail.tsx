@@ -331,8 +331,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   }
 
   const workspaceBound = grant !== null;
-  const selectedTeam =
-    catalogTeams.find((team) => team.id === selection.teamId) ?? PRESET_TEAM;
+  const selectedTeam = catalogTeams.find((team) => team.id === selection.teamId) ?? PRESET_TEAM;
   const boundTeamVersionId = projectTeamVersionId(project);
   const actionInput = {
     status: project.status,
@@ -763,7 +762,7 @@ function SettingsPanel(props: {
         <ProjectTeamBindingField
           teams={props.teams}
           writeSupport={props.teamWrite}
-          selection={props.selection}
+          selection={{ teamId: props.selection.teamId, versionId: props.selection.teamVersionId }}
           projectTeamVersionId={props.projectTeamVersionId}
           disabled={!showBind}
           busy={props.bindBusy}

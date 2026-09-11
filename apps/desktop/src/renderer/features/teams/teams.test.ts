@@ -80,7 +80,9 @@ describe("team pages", () => {
 
   it("keeps live preset cards read-only when GET /teams is available", () => {
     const model = teamPageModel({
-      liveTeams: [{ ...PRESET_TEAM, id: "tm_software_development", name: "Software Development Team" }],
+      liveTeams: [
+        { ...PRESET_TEAM, id: "tm_software_development", name: "Software Development Team" },
+      ],
     });
     expect(model.source).toBe("live");
     expect(model.readonly).toBe(true);
@@ -172,7 +174,9 @@ describe("publish and bind honesty", () => {
     expect(interpretPublishResponse({ id: "tmv_1", status: "draft", version: "0.2.0" }).ok).toBe(
       false,
     );
-    expect(interpretPublishResponse({ id: "tmv_1", status: "published", version: "0.2.0" })).toEqual({
+    expect(
+      interpretPublishResponse({ id: "tmv_1", status: "published", version: "0.2.0" }),
+    ).toEqual({
       ok: true,
       published: true,
       versionId: "tmv_1",
@@ -247,7 +251,9 @@ describe("publish and bind honesty", () => {
       }),
     ).toBe(true);
     expect(projectTeamVersionId({ id: "prj_1" })).toBeNull();
-    expect(projectTeamVersionId({ id: "prj_1", teamVersionId: "tmv_custom_1" })).toBe("tmv_custom_1");
+    expect(projectTeamVersionId({ id: "prj_1", teamVersionId: "tmv_custom_1" })).toBe(
+      "tmv_custom_1",
+    );
   });
 });
 
@@ -304,7 +310,11 @@ describe("project team binding field", () => {
   it("disables custom bind when write APIs are missing and lists unpublished drafts as not bindable", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectTeamBindingField, {
-        teams: [PRESET_TEAM, publishedCustom(), { ...publishedCustom(), id: "tm_draft", status: "draft" }],
+        teams: [
+          PRESET_TEAM,
+          publishedCustom(),
+          { ...publishedCustom(), id: "tm_draft", status: "draft" },
+        ],
         writeSupport: unavailableTeamWriteSupport(),
         selection: { teamId: "tm_custom", versionId: "tmv_custom_1" },
         projectTeamVersionId: null,
@@ -370,7 +380,13 @@ function publishedCustom(): TeamView {
     readonly: true,
     runtime: { adapterId: "mock", label: "Mock" },
     members: [
-      { id: "developer", role: "developer", title: "Developer", runtimeProfile: "mock", quantity: 2 },
+      {
+        id: "developer",
+        role: "developer",
+        title: "Developer",
+        runtimeProfile: "mock",
+        quantity: 2,
+      },
     ],
     workers: [{ id: "developer", role: "developer", title: "Developer", runtime: "Mock" }],
   };

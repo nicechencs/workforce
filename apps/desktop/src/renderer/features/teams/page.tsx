@@ -42,7 +42,6 @@ import {
   teamWriteMethodsPresent,
   probeTeamWriteSupport,
   updateDraftMember,
-  unavailableTeamWriteSupport,
   type TeamDraftForm,
   type TeamMemberView,
   type TeamView,
@@ -72,7 +71,9 @@ export function TeamsPage(props: FeaturePageProps) {
           const page = await catalog.listRuntimes();
           const ids = page.items
             .map((item) =>
-              typeof item === "object" && item !== null && typeof (item as { id?: unknown }).id === "string"
+              typeof item === "object" &&
+              item !== null &&
+              typeof (item as { id?: unknown }).id === "string"
                 ? (item as { id: string }).id
                 : null,
             )
@@ -168,7 +169,8 @@ export function TeamsPage(props: FeaturePageProps) {
       <h1 style={titleStyle}>AI 团队</h1>
       {note ? <p style={mutedStyle}>{note}</p> : null}
       <p style={mutedStyle}>
-        围着项目编排数字员工。预设 Software Development Team 只读保留；自定义团队必须发布后才能绑定。
+        围着项目编排数字员工。预设 Software Development Team
+        只读保留；自定义团队必须发布后才能绑定。
       </p>
       {listError ? (
         <p style={errorStyle} data-testid="team-list-error">
@@ -318,11 +320,18 @@ function TeamCard(props: {
   }
 
   return (
-    <section style={cardStyle} data-testid={props.team.kind === "preset" ? "team-preset-card" : "team-card"}>
+    <section
+      style={cardStyle}
+      data-testid={props.team.kind === "preset" ? "team-preset-card" : "team-card"}
+    >
       <h1 style={titleStyle}>{props.team.name}</h1>
       <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
         <span style={badgeStyle(props.team.status === "published" ? "health" : "muted")}>
-          {props.team.kind === "preset" ? "预设只读" : props.team.status === "published" ? "已发布" : "草稿"}
+          {props.team.kind === "preset"
+            ? "预设只读"
+            : props.team.status === "published"
+              ? "已发布"
+              : "草稿"}
         </span>
       </div>
       <p style={mutedStyle}>
@@ -377,7 +386,10 @@ function TeamEditor(props: {
 
   async function run(action: "save" | "publish") {
     if (action === "save" && !props.writeSupport.create) {
-      setForm((current) => ({ ...current, error: rejectCustomTeamSave(props.writeSupport).reason }));
+      setForm((current) => ({
+        ...current,
+        error: rejectCustomTeamSave(props.writeSupport).reason,
+      }));
       return;
     }
     if (action === "publish" && !props.writeSupport.publish) {
@@ -473,7 +485,9 @@ function TeamEditor(props: {
   return (
     <section style={cardStyle} data-testid="team-editor">
       <h1 style={titleStyle}>{form.teamId ? "编辑团队草稿" : "新建团队草稿"}</h1>
-      <p style={mutedStyle}>成员包含 role、RuntimeProfile 与 quantity。发布后不可变，编辑必须新建版本。</p>
+      <p style={mutedStyle}>
+        成员包含 role、RuntimeProfile 与 quantity。发布后不可变，编辑必须新建版本。
+      </p>
       {!props.writeSupport.create ? (
         <p style={warningStyle} data-testid="team-write-api-missing">
           {create.reason}
@@ -488,7 +502,9 @@ function TeamEditor(props: {
         style={inputStyle}
         value={form.name}
         onChange={(event) =>
-          setForm((current) => reduceTeamDraftForm(current, { type: "changeName", value: event.target.value }))
+          setForm((current) =>
+            reduceTeamDraftForm(current, { type: "changeName", value: event.target.value }),
+          )
         }
       />
       <MemberEditor
@@ -529,7 +545,9 @@ function TeamEditor(props: {
           {form.error}
         </p>
       ) : null}
-      {form.needsRefresh ? <p style={mutedStyle}>已保留输入。刷新后再提交，不会假装已保存。</p> : null}
+      {form.needsRefresh ? (
+        <p style={mutedStyle}>已保留输入。刷新后再提交，不会假装已保存。</p>
+      ) : null}
     </section>
   );
 }
@@ -538,7 +556,11 @@ function MemberList(props: { members: TeamMemberView[] }) {
   return (
     <ul style={listStyle}>
       {props.members.map((member) => (
-        <li key={member.id} style={{ ...listItemStyle, cursor: "default" }} data-testid={`team-member-${member.id}`}>
+        <li
+          key={member.id}
+          style={{ ...listItemStyle, cursor: "default" }}
+          data-testid={`team-member-${member.id}`}
+        >
           <strong>{member.title}</strong>
           <div style={mutedStyle}>
             角色 {member.role} · RuntimeProfile {member.runtimeProfile} · 数量 {member.quantity}
@@ -581,7 +603,9 @@ function MemberEditor(props: {
               disabled={props.disabled}
               value={member.role}
               onChange={(event) =>
-                props.onChange(updateDraftMember(props.members, index, { role: event.target.value }))
+                props.onChange(
+                  updateDraftMember(props.members, index, { role: event.target.value }),
+                )
               }
             >
               {TEAM_ROLES.includes(member.role as (typeof TEAM_ROLES)[number]) ? null : (
