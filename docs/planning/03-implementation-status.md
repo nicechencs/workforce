@@ -81,14 +81,17 @@ pnpm test             # 本机 Node v22.14.0 全量 isolate 曾超时/环境失�
 GitHub Actions pull-request on 20931f0  # success（ubuntu-latest / Node 22）
 ```
 
-T18 画布保存接线（Linux，2026-09-12；依赖 #23 `efaadd42`）：
+T18 画布保存接线（Linux，2026-09-12；依赖 #23 `efaadd42`；head `ce643bb`）：
 
 ```text
-pnpm format:check
-pnpm lint
-pnpm --filter @workforce/desktop typecheck
-pnpm exec vitest run apps/desktop/src/renderer/features/workflows apps/desktop/tests/workflows-write-proxy.test.ts apps/desktop/tests/workflows-catalog-proxy.test.ts
-pnpm check:docs
+pnpm format:check     # 退出 0
+pnpm lint             # 退出 0
+pnpm typecheck        # 退出 0
+pnpm check:docs       # 退出 0
+pnpm exec vitest run apps/desktop/src/renderer/features/workflows \
+  apps/desktop/tests/workflows-write-proxy.test.ts \
+  apps/desktop/tests/workflows-catalog-proxy.test.ts
+                      # 4 files / 26 tests 通过（含 create+save+reload 与空图发布诚实失败）
 ```
 
 headed 真窗 create→edit→save→reload **尚未**在本环境复验；上一次真窗报告 `WORKFORCE-PR22-62b1e620-CANVAS-TRUEWINDOW` 因写 path 未挂载而 FAIL，本切片已接线，待 Test-bot 复测。
