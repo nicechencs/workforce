@@ -2,9 +2,11 @@ export const packageName = "@workforce/protocol" as const;
 export const protocolVersion = "0.1" as const;
 
 export * from "./command.js";
+export * from "./dto.js";
 export * from "./errors.js";
 export * from "./event.js";
 export * from "./execution.js";
+export * from "./execution-snapshot.js";
 export * from "./expected-output.js";
 export * from "./money.js";
 export * from "./run.js";

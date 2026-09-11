@@ -1,6 +1,6 @@
-import type { StartRunRequest } from "@workforce/protocol";
+import type { RuntimeTransport, StartRunRequest } from "@workforce/protocol";
 
-export type RuntimeTransport = "process" | "sdk" | "http";
+export type { RuntimeTransport };
 
 export interface RuntimeCapability {
   name: string;
@@ -39,6 +39,9 @@ export interface RuntimeHandle extends RuntimeHandleRef {
     startIdentity: string;
   };
   createdAt: string;
+  nodeId?: string;
+  nodeSessionId?: string;
+  runtimeInstallationId?: string;
 }
 
 export interface RuntimeInput {

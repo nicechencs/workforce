@@ -15,6 +15,9 @@ export type EventId = Brand<string, "EventId">;
 export type OperationId = Brand<string, "OperationId">;
 export type ExecutionNodeId = Brand<string, "ExecutionNodeId">;
 export type RuntimeInstallationId = Brand<string, "RuntimeInstallationId">;
+export type ExecutionSnapshotId = Brand<string, "ExecutionSnapshotId">;
+/** Alias required by blueprint 02/08; not a second brand. */
+export type SnapshotRef = ExecutionSnapshotId;
 export type PrincipalId = Brand<string, "PrincipalId">;
 export type ClientId = Brand<string, "ClientId">;
 
@@ -34,6 +37,7 @@ export const ID_PREFIX = {
   operation: "op_",
   executionNode: "ndl_",
   runtimeInstallation: "rtm_",
+  snapshot: "snp_",
   principal: "usr_",
   client: "cli_",
 } as const;

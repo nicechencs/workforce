@@ -51,9 +51,8 @@ export type PlacementIntent = z.infer<typeof placementIntentSchema>;
  * The single resolved placement binding for one Run: Node, Node session,
  * RuntimeInstallation, WorkspaceInstance and the execution Lease/fencing token.
  *
- * A Run may not enter `starting` before this is complete. The fields mirror the
- * Runtime Host's resolved binding (`NodeExecutionBinding`) so the same fact is
- * not stored twice under two names.
+ * A Run may not enter `starting` before this is complete. The Runtime Host
+ * stores this object; do not keep a parallel NodeExecutionBinding type.
  */
 export const placementSnapshotSchema = z
   .object({

@@ -1,14 +1,9 @@
-import type { ReceiptScope, StartRunRequest } from "@workforce/protocol";
+import type { PlacementSnapshot, ReceiptScope, StartRunRequest } from "@workforce/protocol";
 import type { RuntimeHandle, RuntimeStatusName } from "@workforce/runtime-spi";
 
-export interface NodeExecutionBinding {
-  nodeId: string;
-  nodeSessionId: string;
-  runtimeInstallationId: string;
-  executionLeaseId: string;
-  fencingToken: number;
-  workspaceInstanceId: string;
-}
+export type { PlacementSnapshot };
+/** @deprecated Use PlacementSnapshot. Identity alias only — not a second shape. */
+export type NodeExecutionBinding = PlacementSnapshot;
 
 export interface StoredOperation {
   operationId: string;
@@ -22,7 +17,7 @@ export interface StoredOperation {
 
 export interface StoredHandle {
   handle: RuntimeHandle;
-  binding: NodeExecutionBinding;
+  binding: PlacementSnapshot;
   status: RuntimeStatusName;
   terminal: boolean;
   request: StartRunRequest;

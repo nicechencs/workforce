@@ -29,7 +29,7 @@ import {
   isTerminalStatus,
   parseHostEventCursor,
   type HostRuntimeEvent,
-  type NodeExecutionBinding,
+  type PlacementSnapshot,
   type ProcessTreeKiller,
   RecordingProcessTreeKiller,
   type StoredHandle,
@@ -348,7 +348,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     return results;
   }
 
-  async getBinding(handleId: string): Promise<NodeExecutionBinding> {
+  async getBinding(handleId: string): Promise<PlacementSnapshot> {
     const stored = await this.requireStoredHandle(handleId);
     return stored.binding;
   }
@@ -455,7 +455,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     }
   }
 
-  private bindingFor(request: StartRunRequest, session: StoredNodeSession): NodeExecutionBinding {
+  private bindingFor(request: StartRunRequest, session: StoredNodeSession): PlacementSnapshot {
     return {
       nodeId: request.placement.executionNodeId,
       nodeSessionId: session.nodeSessionId,

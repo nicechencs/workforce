@@ -32,45 +32,18 @@ export interface CapabilitiesDto {
   };
 }
 
-export type { TaskDependency, TaskDto } from "@workforce/protocol";
+export type {
+  ProjectDto,
+  RunDto,
+  TaskDependency,
+  TaskDto,
+  TeamDto,
+  TeamRoleDto,
+} from "@workforce/protocol";
 
 export interface PageDto<T> {
   items: T[];
   page: { nextCursor: string | null; hasMore: boolean };
-}
-
-export interface ProjectDto {
-  id: string;
-  organizationId: string;
-  name: string;
-  objective: string;
-  status: string;
-  stateRevision: number;
-  protocolVersion: "0.1";
-  cancelRequested: boolean;
-  createdAt: string;
-  updatedAt: string;
-  planArtifactVersionId?: string;
-}
-
-export interface RunDto {
-  id: string;
-  taskId: string;
-  projectId: string;
-  status: string;
-  stateRevision: number;
-  definitionRevision: number;
-  generation: number;
-  attempt: number;
-  protocolVersion: "0.1";
-  cancelRequested: boolean;
-  usage: {
-    costMinor: number;
-    currency: string;
-    kind: "unknown" | "estimated" | "settled";
-  };
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface ApprovalDto {
@@ -204,21 +177,6 @@ export interface ApprovalDecisionInput {
 export interface SessionDto {
   sessionToken: string;
   principalId: string;
-}
-
-export interface TeamRoleDto {
-  id: string;
-  role: string;
-  version: string;
-}
-
-export interface TeamDto {
-  id: string;
-  name: string;
-  version: string;
-  status: "published";
-  protocolVersion: "0.1";
-  roles: TeamRoleDto[];
 }
 
 export type { WorkflowDto, WorkflowStepDto, WorkflowVersionDto } from "@workforce/protocol";
