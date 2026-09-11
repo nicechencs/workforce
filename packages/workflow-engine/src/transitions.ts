@@ -85,6 +85,7 @@ const RUN_EDGES = [
   ["running", "succeed", "succeeded"],
   ["running", "fail", "failed"],
   ["running", "timeout", "timed_out"],
+  ["pending", "cancel-settled", "cancelled"],
   ["starting", "cancel-settled", "cancelled"],
   ["running", "cancel-settled", "cancelled"],
   ["waiting_input", "cancel-settled", "cancelled"],
