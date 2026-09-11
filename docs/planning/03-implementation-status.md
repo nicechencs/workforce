@@ -32,7 +32,7 @@
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
 | T16 | **本轮起步** | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口） |
 | T17 | 未开始 | 打包/签名 |
-| T18 | 画布 UI 已接线；草稿保存走写 API（依赖 #23） | renderer 画布可新建/编辑/连线；保存调用 typed client `createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion`（协议 `entry`+`nodes`+`edges`，If-Match=`stateRevision`）。发布走 `publishWorkflowVersion`；空图/非法图诚实失败。未发布草稿不进 `GET /workflows` 列表，reload 走 `GET /workflows/{id}`。**headed 真窗尚未复验通过**（本 FAIL 待复测）。不宣称 Mock/Codex 可执行未发布图 |
+| T18 | 画布 UI 已接线；草稿保存走写 API（#23 已在 main） | renderer 画布可新建/编辑/连线；保存调用 typed client `createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion`（协议 `entry`+`nodes`+`edges`，If-Match=`stateRevision`）。发布走 `publishWorkflowVersion`；空图/非法图诚实失败。未发布草稿不进 `GET /workflows` 列表，reload 走 `GET /workflows/{id}`。**headed 真窗尚未复验通过**（待 Test-bot 复测）。不宣称 Mock/Codex 可执行未发布图，也不宣称 M7 / T19 / T20 / T21 完成 |
 | T19 | 已规划，未实现（写 API 已就绪） | 自定义 Team 编排 UI（D16）**未实现**。写接口与 `GET .../versions/{versionId}` 已接通；teams 页仍是只读预设 |
 | T20 | 已规划，未实现 | 对话式工作流编排（D17）。无对话入口、无生成用例、无会话协议 |
 | T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `executionMode` 字段 |
@@ -160,7 +160,7 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
-4. **M7 可视化画布（T18）UI 已接线，headed 真窗待复测**：草稿保存走写 API（依赖 #23）。happy-dom / Electron proxy 证明 create+save+reload 与诚实 publish；**headed 真窗尚未复验通过**。不宣称 M7 完成，也不宣称 Mock/Codex Runtime 可执行未发布图。  
+4. **M7 可视化画布（T18）UI 已接线，headed 真窗待复测**：草稿保存走已合入 main 的 #23 写 API。happy-dom / Electron proxy 证明 create+save+reload 与诚实 publish；**headed 真窗尚未复验通过**。不宣称 M7 完成，也不宣称 Mock/Codex Runtime 可执行未发布图。  
 5. **M7 自定义 Team 编排 UI（T19）未实现**：写接口已接通；AI 团队页仍只读预设。未发布 TeamVersion 不能 `:start-planning` bind。  
 6. **M7 对话生成工作流（T20）未实现**：无对话入口，无生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。  
 7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode。  
