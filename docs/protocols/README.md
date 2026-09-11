@@ -29,6 +29,7 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/workflow-catalog.schema.json` — WorkflowDefinition / WorkflowVersion（已发布目录 + M7 草稿图 nodes/edges；未发布不可执行）
 - `v0.1/team.schema.json` — Team / TeamVersion（预设 + M7 自定义草稿/发布；未发布不可 `:start-planning`）
 - `v0.1/task.schema.json` — 公开 `TaskDto`，含已发布 DAG 的 `dependsOn`
+- `v0.1/orchestration-mode.schema.json` — D18 `orchestrationMode`：`workflow_bound | direct`。可执行源在 `packages/protocol` 的 `StartRunRequest`（缺省 `workflow_bound`）。不是新 HTTP path
 - `v0.1/fixtures/` — 可校验完整示例；概念节选不得放这里
 - `v0.1/ports.md` — M3 公共 ports 签名（T02 编码进 TypeScript）；ArtifactStore 权威与 Task `dependsOn` 映射
 

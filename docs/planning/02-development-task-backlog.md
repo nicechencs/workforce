@@ -1,7 +1,7 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T21 代码未实现。** T20 仅有 Desktop UI shell + 写 API 落草稿，会话协议仍 planned，不得写成对话编排完成。
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 仅有 Desktop UI shell + 写 API 落草稿，会话协议仍 planned，不得写成对话编排完成。T21 UI 未实现**（T02 已冻结 `orchestrationMode`，字段依赖已满足）。
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -84,7 +84,7 @@ flowchart TD
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
 | T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通。UI shell 已开工，会话协议仍是缺口 | 高 / 中 |
-| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `executionMode`（或等价）后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
+| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 已冻结 `orchestrationMode`（字段依赖已满足）；领取 UI/调度时不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
@@ -386,7 +386,7 @@ flowchart TD
 
 **目标：** 兑现 D18：每个 bot/Agent 做事时可选择 **跟随已发布工作流** 或 **直接执行**；两者皆一等，靠 capability probe 诚实显隐。
 
-**所有权：** 启动/探测相关 Application 接线说明与 `renderer` 中不与 T13/T19 重叠的执行模式切片（领取时锁定精确文件）。不改 protocol / daemon composition / 路由表。`executionMode`（或 T02 所定等价字段）归 T02；调度归 T09；HTTP 归 T10。
+**所有权：** 启动/探测相关 Application 接线说明与 `renderer` 中不与 T13/T19 重叠的执行模式切片（领取时锁定精确文件）。不改 protocol / daemon composition / 路由表。`orchestrationMode` 归 T02（**已冻结**于 `StartRunRequest`）；调度归 T09；HTTP 归 T10。
 
 **工作：**
 
@@ -394,11 +394,11 @@ flowchart TD
 - workflow-bound：只执行已确认 `WorkflowVersion` 中轮到的节点。
 - direct：即席执行当前目标，仍走 Policy、Workspace、预算、Approval；不是 Renderer 直接 spawn。
 - 模式写入新 Run 的可审计字段；重试新 Run，不改旧 Run。
-- T02 未冻结字段前不发明 `/runs/{id}:direct`，不渲染假 mode。
+- T02 已冻结 `orchestrationMode`；仍不发明 `/runs/{id}:direct`，不渲染假 mode。字段冻结不是本卡验收。
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 
-**集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
+**集成依赖：** T02 `orchestrationMode` **已冻结**（本卡字段依赖已满足）。仍需 T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 
 ## 5. 实际并行领取建议
 
@@ -424,7 +424,7 @@ T02 不必一次冻结所有远期协议；M3 必需字段和所有消费者使�
 
 ### 第 3 批：集成与发布
 
-T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19/T20）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。M8（T21）在 T02 冻结执行 mode 字段后领取。最终接线、迁移顺序和主分支验收由一个协调者控制。
+T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19/T20）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。M8（T21）可在 T02 已冻结的 `orchestrationMode` 上领取 UI/调度；字段本身不再阻塞。最终接线、迁移顺序和主分支验收由一个协调者控制。
 
 ## 6. 避免冲突的硬规则
 
@@ -440,7 +440,7 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 | 工作流画布 UI | T18；图协议归 T02，发布校验归 T09，HTTP 归 T10 |
 | 自定义 Team 写 UI | T19；TeamVersion 契约归 T02，HTTP 归 T10 |
 | 对话生成工作流 UI | T20；会话/草稿契约归 T02，落草稿复用 M7 写接口，画布仍归 T18 |
-| 双执行模式 | T21；mode 字段归 T02，调度归 T09，HTTP 归 T10 |
+| 双执行模式 | T21；`orchestrationMode` 归 T02（已冻结），调度归 T09，HTTP 归 T10 |
 | Release/打包配置 | T17，避免与 T11 同时编辑生命周期文件 |
 
 - 每个 agent 一个分支/独立 worktree；不要让多个 agent 共用同一可写 checkout。

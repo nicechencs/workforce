@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workforce.local/protocols/v0.1/orchestration-mode.schema.json",
+  "title": "OrchestrationMode",
+  "description": "D18 dual execution mode on StartRunRequest. Default when omitted is workflow_bound (M3 Mock). Orthogonal to D19 placement kinds. Not a new HTTP path. Old name executionMode is not accepted.",
+  "type": "string",
+  "enum": ["workflow_bound", "direct"]
+}
