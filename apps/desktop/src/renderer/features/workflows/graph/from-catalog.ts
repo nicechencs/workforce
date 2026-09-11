@@ -1,9 +1,16 @@
+import type {
+  CreateWorkflowVersionInput,
+  WorkflowGraphEdgeDto,
+  WorkflowGraphNodeDto,
+} from "@workforce/desktop-client";
+
 import type { WorkflowStepView, WorkflowVersionView } from "../model.js";
 import { addNode, connectNodes, layoutGraph } from "./operations.js";
 import {
   emptyCanvasGraph,
   isCanvasWorkerRole,
   type CanvasGraph,
+  type CanvasGraphPayload,
   type CanvasNode,
   type CanvasNodeKind,
 } from "./types.js";
@@ -82,4 +89,48 @@ export function stepsFromGraph(graph: CanvasGraph): WorkflowStepView[] {
     }
     return step;
   });
+}
+
+export function toProtocolNodeKind(kind: CanvasNodeKind): WorkflowGraphNodeDto["kind"] {
+  return kind === "delivery" ? "task" : kind;
+}
+
+export function toProtocolGraph(
+  graph: CanvasGraph | CanvasGraphPayload,
+): Pick<CreateWorkflowVersionInput, "entry" | "nodes" | "edges"> {
+  const nodes: WorkflowGraphNodeDto[] = graph.nodes.map((node) => {
+    const dto: WorkflowGraphNodeDto = {
+      id: node.id,
+      kind: toProtocolNodeKind(node.kind),
+    };
+    if (node.title !== undefined && node.title.length > 0) {
+      dto.title = node.title;
+    }
+    if (node.role !== undefined) {
+      dto.role = node.role;
+    }
+    if (node.joinPolicy !== undefined) {
+      dto.joinPolicy = node.joinPolicy;
+    }
+    if (node.minSuccess !== undefined) {
+      dto.minSuccess = node.minSuccess;
+    }
+    return dto;
+  });
+  const edges: WorkflowGraphEdgeDto[] = graph.edges.map((edge) => {
+    const dto: WorkflowGraphEdgeDto = {
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+    };
+    if (edge.waitFor !== undefined) {
+      dto.waitFor = edge.waitFor;
+    }
+    return dto;
+  });
+  const entry = graph.entryNodeIds[0] ?? graph.nodes[0]?.id;
+  if (entry === undefined) {
+    return { nodes, edges };
+  }
+  return { entry, nodes, edges };
 }

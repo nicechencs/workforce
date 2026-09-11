@@ -25,6 +25,7 @@ export interface WorkflowVersionView {
   steps: WorkflowStepView[];
   graph?: CanvasGraph;
   executionFrozen: boolean;
+  stateRevision?: number;
 }
 
 export interface WorkflowTemplateView {
@@ -34,6 +35,8 @@ export interface WorkflowTemplateView {
   activeVersionId: string;
   versions: WorkflowVersionView[];
   readonly: true;
+  status?: "draft" | "published";
+  stateRevision?: number;
 }
 
 export const FEATURE_DELIVERY_STEPS: WorkflowStepView[] = [
@@ -185,7 +188,7 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
   const fallback = versions[0]?.id ?? "";
   const activeVersionId =
     typeof record.activeVersionId === "string" ? record.activeVersionId : fallback;
-  return {
+  const view: WorkflowTemplateView = {
     id: record.id,
     name,
     description,
@@ -193,9 +196,16 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
     versions,
     readonly: true,
   };
+  if (record.status === "draft" || record.status === "published") {
+    view.status = record.status;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
+  }
+  return view;
 }
 
-function asVersionView(value: unknown): WorkflowVersionView | null {
+export function asVersionView(value: unknown): WorkflowVersionView | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -225,6 +235,9 @@ function asVersionView(value: unknown): WorkflowVersionView | null {
   };
   if (graph) {
     view.graph = graph;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
   }
   return view;
 }

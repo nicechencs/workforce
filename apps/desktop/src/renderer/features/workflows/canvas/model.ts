@@ -34,6 +34,9 @@ export interface CanvasDraft {
   description: string;
   graph: CanvasGraph;
   dirty: boolean;
+  definitionStatus?: "draft" | "published";
+  definitionRevision?: number;
+  versionRevision?: number;
 }
 
 export interface CanvasSession {
@@ -70,7 +73,13 @@ export type CanvasAction =
   | { type: "cancelConnect" }
   | { type: "saveStart" }
   | { type: "saveFailed"; error: string; workflowId?: string | null; versionId?: string | null }
-  | { type: "saveSucceeded"; workflowId: string; versionId: string }
+  | {
+      type: "saveSucceeded";
+      workflowId: string;
+      versionId: string;
+      definitionRevision?: number;
+      versionRevision?: number;
+    }
   | { type: "publishStart" }
   | { type: "publishFailed"; error: string }
   | { type: "publishSucceeded" };
@@ -263,6 +272,9 @@ export function reduceCanvasSession(session: CanvasSession, action: CanvasAction
           workflowId: action.workflowId,
           versionId: action.versionId,
           dirty: false,
+          definitionStatus: session.draft.definitionStatus ?? "draft",
+          definitionRevision: action.definitionRevision ?? session.draft.definitionRevision,
+          versionRevision: action.versionRevision ?? session.draft.versionRevision,
         },
       };
     case "publishStart": {
@@ -354,6 +366,8 @@ export function sessionFromFork(input: {
       description: input.workflow.description,
       graph,
       dirty: true,
+      definitionStatus: input.workflow.status ?? "published",
+      definitionRevision: input.workflow.stateRevision,
     },
     selectedNodeId: null,
     selectedEdgeId: null,
@@ -384,6 +398,9 @@ export function sessionFromDraftVersion(input: {
       description: input.workflow.description,
       graph,
       dirty: false,
+      definitionStatus: input.workflow.status ?? (frozen ? "published" : "draft"),
+      definitionRevision: input.workflow.stateRevision,
+      versionRevision: input.version.stateRevision,
     },
     selectedNodeId: null,
     selectedEdgeId: null,

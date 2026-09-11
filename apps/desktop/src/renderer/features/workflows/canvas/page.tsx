@@ -1,5 +1,5 @@
 import { useEffect, useReducer, type CSSProperties, type ReactNode } from "react";
-import type { WorkflowDto } from "@workforce/desktop-client";
+import type { WorkflowDto, WorkflowVersionDto } from "@workforce/desktop-client";
 
 import {
   buttonStyle,
@@ -14,7 +14,7 @@ import {
 } from "../../projects/ui.js";
 import { useWorkforceClient } from "../../hooks.js";
 import { toGraphPayload } from "../graph/types.js";
-import { asWorkflowView, versionById, type WorkflowTemplateView } from "../model.js";
+import { asVersionView, asWorkflowView, versionById, type WorkflowTemplateView } from "../model.js";
 import { persistWorkflowDraft, publishWorkflowDraft } from "../write-client.js";
 import { WorkflowCanvasEditor } from "./editor.js";
 import { WorkflowCanvasInspector } from "./inspector.js";
@@ -28,6 +28,7 @@ import {
 import {
   CANVAS_DRAFT_VERSION_ID,
   CANVAS_NEW_WORKFLOW_ID,
+  canvasDraftPath,
   persistStatusLabel,
   reduceCanvasSession,
   sessionFromBlank,
@@ -82,6 +83,11 @@ export function WorkflowCanvasPage(props: {
       description: session.draft.description,
       graph: toGraphPayload(session.draft.graph),
       steps: canvasDraftSteps(session),
+      revisions: {
+        definitionRevision: session.draft.definitionRevision,
+        versionRevision: session.draft.versionRevision,
+      },
+      definitionStatus: session.draft.definitionStatus,
     });
     if (!result.ok) {
       dispatch({
@@ -92,7 +98,16 @@ export function WorkflowCanvasPage(props: {
       });
       return;
     }
-    dispatch({ type: "saveSucceeded", workflowId: result.workflowId, versionId: result.versionId });
+    dispatch({
+      type: "saveSucceeded",
+      workflowId: result.workflowId,
+      versionId: result.versionId,
+      definitionRevision: result.revisions.definitionRevision,
+      versionRevision: result.revisions.versionRevision,
+    });
+    if (props.workflowId !== result.workflowId || props.versionId !== result.versionId) {
+      props.navigate(canvasDraftPath(result.workflowId, result.versionId));
+    }
   }
 
   async function onPublish(): Promise<void> {
@@ -108,7 +123,11 @@ export function WorkflowCanvasPage(props: {
       dispatch({ type: "publishFailed", error: "缺少已保存的 workflowId / versionId，不能发布。" });
       return;
     }
-    const result = await publishWorkflowDraft(client, { workflowId, versionId });
+    const result = await publishWorkflowDraft(client, {
+      workflowId,
+      versionId,
+      versionRevision: session.draft.versionRevision,
+    });
     if (!result.ok) {
       dispatch({ type: "publishFailed", error: result.error });
       return;
@@ -235,7 +254,10 @@ export function WorkflowCanvasPage(props: {
 }
 
 export async function loadCanvasSession(
-  client: { getWorkflow: (id: string) => Promise<WorkflowDto> },
+  client: {
+    getWorkflow: (id: string) => Promise<WorkflowDto>;
+    getWorkflowVersion?: (id: string, versionId: string) => Promise<WorkflowVersionDto>;
+  },
   workflowId: string,
   versionId?: string | undefined,
 ): Promise<CanvasSession> {
@@ -250,7 +272,11 @@ export async function loadCanvasSession(
   if (versionId === CANVAS_DRAFT_VERSION_ID || versionId === undefined) {
     const existingDraft = workflow.versions.find((item) => item.status === "draft") ?? null;
     if (existingDraft && versionId === CANVAS_DRAFT_VERSION_ID) {
-      return sessionFromDraftVersion({ client, workflow, version: existingDraft });
+      return sessionFromDraftVersion({
+        client,
+        workflow,
+        version: await hydrateVersionGraph(client, workflow.id, existingDraft),
+      });
     }
     if (versionId === CANVAS_DRAFT_VERSION_ID) {
       return sessionFromFork({
@@ -262,9 +288,37 @@ export async function loadCanvasSession(
   }
   const selected = versionById(workflow, versionId);
   if (selected?.status === "draft") {
-    return sessionFromDraftVersion({ client, workflow, version: selected });
+    return sessionFromDraftVersion({
+      client,
+      workflow,
+      version: await hydrateVersionGraph(client, workflow.id, selected),
+    });
   }
   return sessionFromFork({ client, workflow, source: selected });
+}
+
+async function hydrateVersionGraph(
+  client: {
+    getWorkflowVersion?: (id: string, versionId: string) => Promise<WorkflowVersionDto>;
+  },
+  workflowId: string,
+  version: NonNullable<ReturnType<typeof versionById>>,
+): Promise<NonNullable<ReturnType<typeof versionById>>> {
+  if (version.graph && version.graph.nodes.length > 0) {
+    return version;
+  }
+  if (typeof client.getWorkflowVersion !== "function") {
+    return version;
+  }
+  const detailed = asVersionView(await client.getWorkflowVersion(workflowId, version.id));
+  if (!detailed) {
+    return version;
+  }
+  return {
+    ...version,
+    ...detailed,
+    graph: detailed.graph ?? version.graph,
+  };
 }
 
 export function shouldOpenCanvas(params: {

@@ -1,8 +1,9 @@
+import { createDesktopClient, type CommandOptions } from "@workforce/desktop-client";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { WorkflowCanvasPage } from "./canvas/page.js";
+import { loadCanvasSession, WorkflowCanvasPage } from "./canvas/page.js";
 import {
   CANVAS_DRAFT_VERSION_ID,
   canvasCreatePath,
@@ -19,7 +20,7 @@ import {
   sessionFromFork,
 } from "./canvas/model.js";
 import { addNode, connectNodes } from "./graph/operations.js";
-import { graphFromSteps, stepsFromGraph } from "./graph/from-catalog.js";
+import { graphFromSteps, stepsFromGraph, toProtocolGraph } from "./graph/from-catalog.js";
 import { emptyCanvasGraph, toGraphPayload } from "./graph/types.js";
 import { validateCanvasGraph } from "./graph/validate.js";
 import {
@@ -32,6 +33,7 @@ import {
   persistWorkflowDraft,
   publishWorkflowDraft,
   WRITE_API_MISSING_NOTE,
+  WRITE_API_READY_NOTE,
   type WorkflowWriteClient,
   type WorkflowWriteResult,
 } from "./write-client.js";
@@ -88,7 +90,26 @@ describe("write client stubs", () => {
     const session = emptyCanvasSession(caps);
     expect(saveButtonState(session).disabled).toBe(true);
     expect(publishButtonState(session).disabled).toBe(true);
-    expect(saveButtonState(session).reason).toContain("写接口尚未挂到 typed client");
+    expect(saveButtonState(session).reason).toContain("缺少工作流写方法");
+  });
+
+  it("enables save on the typed DesktopClient write methods", () => {
+    const client = createDesktopClient({
+      transport: {
+        async request() {
+          return { status: 503, headers: {}, body: {} };
+        },
+      },
+    });
+    const caps = inspectWorkflowWriteClient(client);
+    expect(caps.canSaveDraft).toBe(true);
+    expect(caps.canPublish).toBe(true);
+    expect(caps.missing).toEqual([]);
+    expect(caps.note).toBe(WRITE_API_READY_NOTE);
+    const session = sessionFromBlank(client);
+    expect(saveButtonState(session).disabled).toBe(false);
+    expect(publishButtonState(session).disabled).toBe(true);
+    expect(publishButtonState(session).reason).toContain("先成功保存草稿");
   });
 
   it("never marks publish success when the method is missing", async () => {
@@ -111,42 +132,59 @@ describe("write client stubs", () => {
     expect(persisted.ok).toBe(false);
   });
 
-  it("calls typed write methods and keeps the draft when publish throws", async () => {
-    const calls: string[] = [];
+  it("POSTs protocol nodes/edges and keeps the draft when publish throws", async () => {
+    const calls: Array<{ name: string; body?: unknown; ifMatch?: CommandOptions["ifMatch"] }> = [];
     const client: WorkflowWriteClient = {
-      createWorkflow: async (input) => {
-        calls.push(`create:${input.name}`);
-        return { id: "wf_created", versionId: "ver_1" };
+      createWorkflow: async (input, options) => {
+        calls.push({ name: `create:${input.name}`, body: input, ifMatch: options.ifMatch });
+        return { id: "wf_created", stateRevision: 1 };
       },
-      createWorkflowVersion: async (id) => {
-        calls.push(`version:${id}`);
-        return { id, versionId: "ver_1" };
+      createWorkflowVersion: async (id, input, options) => {
+        calls.push({ name: `version:${id}`, body: input, ifMatch: options.ifMatch });
+        return { id: "ver_1", stateRevision: 1 };
       },
-      publishWorkflowVersion: async () => {
-        calls.push("publish");
+      publishWorkflowVersion: async (_id, _versionId, options) => {
+        calls.push({ name: "publish", ifMatch: options.ifMatch });
         throw new Error("publish rejected: invalid DAG");
       },
     };
+    const graph = graphFromSteps(FEATURE_DELIVERY_STEPS, "planning");
     const saved = await persistWorkflowDraft(client, {
       workflowId: null,
       versionId: "draft",
       name: "Demo",
       description: "keep me",
-      graph: toGraphPayload(graphFromSteps(FEATURE_DELIVERY_STEPS, "planning")),
+      graph: toGraphPayload(graph),
       steps: FEATURE_DELIVERY_STEPS,
     });
     expect(saved.ok).toBe(true);
     if (saved.ok) {
+      expect(saved.versionId).toBe("ver_1");
+      expect(saved.revisions.versionRevision).toBe(1);
       const published = await publishWorkflowDraft(client, {
         workflowId: saved.workflowId,
         versionId: saved.versionId,
+        versionRevision: saved.revisions.versionRevision,
       });
       expect(published.ok).toBe(false);
       if (!published.ok) {
         expect(published.error).toContain("invalid DAG");
       }
     }
-    expect(calls).toEqual(["create:Demo", "version:wf_created", "publish"]);
+    expect(calls.map((item) => item.name)).toEqual([
+      "create:Demo",
+      "version:wf_created",
+      "publish",
+    ]);
+    const versionBody = calls[1]?.body as Record<string, unknown>;
+    expect(versionBody).toMatchObject(toProtocolGraph(graph));
+    expect(versionBody).not.toHaveProperty("graph");
+    expect(versionBody).not.toHaveProperty("status");
+    expect(versionBody.nodes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "integration", kind: "task" })]),
+    );
+    expect(calls[1]?.ifMatch).toBe(1);
+    expect(calls[2]?.ifMatch).toBe(1);
   });
 
   it("does not treat a non-published status as success", async () => {
@@ -157,8 +195,23 @@ describe("write client stubs", () => {
         status: "draft",
       }),
     };
+    const result = await publishWorkflowDraft(client, {
+      workflowId: "wf_1",
+      versionId: "v1",
+      versionRevision: 1,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses publish without a saved revision instead of faking success", async () => {
+    const client: WorkflowWriteClient = {
+      publishWorkflowVersion: async () => ({ id: "v1", status: "published" }),
+    };
     const result = await publishWorkflowDraft(client, { workflowId: "wf_1", versionId: "v1" });
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("stateRevision");
+    }
   });
 });
 
@@ -192,7 +245,10 @@ describe("canvas session reducer", () => {
       type: "saveSucceeded",
       workflowId: "wf_1",
       versionId: "ver_1",
+      definitionRevision: 2,
+      versionRevision: 1,
     });
+    expect(session.draft.versionRevision).toBe(1);
     expect(session.persist).toBe("saved");
     expect(session.persist).not.toBe("published");
     session = reduceCanvasSession(session, { type: "publishStart" });
@@ -249,7 +305,7 @@ describe("canvas routes", () => {
 });
 
 describe("canvas page render", () => {
-  it("renders authoring chrome with disabled write actions on tip main", () => {
+  it("renders authoring chrome with save enabled on the typed write client", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowCanvasPage, {
         workflowId: "new",
@@ -260,8 +316,51 @@ describe("canvas page render", () => {
     expect(html).toContain("未发布，Runtime 不会执行此图");
     expect(html).toContain("项目制循环");
     expect(html).toContain("workflow-canvas-save");
-    expect(html).toContain("disabled");
-    expect(html).toContain("写接口尚未挂到 typed client");
+    expect(html).toContain(WRITE_API_READY_NOTE);
+    expect(html).not.toContain("写接口尚未挂到 typed client");
+    expect(html).not.toContain("缺少工作流写方法");
     expect(html).not.toContain("已发布为不可变版本");
+    expect(html).toContain("发布前必须先成功保存草稿");
+  });
+});
+
+describe("canvas reload after save", () => {
+  it("restores the same draft name and graph from getWorkflow", async () => {
+    const graph = addNode(emptyCanvasGraph(), "task", "plan");
+    const workflow = {
+      id: "wfd_saved",
+      name: "Saved draft",
+      description: "",
+      protocolVersion: "0.1" as const,
+      status: "draft" as const,
+      stateRevision: 2,
+      versions: [
+        {
+          id: "wfv_saved",
+          workflowId: "wfd_saved",
+          version: "1",
+          status: "draft" as const,
+          immutable: false,
+          entry: "plan",
+          stateRevision: 1,
+          nodes: [{ id: "plan", kind: "task" as const, title: "任务" }],
+          edges: [],
+        },
+      ],
+    };
+    const session = await loadCanvasSession(
+      {
+        getWorkflow: async () => workflow,
+        getWorkflowVersion: async () => workflow.versions[0]!,
+      },
+      "wfd_saved",
+      "wfv_saved",
+    );
+    expect(session.draft.name).toBe("Saved draft");
+    expect(session.draft.versionId).toBe("wfv_saved");
+    expect(session.draft.graph.nodes.map((node) => node.id)).toEqual(["plan"]);
+    expect(session.draft.definitionRevision).toBe(2);
+    expect(session.draft.versionRevision).toBe(1);
+    expect(session.mode).toBe("edit");
   });
 });
