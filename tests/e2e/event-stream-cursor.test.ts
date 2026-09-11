@@ -1,22 +1,6 @@
-import { randomBytes } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { afterEach, describe, expect, it } from "vitest";
-
-import { createComposedAppServices, startDaemon, type StartedDaemon } from "@workforce/daemon";
-import {
-  createDesktopClient,
-  createLoopbackTransport,
-  type DesktopClient,
-} from "@workforce/desktop-client";
-
-interface Harness {
-  client: DesktopClient;
-  daemon: StartedDaemon;
-  stateDir: string;
-}
+import { ComposedDaemonHarnesses } from "../helpers/composed-daemon.js";
 
 interface SseEvent {
   cursor: string;
@@ -24,49 +8,25 @@ interface SseEvent {
   data: unknown;
 }
 
-const harnesses: Harness[] = [];
+type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-afterEach(async () => {
-  for (const harness of harnesses.splice(0)) {
-    await harness.daemon.close();
-    fs.rmSync(harness.stateDir, { recursive: true, force: true });
-  }
-});
+class SseHttpError extends Error {
+  override readonly name = "SseHttpError";
 
-async function startProductionComposition(): Promise<Harness> {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "wf-t16-events-"));
-  const lockPath = path.join(
-    os.tmpdir(),
-    `wf-t16-events-${process.pid}-${randomBytes(6).toString("hex")}.sock`,
-  );
-  let services: Awaited<ReturnType<typeof createComposedAppServices>> | undefined;
-  try {
-    services = await createComposedAppServices({ stateDir, completeAfterMs: 5 });
-    const daemon = await startDaemon({
-      stateDir,
-      services,
-      lockPath,
-      heartbeatMs: 30,
-      pollMs: 20,
-    });
-    const harness = {
-      daemon,
-      stateDir,
-      client: createDesktopClient({
-        transport: createLoopbackTransport({
-          port: daemon.port,
-          getSessionToken: () => daemon.sessionToken,
-        }),
-      }),
-    };
-    harnesses.push(harness);
-    return harness;
-  } catch (error) {
-    await services?.close();
-    fs.rmSync(stateDir, { recursive: true, force: true });
-    throw error;
+  constructor(
+    readonly status: number,
+    readonly responseText: string,
+  ) {
+    super(`SSE request failed with HTTP ${status}: ${responseText}`);
   }
 }
+
+const harnesses = new ComposedDaemonHarnesses();
+
+afterEach(async () => {
+  vi.useRealTimers();
+  await harnesses.closeAll();
+});
 
 function parseSseEvents(body: string): SseEvent[] {
   const completeFrames = body.split("\n\n");
@@ -86,42 +46,40 @@ function parseSseEvents(body: string): SseEvent[] {
 }
 
 async function readUntilEvent(input: {
-  daemon: StartedDaemon;
-  path: string;
+  url: string;
   type: string;
+  headers?: ConstructorParameters<typeof Headers>[0];
   lastEventId?: string;
   timeoutMs?: number;
+  fetchImpl?: FetchImplementation;
 }): Promise<SseEvent[]> {
   const controller = new AbortController();
-  const headers = new Headers({
-    accept: "text/event-stream",
-    authorization: `Bearer ${input.daemon.sessionToken}`,
-  });
+  const headers = new Headers(input.headers);
+  headers.set("accept", "text/event-stream");
   if (input.lastEventId) {
     headers.set("Last-Event-ID", input.lastEventId);
   }
-  const response = await fetch(`http://127.0.0.1:${input.daemon.port}${input.path}`, {
-    headers,
-    signal: controller.signal,
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`SSE request failed with HTTP ${response.status}: ${await response.text()}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
   const timeoutMs = input.timeoutMs ?? 2_000;
-  const deadline = Date.now() + timeoutMs;
-  let body = "";
+  const deadlineError = new Error(`timed out after ${timeoutMs}ms waiting for ${input.type}`);
+  const deadlineTimer = setTimeout(() => controller.abort(deadlineError), timeoutMs);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
-    while (Date.now() < deadline) {
-      const remaining = Math.max(1, deadline - Date.now());
-      const chunk = await Promise.race([
-        reader.read(),
-        new Promise<{ done: true; value: undefined }>((resolve) =>
-          setTimeout(() => resolve({ done: true, value: undefined }), remaining),
-        ),
-      ]);
+    const response = await (input.fetchImpl ?? fetch)(input.url, {
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new SseHttpError(response.status, await response.text());
+    }
+    if (!response.body) {
+      throw new Error(`SSE request returned HTTP ${response.status} without a body`);
+    }
+
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let body = "";
+    while (true) {
+      const chunk = await reader.read();
       if (chunk.value) {
         body += decoder.decode(chunk.value, { stream: true });
       }
@@ -133,26 +91,167 @@ async function readUntilEvent(input: {
         break;
       }
     }
-    throw new Error(`timed out waiting for ${input.type}; received ${body}`);
+    throw new Error(`SSE stream ended before ${input.type}; received ${body}`);
+  } catch (error) {
+    if (controller.signal.aborted && controller.signal.reason === deadlineError) {
+      throw deadlineError;
+    }
+    throw error;
   } finally {
+    clearTimeout(deadlineTimer);
     controller.abort();
-    await reader.cancel().catch(() => undefined);
+    await reader?.cancel().catch(() => undefined);
   }
 }
 
+describe("SSE reader deadline cleanup", () => {
+  it("times out while the initial fetch is pending and clears its deadline", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl: FetchImplementation = (_input, init) => {
+      const signal = init?.signal;
+      if (!signal) {
+        return Promise.reject(new Error("missing abort signal"));
+      }
+      requestSignal = signal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    };
+
+    const result = readUntilEvent({
+      url: "http://127.0.0.1/pending",
+      type: "project.created",
+      timeoutMs: 50,
+      fetchImpl,
+    });
+    const rejection = expect(result).rejects.toThrow(
+      "timed out after 50ms waiting for project.created",
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    await rejection;
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels the reader and clears its deadline when streaming times out", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn(async () => undefined);
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl: FetchImplementation = async (_input, init) => {
+      const signal = init?.signal;
+      if (!signal) {
+        throw new Error("missing abort signal");
+      }
+      requestSignal = signal;
+      const reader = {
+        read: () =>
+          new Promise<never>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+        cancel,
+      } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+      return {
+        ok: true,
+        status: 200,
+        body: { getReader: () => reader },
+      } as unknown as Response;
+    };
+
+    const result = readUntilEvent({
+      url: "http://127.0.0.1/stalled-stream",
+      type: "project.planning_started",
+      timeoutMs: 75,
+      fetchImpl,
+    });
+    const rejection = expect(result).rejects.toThrow(
+      "timed out after 75ms waiting for project.planning_started",
+    );
+    await vi.advanceTimersByTimeAsync(75);
+    await rejection;
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels the reader and clears its deadline after receiving the target event", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn(async () => undefined);
+    let requestSignal: AbortSignal | undefined;
+    const frame = 'id: opaque\nevent: project.created\ndata: {"type":"project.created"}\n\n';
+    const fetchImpl: FetchImplementation = async (_input, init) => {
+      requestSignal = init?.signal ?? undefined;
+      const reader = {
+        read: vi.fn(async () => ({ done: false, value: new TextEncoder().encode(frame) })),
+        cancel,
+      } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+      return {
+        ok: true,
+        status: 200,
+        body: { getReader: () => reader },
+      } as unknown as Response;
+    };
+
+    await expect(
+      readUntilEvent({
+        url: "http://127.0.0.1/ready-stream",
+        type: "project.created",
+        timeoutMs: 100,
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject([{ cursor: "opaque", type: "project.created" }]);
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cleans up its deadline and signal for a non-2xx response", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl: FetchImplementation = async (_input, init) => {
+      requestSignal = init?.signal ?? undefined;
+      return new Response(JSON.stringify({ code: "event_cursor_expired" }), {
+        status: 410,
+      });
+    };
+
+    await expect(
+      readUntilEvent({
+        url: "http://127.0.0.1/expired",
+        type: "project.created",
+        timeoutMs: 100,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      status: 410,
+      responseText: expect.stringContaining("event_cursor_expired"),
+    });
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe("event stream recovery through the production Daemon", () => {
   it("resumes strictly after Last-Event-ID and rejects that cursor under another filter", async () => {
-    const { client, daemon } = await startProductionComposition();
+    const { client, daemon } = await harnesses.start({
+      testId: "t16-events",
+      completeAfterMs: 5,
+    });
     const project = await client.createProject(
       { name: "Cursor recovery", objective: "resume without duplicate delivery" },
       { idempotencyKey: "create-project", operationId: "op_create_project" },
     );
     const streamPath = client.eventsStreamPath({ projectId: project.id });
+    const headers = { authorization: `Bearer ${daemon.sessionToken}` };
 
     const initial = await readUntilEvent({
-      daemon,
-      path: streamPath,
+      url: `http://127.0.0.1:${daemon.port}${streamPath}`,
       type: "project.created",
+      headers,
     });
     const createdEvent = initial.find((event) => event.type === "project.created");
     expect(createdEvent).toBeDefined();
@@ -170,9 +269,9 @@ describe("event stream recovery through the production Daemon", () => {
     });
 
     const resumed = await readUntilEvent({
-      daemon,
-      path: streamPath,
+      url: `http://127.0.0.1:${daemon.port}${streamPath}`,
       type: "project.planning_started",
+      headers,
       lastEventId: createdEvent.cursor,
     });
     expect(resumed.map((event) => event.type)).toContain("project.planning_started");
@@ -183,17 +282,16 @@ describe("event stream recovery through the production Daemon", () => {
       { name: "Different filter", objective: "must not reuse another subscription cursor" },
       { idempotencyKey: "create-other", operationId: "op_create_other" },
     );
-    const mismatch = await fetch(
-      `http://127.0.0.1:${daemon.port}${client.eventsStreamPath({ projectId: otherProject.id })}`,
-      {
-        headers: {
-          accept: "text/event-stream",
-          authorization: `Bearer ${daemon.sessionToken}`,
-          "Last-Event-ID": createdEvent.cursor,
-        },
-      },
-    );
-    expect(mismatch.status).toBe(410);
-    expect(await mismatch.json()).toMatchObject({ code: "event_cursor_expired" });
+    await expect(
+      readUntilEvent({
+        url: `http://127.0.0.1:${daemon.port}${client.eventsStreamPath({ projectId: otherProject.id })}`,
+        type: "project.created",
+        headers,
+        lastEventId: createdEvent.cursor,
+      }),
+    ).rejects.toMatchObject({
+      status: 410,
+      responseText: expect.stringContaining("event_cursor_expired"),
+    });
   });
 });

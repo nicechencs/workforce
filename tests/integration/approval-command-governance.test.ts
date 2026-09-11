@@ -1,67 +1,14 @@
-import { randomBytes } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createComposedAppServices, startDaemon, type StartedDaemon } from "@workforce/daemon";
-import {
-  createDesktopClient,
-  createLoopbackTransport,
-  type ApprovalDto,
-  type DesktopClient,
-} from "@workforce/desktop-client";
+import type { ApprovalDto, DesktopClient } from "@workforce/desktop-client";
 
-interface Harness {
-  client: DesktopClient;
-  daemon: StartedDaemon;
-  stateDir: string;
-}
+import { ComposedDaemonHarnesses } from "../helpers/composed-daemon.js";
 
-const harnesses: Harness[] = [];
+const harnesses = new ComposedDaemonHarnesses();
 
 afterEach(async () => {
-  for (const harness of harnesses.splice(0)) {
-    await harness.daemon.close();
-    fs.rmSync(harness.stateDir, { recursive: true, force: true });
-  }
+  await harnesses.closeAll();
 });
-
-async function startProductionComposition(): Promise<Harness> {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "wf-t16-approval-"));
-  const lockPath = path.join(
-    os.tmpdir(),
-    `wf-t16-approval-${process.pid}-${randomBytes(6).toString("hex")}.sock`,
-  );
-  let services: Awaited<ReturnType<typeof createComposedAppServices>> | undefined;
-  try {
-    services = await createComposedAppServices({ stateDir, completeAfterMs: 5 });
-    const daemon = await startDaemon({
-      stateDir,
-      services,
-      lockPath,
-      heartbeatMs: 30,
-      pollMs: 20,
-    });
-    const harness = {
-      daemon,
-      stateDir,
-      client: createDesktopClient({
-        transport: createLoopbackTransport({
-          port: daemon.port,
-          getSessionToken: () => daemon.sessionToken,
-        }),
-      }),
-    };
-    harnesses.push(harness);
-    return harness;
-  } catch (error) {
-    await services?.close();
-    fs.rmSync(stateDir, { recursive: true, force: true });
-    throw error;
-  }
-}
 
 async function pendingPlanApproval(client: DesktopClient, projectId: string): Promise<ApprovalDto> {
   const approvals = await client.listApprovals({ projectId, limit: 50 });
@@ -76,7 +23,7 @@ async function pendingPlanApproval(client: DesktopClient, projectId: string): Pr
 
 describe("approval command governance through the production composition", () => {
   it("rejects a stale digest, replays the exact decision, and conflicts when its parameters change", async () => {
-    const { client } = await startProductionComposition();
+    const { client } = await harnesses.start({ testId: "t16-approval", completeAfterMs: 5 });
     const project = await client.createProject(
       { name: "Approval replay", objective: "keep the frozen plan decision stable" },
       { idempotencyKey: "create-project", operationId: "op_create_project" },

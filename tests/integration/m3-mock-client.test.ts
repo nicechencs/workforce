@@ -1,33 +1,11 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
-
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createComposedAppServices, startDaemon, type StartedDaemon } from "@workforce/daemon";
-import { createDesktopClient, createLoopbackTransport } from "@workforce/desktop-client";
+import { ComposedDaemonHarnesses } from "../helpers/composed-daemon.js";
 
-function uniqueLockPath(): string {
-  const id = randomBytes(6).toString("hex");
-  if (process.platform === "win32") {
-    return `\\\\.\\pipe\\WorkforceM3-${process.pid}-${id}`;
-  }
-  return path.join(os.tmpdir(), `workforce-m3-${process.pid}-${id}.lock.sock`);
-}
-
-interface Harness {
-  daemon: StartedDaemon;
-  stateDir: string;
-}
-
-const harnesses: Harness[] = [];
+const harnesses = new ComposedDaemonHarnesses();
 
 afterEach(async () => {
-  for (const item of harnesses.splice(0)) {
-    await item.daemon.close();
-    fs.rmSync(item.stateDir, { recursive: true, force: true });
-  }
+  await harnesses.closeAll();
 });
 
 async function poll<T>(fn: () => Promise<T | undefined>, timeoutMs = 4000): Promise<T> {
@@ -48,23 +26,7 @@ describe("M3 mock loop via typed desktop client", () => {
     "creates, confirms the fixture plan, runs mock developers, and consumes artifact approval",
     { timeout: 20_000 },
     async () => {
-      const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "wf-m3-client-"));
-      const services = await createComposedAppServices({ stateDir, completeAfterMs: 5 });
-      const daemon = await startDaemon({
-        stateDir,
-        services,
-        lockPath: uniqueLockPath(),
-        heartbeatMs: 30,
-        pollMs: 20,
-      });
-      harnesses.push({ daemon, stateDir });
-
-      const client = createDesktopClient({
-        transport: createLoopbackTransport({
-          port: daemon.port,
-          getSessionToken: () => daemon.sessionToken,
-        }),
-      });
+      const { client } = await harnesses.start({ testId: "m3-client", completeAfterMs: 5 });
 
       const teams = await client.listTeams();
       expect(teams.items.some((team) => team.id === "tm_software_development")).toBe(true);
