@@ -2,7 +2,7 @@
 
 日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-11 — 同步公开 Task `dependsOn` 与 `LocalArtifactStore` Mock 产物权威；不宣称 live Codex。画布与自定义 Team 为项目制循环上的 M7 已规划、未实现。
+修订：2026-09-11 — 桌面 IPC allowlist 补上只读 `GET /workflows` / `{id}` / `{id}/versions/{versionId}`（Daemon composition 早已返回已发布模板；headed 真窗口读失败是 Electron 代理拒路，不是 Fake-only）。不宣称 headed Electron / live Codex 已在 CI 复验。
 
 ## 1. 本轮目标与结果
 
@@ -91,8 +91,8 @@ pnpm check:docs
    **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → Settings 绑定工作区（测试 preload 假 picker）→ 页头开始规划 → 确认计划 → 开始执行 → Tasks 核对 `dev_alpha` / `dev_bravo` 及依赖文案（`outputs_ready` 或「依赖：无」）。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
-5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client）  
-   `GET /workflows` / `{id}` / `{id}/versions/{versionId}` 返回已发布 `software-development-team.feature-delivery` 模板、不可变版本和结构化步骤。桌面页走 `listWorkflows`，空目录/失败用诚实文案，不再用夹具冒充已接通。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。
+5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist）  
+   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`；Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET（写接口仍拒）。桌面页走 `listWorkflows`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
 
 6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  

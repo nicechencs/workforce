@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   asWorkflowView,
+  catalogListCard,
+  CATALOG_LOADING_NOTE,
   EMPTY_CATALOG_NOTE,
   FEATURE_DELIVERY_STEPS,
   FEATURE_DELIVERY_WORKFLOW,
@@ -53,10 +55,23 @@ describe("workflow pages", () => {
     expect(empty.source).toBe("empty");
     expect(empty.workflows).toEqual([]);
     expect(empty.note).toBe(EMPTY_CATALOG_NOTE);
+    expect(catalogListCard(empty.source)).toEqual({
+      testId: "workflow-empty",
+      text: "当前没有已发布的工作流模板。",
+    });
     const unavailable = workflowPageModel({ status: "error" });
     expect(unavailable.source).toBe("unavailable");
     expect(unavailable.workflows).toEqual([]);
     expect(unavailable.note).toBe(UNAVAILABLE_CATALOG_NOTE);
+    expect(catalogListCard(unavailable.source)).toEqual({
+      testId: "workflow-error",
+      text: UNAVAILABLE_CATALOG_NOTE,
+    });
+    expect(catalogListCard(unavailable.source).text).not.toBe(catalogListCard(empty.source).text);
+    expect(catalogListCard("loading")).toEqual({
+      testId: "workflow-loading",
+      text: CATALOG_LOADING_NOTE,
+    });
   });
 
   it("maps catalog DTOs without inventing fixture steps", () => {
@@ -90,6 +105,8 @@ describe("workflow pages", () => {
     );
     expect(html).toContain("工作流");
     expect(html).toContain("没有画布编辑器");
+    expect(html).toContain("workflow-loading");
+    expect(html).not.toContain("workflow-empty");
     expect(html).not.toContain("不得发明 endpoint");
     expect(html).not.toContain("可视化编辑器已可用");
     expect(html.toLowerCase()).not.toContain("canvas");
