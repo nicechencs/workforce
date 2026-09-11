@@ -589,10 +589,15 @@ describe("composed M3 mock loop", () => {
       .load()
       .runs.find((item) => item.id === run.id);
     expect(afterFailure?.cancelRequestedAt).toBeUndefined();
+    const retryState = await injectJson(harness, `/api/v1/runs/${run.id}`, {
+      headers: harness.auth,
+    });
+    expect(retryState.body).toMatchObject({ status: "running", cancelRequested: true });
+    const retryRevision = (retryState.body as { stateRevision: number }).stateRevision;
 
     const retried = await injectJson(harness, `/api/v1/runs/${run.id}:cancel`, {
       method: "POST",
-      headers: commandHeaders(harness.auth, "cancel-write-retry", run.stateRevision),
+      headers: commandHeaders(harness.auth, "cancel-write-retry", retryRevision),
       body: JSON.stringify({ operationId: "op_cancel_write_retry" }),
     });
     expect(retried.status).toBe(202);
