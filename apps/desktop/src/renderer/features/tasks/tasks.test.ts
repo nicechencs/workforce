@@ -4,6 +4,7 @@ import type { RunDto, TaskDto } from "@workforce/desktop-client";
 
 import {
   runStatusLabel,
+  sortTasksForDag,
   taskHeadlineStatus,
   taskKindNote,
   taskStatusLabel,
@@ -24,6 +25,7 @@ function task(partial: Partial<TaskDto> & Pick<TaskDto, "status">): TaskDto {
     cancelRequested: false,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-10T00:00:00.000Z",
+    dependsOn: [],
     ...partial,
   };
 }
@@ -59,6 +61,35 @@ describe("task vs run statuses", () => {
   it("shows 取消中 when cancel is accepted before status is cancelled", () => {
     expect(taskHeadlineStatus(task({ status: "running", cancelRequested: true }))).toBe("取消中");
     expect(taskHeadlineStatus(task({ status: "cancelled" }))).toBe("已取消");
+  });
+});
+
+describe("task DAG order", () => {
+  it("orders published dependsOn edges before dependents", () => {
+    const review = task({
+      id: "tsk_review",
+      status: "blocked",
+      createdAt: "2026-09-11T00:00:00.000Z",
+      dependsOn: [
+        { taskId: "tsk_a", waitFor: "outputs_ready" },
+        { taskId: "tsk_b", waitFor: "outputs_ready" },
+      ],
+    });
+    const bravo = task({
+      id: "tsk_b",
+      status: "ready",
+      createdAt: "2026-09-11T00:00:01.000Z",
+    });
+    const alpha = task({
+      id: "tsk_a",
+      status: "ready",
+      createdAt: "2026-09-11T00:00:02.000Z",
+    });
+    expect(sortTasksForDag([review, bravo, alpha]).map((item) => item.id)).toEqual([
+      "tsk_b",
+      "tsk_a",
+      "tsk_review",
+    ]);
   });
 });
 

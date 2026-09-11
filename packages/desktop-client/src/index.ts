@@ -44,6 +44,7 @@ export type {
   RuntimeDto,
   SessionDto,
   StartProjectInput,
+  TaskDependency,
   TaskDto,
   TeamDto,
   TeamRoleDto,

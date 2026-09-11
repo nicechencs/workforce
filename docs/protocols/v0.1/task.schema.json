@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workforce.local/protocols/v0.1/task.schema.json",
+  "title": "TaskDto",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "title",
+    "objective",
+    "status",
+    "stateRevision",
+    "definitionRevision",
+    "generation",
+    "attempt",
+    "protocolVersion",
+    "cancelRequested",
+    "createdAt",
+    "updatedAt",
+    "dependsOn"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "objective": { "type": "string" },
+    "status": { "type": "string" },
+    "stateRevision": { "type": "integer" },
+    "definitionRevision": { "type": "integer" },
+    "generation": { "type": "integer" },
+    "attempt": { "type": "integer" },
+    "protocolVersion": { "const": "0.1" },
+    "cancelRequested": { "type": "boolean" },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "role": { "type": "string" },
+    "workflowNodeId": { "type": "string" },
+    "dependsOn": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/TaskDependency" }
+    }
+  },
+  "$defs": {
+    "TaskDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "waitFor"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "waitFor": { "type": "string", "enum": ["outputs_ready", "completed"] }
+      }
+    }
+  }
+}

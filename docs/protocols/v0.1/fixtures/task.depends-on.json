@@ -1,0 +1,21 @@
+{
+  "id": "tsk_review_integration",
+  "projectId": "prj_01JEXAMPLE",
+  "title": "review_integration",
+  "objective": "Review the integrated worktree bound to a single content digest.",
+  "status": "blocked",
+  "stateRevision": 1,
+  "definitionRevision": 1,
+  "generation": 1,
+  "attempt": 1,
+  "protocolVersion": "0.1",
+  "cancelRequested": false,
+  "createdAt": "2026-09-11T00:00:00.000Z",
+  "updatedAt": "2026-09-11T00:00:00.000Z",
+  "role": "reviewer",
+  "workflowNodeId": "review_integration",
+  "dependsOn": [
+    { "taskId": "tsk_dev_alpha", "waitFor": "outputs_ready" },
+    { "taskId": "tsk_dev_bravo", "waitFor": "outputs_ready" }
+  ]
+}

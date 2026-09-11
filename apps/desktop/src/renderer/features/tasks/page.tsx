@@ -9,6 +9,7 @@ import {
   isCommandAccepted,
   isRevisionConflict,
 } from "../projects/command.js";
+import { taskDependencyLabel } from "../projects/model.js";
 import {
   badgeStyle,
   buttonStyle,
@@ -158,6 +159,9 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
         <p style={mutedStyle}>
           任务状态：{taskStatusLabel(task.status)} · definitionRevision {task.definitionRevision} ·
           generation {task.generation} · attempt {task.attempt}
+        </p>
+        <p style={mutedStyle} data-testid="task-depends-on">
+          {taskDependencyLabel(task)}
         </p>
         <p style={mutedStyle}>{taskKindNote()}</p>
       </section>

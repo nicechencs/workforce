@@ -1,13 +1,14 @@
 import { ArtifactError } from "./errors.js";
 import { decodeUtf8 } from "./hash.js";
 
-export const REGISTRABLE_KINDS = ["plan", "git_diff", "test_result"] as const;
+export const REGISTRABLE_KINDS = ["plan", "git_diff", "test_result", "evaluation"] as const;
 export type RegistrableKind = (typeof REGISTRABLE_KINDS)[number];
 
 export const KIND_MEDIA_TYPES: Record<RegistrableKind, string> = {
   plan: "application/vnd.workforce.plan+json",
   git_diff: "text/x-diff",
   test_result: "application/vnd.workforce.test-result+json",
+  evaluation: "application/vnd.workforce.review+json",
 };
 
 const MEDIA_TYPE_TO_KIND: Record<string, RegistrableKind> = {
@@ -16,6 +17,7 @@ const MEDIA_TYPE_TO_KIND: Record<string, RegistrableKind> = {
   "text/x-patch": "git_diff",
   "application/x-git-diff": "git_diff",
   "application/vnd.workforce.test-result+json": "test_result",
+  "application/vnd.workforce.review+json": "evaluation",
 };
 
 export function isRegistrableKind(value: string): value is RegistrableKind {
@@ -52,6 +54,9 @@ export function inferKind(input: {
   }
   if (slot.includes("test")) {
     return "test_result";
+  }
+  if (slot.includes("review") || slot.includes("report") || slot.includes("eval")) {
+    return "evaluation";
   }
   throw new ArtifactError(
     "ARTIFACT_KIND_UNSUPPORTED",
@@ -103,6 +108,27 @@ function verifyPlan(body: Uint8Array): unknown {
   requireString(parsed, "summary", "plan");
   if (parsed.steps !== undefined && !Array.isArray(parsed.steps)) {
     throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", "plan.steps must be an array when present");
+  }
+  return parsed;
+}
+
+function verifyEvaluation(body: Uint8Array): unknown {
+  const parsed = asRecord(parseJsonBody(body, "evaluation"), "evaluation");
+  const verdict = parsed.verdict;
+  const passed = parsed.passed;
+  const hasVerdict = typeof verdict === "string" && verdict.length > 0;
+  const hasPassed = typeof passed === "boolean";
+  if (!hasVerdict && !hasPassed) {
+    throw new ArtifactError(
+      "ARTIFACT_SCHEMA_INVALID",
+      "evaluation requires verdict (string) or passed (boolean)",
+    );
+  }
+  if (parsed.summary !== undefined && typeof parsed.summary !== "string") {
+    throw new ArtifactError(
+      "ARTIFACT_SCHEMA_INVALID",
+      "evaluation.summary must be a string when present",
+    );
   }
   return parsed;
 }
@@ -182,6 +208,9 @@ export function verifyKindContent(input: {
   }
   if (input.kind === "test_result") {
     return { kind: "test_result", parsed: verifyTestResult(input.body) };
+  }
+  if (input.kind === "evaluation") {
+    return { kind: "evaluation", parsed: verifyEvaluation(input.body) };
   }
   return {
     kind: "git_diff",

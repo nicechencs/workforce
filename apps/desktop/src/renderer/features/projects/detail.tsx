@@ -496,7 +496,7 @@ function TasksPanel(props: {
   return (
     <section style={cardStyle}>
       <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>Tasks</h2>
-      <p style={mutedStyle}>按创建时间排列的任务列表。公开 Task DTO 未返回 DAG 边。</p>
+      <p style={mutedStyle}>按已发布执行图依赖排列的任务列表。</p>
       {props.tasks.length === 0 ? (
         <p style={mutedStyle}>{emptyTasksCopy(props.project.status)}</p>
       ) : (
@@ -504,9 +504,10 @@ function TasksPanel(props: {
           {props.tasks.map((task) => (
             <li key={task.id} style={listItemStyle} onClick={() => props.onOpen(task.id)}>
               <strong>{task.title}</strong>
-              <div style={mutedStyle}>
+              <div style={mutedStyle} data-testid={`project-task-deps-${task.id}`}>
                 {taskStatusLabel(task.status)} · 负责人 {taskOwnerLabel(task)} ·{" "}
-                {taskDependencyLabel()} · attempt {task.attempt} · generation {task.generation}
+                {taskDependencyLabel(task, props.tasks)} · attempt {task.attempt} · generation{" "}
+                {task.generation}
                 {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""}
               </div>
             </li>

@@ -84,10 +84,20 @@ describe("LocalArtifactStore", () => {
       taskId: "tsk_1",
       runId: "run_1",
     });
+    const review = await store.register({
+      slotId: "out_review_report",
+      mediaType: KIND_MEDIA_TYPES.evaluation,
+      body: encodeUtf8(JSON.stringify({ verdict: "pass", summary: "looks good" })),
+      kind: "evaluation",
+      taskId: "tsk_1",
+      runId: "run_1",
+    });
 
     expect(plan.status).toBe("available");
     expect(diff.status).toBe("available");
     expect(tests.status).toBe("available");
+    expect(review.status).toBe("available");
+    expect(review.kind).toBe("evaluation");
     expect(plan.version).toBe(1);
     expect(diff.kind).toBe("git_diff");
     expect(tests.kind).toBe("test_result");

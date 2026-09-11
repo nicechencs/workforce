@@ -262,6 +262,8 @@ describe("desktop project main path", () => {
       expect(status === "执行中" || status === "已完成").toBe(true);
       expect(tasks).toContain("dev_alpha");
       expect(tasks).toContain("dev_bravo");
+      expect(tasks).toMatch(/依赖：/);
+      expect(tasks).toMatch(/outputs_ready|依赖：无/);
 
       for (const id of ["overview", "tasks", "runs", "artifacts", "activity", "settings"]) {
         const button = await waitFor(`project-tab-${id}`, () =>
