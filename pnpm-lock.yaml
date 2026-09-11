@@ -252,6 +252,9 @@ importers:
 
   packages/process:
     dependencies:
+      '@workforce/application':
+        specifier: workspace:*
+        version: link:../application
       '@workforce/domain':
         specifier: workspace:*
         version: link:../domain

@@ -86,8 +86,8 @@ describe("OsProcessController source invariants", () => {
     }
   });
 
-  it("exports UNTESTED_PROCESS_PLATFORMS documenting darwin and linux", () => {
-    expect(UNTESTED_PROCESS_PLATFORMS).toEqual(["darwin", "linux"]);
+  it("exports UNTESTED_PROCESS_PLATFORMS documenting macOS", () => {
+    expect(UNTESTED_PROCESS_PLATFORMS).toEqual(["darwin"]);
   });
 });
 

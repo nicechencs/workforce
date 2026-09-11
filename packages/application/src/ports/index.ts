@@ -79,8 +79,37 @@ export interface ProcessStatus {
   startIdentity: string;
 }
 
+export interface CapturedSpawnRequest extends SpawnRequest {
+  stdin?: Uint8Array;
+}
+
+export type ProcessOutputSource = "stdout" | "stderr";
+
+export interface ProcessOutput {
+  source: ProcessOutputSource;
+  chunk: Uint8Array;
+}
+
+export interface ProcessExitResult {
+  exitCode: number | null;
+  signal: string | null;
+}
+
+export interface CapturedProcess {
+  handle: ProcessHandle;
+  /**
+   * A single-consumer, multiplexed stream drained from stdout and stderr.
+   * If never consumed, the process continues while output is held only in a bounded queue.
+   * Returning before EOF force-cancels the managed process. If that queue overflows because
+   * output is not consumed, the process is force-cancelled and iteration fails.
+   */
+  output: AsyncIterable<ProcessOutput>;
+  wait(): Promise<ProcessExitResult>;
+}
+
 export interface ProcessController {
   spawn(req: SpawnRequest): Promise<ProcessHandle>;
+  spawnCaptured(req: CapturedSpawnRequest): Promise<CapturedProcess>;
   cancel(handle: ProcessHandle, mode: ProcessCancelMode): Promise<void>;
   inspect(handle: ProcessHandle): Promise<ProcessStatus>;
 }

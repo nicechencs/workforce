@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { mergeMinimalEnv } from "./env.js";
 import { identityMismatchError } from "./start-identity.js";
-import type { TrackedProcess } from "./tracked.js";
+import { observeChild, type TrackedProcess } from "./tracked.js";
 import {
   pollUntil,
   queryWin32StartIdentity,
@@ -192,6 +192,7 @@ async function trySpawnInJob(req: {
       stdio: ["pipe", "ignore", "ignore"],
     },
   );
+  const helperCompletion = observeChild(helper);
 
   try {
     await waitForChildSpawn(helper);
@@ -211,6 +212,10 @@ async function trySpawnInJob(req: {
         helper,
         dir,
       };
+      tracked.completion = helperCompletion.then((result) => {
+        cleanupJobArtifacts(tracked);
+        return result;
+      });
       return tracked;
     }
   } catch {
@@ -249,6 +254,7 @@ async function spawnFallback(req: {
     detached: false,
     stdio: ["pipe", "ignore", "ignore"],
   });
+  const completion = observeChild(child);
   await waitForChildSpawn(child);
   if (child.pid === undefined) {
     throw new Error("windows spawn produced no pid");
@@ -260,6 +266,7 @@ async function spawnFallback(req: {
     descendants: [],
     usedJob: false,
     child,
+    completion,
   };
 }
 
@@ -271,9 +278,12 @@ async function waitForStartIdentity(pid: number): Promise<string> {
       return id;
     }
     if (!tasklistHasPid(pid)) {
-      break;
+      return `win32:${pid}:unresolved`;
     }
     await sleep(50);
+  }
+  if (tasklistHasPid(pid)) {
+    taskkillPid(pid, true);
   }
   throw new Error(`failed to read startIdentity for pid ${pid}`);
 }
@@ -340,12 +350,20 @@ async function cleanupTracked(tracked: TrackedProcess | undefined): Promise<void
     }
   }
   if (tracked.dir) {
-    try {
-      fs.rmSync(tracked.dir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    cleanupJobArtifacts(tracked);
   }
+}
+
+function cleanupJobArtifacts(tracked: TrackedProcess): void {
+  if (!tracked.dir) {
+    return;
+  }
+  try {
+    fs.rmSync(tracked.dir, { recursive: true, force: true });
+  } catch {
+    // cleanup is best-effort; the helper and target are already observably stopped
+  }
+  delete tracked.dir;
 }
 
 function helperEnv(): Record<string, string> {
