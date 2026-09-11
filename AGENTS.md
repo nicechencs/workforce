@@ -23,8 +23,9 @@
 | 选择验证命令                         | [测试与验证](docs/guides/testing-and-validation.md)                    |
 | 新增或重写文档                       | [文档风格与治理](docs/STYLE.md) 与 [文档索引](docs/README.md)          |
 | 修改公共协议、状态或 API             | 对应 `docs/blueprint/`、`docs/protocols/`、ADR、状态矩阵和能力矩阵     |
-| 修改 T00–T17 负责范围或共享文件      | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
+| 修改 T00–T21 负责范围或共享文件      | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
 | 判断当前完成度                       | [实现进度](docs/planning/03-implementation-status.md) 与当前源码、测试 |
+| 修改产品或规划文档                   | 同步追加 [产品沟通历史](docs/planning/communication-history.md)        |
 
 必读内容缺失、互相冲突或与代码不一致时，说明差异，只暂停依赖该结论的步骤，不自行补写事实。
 
@@ -79,3 +80,4 @@ git diff --cached --stat
 - 不通过削弱断言、伪造 Artifact/Evaluation、静默回退 Mock 或忽略 unsupported capability 宣称完成。
 - 交付至少包含：行为结果、改动文件、验证命令与退出结果、未验证的平台/Runtime、遗留风险和下一步。
 - 文档变化同步更新索引和 `updated`；提交前运行 `pnpm check:docs`。
+- 产品或规划文档（决策登记、能力矩阵、任务清单、实现进度、Product UI）有实质更新时，必须在 [产品沟通历史](docs/planning/communication-history.md) 追加当日（Asia/Taipei）条目：决定 → 文档影响 → 状态（planned / implemented）。

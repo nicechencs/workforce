@@ -3,11 +3,11 @@
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**修订：** 2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned），均未实现。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
-产品主对象是 Project。围着该项目：编排 Team（M3 选预设；M7 可自定义）、编排 Tasks、编排 Workflow（M3 只读目录；M7 画布），再执行与验收。桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。
+产品主对象是 Project。围着该项目：编排 Team（M3 选预设；M7 可自定义或由对话生成角色草稿）、编排 Tasks、编排 Workflow（M3 只读目录；M7 对话生成草稿后进画布编辑），再执行与验收（M8：每个 Agent 可绑定已发布工作流或直接执行）。桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。D17/D18 **尚未实现**。
 
 ```mermaid
 flowchart TD
@@ -27,7 +27,7 @@ flowchart TD
   Approval -->|通过| Complete[项目完成]
 ```
 
-M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team 与画布。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。
+M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team、画布与对话生成。M8 才要求按 Agent 选择执行模式。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。无 capability 不得渲染直接执行成功态。
 
 ## 2. 单节点多 Agent 调度
 
@@ -142,3 +142,47 @@ flowchart TD
 ```
 
 未发布草稿不能 `:start-planning`。预设模板始终可选。
+
+## 9. 对话生成工作流（M7，尚未实现）
+
+用户与编排 Agent 对话，生成可编辑的工作流（及可选的角色/任务草稿），再进入 D15 画布。
+
+```mermaid
+flowchart TD
+  Talk[用户描述角色流程与任务] --> Agent[编排 Agent 理解意图]
+  Agent --> Draft[生成 Workflow 与可选 Team/Task 草稿]
+  Draft --> Edit[画布或结构化编辑]
+  Edit --> Save[保存未发布版本]
+  Save --> Publish{发布}
+  Publish -->|校验失败| Edit
+  Publish -->|通过| Frozen[不可变 WorkflowVersion]
+  Frozen --> Bind[确认计划后绑定执行图]
+```
+
+约束：
+
+- 对话只生成定义，不执行 Runtime，也不把聊天回复写成 Task/Run 完成。
+- 生成结果必须可编辑；禁止一次生成即锁定。
+- 未发布图不能被 Runtime 执行。写接口未就绪时，「对话生成」不得假成功。
+- 会话协议未由 T02 冻结前，本流程只是产品路径，不对应已实现 endpoint。
+
+## 10. 按 Agent 选择执行模式（M8，尚未实现）
+
+```mermaid
+flowchart TD
+  AgentWork[某 Agent 将要做事] --> Probe{capability 支持哪些模式}
+  Probe -->|皆无| Deny[禁用并说明]
+  Probe -->|有能力| Choose{用户选择}
+  Choose -->|跟随已发布工作流| Bound[只执行图中轮到的节点]
+  Choose -->|直接执行| Direct[即席执行当前目标]
+  Bound --> Policy[Policy Workspace 预算 Approval]
+  Direct --> Policy
+  Policy --> Run[创建新 Run]
+```
+
+约束：
+
+- workflow-bound 与 direct 都是一等模式，UI/API 必须诚实，靠 probe 显隐。
+- direct 仍受 Policy、隔离 worktree、预算与 Approval 约束，不是无协议乱跑。
+- 重试创建新 Run，不改写旧 Run 的模式。
+- 当前代码无此选择面；不得预置可点击成功的「直接执行」。

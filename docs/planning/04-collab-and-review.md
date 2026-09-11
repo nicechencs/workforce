@@ -12,6 +12,7 @@
 | 验证命令与证据边界 | [testing-and-validation.md](../guides/testing-and-validation.md) |
 | 文档风格与 `pnpm check:docs` | [STYLE.md](../STYLE.md) |
 | 进度真相 | [03-implementation-status.md](03-implementation-status.md) |
+| 产品沟通历史（只追加） | [communication-history.md](communication-history.md) |
 
 权威顺序以 [decision-register.md](decision-register.md) §1 / D01 为准，此处不抄录。不要把 [02-development-task-backlog.md](02-development-task-backlog.md) 里过时的“均未开始”当成现状。
 
@@ -66,3 +67,4 @@ review-bot 对每个 PR 核对下列**决策登记**红线；任一项回归则 
 1. **Codex live exec**（T15：Process 已接线；本机无 live `codex exec`。需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**
 3. **项目制循环上的画布 / 自定义 Team 写接口**（M7 / T18–T19：给 Project 编排 Team 与 Workflow，不是外挂。未领取前不要在普通 PR 里顺便做）
+4. **对话生成工作流 / 双执行模式**（M7–M8 / T20–T21：D17/D18 已冻结为 planned，**未实现**。未领取且 T02 未冻结会话/mode 字段前，不要顺便做 chat 入口或假 mode 按钮）
