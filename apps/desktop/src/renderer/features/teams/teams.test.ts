@@ -1,38 +1,377 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { PRESET_TEAM, rejectCustomTeamSave, teamPageModel } from "./model.js";
+import { ProjectTeamBindingField } from "./page.js";
+
+import { problemFrom } from "../projects/command.js";
+import {
+  PRESET_TEAM,
+  TEAM_WRITE_API_MISSING,
+  type TeamView,
+  UNPUBLISHED_BIND_REASON,
+  addDraftMember,
+  asTeamView,
+  bindableTeams,
+  canBindTeamVersion,
+  createTeamButton,
+  draftMembersValid,
+  emptyTeamDraftForm,
+  interpretPublishResponse,
+  isPresetTeamId,
+  isPublishedTeamVersion,
+  isTeamReadyForPlanning,
+  mergeCatalogTeams,
+  probeTeamWriteSupport,
+  projectTeamVersionId,
+  publishTeamButton,
+  reduceTeamDraftForm,
+  rejectCustomTeamPublish,
+  rejectCustomTeamSave,
+  rejectUnpublishedBind,
+  supportFromFlags,
+  teamPageModel,
+  unavailableTeamWriteSupport,
+  updateDraftMember,
+} from "./model.js";
+
+const writeLive = supportFromFlags({
+  methodsPresent: true,
+  versionRead: true,
+  bindMethod: true,
+});
 
 describe("team pages", () => {
-  it("is read-only and does not expose create/edit/save actions", () => {
+  it("keeps the preset read-only when write APIs are missing", () => {
     const model = teamPageModel();
     expect(model.readonly).toBe(true);
     expect(model.canCreate).toBe(false);
     expect(model.canEdit).toBe(false);
+    expect(model.canPublish).toBe(false);
     expect(model.saveLooksSuccessful).toBe(false);
+    expect(model.publishLooksSuccessful).toBe(false);
     expect(model.actions).toEqual([]);
     expect(model.teams).toEqual([PRESET_TEAM]);
     expect(model.note).toContain("GET /teams");
+    expect(model.note).toContain("写接口尚未接通");
     expect(PRESET_TEAM.workers.map((worker) => worker.role)).toEqual([
       "planner",
       "developer",
       "reviewer",
     ]);
+    expect(PRESET_TEAM.members.map((member) => member.quantity)).toEqual([1, 1, 1]);
     expect(PRESET_TEAM.runtime.label).toBe("Mock");
+    expect(PRESET_TEAM.readonly).toBe(true);
+    expect(PRESET_TEAM.kind).toBe("preset");
   });
 
-  it("does not fake a successful custom team save", () => {
-    const result = rejectCustomTeamSave();
-    expect(result.ok).toBe(false);
-    expect(result.reason).toContain("只读");
+  it("does not fake a successful custom team save or publish", () => {
+    const save = rejectCustomTeamSave();
+    expect(save.ok).toBe(false);
+    expect(save.reason).toContain("只读");
+    const publish = rejectCustomTeamPublish();
+    expect(publish.ok).toBe(false);
+    expect(publish.reason).toContain("写接口尚未接通");
+    expect(createTeamButton(unavailableTeamWriteSupport()).enabled).toBe(false);
+    expect(createTeamButton(unavailableTeamWriteSupport()).looksSuccessful).toBe(false);
+    expect(publishTeamButton(unavailableTeamWriteSupport()).enabled).toBe(false);
+    expect(publishTeamButton(unavailableTeamWriteSupport()).looksSuccessful).toBe(false);
   });
 
-  it("keeps live teams read-only when GET /teams is available", () => {
+  it("keeps live preset cards read-only when GET /teams is available", () => {
     const model = teamPageModel({
-      liveTeams: [{ ...PRESET_TEAM, id: "software-development-team", name: "Live Team" }],
+      liveTeams: [{ ...PRESET_TEAM, id: "tm_software_development", name: "Software Development Team" }],
     });
     expect(model.source).toBe("live");
     expect(model.readonly).toBe(true);
     expect(model.canCreate).toBe(false);
     expect(model.teams[0]?.readonly).toBe(true);
+    expect(model.teams[0]?.kind).toBe("preset");
+  });
+
+  it("enables create/publish only after a live TeamVersion read probe", () => {
+    const methodsOnly = supportFromFlags({
+      methodsPresent: true,
+      versionRead: false,
+      bindMethod: true,
+    });
+    expect(teamPageModel({ writeSupport: methodsOnly }).canCreate).toBe(false);
+    expect(createTeamButton(methodsOnly).enabled).toBe(false);
+    const live = teamPageModel({
+      liveTeams: [PRESET_TEAM, publishedCustom()],
+      writeSupport: writeLive,
+    });
+    expect(live.canCreate).toBe(true);
+    expect(live.canPublish).toBe(true);
+    expect(live.canBind).toBe(true);
+    expect(live.readonly).toBe(false);
+    expect(live.saveLooksSuccessful).toBe(false);
+    expect(createTeamButton(writeLive).enabled).toBe(true);
+    expect(createTeamButton(writeLive).looksSuccessful).toBe(false);
   });
 });
+
+describe("team write probe", () => {
+  it("stays disabled when getTeamVersion is missing or 404s", async () => {
+    await expect(
+      probeTeamWriteSupport({
+        createTeam: () => undefined,
+        createTeamVersion: () => undefined,
+        patchTeamVersion: () => undefined,
+        publishTeamVersion: () => undefined,
+        patchProject: () => undefined,
+        listTeams: async () => ({ items: [PRESET_TEAM] }),
+      }),
+    ).resolves.toMatchObject({ create: false, publish: false, bind: false, versionRead: false });
+
+    await expect(
+      probeTeamWriteSupport({
+        createTeam: () => undefined,
+        createTeamVersion: () => undefined,
+        patchTeamVersion: () => undefined,
+        publishTeamVersion: () => undefined,
+        getTeamVersion: async () => {
+          throw problemFrom({ code: "not_found", status: 404, detail: "missing route" });
+        },
+        patchProject: () => undefined,
+        listTeams: async () => ({ items: [{ id: "tm_software_development", version: "0.1.0" }] }),
+      }),
+    ).resolves.toMatchObject({ create: false, versionRead: false });
+  });
+
+  it("enables write actions only when a version payload is actually returned", async () => {
+    const support = await probeTeamWriteSupport({
+      createTeam: () => undefined,
+      createTeamVersion: () => undefined,
+      patchTeamVersion: () => undefined,
+      publishTeamVersion: () => undefined,
+      getTeamVersion: async () => ({
+        id: "tmv_1",
+        teamId: "tm_software_development",
+        version: "0.1.0",
+        status: "published",
+        protocolVersion: "0.1",
+        members: [],
+      }),
+      patchProject: () => undefined,
+      listTeams: async () => ({ items: [{ id: "tm_software_development", version: "0.1.0" }] }),
+    });
+    expect(support).toEqual({
+      methodsPresent: true,
+      versionRead: true,
+      create: true,
+      publish: true,
+      bind: true,
+    });
+  });
+});
+
+describe("publish and bind honesty", () => {
+  it("does not treat a draft or empty publish response as success", () => {
+    expect(isPublishedTeamVersion({ id: "tmv_1", status: "draft", version: "0.2.0" })).toBe(false);
+    expect(interpretPublishResponse({ id: "tmv_1", status: "draft", version: "0.2.0" }).ok).toBe(
+      false,
+    );
+    expect(interpretPublishResponse({ id: "tmv_1", status: "published", version: "0.2.0" })).toEqual({
+      ok: true,
+      published: true,
+      versionId: "tmv_1",
+    });
+    expect(
+      interpretPublishResponse({
+        id: "tmv_1",
+        status: "published",
+        version: "0.2.0",
+        publishedAt: "",
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("refuses to bind unpublished drafts and does not enable start-planning", () => {
+    const draft = {
+      ...publishedCustom(),
+      status: "draft" as const,
+      readonly: false,
+    };
+    expect(canBindTeamVersion(draft)).toBe(false);
+    expect(rejectUnpublishedBind(draft)).toEqual({ ok: false, reason: UNPUBLISHED_BIND_REASON });
+    expect(bindableTeams([PRESET_TEAM, draft, publishedCustom()]).map((team) => team.id)).toEqual([
+      PRESET_TEAM.id,
+      "tm_custom",
+    ]);
+    expect(
+      isTeamReadyForPlanning({
+        selection: {
+          teamId: draft.id,
+          versionId: draft.versionId,
+          status: "draft",
+          kind: "custom",
+        },
+        projectTeamVersionId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("enables planning for the preset, but not for an unbound custom TeamVersion", () => {
+    expect(
+      isTeamReadyForPlanning({
+        selection: {
+          teamId: PRESET_TEAM.id,
+          versionId: PRESET_TEAM.versionId,
+          status: "published",
+          kind: "preset",
+        },
+        projectTeamVersionId: null,
+      }),
+    ).toBe(true);
+    expect(
+      isTeamReadyForPlanning({
+        selection: {
+          teamId: "tm_custom",
+          versionId: "tmv_custom_1",
+          status: "published",
+          kind: "custom",
+        },
+        projectTeamVersionId: null,
+      }),
+    ).toBe(false);
+    expect(
+      isTeamReadyForPlanning({
+        selection: {
+          teamId: "tm_custom",
+          versionId: "tmv_custom_1",
+          status: "published",
+          kind: "custom",
+        },
+        projectTeamVersionId: "tmv_custom_1",
+      }),
+    ).toBe(true);
+    expect(projectTeamVersionId({ id: "prj_1" })).toBeNull();
+    expect(projectTeamVersionId({ id: "prj_1", teamVersionId: "tmv_custom_1" })).toBe("tmv_custom_1");
+  });
+});
+
+describe("team draft form", () => {
+  it("keeps members on 412 and never marks publish success", () => {
+    const edited = reduceTeamDraftForm(emptyTeamDraftForm(), {
+      type: "setMembers",
+      members: updateDraftMember(emptyTeamDraftForm().members, 1, { quantity: 3 }),
+    });
+    const submitted = reduceTeamDraftForm(edited, { type: "submit", action: "publish" });
+    const failed = reduceTeamDraftForm(submitted, {
+      type: "failure",
+      error: problemFrom({
+        code: "revision_conflict",
+        status: 412,
+        title: "Revision conflict",
+        detail: "If-Match did not match",
+      }),
+    });
+    expect(failed.members[1]?.quantity).toBe(3);
+    expect(failed.published).toBe(false);
+    expect(failed.needsRefresh).toBe(true);
+    expect(failed.error).toContain("412");
+    expect(failed.name).toBe(edited.name);
+  });
+
+  it("only marks published after an explicit published event", () => {
+    const saved = reduceTeamDraftForm(emptyTeamDraftForm(), {
+      type: "saved",
+      teamId: "tm_1",
+      versionId: "tmv_1",
+    });
+    expect(saved.saved).toBe(true);
+    expect(saved.published).toBe(false);
+    const published = reduceTeamDraftForm(saved, {
+      type: "published",
+      teamId: "tm_1",
+      versionId: "tmv_1",
+    });
+    expect(published.published).toBe(true);
+  });
+
+  it("requires role, runtime profile, and quantity >= 1", () => {
+    expect(draftMembersValid(PRESET_TEAM.members)).toBe(true);
+    expect(draftMembersValid(updateDraftMember(PRESET_TEAM.members, 0, { quantity: 0 }))).toBe(
+      false,
+    );
+    expect(draftMembersValid(updateDraftMember(PRESET_TEAM.members, 0, { role: "" }))).toBe(false);
+    expect(addDraftMember(PRESET_TEAM.members)).toHaveLength(4);
+  });
+});
+
+describe("project team binding field", () => {
+  it("disables custom bind when write APIs are missing and lists unpublished drafts as not bindable", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProjectTeamBindingField, {
+        teams: [PRESET_TEAM, publishedCustom(), { ...publishedCustom(), id: "tm_draft", status: "draft" }],
+        writeSupport: unavailableTeamWriteSupport(),
+        selection: { teamId: "tm_custom", versionId: "tmv_custom_1" },
+        projectTeamVersionId: null,
+        disabled: false,
+        busy: false,
+        error: null,
+        onSelect: () => undefined,
+        onBind: () => undefined,
+      }),
+    );
+    expect(html).toContain("project-bind-team");
+    expect(html).toContain("disabled");
+    expect(html).toContain("project-team-unpublished");
+    expect(html).toContain("开始规划");
+    expect(html).not.toContain("已绑定成功");
+  });
+});
+
+describe("team catalog parsing", () => {
+  it("parses roles, members, and live preset aliases without inventing a write success", () => {
+    expect(isPresetTeamId("tm_software_development")).toBe(true);
+    const fromRoles = asTeamView({
+      id: "tm_software_development",
+      name: "Software Development Team",
+      version: "0.1.0",
+      status: "published",
+      roles: [{ id: "planner", role: "planner", version: "0.1.0" }],
+    });
+    expect(fromRoles?.kind).toBe("preset");
+    expect(fromRoles?.members[0]).toMatchObject({
+      role: "planner",
+      runtimeProfile: "mock",
+      quantity: 1,
+    });
+    const custom = asTeamView({
+      id: "tm_custom",
+      name: "Docs team",
+      version: "0.2.0",
+      status: "draft",
+      members: [{ role: "developer", runtimeProfile: "mock", quantity: 2, title: "Dev" }],
+    });
+    expect(custom).toMatchObject({
+      kind: "custom",
+      status: "draft",
+      readonly: false,
+      members: [{ role: "developer", quantity: 2, runtimeProfile: "mock" }],
+    });
+    const merged = mergeCatalogTeams([custom!]);
+    expect(merged[0]).toEqual(PRESET_TEAM);
+    expect(merged[1]?.id).toBe("tm_custom");
+    expect(TEAM_WRITE_API_MISSING).toContain("M7");
+  });
+});
+
+function publishedCustom(): TeamView {
+  return {
+    id: "tm_custom",
+    name: "Docs team",
+    version: "0.2.0",
+    versionId: "tmv_custom_1",
+    kind: "custom",
+    status: "published",
+    readonly: true,
+    runtime: { adapterId: "mock", label: "Mock" },
+    members: [
+      { id: "developer", role: "developer", title: "Developer", runtimeProfile: "mock", quantity: 2 },
+    ],
+    workers: [{ id: "developer", role: "developer", title: "Developer", runtime: "Mock" }],
+  };
+}

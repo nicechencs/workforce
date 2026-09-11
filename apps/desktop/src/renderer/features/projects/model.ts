@@ -10,7 +10,12 @@ import type {
 import { isActiveRun } from "../runs/model.js";
 import { sortRunsNewestFirst } from "../tasks/model.js";
 import { errorMessage, isRevisionConflict, revisionConflictMessage } from "./command.js";
-import { PRESET_RUNTIME_ID, PRESET_TEAM, PRESET_TEAM_ID } from "../teams/model.js";
+import {
+  PRESET_RUNTIME_ID,
+  PRESET_TEAM,
+  PRESET_TEAM_ID,
+  PRESET_TEAM_VERSION,
+} from "../teams/model.js";
 
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -281,8 +286,16 @@ export function presetTeamCopy(): { id: string; name: string; runtime: string } 
   return { id: PRESET_TEAM.id, name: PRESET_TEAM.name, runtime: PRESET_TEAM.runtime.label };
 }
 
-export function defaultDraftSelection(): { teamId: string; runtimeId: string } {
-  return { teamId: PRESET_TEAM_ID, runtimeId: PRESET_RUNTIME_ID };
+export function defaultDraftSelection(): {
+  teamId: string;
+  teamVersionId: string;
+  runtimeId: string;
+} {
+  return {
+    teamId: PRESET_TEAM_ID,
+    teamVersionId: PRESET_TEAM_VERSION,
+    runtimeId: PRESET_RUNTIME_ID,
+  };
 }
 
 export function nodeScopeLabel(): string {
