@@ -207,3 +207,11 @@ updated: 2026-09-12
 - **决定：** 在 main tip（含 #25 `b700010` `orchestrationMode` 冻结）上做 T21 Desktop UI 切片：项目详情与 Task 详情展示 `orchestrationMode` 选择面；`GET /capabilities` / Runtime probe 未声明 `orchestration.direct` 时禁用 direct；选择写入现有 `POST /projects/{id}:start`（省略仍默认 `workflow_bound`）。无能力组合返回冻结错误 `unsupported_capability`。**不发明** `/runs/{id}:direct`、chat、enrollment 或容器 path。不改 T18 画布文件或 T19 Team 写面。不宣称 M8 调度完成、headed PASS 或生产 Codex direct。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 行改为 UI 切片已接线；[api-capability-matrix.md](api-capability-matrix.md) M8 行记录字段+UI 进度且不增 path；[02-development-task-backlog.md](02-development-task-backlog.md) / [04-collab-and-review.md](04-collab-and-review.md) 去掉「T21 UI 未实现」的现行概括。
 - **状态：** T21 UI 切片 **implemented**（happy-dom；headed 未跑）。M8 调度 / 生产 Codex direct / D19 runner / 会话协议 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T21 去掉 Task 详情未接线 mode 控件
+
+- **决定：** PM UI P1 打回 #26：Task 详情上的 `orchestrationMode` 控件未接到 start 命令，属于假按钮风险。同 PR 删除该挂载，只保留已接到 `POST /projects/{id}:start` 的项目「开始执行」面。不发明 `/runs/{id}:direct`，不宣称 M8 / Codex direct / headed。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 行改为「项目启动面部分接线；Task 详情不挂未接线控件」。
+- **状态：** T21 UI **部分接线**（项目 `:start`）。Task 详情无 mode 控件。M8 **planned**。

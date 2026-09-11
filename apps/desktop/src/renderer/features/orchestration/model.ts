@@ -27,7 +27,7 @@ export const DIRECT_COPY =
   "直接执行：按当前任务目标即席执行，仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn。";
 
 export const SLICE_NOTE =
-  "T21 UI 切片：选择写入现有 POST /projects/{id}:start 的 orchestrationMode。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";
+  "T21 UI 切片：仅项目「开始执行」写入现有 POST /projects/{id}:start 的 orchestrationMode。Task 详情不挂未接线控件。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";
 
 export const MODE_LABELS: Record<OrchestrationMode, string> = {
   workflow_bound: "跟随已发布工作流",

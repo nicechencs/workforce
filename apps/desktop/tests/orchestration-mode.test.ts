@@ -1,8 +1,10 @@
+import type { DesktopClient, RunDto, TaskDto } from "@workforce/desktop-client";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { OrchestrationModeControl } from "../src/renderer/features/orchestration/control.js";
+import { TaskDetailPage } from "../src/renderer/features/tasks/page.js";
 import {
   DIRECT_UNSUPPORTED,
   buildStartProjectInput,
@@ -105,5 +107,52 @@ describe("orchestration mode happy-dom", () => {
     if (payload.ok) {
       expect(payload.input.orchestrationMode).toBe("direct");
     }
+  });
+
+  it("does not mount an unwired orchestrationMode control on task detail", async () => {
+    const task: TaskDto = {
+      id: "tsk_1",
+      projectId: "prj_1",
+      title: "Implement slice Alpha",
+      objective: "Add Alpha",
+      status: "ready",
+      stateRevision: 1,
+      definitionRevision: 1,
+      generation: 1,
+      attempt: 1,
+      protocolVersion: "0.1",
+      cancelRequested: false,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      updatedAt: "2026-09-10T00:00:00.000Z",
+      dependsOn: [],
+    };
+    const client = {
+      getTask: async () => task,
+      listRuns: async () => ({
+        items: [] as RunDto[],
+        page: { nextCursor: null, hasMore: false },
+      }),
+    } as Pick<DesktopClient, "getTask" | "listRuns">;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(TaskDetailPage, {
+          client: client as DesktopClient,
+          path: "/projects/prj_1/tasks/tsk_1",
+          params: { projectId: "prj_1", taskId: "tsk_1" },
+          navigate: () => undefined,
+        }),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain("Implement slice Alpha");
+    expect(host.querySelector('[data-testid="orchestration-mode-control"]')).toBeNull();
+    expect(host.querySelector('[data-testid="orchestration-mode-direct"]')).toBeNull();
+    expect(host.querySelector('[data-testid="orchestration-mode-workflow_bound"]')).toBeNull();
   });
 });

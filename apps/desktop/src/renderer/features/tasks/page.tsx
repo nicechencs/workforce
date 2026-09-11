@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CapabilitiesDto, DesktopClient, RunDto, TaskDto } from "@workforce/desktop-client";
+import type { DesktopClient, RunDto, TaskDto } from "@workforce/desktop-client";
 
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
@@ -9,14 +9,7 @@ import {
   isCommandAccepted,
   isRevisionConflict,
 } from "../projects/command.js";
-import {
-  OrchestrationModeControl,
-  DEFAULT_MODE,
-  probeOrchestrationSupport,
-  resolveSelectedMode,
-  type OrchestrationMode,
-} from "../orchestration/index.js";
-import { defaultCapabilities, taskDependencyLabel } from "../projects/model.js";
+import { taskDependencyLabel } from "../projects/model.js";
 import {
   badgeStyle,
   buttonStyle,
@@ -49,16 +42,12 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState<TaskActionId | null>(null);
-  const [capabilities, setCapabilities] = useState<CapabilitiesDto>(defaultCapabilities());
-  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
 
   const reload = useCallback(async () => {
     const loaded = await client.getTask(taskId);
     setTask(loaded);
     const page = await client.listRuns({ taskId });
     setRuns(sortRunsNewestFirst(page.items));
-    const caps = await client.getCapabilities().catch(() => defaultCapabilities());
-    setCapabilities(caps);
   }, [client, taskId]);
 
   useEffect(() => {
@@ -164,15 +153,6 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
         ) : null}
       </div>
       {error ? <div style={conflict ? warningStyle : errorStyle}>{error}</div> : null}
-      <OrchestrationModeControl
-        selected={resolveSelectedMode(
-          orchestrationMode,
-          probeOrchestrationSupport({ capabilities }),
-        )}
-        probe={probeOrchestrationSupport({ capabilities })}
-        disabled={busy !== null}
-        onChange={setOrchestrationMode}
-      />
       <section style={cardStyle}>
         <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>任务</h2>
         <p>{task.objective}</p>

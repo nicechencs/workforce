@@ -125,6 +125,7 @@ describe("orchestration mode control", () => {
     expect(html).toContain(DIRECT_UNSUPPORTED);
     expect(html).not.toContain("executionMode");
     expect(html).not.toContain('href="/runs/');
+    expect(html).toContain("Task 详情不挂未接线控件");
   });
 
   it("enables the direct button only when the probe says so", () => {
