@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   isExecutableWorkflowVersion,
   parseTeam,
+  parseTeamPage,
   parseTeamVersion,
   parseWorkflow,
   parseWorkflowPage,
@@ -126,6 +127,21 @@ describe("M7 workflow and team write API", () => {
     expect(teamRes.status).toBe(201);
     const team = parseTeam(teamRes.body);
     expect(team.status).toBe("draft");
+
+    const listedDefault = parseTeamPage(
+      (await json(daemon.port, "/api/v1/teams", { headers: auth })).body,
+    );
+    expect(listedDefault.items.some((item) => item.id === team.id)).toBe(false);
+    const listedDrafts = parseTeamPage(
+      (await json(daemon.port, "/api/v1/teams?status=draft", { headers: auth })).body,
+    );
+    expect(listedDrafts.items.some((item) => item.id === team.id && item.status === "draft")).toBe(
+      true,
+    );
+    const draftDetail = parseTeam(
+      (await json(daemon.port, `/api/v1/teams/${team.id}`, { headers: auth })).body,
+    );
+    expect(draftDetail.status).toBe("draft");
 
     const versionRes = await json(daemon.port, `/api/v1/teams/${team.id}/versions`, {
       method: "POST",

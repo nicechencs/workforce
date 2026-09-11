@@ -20,8 +20,8 @@ import { ProjectTeamBindingField } from "../teams/page.js";
 import {
   PRESET_TEAM,
   TEAM_WRITE_API_MISSING,
-  asTeamView,
   isTeamReadyForPlanning,
+  loadTeamCatalog,
   mergeCatalogTeams,
   probeTeamWriteSupport,
   projectTeamVersionId,
@@ -130,10 +130,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       setTeamWrite(support);
       if (hasCatalogMethod(catalog, "listTeams")) {
         try {
-          const teamPage = await catalog.listTeams();
-          const parsed = teamPage.items
-            .map(asTeamView)
-            .filter((item): item is TeamView => item !== null);
+          const parsed = await loadTeamCatalog(client);
           if (parsed.length > 0) {
             setCatalogTeams(mergeCatalogTeams(parsed));
           }

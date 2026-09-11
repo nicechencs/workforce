@@ -21,6 +21,7 @@ import {
   isPresetTeamId,
   isPublishedTeamVersion,
   isTeamReadyForPlanning,
+  loadTeamCatalog,
   loadTeamDetail,
   membersToPayload,
   mergeCatalogTeams,
@@ -454,6 +455,14 @@ describe("team draft persistence", () => {
     expect(reloaded?.name).toBe("Squad");
     expect(reloaded?.status).toBe("draft");
     expect(reloaded?.members[0]).toMatchObject({ role: "developer", quantity: 2 });
+
+    const catalogAfterReload = await loadTeamCatalog(client);
+    expect(catalogAfterReload.find((team) => team.id === "tm_1")).toMatchObject({
+      name: "Squad",
+      status: "draft",
+      members: [{ role: "developer", quantity: 2 }],
+    });
+    expect(client.listCalls).toEqual([undefined, { status: "draft" }]);
   });
 
   it("refuses to mark publish success unless the version is published and immutable", async () => {
@@ -499,8 +508,17 @@ describe("team draft persistence", () => {
 function memoryTeamClient(store: Map<string, unknown>) {
   const client = {
     calls: [] as string[],
+    listCalls: [] as Array<{ status?: string } | undefined>,
     lastMembers: [] as unknown[],
     publishResult: undefined as unknown,
+    listTeams: async (query?: { status?: string }) => {
+      client.listCalls.push(query);
+      const items = [...store.values()].filter((item) => {
+        const status = (item as { status?: string }).status;
+        return query?.status === "draft" ? status === "draft" : status === "published";
+      });
+      return { items };
+    },
     createTeam: async (input: { name: string }) => {
       client.calls.push("createTeam");
       const team = {

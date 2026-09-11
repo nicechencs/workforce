@@ -19,6 +19,7 @@ describe("desktop-client paths", () => {
     expect(paths.runCancel("run_1")).toBe("/api/v1/runs/run_1:cancel");
     expect(paths.approvalRequestChanges("apr_1")).toBe("/api/v1/approvals/apr_1:request-changes");
     expect(paths.teams()).toBe("/api/v1/teams");
+    expect(paths.teams({ status: "draft" })).toBe("/api/v1/teams?status=draft");
     expect(paths.team("tm_custom")).toBe("/api/v1/teams/tm_custom");
     expect(paths.teamVersions("tm_custom")).toBe("/api/v1/teams/tm_custom/versions");
     expect(paths.teamVersion("tm_custom", "tmv_1")).toBe("/api/v1/teams/tm_custom/versions/tmv_1");

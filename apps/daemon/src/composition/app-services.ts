@@ -113,6 +113,7 @@ import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js
 import {
   assertBindableTeamVersionId,
   createAuthoringCatalog,
+  listedDraftTeams,
   listedTeams,
   listedWorkflows,
   resolveTeam,
@@ -333,8 +334,10 @@ export class ComposedAppServices implements AppServices {
     this.persist();
   }
 
-  listTeams(_query: ListQuery): PageDto<TeamDto> {
-    void _query;
+  listTeams(query: ListQuery): PageDto<TeamDto> {
+    if (query.status === "draft") {
+      return pageOf(listedDraftTeams(this.authoring));
+    }
     return pageOf(listedTeams(this.authoring));
   }
 

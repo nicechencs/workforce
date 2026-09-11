@@ -109,7 +109,7 @@ export interface TeamMemberWritePayload {
 }
 
 export interface TeamWriteClient {
-  listTeams?: () => Promise<{ items: unknown[] }>;
+  listTeams?: (query?: { status?: string }) => Promise<{ items: unknown[] }>;
   getTeam?: (id: string) => Promise<unknown>;
   getTeamVersion?: (id: string, versionId: string) => Promise<unknown>;
   createTeam?: (input: { name: string }, options: TeamWriteOptions) => Promise<unknown>;
@@ -876,6 +876,28 @@ function readStateRevision(value: unknown): number | undefined {
     Number.isInteger(record.stateRevision)
     ? record.stateRevision
     : undefined;
+}
+
+export async function loadTeamCatalog(client: TeamWriteClient): Promise<TeamView[]> {
+  if (typeof client.listTeams !== "function") {
+    return [];
+  }
+  const published = await client.listTeams();
+  let drafts: unknown[] = [];
+  try {
+    const draftPage = await client.listTeams({ status: "draft" });
+    drafts = draftPage.items;
+  } catch {
+    drafts = [];
+  }
+  const byId = new Map<string, TeamView>();
+  for (const item of [...published.items, ...drafts]) {
+    const view = asTeamView(item);
+    if (view) {
+      byId.set(view.id, view);
+    }
+  }
+  return [...byId.values()];
 }
 
 export async function loadTeamDetail(

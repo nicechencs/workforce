@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DesktopClient, PageDto } from "@workforce/desktop-client";
+import type { DesktopClient } from "@workforce/desktop-client";
 
 import type { FeaturePageProps } from "../contract.js";
 import { asCatalogClient, hasCatalogMethod, useWorkforceClient } from "../hooks.js";
@@ -20,12 +20,12 @@ import {
 } from "../projects/ui.js";
 import {
   addDraftMember,
-  asTeamView,
   canBindTeamVersion,
   createTeamButton,
   draftFormFromTeam,
   draftMembersValid,
   emptyTeamDraftForm,
+  loadTeamCatalog,
   loadTeamDetail,
   persistTeamDraft,
   PRESET_TEAM,
@@ -98,8 +98,7 @@ export function TeamsPage(props: FeaturePageProps) {
         return;
       }
       try {
-        const page: PageDto<unknown> = await catalog.listTeams();
-        const parsed = page.items.map(asTeamView).filter((item): item is TeamView => item !== null);
+        const parsed = await loadTeamCatalog(client);
         if (!cancelled) {
           const model = teamPageModel({
             liveTeams: parsed.length > 0 ? parsed : null,
