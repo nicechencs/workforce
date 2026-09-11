@@ -340,6 +340,6 @@ V0.1 暂不实现：
 | `resource_allocations` | id, run_id, node_id, cpu, memory, gpu, disk | 并发资源占用 |
 | `coordination_messages` | id, project_id, task_id, run_id, sender, recipients, kind, content_ref | Agent 结构化协作 |
 
-`runs` 增加 `node_id`、`runtime_installation_id`、`workspace_instance_id`、`placement_snapshot_json`。V0.1 为本机创建唯一 Local Node，并允许上述外键为空后逐步收紧；进入远程执行前必须设为强制。
+`runs` 增加 `node_id`、`runtime_installation_id`、`workspace_instance_id`、`placement_snapshot_json`。V0.1 为本机创建唯一 Local Node（产品默认 `local`，见 D19），并允许上述外键为空后逐步收紧；进入远程或容器执行前必须设为强制。本表不发明 enrollment / 容器编排列。
 
 唯一性与并发约束至少包括：一个非终态 Run 只有一个有效 Lease；`(node_session_id, source_sequence)` 唯一；`(run_id, attempt)` 唯一；资源分配释放与 Run 终态在同一事务或可对账流程中完成。

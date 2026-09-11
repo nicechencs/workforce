@@ -3,7 +3,7 @@
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned），均未实现。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**修订：** 2026-09-11 — §2/§3 对齐 D19：默认本机；远程与容器是一等 Placement；V0.1 隔离仍是 worktree，容器 runner 未实现。同日主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned），均未实现。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
@@ -46,26 +46,37 @@ flowchart TD
 约束：
 
 - 同一节点可以并发执行多个 Run。
-- 每个 Run 使用独立 worktree/目录/容器、进程树和 PermissionGrant。
+- 每个 Run 使用独立 WorkspaceInstance、进程树和 PermissionGrant。V0.1 **已实现**的隔离是独立 git worktree，不是容器 Placement。
+- 产品 Placement kind 为 `local`（默认）/ `remote` / `container`（[D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)）。本节流程图里的「容器」不得读成 runner 已落地。
 - `maxConcurrentRuns` 与资源预算同时生效。
 - 容量等待不会消耗 Task attempt。
 
-## 3. 本机与远程节点选择
+## 3. 本机、远程与容器选择
+
+默认执行位置是**本机**。远程与容器是一等产品能力，不是 later nicety。
 
 ```mermaid
 flowchart TD
-  Task[Task Placement Intent] --> Mode{执行位置}
-  Mode -->|本机| Local[Local Node]
-  Mode -->|指定服务器| Remote[Selected Remote Node]
+  Task[Task Placement Intent] --> Mode{执行位置种类}
+  Mode -->|本机 默认| Local[Local Node]
+  Mode -->|远程| Remote[Selected Remote Node]
+  Mode -->|容器| Container[Container on a Node]
   Mode -->|自动| Select[能力 容量 数据位置 策略匹配]
   Select --> Local
   Select --> Remote
+  Select --> Container
   Local --> Lease[Create Lease]
   Remote --> Lease
+  Container --> Lease
   Lease --> Run[Start Run]
 ```
 
-V0.1 只实现 Local Node，但界面保留“自动调度 / 本机 / 指定节点”的模型；未实现选项必须清晰标记，而不是伪造可用。
+约束：
+
+- UX / API 缺省解析为 `local_only` + kind `local`。`automatic` 在仅 Local Node 可用时也必须落到本机。
+- V0.1 **只实现** Local Node。界面可以保留「自动 / 本机 / 远程 / 容器」模型；未接通的远程与容器必须 disabled 或启动前拒绝，禁止伪造在线节点或可点成功的容器调度。
+- 容器 Placement 仍绑定某个 ExecutionNode 上的 WorkspaceInstance；不是第四种机器，也不是 D10 worktree 的别名。
+- 不发明 enrollment / Docker / K8s endpoint。远程 drain/revoke 仍按能力矩阵 later，不得显示在线远程节点。
 
 ## 4. 人工审批
 

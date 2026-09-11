@@ -1,11 +1,11 @@
 # V0.1 决策登记
 
 日期：2026-09-11  
-状态：**已冻结（M0–M3 开工基线；项目制主对象；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式）**  
-范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行。  
+状态：**已冻结（M0–M3 开工基线；项目制主对象；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式；执行 Placement：本机默认，远程与容器为一等能力）**  
+范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行；产品支持在**本机（默认）**、经**远程连接**和在**容器**中工作。  
 协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。产品/规划文档变更必须追加 [communication-history.md](communication-history.md)。
 
-本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**尚未实现**；进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**尚未实现**。远程与容器是已冻结的产品 Placement，**不是** later nicety；V0.1 实现深度仍是 Local Node + worktree，见 [D19](#d19-执行-placement本机远程与容器)。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
 未测的真实 Runtime 能力转交 T03，不得用猜测当决定。
 
@@ -28,7 +28,7 @@
 | 产品主对象 | 项目制：一切围绕 Project；Team / Task / Workflow 在项目内编排；工作流必须高度可定制 | T00、T12、T14、T18–T21 |
 | 工作流作者路径 | 对话生成草稿（D17）后必须可在画布/结构化面编辑（D15）；未发布不得执行 | T18、T20、T02 |
 | Agent 执行模式 | 绑定已发布工作流，或直接执行；两者皆一等、靠 probe 诚实显隐（D18） | T21、T09、T10 |
-| 首版执行位置 | 单用户 Local Node；远程只保留版本化契约与 Mock | T02、T05、T09、T10、T13 |
+| 执行 Placement | 种类：`local`（本机，**默认**）\| `remote` \| `container`。调度意图仍为 `automatic \| local_only \| remote_only \| specific_node`，系统默认 `local_only`。V0.1 只实现 Local Node + worktree；远程=契约/Mock，容器=planned，均非 later nicety（D07 / D19） | T02、T05、T09、T10、T13 |
 | 初始交付结果 | 固定基线 SHA 的整合 patch/分支 + 报告；合回用户目标分支是显式动作 | T06、T08、T14、T16 |
 | Planner 流程 | 先配置再规划；Planner 是普通受控 Task/Run；确认 Plan 版本后才发布冻结执行 DAG | T02、T09、T12、T14 |
 | 接管含义 | 先停写入并确认，再人工编辑，再重新注册 Artifact / Evaluation / 审批 | T05、T06、T09、T13 |
@@ -183,9 +183,12 @@ SSE：
 - 本地新建 Run 在 **starting 之前**必须有 `executionNodeId`、`runtimeInstallationId`、`workspaceInstanceId`。分配前可空，starting 时缺一不可。
 - `workflowNodeId`（图节点）与 `executionNodeId`（执行位置）禁止混用同一字段名。
 - `RuntimeDescriptor.transport` 只表示接入方式：`process | sdk | http`。删除 `remote` 作为 transport 的含义。位置用 Placement。
-- V0.1 实现单机容量与 Node ports。远程 enrollment / heartbeat / 服务器 lease：版本化契约 + Mock，不建服务器控制面。
+- V0.1 实现单机容量与 Node ports。远程 enrollment / heartbeat / 服务器 lease：版本化契约 + Mock，不建服务器控制面。**不发明**矩阵中不存在的 enrollment / orchestrator endpoint。
 - Lease 到期 ≠ 旧进程已停。fencing 只阻止旧结果被平台接纳，不能阻止旧进程写外部系统。
 - 恢复不确定时不得直接重跑。取消与 inspect 必须有明确授权路径。
+- 产品执行位置种类（本机 / 远程 / 容器）与默认本机见 [D19](#d19-执行-placement本机远程与容器)。本条的 Node、Lease、transport 与 enrollment 边界仍然有效，D19 **不得**改写它们。
+- 调度意图（Placement intent mode）仍为蓝图已有取值：`automatic | local_only | remote_only | specific_node`。系统默认 **`local_only`**（本机 Local Node）。`automatic` 在仅 Local Node 可用时必须解析为本机，不得假装已选中远程或容器节点。
+- 执行字段与 D18 正交：`transport`（接入方式）≠ Placement intent ≠ Placement kind ≠ `orchestrationMode`（`workflow_bound | direct`）。旧名 `executionMode` 不得再承载位置。缺失 intent 按默认 `local_only` 补齐并写入 Run 快照；任何 override 不得放宽 Policy、预算、Workspace 或 capability。
 
 ### D08 / R08 — 首版 API 与页面
 
@@ -221,7 +224,7 @@ SSE：
 ### D10 / R10 — 代码汇总
 
 - 每个 Project 冻结 immutable base SHA。
-- 每个 Run 独立 worktree，不共享可写目录。
+- 每个 Run 独立 worktree，不共享可写目录。这是 V0.1 **已实现**的隔离，不是 [D19](#d19-执行-placement本机远程与容器) 的 `container` Placement，也不得把 worktree 写成「已经在容器里跑」。
 - 输出含 patch/commit、base SHA、changed paths、测试结果、内容 hash。
 - 依赖任务用上游精确 ArtifactVersion 构建工作区。
 - 并行分支在独立 integration worktree 按稳定 Node ID 顺序整合；冲突进人工处理。
@@ -338,8 +341,11 @@ RunStatus 仍为：`pending | starting | running | waiting_input | paused | succ
 
 - 真实 Codex 能力（T03 实测后才能写入能力矩阵的 live 列）
 - 三平台安装签名/公证（T17）
-- 远程节点控制面、云账号、GitHub PR、自动 push
+- 远程节点**控制面**（enrollment / heartbeat / 服务器 lease 的真实实现）、云账号、GitHub PR、自动 push
+- Docker / Kubernetes runner、容器编排控制面
 - 复杂仪表盘
+
+远程连接与容器工作本身**已迁出本节**：它们是产品 Placement（[D19](#d19-执行-placement本机远程与容器)），不是 later nicety。未实现的是控制面与 runner，不是「产品不做远程/容器」。
 
 可视化画布与自定义 Team **已迁出本节**：它们属于 [§0 项目制](#0-产品模型项目制) 主循环，细则见 [§8](#8-项目制循环上的-team-与-workflow-编排m7) / D15 / D16。对话生成（D17）与双执行模式（D18）见 [§9](#9-对话生成与双执行模式m7m8)。不得再写成 later、后置、外挂或「V0.1 不做」。
 
@@ -468,7 +474,46 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 不是第二套 Workflow 引擎，也不是让 Renderer 直接 spawn Runtime。
 - 不得用 Mock 成功冒充 direct 已在真实 Codex 验证。
 
-## 10. 交接
+## 10. 执行 Placement：本机默认；远程与容器为一等能力
+
+用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：产品必须能在**本机**工作，也必须能经**远程连接**工作，**默认是本机**；同时必须能在**容器**中工作。这是产品模型，不是后期 nicety，也不是把 core-user-flows 里「worktree/目录/容器」一语当作已冻结的容器 Placement。
+
+[D07](#d07-r07-node-与-placement) 的 Local Node、transport、enrollment=契约/Mock、无服务器控制面仍然有效。本条只冻结用户可理解的位置种类与默认，**不**发明 enrollment / orchestrator / Docker / K8s endpoint，也**不**把未实现写成已完成。
+
+### D19 — 执行 Placement：本机、远程与容器
+
+产品支持三类 **Placement kind**。UX 与 API 缺省必须偏向本机 Workspace / Local Node。
+
+| kind | 中文 | 产品地位 | V0.1 实现深度 |
+|---|---|---|---|
+| `local` | 本机 | **默认。** 新项目、Workspace 绑定、Placement intent 与 `GET /nodes` 均以本机 Local Node 为准 | **已实现**：单用户 Local Node、只读节点诊断、每个 Run 独立 git worktree（D10） |
+| `remote` | 远程 | **一等能力。** 经远程连接在另一台 ExecutionNode 上工作；与本机共用同一抽象（ADR 0001） | **契约 + Mock。** 无服务器控制面；无公开 enrollment / heartbeat / 远程 lease API；UI **不得**伪造在线远程节点 |
+| `container` | 容器 | **一等能力。** 在容器中工作。不是 worktree 别名，也不是 `transport` | **planned / 未实现 runner。** 不发明 Docker / K8s / 编排 endpoint；不得写成已完成 |
+
+**不得混用的正交轴：**
+
+1. **Runtime transport**（D07）：`process | sdk | http`。`remote` 不是 transport。
+2. **Placement intent mode**（蓝图 `PlacementPolicy` / `TaskPlacement`，D07）：`automatic | local_only | remote_only | specific_node`。系统默认 **`local_only`**。这是调度怎么选节点，不是用户说的三种位置种类。
+3. **Placement kind**（本条）：`local | remote | container`。这是用户选择的执行位置种类，默认 **`local`**。
+4. **Isolation**（D10）：V0.1 已实现独立 git worktree。`TaskPlacement.isolation` 里的 `"container"` 只是蓝图隔离枚举，**不是**本条已落地的容器 Placement。
+5. **ExecutionNode.kind**：`local | remote | enterprise` 是节点分类。`container` **不是**第四种机器；容器 Run 仍绑定某个 ExecutionNode（本机或远程宿主机）上的 `WorkspaceInstance`。具体 host 字段待 T02，本登记不发明 path。
+6. **orchestrationMode**（D18）：`workflow_bound | direct`。与 Placement 正交。
+
+**默认与诚实显隐：**
+
+- UX / API 缺省 Placement 与 Workspace 绑定优先本机。未写 intent 时按 `local_only` + kind `local` 补齐。
+- `automatic` 在仅 Local Node 可调度时解析为本机；不得因此画出可选的在线远程节点或可点成功的容器调度。
+- 远程与容器在产品模型里**已经支持**（planned / 契约），页面可以展示「远程 / 容器」并标成尚未接通，但必须 disabled 或启动前 `422 unsupported_capability`。禁止假成功、假在线、假 runner。
+- `GET /nodes` 在 V0.1 **仍仅 Local Node**（能力矩阵已列）。本条不增加 path，也不把 drain/revoke 提前实现。
+
+**非目标：**
+
+- 不建设远程节点控制面，不发明 enrollment / heartbeat / 服务器 lease 的新公开 API。
+- 不实现 Docker / Kubernetes runner，不领取 T18/T19，不改 Daemon 业务代码。
+- 不把「core-user-flows 写过容器」或 Workspace `kind: container` 蓝图字段写成容器 Placement 已冻结为已实现。
+- 不得把尚未出现在当前源码与测试中的 protocol 字段写成已实现。T02 若要把 `placementKind` 落进 schema，走兼容流程；本条只冻结产品语义。
+
+## 11. 交接
 
 - 决策：本文
 - 沟通历史：[communication-history.md](communication-history.md)
@@ -476,4 +521,4 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把本节字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口与 M8 执行 mode 是 T02 的兼容扩展，不回退已冻结的 M3 字段。
+T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口、M8 执行 mode 与 D19 的 `placementKind`（若落地）是 T02 的兼容扩展，不回退已冻结的 M3 字段，也不在本登记发明 path。

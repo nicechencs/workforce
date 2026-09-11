@@ -2,7 +2,7 @@
 
 日期：2026-09-11  
 状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18–T21 代码均未实现**。  
-前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
+前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
 
@@ -98,7 +98,7 @@ flowchart TD
 
 **工作：**
 
-- 确认 V0.1 Local Node 范围及远程契约边界，吸收附加章节到主体模型。
+- 确认 V0.1 Local Node 范围及远程/容器契约边界（D19：本机默认；远程与容器为一等 Placement；enrollment / runner 未实现），吸收附加章节到主体模型。
 - 冻结 Event、Task/Run、Runtime SPI、ArtifactVersion、NodeExecutionBinding、Approval、Budget 的术语与版本。
 - 决定 planning → Plan Artifact → 人工确认 → 冻结执行 DAG 的流程，以及成果汇总、接管、retry/rework 语义。
 - 输出完整状态矩阵：含 command、guard、next state、Event、事务边界、非法操作及中间状态。

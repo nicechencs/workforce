@@ -2,9 +2,9 @@
 
 日期：2026-09-11  
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
-权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18。沟通历史：[communication-history.md](communication-history.md)。  
+权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — 主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
+修订：2026-09-11 — 补 D19：Placement kind = `local`（默认）/ `remote` / `container`。本矩阵**不增加** enrollment、远程 lease 或 Docker/K8s path；`GET /nodes` 仍仅 Local Node。同日主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
 
 **项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布或对话生成并编辑 Workflow」。M8 补齐「Agent 跟随已发布工作流或直接执行」。对话生成与双执行 **均未实现**。
 
@@ -32,7 +32,7 @@ P0 最小切片（M3 必须能走完主路径）：
 | Run 控制台 | 必须 | 时间线、日志、取消、用量（未知成本展示） |
 | Artifact 查看 | 必须 | 固定版本 diff/内容/Evaluation |
 | 审批卡 | 必须 | plan + artifact；digest/版本/到期 |
-| 本机诊断 / Local Node | 必须 | 只读本机节点与 Mock/Codex 探测 |
+| 本机诊断 / Local Node | 必须 | 只读本机节点与 Mock/Codex 探测。产品默认本机；远程/容器见 D19，本页不增加 path |
 | AI 团队 | readonly → M7 | 项目循环第一环。M3：只读预设 Software Development Team。M7：为项目自定义编排（创建/版本/发布）。见 D16 |
 | 设置 | 部分 | 本机 Runtime 探测、预算展示 |
 
@@ -62,7 +62,8 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | 页面/动作 | 处理 |
 |---|---|
 | 项目归档 | later；无按钮 |
-| 远程节点 drain/revoke | later；不得显示在线远程节点 |
+| 远程节点 drain/revoke | later；不得显示在线远程节点。远程是 D19 产品能力，不是 later nicety；later 的是控制面动作，不是「产品不做远程」 |
+| 容器 runner / 编排 | later；D19 产品能力，**未实现**。不发明 Docker / K8s / enrollment path，不得假成功 |
 | 完整仪表盘图表 | later |
 | GitHub PR / push | unsupported |
 | 通用交互终端接到 Renderer | unsupported |
@@ -157,7 +158,7 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | GET | `/runtimes/{id}/capabilities` | 必须 | probe 结果 |
 | POST | `/runtimes/{id}:validate` | 必须 | — |
 | POST | `/runtimes/{id}:diagnose` | 必须 | 本机诊断 |
-| GET | `/nodes` | 必须 | 仅 Local Node |
+| GET | `/nodes` | 必须 | 仅 Local Node。默认本机；不返回伪造远程节点，不发明 enrollment |
 | GET | `/nodes/{id}` | 必须 | 容量只读 |
 | GET | `/teams` | 必须 | M3 预设列表；M7 含已发布自定义 Team |
 | GET | `/teams/{id}` | 必须 | M3 只读 Worker 版本 |
@@ -241,7 +242,8 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 - 只使用 `packages/desktop-client` 生成的 typed client
 - 公开 Task DTO 的 `dependsOn` 由 `packages/protocol` 定义；页面只消费该字段，不另造 DAG API
 - Artifact 内容路由走已列 versioned path；不发明无版本 content
-- 不发明可写项目策略 endpoint 或远程节点 enrollment
+- 不发明可写项目策略 endpoint、远程节点 enrollment，或容器编排 / Docker / K8s endpoint
+- Placement 缺省为本机 / `local_only`（D19）；远程与容器在未接通前不得假成功
 - 不改 OpenAPI / protocol（缺口交 T02）
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态

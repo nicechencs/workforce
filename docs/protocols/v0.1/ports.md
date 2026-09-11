@@ -73,7 +73,7 @@ interface RuntimeAdapter {
 }
 ```
 
-`StartRunRequest` 必须包含 D07 的 node/runtime/workspace binding。`transport` ∈ `process | sdk | http`。
+`StartRunRequest` 必须包含 D07 的 node/runtime/workspace binding。`transport` ∈ `process | sdk | http`。产品 Placement kind 默认 `local`（[D19](../../planning/decision-register.md#d19-执行-placement本机远程与容器)）；远程/容器与 enrollment 不进入本 SPI 结构，也不在此发明 path。
 
 ## Workspace / Process / Policy / Artifact
 

@@ -613,7 +613,7 @@ Runtime Protocol V0.1 在以下条件满足时可冻结：
 
 ## 18. Node-aware Runtime Binding
 
-Runtime transport 与执行位置是两个正交概念：`process | sdk | http` 描述 Adapter 如何调用 Runtime；`local | remote` 由 ExecutionNode 与 Placement 表达。
+Runtime transport 与执行位置是两个正交概念：`process | sdk | http` 描述 Adapter 如何调用 Runtime；产品 Placement kind 为 `local | remote | container`（默认 `local`，见 [D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)），由 ExecutionNode 与 Placement 表达，不得把 `remote` 或 `container` 写成 transport。
 
 `StartRunRequest` 增加：
 
@@ -630,4 +630,4 @@ interface NodeExecutionBinding {
 
 RuntimeHandle 增加 `nodeId`、`nodeSessionId` 与 `runtimeInstallationId`。所有 start、input、pause、resume、cancel 和 reconcile 必须校验有效 Lease/fencing token，防止失联旧节点恢复后继续提交结果。同一节点可以托管多个 Handle；进程、容器、事件 cursor 和资源配额必须按 Handle 隔离。
 
-V0.1 的 Local Runtime Host 生成本地 NodeExecutionBinding；远程注册、网络 heartbeat 和分布式 Lease 延后实现，但契约字段与 Mock Node 测试现在保留。
+V0.1 的 Local Runtime Host 生成本地 NodeExecutionBinding。远程注册、网络 heartbeat、分布式 Lease 与容器 runner **未实现**（契约字段与 Mock 可保留）；这不改变 D19「远程与容器是产品能力、默认本机」的冻结。不发明 enrollment / Docker / K8s endpoint。
