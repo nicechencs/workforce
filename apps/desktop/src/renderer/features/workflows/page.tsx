@@ -1,18 +1,9 @@
 import { useEffect, useState } from "react";
 import type { WorkflowDto } from "@workforce/desktop-client";
 
+import { Badge, Button, Card, List, ListRow, Muted, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
-import {
-  badgeStyle,
-  buttonStyle,
-  cardStyle,
-  listItemStyle,
-  listStyle,
-  mutedStyle,
-  pageStyle,
-  titleStyle,
-} from "../projects/ui.js";
 import {
   asWorkflowView,
   catalogListCard,
@@ -93,45 +84,40 @@ export function WorkflowsPage(props: FeaturePageProps) {
   }
 
   return (
-    <main style={pageStyle}>
-      <h1 style={titleStyle}>工作流</h1>
-      <p style={mutedStyle}>{note}</p>
-      <p style={mutedStyle}>模板、版本和结构化步骤（只读目录）。画布编辑器尚未实现。</p>
-      <section style={cardStyle}>
+    <Page title="工作流" subtitle="模板、版本和结构化步骤（只读目录）。画布编辑器尚未实现。">
+      <Muted>{note}</Muted>
+      <Card>
         {workflows.length === 0 ? (
           <CatalogListStatus source={source} />
         ) : (
-          <ul style={listStyle}>
+          <List>
             {workflows.map((workflow) => {
               const version = versionById(workflow, undefined);
               return (
-                <li
+                <ListRow
                   key={workflow.id}
-                  style={listItemStyle}
-                  data-testid={`workflow-row-${workflow.id}`}
+                  testId={`workflow-row-${workflow.id}`}
+                  title={workflow.name}
+                  meta={`${workflow.id} · 版本 ${version?.version ?? workflow.activeVersionId} · ${
+                    version?.steps.length ?? 0
+                  } 步`}
                   onClick={() => props.navigate(`/workflows/${workflow.id}`)}
-                >
-                  <strong>{workflow.name}</strong>
-                  <div style={mutedStyle}>
-                    {workflow.id} · 版本 {version?.version ?? workflow.activeVersionId} ·{" "}
-                    {version?.steps.length ?? 0} 步
-                  </div>
-                </li>
+                />
               );
             })}
-          </ul>
+          </List>
         )}
-      </section>
-    </main>
+      </Card>
+    </Page>
   );
 }
 
 function CatalogListStatus(props: { source: WorkflowCatalogSource }) {
   const card = catalogListCard(props.source);
   return (
-    <p style={mutedStyle} data-testid={card.testId}>
-      {card.text}
-    </p>
+    <Muted>
+      <span data-testid={card.testId}>{card.text}</span>
+    </Muted>
   );
 }
 
@@ -144,19 +130,15 @@ function WorkflowDetailPage(props: {
 }) {
   if (!props.workflow) {
     return (
-      <main style={pageStyle}>
-        <p>
-          <button
-            type="button"
-            style={buttonStyle("secondary")}
-            onClick={() => props.navigate("/workflows")}
-          >
-            返回工作流
-          </button>
-        </p>
-        <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
-        {props.source === "unavailable" ? <p style={mutedStyle}>{props.note}</p> : null}
-      </main>
+      <Page
+        title="工作流"
+        actions={<Button onClick={() => props.navigate("/workflows")}>返回工作流</Button>}
+      >
+        <Card>
+          <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
+          {props.source === "unavailable" ? <Muted>{props.note}</Muted> : null}
+        </Card>
+      </Page>
     );
   }
 
@@ -167,62 +149,53 @@ function WorkflowDetailPage(props: {
     props.source === "live" ? "GET /workflows" : props.source === "empty" ? "空目录" : "目录未加载";
 
   return (
-    <main style={pageStyle}>
-      <p>
-        <button
-          type="button"
-          style={buttonStyle("secondary")}
+    <Page
+      title={props.workflow.name}
+      actions={
+        <Button
           onClick={() =>
             props.navigate(versionRoute ? `/workflows/${props.workflow?.id}` : "/workflows")
           }
         >
           {versionRoute ? "返回工作流详情" : "返回工作流"}
-        </button>
-      </p>
-      <section style={cardStyle} data-testid="workflow-detail">
-        <h1 style={titleStyle}>{props.workflow.name}</h1>
-        <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-          <span style={badgeStyle("muted")}>只读</span>
+        </Button>
+      }
+    >
+      <Card testId="workflow-detail">
+        <div className="wf-cluster">
+          <Badge tone="muted">只读</Badge>
+          <Muted>
+            来源 {sourceLabel} · 活动版本 {props.workflow.activeVersionId}
+          </Muted>
         </div>
-        <p style={mutedStyle}>{props.workflow.description}</p>
-        <p style={mutedStyle}>
-          来源 {sourceLabel} · 活动版本 {props.workflow.activeVersionId}
-        </p>
-        <p style={mutedStyle}>{props.note}</p>
-        <p style={mutedStyle}>{canvas.reason}</p>
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>版本</h2>
-        <ul style={listStyle}>
+        <Muted>{props.workflow.description}</Muted>
+        <Muted>{props.note}</Muted>
+        <Muted>{canvas.reason}</Muted>
+        <h2 className="wf-section-title">版本</h2>
+        <List>
           {props.workflow.versions.map((version) => (
-            <li
+            <ListRow
               key={version.id}
-              style={listItemStyle}
-              data-testid={`workflow-version-${version.id}`}
+              testId={`workflow-version-${version.id}`}
+              title={`${version.version} · ${version.status === "published" ? "已发布" : "草稿"}`}
+              meta={`不可变 · 入口 ${version.entry} · ${version.steps.length} 步`}
               onClick={() =>
                 props.navigate(`/workflows/${props.workflow?.id}/versions/${version.id}`)
               }
-            >
-              <strong>
-                {version.version} · {version.status === "published" ? "已发布" : "草稿"}
-              </strong>
-              <div style={mutedStyle}>
-                不可变 · 入口 {version.entry} · {version.steps.length} 步
-              </div>
-            </li>
+            />
           ))}
-        </ul>
+        </List>
         {selected ? <StructuredSteps version={selected} /> : <p>未找到该版本。</p>}
-      </section>
-    </main>
+      </Card>
+    </Page>
   );
 }
 
 export function StructuredSteps(props: { version: WorkflowVersionView }) {
   return (
     <section data-testid="workflow-steps">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>
-        结构化步骤 · {props.version.version}
-      </h2>
-      <ol style={{ ...listStyle, paddingLeft: "var(--wf-space-lg, 16px)" }}>
+      <h2 className="wf-section-title">结构化步骤 · {props.version.version}</h2>
+      <ol className="wf-timeline">
         {props.version.steps.map((step, index) => (
           <WorkflowStepRow key={step.id} step={step} index={index} />
         ))}
@@ -240,16 +213,13 @@ function WorkflowStepRow(props: { step: WorkflowStepView; index: number }) {
     .filter((item): item is string => item !== null)
     .join(" · ");
   return (
-    <li
-      style={{ ...listItemStyle, cursor: "default" }}
-      data-testid={`workflow-step-${props.step.id}`}
-    >
-      <strong>
+    <li className="wf-timeline-row" data-testid={`workflow-step-${props.step.id}`}>
+      <span className="wf-list-row-title">
         {props.index + 1}. {props.step.title}
-      </strong>
-      <div style={mutedStyle}>{meta}</div>
+      </span>
+      <span className="wf-list-row-meta">{meta}</span>
       {props.step.notes.length > 0 ? (
-        <div style={mutedStyle}>{props.step.notes.join(" · ")}</div>
+        <span className="wf-list-row-meta">{props.step.notes.join(" · ")}</span>
       ) : null}
     </li>
   );

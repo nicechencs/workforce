@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DesktopClient, RunDto, TaskDto } from "@workforce/desktop-client";
 
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorText,
+  List,
+  ListRow,
+  LoadingText,
+  Muted,
+  Page,
+} from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
 import {
@@ -10,19 +21,6 @@ import {
   isRevisionConflict,
 } from "../projects/command.js";
 import { taskDependencyLabel } from "../projects/model.js";
-import {
-  badgeStyle,
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  listItemStyle,
-  listStyle,
-  mutedStyle,
-  pageStyle,
-  rowStyle,
-  titleStyle,
-  warningStyle,
-} from "../projects/ui.js";
 import {
   runStatusLabel,
   sortRunsNewestFirst,
@@ -104,87 +102,77 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
 
   if (error && !task) {
     return (
-      <main style={pageStyle}>
-        <div style={errorStyle}>{error}</div>
-      </main>
+      <Page title="任务">
+        <ErrorText>{error}</ErrorText>
+      </Page>
     );
   }
   if (!task) {
     return (
-      <main style={pageStyle}>
-        <p style={mutedStyle}>加载任务…</p>
-      </main>
+      <Page title="任务">
+        <LoadingText>加载任务…</LoadingText>
+      </Page>
     );
   }
 
   const actions = visibleTaskActions(task);
 
   return (
-    <main style={pageStyle}>
-      <p>
-        <button
-          type="button"
-          style={buttonStyle("secondary")}
-          onClick={() => navigate(`/projects/${projectId || task.projectId}`)}
-        >
+    <Page
+      title={task.title}
+      actions={
+        <Button onClick={() => navigate(`/projects/${projectId || task.projectId}`)}>
           返回项目
-        </button>
-      </p>
-      <h1 style={titleStyle}>{task.title}</h1>
-      <div style={rowStyle}>
-        <span style={badgeStyle(task.status === "failed" ? "danger" : "muted")}>
+        </Button>
+      }
+    >
+      <div className="wf-chrome-row">
+        <Badge tone={task.status === "failed" ? "danger" : "muted"}>
           {taskHeadlineStatus(task)}
-        </span>
+        </Badge>
         {actions.map((action) => (
-          <button
+          <Button
             key={action.id}
-            type="button"
+            variant={action.kind === "primary" ? "primary" : "secondary"}
             disabled={!action.enabled || busy !== null}
-            style={buttonStyle(action.kind, !action.enabled || busy !== null)}
             onClick={() => void runAction(action.id)}
           >
             {action.label}
-          </button>
+          </Button>
         ))}
-        {conflict ? (
-          <button type="button" style={buttonStyle("secondary")} onClick={() => void reload()}>
-            刷新
-          </button>
-        ) : null}
+        {conflict ? <Button onClick={() => void reload()}>刷新</Button> : null}
       </div>
-      {error ? <div style={conflict ? warningStyle : errorStyle}>{error}</div> : null}
-      <section style={cardStyle}>
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>任务</h2>
+      <ErrorText>{error}</ErrorText>
+      <Card title="任务">
         <p>{task.objective}</p>
-        <p style={mutedStyle}>
+        <Muted>
           任务状态：{taskStatusLabel(task.status)} · definitionRevision {task.definitionRevision} ·
           generation {task.generation} · attempt {task.attempt}
-        </p>
-        <p style={mutedStyle} data-testid="task-depends-on">
-          {taskDependencyLabel(task)}
-        </p>
-        <p style={mutedStyle}>{taskKindNote()}</p>
-      </section>
-      <section style={cardStyle}>
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>运行记录</h2>
+        </Muted>
+        <Muted>
+          <span data-testid="task-depends-on">{taskDependencyLabel(task)}</span>
+        </Muted>
+        <Muted>{taskKindNote()}</Muted>
+      </Card>
+      <Card title="运行记录">
         {runs.length === 0 ? (
-          <p style={mutedStyle}>还没有 Run。</p>
+          <Muted>还没有 Run。</Muted>
         ) : (
-          <ul style={listStyle}>
+          <List>
             {runs.map((run) => (
-              <li key={run.id} style={listItemStyle} onClick={() => navigate(`/runs/${run.id}`)}>
-                <strong>{run.id}</strong>
-                <div style={mutedStyle}>
-                  运行状态：{runStatusLabel(run.status)}
-                  {run.cancelRequested && run.status !== "cancelled" ? " · 取消中" : ""} · attempt{" "}
-                  {run.attempt}
-                </div>
-              </li>
+              <ListRow
+                key={run.id}
+                title={run.id}
+                meta={`运行状态：${runStatusLabel(run.status)}${
+                  run.cancelRequested && run.status !== "cancelled" ? " · 取消中" : ""
+                } · attempt ${run.attempt}`}
+                onClick={() => navigate(`/runs/${run.id}`)}
+              />
             ))}
-          </ul>
+          </List>
         )}
-      </section>
-    </main>
+      </Card>
+    </Page>
   );
 }
 

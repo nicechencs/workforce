@@ -1,18 +1,19 @@
 import type { ApprovalDto } from "@workforce/desktop-client";
 import { useState, type ReactNode } from "react";
 
-import type { FeaturePageProps } from "../contract.js";
 import {
-  formatT13Error,
-  getT13Client,
-  T13Button,
-  T13Card,
-  T13Error,
-  T13Page,
-  t13CommandOptions,
-  t13Styles,
-  useT13Query,
-} from "../_t13_client.js";
+  Badge,
+  Button,
+  Card,
+  CardList,
+  ErrorText,
+  LoadingText,
+  Muted,
+  Page,
+  Textarea,
+} from "../../components/ui.js";
+import type { FeaturePageProps } from "../contract.js";
+import { formatT13Error, getT13Client, t13CommandOptions, useT13Query } from "../_t13_client.js";
 import {
   approvalDigest,
   approvalExpiry,
@@ -37,16 +38,16 @@ function ApprovalListPage(props: FeaturePageProps): ReactNode {
     return page.items;
   });
   return (
-    <T13Page title="审批中心" subtitle="计划与产物门禁。批准必须绑定当前 digest 与版本。">
-      <T13Error message={query.error} />
-      {query.loading && query.data === null ? <p style={t13Styles.muted}>加载中…</p> : null}
+    <Page title="审批中心" subtitle="计划与产物门禁。批准必须绑定当前 digest 与版本。">
+      <ErrorText>{query.error}</ErrorText>
+      {query.loading && query.data === null ? <LoadingText /> : null}
       <ApprovalListView
         approvals={query.data ?? []}
         onOpen={(id) => {
           props.navigate(`/approvals/${id}`);
         }}
       />
-    </T13Page>
+    </Page>
   );
 }
 
@@ -56,24 +57,23 @@ export function ApprovalListView(props: {
 }): ReactNode {
   if (props.approvals.length === 0) {
     return (
-      <T13Card>
-        <p style={t13Styles.muted}>暂无审批。</p>
-      </T13Card>
+      <Card>
+        <Muted>暂无审批。</Muted>
+      </Card>
     );
   }
   return (
-    <ul style={t13Styles.list}>
+    <CardList>
       {props.approvals.map((approval) => (
-        <li key={approval.id}>
-          <ApprovalCard
-            approval={approval}
-            onOpen={() => {
-              props.onOpen(approval.id);
-            }}
-          />
-        </li>
+        <ApprovalCard
+          key={approval.id}
+          approval={approval}
+          onOpen={() => {
+            props.onOpen(approval.id);
+          }}
+        />
       ))}
-    </ul>
+    </CardList>
   );
 }
 
@@ -116,22 +116,22 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
   }
 
   return (
-    <T13Page
+    <Page
       title="审批卡"
       subtitle={props.approvalId}
       actions={
-        <T13Button
+        <Button
           onClick={() => {
             props.navigate("/approvals");
           }}
         >
           返回列表
-        </T13Button>
+        </Button>
       }
     >
-      <T13Error message={query.error} />
-      <T13Error message={actionError} />
-      {query.loading && approval === null ? <p style={t13Styles.muted}>加载中…</p> : null}
+      <ErrorText>{query.error}</ErrorText>
+      <ErrorText>{actionError}</ErrorText>
+      {query.loading && approval === null ? <LoadingText /> : null}
       {approval ? (
         <ApprovalCard
           approval={approval}
@@ -149,7 +149,7 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
           }}
         />
       ) : null}
-    </T13Page>
+    </Page>
   );
 }
 
@@ -171,68 +171,67 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
   const showActions = props.onApprove !== undefined || props.onOpen !== undefined;
 
   return (
-    <T13Card testId={`approval-card-${props.approval.id}`}>
-      <p>
+    <Card testId={`approval-card-${props.approval.id}`}>
+      <div className="wf-cluster">
         <strong>{gateLabel(props.approval.gate)}</strong>
-        {" · "}
-        <span data-testid="approval-status">{approvalStatusLabel(props.approval.status)}</span>
-      </p>
-      <p style={t13Styles.muted}>项目 {props.approval.projectId}</p>
-      {props.approval.taskId !== undefined ? (
-        <p style={t13Styles.muted}>Task {props.approval.taskId}</p>
-      ) : null}
-      <p data-testid="approval-resource">资源 {props.approval.resource}</p>
-      <p data-testid="approval-version">
-        版本 {props.approval.artifactVersionId ?? "未绑定产物版本"}
-      </p>
-      <p data-testid="approval-digest">摘要 {digest ?? "缺失"}</p>
-      <p data-testid="approval-expiry">到期 {approvalExpiry(props.approval)}</p>
-      <p style={t13Styles.muted}>请求于 {props.approval.requestedAt}</p>
+        <Badge tone="muted" testId="approval-status">
+          {approvalStatusLabel(props.approval.status)}
+        </Badge>
+      </div>
+      <Muted>项目 {props.approval.projectId}</Muted>
+      {props.approval.taskId !== undefined ? <Muted>Task {props.approval.taskId}</Muted> : null}
+      <dl className="wf-detail-grid">
+        <dt>资源</dt>
+        <dd data-testid="approval-resource">{props.approval.resource}</dd>
+        <dt>版本</dt>
+        <dd data-testid="approval-version">
+          {props.approval.artifactVersionId ?? "未绑定产物版本"}
+        </dd>
+        <dt>摘要</dt>
+        <dd data-testid="approval-digest">{digest ?? "缺失"}</dd>
+        <dt>到期</dt>
+        <dd data-testid="approval-expiry">{approvalExpiry(props.approval)}</dd>
+        <dt>请求时间</dt>
+        <dd>{props.approval.requestedAt}</dd>
+      </dl>
       {digest === null ? (
-        <p
-          style={{ ...t13Styles.muted, ...t13Styles.danger }}
-          data-testid="approval-digest-missing"
-        >
+        <p className="wf-error-text" data-testid="approval-digest-missing">
           缺少动作摘要，无法批准。版本变更后必须使用审批 DTO 上的当前 digest。
         </p>
       ) : null}
       {showActions ? (
-        <div style={{ ...t13Styles.actions, marginTop: "var(--wf-space-md)" }}>
-          {props.onOpen ? <T13Button onClick={props.onOpen}>打开审批卡</T13Button> : null}
+        <div className="wf-cluster wf-mt-12">
+          {props.onOpen ? <Button onClick={props.onOpen}>打开审批卡</Button> : null}
           {props.onApprove || props.onReject || props.onRequestChanges ? (
             <>
-              <textarea
+              <Textarea
                 value={props.reason ?? ""}
                 onChange={(event) => props.onReason?.(event.target.value)}
-                style={{ ...t13Styles.input, minHeight: "3rem" }}
+                rows={2}
                 aria-label="决定原因"
               />
-              <T13Button
-                testId="approval-reject"
-                disabled={!decideEnabled}
-                onClick={props.onReject}
-              >
+              <Button testId="approval-reject" disabled={!decideEnabled} onClick={props.onReject}>
                 拒绝
-              </T13Button>
-              <T13Button
+              </Button>
+              <Button
                 testId="approval-request-changes"
                 disabled={!decideEnabled}
                 onClick={props.onRequestChanges}
               >
                 要求修改
-              </T13Button>
-              <T13Button
-                kind="primary"
+              </Button>
+              <Button
+                variant="primary"
                 testId="approval-approve"
                 disabled={!approveEnabled}
                 onClick={props.onApprove}
               >
                 批准
-              </T13Button>
+              </Button>
             </>
           ) : null}
         </div>
       ) : null}
-    </T13Card>
+    </Card>
   );
 }

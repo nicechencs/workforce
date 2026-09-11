@@ -9,6 +9,21 @@ import type {
 } from "@workforce/desktop-client";
 import type { WorkspaceGrant } from "@workforce/ui";
 
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorText,
+  Field,
+  Input,
+  List,
+  ListRow,
+  Muted,
+  Page,
+  Tabs,
+  Textarea,
+  type Tone,
+} from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { asCatalogClient, getPreloadApi, hasCatalogMethod } from "../hooks.js";
 import {
@@ -51,22 +66,6 @@ import {
   projectDetailPath,
   type ProjectDetailTab,
 } from "./tabs.js";
-import {
-  badgeStyle,
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  inputStyle,
-  labelStyle,
-  listItemStyle,
-  listStyle,
-  mutedStyle,
-  rowStyle,
-  tabButtonStyle,
-  tabListStyle,
-  titleStyle,
-  warningStyle,
-} from "./ui.js";
 
 export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient }) {
   const { client, params, navigate } = props;
@@ -259,10 +258,18 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   }
 
   if (error && !project) {
-    return <div style={errorStyle}>{error}</div>;
+    return (
+      <Page title="项目">
+        <ErrorText>{error}</ErrorText>
+      </Page>
+    );
   }
   if (!project) {
-    return <p style={mutedStyle}>加载项目…</p>;
+    return (
+      <Page title="项目">
+        <Muted>加载项目…</Muted>
+      </Page>
+    );
   }
 
   const workspaceBound = grant !== null;
@@ -281,64 +288,53 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const statusLabel = projectStatusLabel(project);
 
   return (
-    <div>
-      <p style={mutedStyle}>
-        <button
-          type="button"
-          style={buttonStyle("secondary")}
-          onClick={() => navigate("/projects")}
+    <Page
+      title={project.name}
+      actions={
+        <Button
+          onClick={() => {
+            navigate("/projects");
+          }}
         >
           返回项目
-        </button>
-      </p>
-      <h1 style={titleStyle}>{project.name}</h1>
-      <div style={rowStyle}>
-        <span
-          data-testid="project-status"
-          style={badgeStyle(statusBadgeTone(project.status, project.cancelRequested))}
+        </Button>
+      }
+    >
+      <div className="wf-chrome-row">
+        <Badge
+          tone={toneFromStatus(statusBadgeTone(project.status, project.cancelRequested))}
+          testId="project-status"
         >
           {statusLabel}
-        </span>
+        </Badge>
         {actions.map((action) => (
-          <button
+          <Button
             key={action.id}
-            type="button"
+            variant={action.kind === "primary" ? "primary" : "secondary"}
             disabled={!action.enabled || busy !== null}
-            style={buttonStyle(action.kind, !action.enabled || busy !== null)}
-            data-testid={`project-action-${action.id}`}
+            testId={`project-action-${action.id}`}
             onClick={() => void runAction(action.id)}
           >
             {action.label}
-          </button>
+          </Button>
         ))}
-        {edit.needsRefresh ? (
-          <button type="button" style={buttonStyle("secondary")} onClick={() => void reload(true)}>
-            刷新
-          </button>
-        ) : null}
+        {edit.needsRefresh ? <Button onClick={() => void reload(true)}>刷新</Button> : null}
       </div>
-      {error ? <div style={edit.needsRefresh ? warningStyle : errorStyle}>{error}</div> : null}
-      {edit.error ? <div style={warningStyle}>{edit.error}</div> : null}
-      <p style={mutedStyle} data-testid="project-chrome-summary">
+      <ErrorText>{error}</ErrorText>
+      <ErrorText>{edit.error}</ErrorText>
+      <p className="wf-muted" data-testid="project-chrome-summary">
         {project.objective} · 团队 {PRESET_TEAM.name} · 工作区 {publicWorkspaceLabel(grant)} ·{" "}
         {budget}
       </p>
 
-      <nav style={tabListStyle} data-testid="project-detail-tabs" aria-label="项目详情">
-        {PROJECT_DETAIL_TABS.map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            data-testid={`project-tab-${id}`}
-            style={tabButtonStyle(tab === id)}
-            onClick={() => selectTab(id)}
-          >
-            {PROJECT_DETAIL_TAB_LABELS[id]}
-          </button>
-        ))}
-      </nav>
+      <Tabs
+        ariaLabel="项目详情"
+        testId="project-detail-tabs"
+        tabTestIdPrefix="project-tab-"
+        items={PROJECT_DETAIL_TABS.map((id) => ({ id, label: PROJECT_DETAIL_TAB_LABELS[id] }))}
+        value={tab}
+        onChange={selectTab}
+      />
 
       <div data-testid={`project-tab-panel-${tab}`} role="tabpanel">
         {tab === "overview" ? (
@@ -383,12 +379,16 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
           />
         ) : null}
       </div>
-    </div>
+    </Page>
   );
 }
 
 function emptyList<T>(): { items: T[] } {
   return { items: [] };
+}
+
+function toneFromStatus(tone: "health" | "warning" | "danger" | "muted"): Tone {
+  return tone === "health" ? "success" : tone;
 }
 
 function OverviewPanel(props: {
@@ -405,84 +405,73 @@ function OverviewPanel(props: {
   const { project, tasks, approvals, grant, budget, edit } = props;
   return (
     <>
-      <section style={cardStyle} data-testid="project-overview">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>概览</h2>
+      <Card title="概览" testId="project-overview">
         <p>{project.objective}</p>
-        <p style={mutedStyle}>状态：{projectStatusLabel(project)}</p>
-        <p style={mutedStyle}>团队：{PRESET_TEAM.name}（预设，只读）</p>
-        <p style={mutedStyle}>节点范围：{nodeScopeLabel()}</p>
-        <p style={mutedStyle} data-testid="project-progress">
-          {projectProgressLabel(tasks)}
-        </p>
-        <p style={mutedStyle}>运行时：Mock</p>
-        <p style={mutedStyle}>工作区：{publicWorkspaceLabel(grant)}（只读摘要；写入在 Settings）</p>
-        <p style={mutedStyle}>{budget}</p>
-        <p style={mutedStyle}>待审批：{approvals}</p>
-      </section>
+        <dl className="wf-detail-grid">
+          <dt>状态</dt>
+          <dd>{projectStatusLabel(project)}</dd>
+          <dt>团队</dt>
+          <dd>{PRESET_TEAM.name}（预设，只读）</dd>
+          <dt>节点范围</dt>
+          <dd>{nodeScopeLabel()}</dd>
+          <dt>进度</dt>
+          <dd data-testid="project-progress">{projectProgressLabel(tasks)}</dd>
+          <dt>运行时</dt>
+          <dd>Mock</dd>
+          <dt>工作区</dt>
+          <dd>{publicWorkspaceLabel(grant)}（只读摘要；写入在 Settings）</dd>
+          <dt>预算</dt>
+          <dd>{budget}</dd>
+          <dt>待审批</dt>
+          <dd>{approvals}</dd>
+        </dl>
+      </Card>
 
       {project.status === "draft" || project.status === "planning" ? (
-        <section style={cardStyle}>
-          <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>名称与目标</h2>
-          <label style={labelStyle} htmlFor="wf-edit-name">
-            名称
-          </label>
-          <input
-            id="wf-edit-name"
-            style={inputStyle}
-            value={edit.name}
-            onChange={(event) =>
-              props.setEdit((current) => ({ ...current, name: event.target.value, error: null }))
-            }
-          />
-          <label style={labelStyle} htmlFor="wf-edit-objective">
-            目标
-          </label>
-          <textarea
-            id="wf-edit-objective"
-            style={{ ...inputStyle, minHeight: "80px" }}
-            value={edit.objective}
-            onChange={(event) =>
-              props.setEdit((current) => ({
-                ...current,
-                objective: event.target.value,
-                error: null,
-              }))
-            }
-          />
-          <button
-            type="button"
-            style={buttonStyle("secondary", edit.submitting)}
-            disabled={edit.submitting}
-            onClick={props.onSave}
-          >
+        <Card title="名称与目标">
+          <Field label="名称" htmlFor="wf-edit-name">
+            <Input
+              id="wf-edit-name"
+              value={edit.name}
+              onChange={(event) =>
+                props.setEdit((current) => ({ ...current, name: event.target.value, error: null }))
+              }
+            />
+          </Field>
+          <Field label="目标" htmlFor="wf-edit-objective">
+            <Textarea
+              id="wf-edit-objective"
+              rows={4}
+              value={edit.objective}
+              onChange={(event) =>
+                props.setEdit((current) => ({
+                  ...current,
+                  objective: event.target.value,
+                  error: null,
+                }))
+              }
+            />
+          </Field>
+          <Button disabled={edit.submitting} onClick={props.onSave}>
             保存
-          </button>
-        </section>
+          </Button>
+        </Card>
       ) : null}
 
       {project.status === "draft" ? (
-        <section style={cardStyle}>
-          <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>下一步</h2>
-          <p style={mutedStyle}>WorkspaceBinding 写入在 Settings。页头在绑定完成后才能开始规划。</p>
-          <button
-            type="button"
-            style={buttonStyle("secondary")}
-            data-testid="project-open-settings"
-            onClick={props.onOpenSettings}
-          >
+        <Card title="下一步">
+          <Muted>WorkspaceBinding 写入在 Settings。页头在绑定完成后才能开始规划。</Muted>
+          <Button testId="project-open-settings" onClick={props.onOpenSettings}>
             去 Settings 绑定工作区
-          </button>
-        </section>
+          </Button>
+        </Card>
       ) : null}
 
       {project.status === "planning" ? (
-        <section style={cardStyle}>
-          <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>计划</h2>
+        <Card title="计划">
           <p>计划产物版本：{project.planArtifactVersionId ?? "尚未生成"}</p>
-          <p style={mutedStyle}>
-            确认计划会提交 planArtifactVersionId。未确认前不会开始执行开发任务。
-          </p>
-        </section>
+          <Muted>确认计划会提交 planArtifactVersionId。未确认前不会开始执行开发任务。</Muted>
+        </Card>
       ) : null}
     </>
   );
@@ -494,27 +483,30 @@ function TasksPanel(props: {
   onOpen: (taskId: string) => void;
 }) {
   return (
-    <section style={cardStyle}>
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>Tasks</h2>
-      <p style={mutedStyle}>按已发布执行图依赖排列的任务列表。</p>
+    <Card title="Tasks">
+      <Muted>按已发布执行图依赖排列的任务列表。</Muted>
       {props.tasks.length === 0 ? (
-        <p style={mutedStyle}>{emptyTasksCopy(props.project.status)}</p>
+        <Muted>{emptyTasksCopy(props.project.status)}</Muted>
       ) : (
-        <ul style={listStyle} data-testid="project-task-list">
+        <List testId="project-task-list">
           {props.tasks.map((task) => (
-            <li key={task.id} style={listItemStyle} onClick={() => props.onOpen(task.id)}>
-              <strong>{task.title}</strong>
-              <div style={mutedStyle} data-testid={`project-task-deps-${task.id}`}>
-                {taskStatusLabel(task.status)} · 负责人 {taskOwnerLabel(task)} ·{" "}
-                {taskDependencyLabel(task, props.tasks)} · attempt {task.attempt} · generation{" "}
-                {task.generation}
-                {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""}
-              </div>
-            </li>
+            <ListRow
+              key={task.id}
+              title={task.title}
+              meta={
+                <span data-testid={`project-task-deps-${task.id}`}>
+                  {taskStatusLabel(task.status)} · 负责人 {taskOwnerLabel(task)} ·{" "}
+                  {taskDependencyLabel(task, props.tasks)} · attempt {task.attempt} · generation{" "}
+                  {task.generation}
+                  {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""}
+                </span>
+              }
+              onClick={() => props.onOpen(task.id)}
+            />
           ))}
-        </ul>
+        </List>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -522,34 +514,31 @@ function RunsPanel(props: { runs: RunDto[]; onOpen: (runId: string) => void }) {
   const { current, history } = splitProjectRuns(props.runs);
   return (
     <>
-      <section style={cardStyle} data-testid="project-runs-current">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>当前执行</h2>
+      <Card title="当前执行" testId="project-runs-current">
         <RunList runs={current} empty="没有正在执行的 Run。" onOpen={props.onOpen} />
-      </section>
-      <section style={cardStyle} data-testid="project-runs-history">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>历史执行</h2>
+      </Card>
+      <Card title="历史执行" testId="project-runs-history">
         <RunList runs={history} empty="暂无历史 Run。" onOpen={props.onOpen} />
-      </section>
+      </Card>
     </>
   );
 }
 
 function RunList(props: { runs: RunDto[]; empty: string; onOpen: (runId: string) => void }) {
   if (props.runs.length === 0) {
-    return <p style={mutedStyle}>{props.empty}</p>;
+    return <Muted>{props.empty}</Muted>;
   }
   return (
-    <ul style={listStyle}>
+    <List>
       {props.runs.map((run) => (
-        <li key={run.id} style={listItemStyle} onClick={() => props.onOpen(run.id)}>
-          <strong>{run.id}</strong>
-          <div style={mutedStyle}>
-            {runHeadlineStatus(run)}
-            {isActiveRun(run) ? " · 当前" : " · 历史"} · Task {run.taskId} · attempt {run.attempt}
-          </div>
-        </li>
+        <ListRow
+          key={run.id}
+          title={run.id}
+          meta={`${runHeadlineStatus(run)}${isActiveRun(run) ? " · 当前" : " · 历史"} · Task ${run.taskId} · attempt ${run.attempt}`}
+          onClick={() => props.onOpen(run.id)}
+        />
       ))}
-    </ul>
+    </List>
   );
 }
 
@@ -558,78 +547,51 @@ function ArtifactsPanel(props: {
   onOpen: (artifactId: string, versionId: string) => void;
 }) {
   return (
-    <section style={cardStyle} data-testid="project-artifacts">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>Artifacts</h2>
-      <p style={mutedStyle}>
-        代码、文档、报告与外部资源。打开时固定到 ArtifactVersion，不用 latest。
-      </p>
+    <Card title="Artifacts" testId="project-artifacts">
+      <Muted>代码、文档、报告与外部资源。打开时固定到 ArtifactVersion，不用 latest。</Muted>
       {props.artifacts.length === 0 ? (
-        <p style={mutedStyle}>暂无产物。</p>
+        <Muted>暂无产物。</Muted>
       ) : (
-        <ul style={listStyle}>
+        <List>
           {props.artifacts.map((artifact) => {
             const pinned = pinnedArtifactVersion(artifact);
             return (
-              <li
+              <ListRow
                 key={artifact.id}
-                style={listItemStyle}
-                onClick={() => {
-                  if (pinned) {
-                    props.onOpen(artifact.id, pinned.id);
-                  }
-                }}
-              >
-                <strong>{artifact.logicalName}</strong>
-                <div style={mutedStyle}>
-                  {artifactKindLabel(artifact.kind)}
-                  {pinned
+                title={artifact.logicalName}
+                meta={`${artifactKindLabel(artifact.kind)}${
+                  pinned
                     ? ` · ${pinned.id} · hash ${pinned.hash}`
-                    : " · 尚无已固定版本，无法打开内容"}
-                </div>
-              </li>
+                    : " · 尚无已固定版本，无法打开内容"
+                }`}
+                {...(pinned ? { onClick: () => props.onOpen(artifact.id, pinned.id) } : {})}
+              />
             );
           })}
-        </ul>
+        </List>
       )}
-    </section>
+    </Card>
   );
 }
 
 function ActivityPanel(props: { events: unknown[] }) {
   const rows = timelineFromEvents(props.events);
   return (
-    <section style={cardStyle} data-testid="project-activity">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>Activity</h2>
-      <p style={mutedStyle}>项目 Event 时间线。空列表表示尚未返回事件，不是伪造动态。</p>
+    <Card title="Activity" testId="project-activity">
+      <Muted>项目 Event 时间线。空列表表示尚未返回事件，不是伪造动态。</Muted>
       {rows.length === 0 ? (
-        <p style={mutedStyle}>暂无项目事件。</p>
+        <Muted>暂无项目事件。</Muted>
       ) : (
-        <ol style={{ ...listStyle, paddingLeft: 0 }}>
+        <ol className="wf-timeline">
           {rows.map((row) => (
-            <li
-              key={row.key}
-              data-testid="project-activity-row"
-              style={{
-                borderBottom: "1px solid var(--wf-color-border, #d1d5db)",
-                padding: "var(--wf-space-sm, 8px) 0",
-              }}
-            >
-              <div style={mutedStyle}>{row.time}</div>
-              <pre
-                style={{
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
-                  fontFamily: "ui-monospace, monospace",
-                  fontSize: "var(--wf-font-label, 14px)",
-                }}
-              >
-                {row.summary}
-              </pre>
+            <li key={row.key} data-testid="project-activity-row" className="wf-timeline-row">
+              <Muted>{row.time}</Muted>
+              <pre className="wf-mono">{row.summary}</pre>
             </li>
           ))}
         </ol>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -643,36 +605,30 @@ function SettingsPanel(props: {
   const showBind = props.project.status === "draft";
   return (
     <>
-      <section style={cardStyle} data-testid="project-settings-workspace">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>WorkspaceBinding</h2>
-        <p style={mutedStyle}>绑定工作区、预设团队与 Mock 运行时。界面不展示宿主绝对路径。</p>
-        <div style={rowStyle}>
+      <Card title="WorkspaceBinding" testId="project-settings-workspace">
+        <Muted>绑定工作区、预设团队与 Mock 运行时。界面不展示宿主绝对路径。</Muted>
+        <div className="wf-cluster">
           {showBind ? (
-            <button
-              type="button"
-              style={buttonStyle("secondary")}
-              data-testid="project-bind-workspace"
-              onClick={props.onBind}
-            >
+            <Button testId="project-bind-workspace" onClick={props.onBind}>
               绑定工作区
-            </button>
+            </Button>
           ) : null}
-          <span style={mutedStyle}>{publicWorkspaceLabel(props.grant)}</span>
+          <Muted>{publicWorkspaceLabel(props.grant)}</Muted>
         </div>
-        <label style={labelStyle}>预设团队</label>
-        <input style={inputStyle} value={PRESET_TEAM.name} readOnly />
-        <label style={labelStyle}>运行时</label>
-        <input style={inputStyle} value="Mock" readOnly />
-      </section>
-      <section style={cardStyle} data-testid="project-settings-budget">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>预算</h2>
-        <p style={mutedStyle}>{props.budget}</p>
-        <p style={mutedStyle}>硬货币上限在未知成本时不会被当成 0。</p>
-      </section>
-      <section style={cardStyle} data-testid="project-settings-policy">
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>策略</h2>
-        <p style={mutedStyle}>{projectPolicyCopy(props.capabilities.project)}</p>
-      </section>
+        <Field label="预设团队" htmlFor="wf-project-team">
+          <Input id="wf-project-team" value={PRESET_TEAM.name} readOnly />
+        </Field>
+        <Field label="运行时" htmlFor="wf-project-runtime">
+          <Input id="wf-project-runtime" value="Mock" readOnly />
+        </Field>
+      </Card>
+      <Card title="预算" testId="project-settings-budget">
+        <Muted>{props.budget}</Muted>
+        <Muted>硬货币上限在未知成本时不会被当成 0。</Muted>
+      </Card>
+      <Card title="策略" testId="project-settings-policy">
+        <Muted>{projectPolicyCopy(props.capabilities.project)}</Muted>
+      </Card>
     </>
   );
 }

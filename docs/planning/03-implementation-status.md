@@ -14,6 +14,8 @@ updated: 2026-09-11
 
 修订：2026-09-11（本轮，基线 `fdce1b2` + 未提交修复）— 发现并修复 daemon 持久化回归：`dumpWorld` / `dualWriteSqlite` / `loadComposition` / `hydrateWorld` 都没有传递 `world.executionSnapshots`，于是 `SqliteWorldSnapshot.save()` 在 `for..of` 处解引用 `undefined` 抛错，`persist()` 又把该失败静默 `catch` 掉。修复后该字段全链贯通、旧 `world.json` 缺字段回退 `[]`，且投影失败不再静默：实体 repository 已把 2067/1555 映射为 `PersistenceError("conflict")` 并向上抛，真正的静默点是 `persist()` 的 fire-and-forget `catch`（本轮已改为 `console.error`）；`dualWriteSqlite` 外层 `isConstraintError` 分支现已改为上报而不是丢弃，但它只覆盖未被 repository 包装的原始约束错误（实体的 insert / upsert 路径不会走到；`node_instances.update`、`runs.updateStatus` 与 `receipts.putPending` 仍可到达），见 §3「持久化回归修复切片」。本轮另外修掉 `SqliteWorldSnapshot.save()` 的插入顺序缺陷：`project_execution_snapshots` 对 projects / workflow_versions / team_versions 有外键，原实现先插 snapshot 再插父表，任何非空 snapshot 都会 `FOREIGN KEY constraint failed` 并回滚整个事务；现改为在 project / workflow 循环之后插入，并加了回归测试（`packages/database/src/world-snapshot.test.ts`）。证据见 §3「持久化回归修复切片」：基线 `fdce1b2` 上 `apps/daemon/tests/composition.test.ts` 的真实断言失败 `expected 500 to be 202` 已消失，该文件只剩 Windows `fs.rmSync` 拆除期的 EPERM。本轮**不**宣称 D02 confirm/start 拆分、D15 `workflow_versions` 不可变、D17 对话生成或 D18 双执行模式已实现；T04 仍只完成 005 expand。
 
+修订：2026-09-11（UI 设计系统对齐）— renderer 视觉层改为对齐 AgentHub 的设计基线：`packages/ui/src/tokens.ts` 重建为语义 token（四档字号、8/12/16 圆角、浅/深主题、5 主题色、8 浅色画布、Agent 色槽）并生成 CSS 变量，新增 `packages/ui/src/theme.ts` 与 `apps/desktop/src/renderer/app/theme.tsx` 承载主题偏好的读取、持久化与首屏落地；`renderer/styles.css` 与 `renderer/components/` 提供语义 class 层与基础组件，T12/T13 页面改为只组合这些组件，`features/projects/ui.ts` 与 `_t13_client.ts` 中的 inline 样式层已删除。未新增运行依赖（无 Tailwind / Radix / CVA / lucide-react），根 lockfile 与构建链未变。权威文档见 [UI 设计系统](../product-ui/04-design-system.md)。本修订**不**改变任何页面能力、状态机或公共 DTO，也不声称 M7/M8 已实现。
+
 ## 1. 本轮目标与结果
 
 目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布、自定义 Team 与对话生成是该循环上 **M7 已规划、未实现** 的编排面；按 Agent 双执行模式是 **M8 已规划、未实现**。都不是外挂功能，也**都还没有代码**。
@@ -37,7 +39,7 @@ M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：
 | T08 | 完成库并接入 Mock composition（本切片权威） | 所有权仍是 `packages/artifacts`（不是 Daemon 私有第二套规则）。composition 以 `LocalArtifactStore` 为 Mock 产物字节/元数据权威；公开 content 读精确 `artifactVersionId`。**不是**未开始，也**不是** world.json / `bodyBase64` 权威 |
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；`taskDto()` 填公开 `dependsOn`；Mock 产物经 `LocalArtifactStore` `register`；测试默认 Fake 仍绿 |
-| T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob |
+| T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob；2026-09-11 补齐设计系统：`packages/ui/src/tokens.ts` / `theme.ts`（四档字号、8/12/16 圆角、浅深主题、5 主题色、8 浅色画布、Agent 色槽）、`renderer/styles.css` 语义 class 层、`renderer/components/` 基础组件与图标、`renderer/app/theme.tsx` 主题提供者与首屏 `bootstrapTheme()`。对齐 AgentHub 视觉基线，实现栈刻意不同（无 Tailwind/Radix/lucide 依赖），差异见 [UI 设计系统](../product-ui/04-design-system.md) §7 |
 | T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流目录（`GET /workflows` 已发布模板·版本·结构化步骤；空目录诚实空态）。Tasks 展示已发布 `dependsOn` 边。画布与自定义 Team 属 **M7 已规划、未实现**，不是「后置放弃」。项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
@@ -125,7 +127,7 @@ pnpm lint                                     # 退出 0
 5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist + `apps/desktop/tests/workflows-catalog-proxy.test.ts`）  
    生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET（写接口仍拒）。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
 
-6. **Codex**  
+6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
    `start/stream/cancel` 走注入的 captured Process：CLI + validate + `resolveStart` 齐备时 `spawnCaptured`；缺 CLI 为 `validation_failed`；缺 Process/`resolveStart`/不完整 context/win32 capture 为 `unsupported_capability`。  
    证据（2026-09-11，Linux，Node v22.14.0，pnpm 9.4.0）：  
@@ -133,6 +135,9 @@ pnpm lint                                     # 退出 0
    `pnpm --filter @workforce/daemon typecheck` 退出 0；  
    `pnpm exec vitest run runtimes/codex apps/daemon/tests/codex-composition.test.ts` → 6 files / 34 tests 通过（含 fake Process 与 `OsProcessController` + `fixtures/jsonl-double.mjs`，**不是** Codex CLI）。  
    本机 Linux **没有**授权 live `codex exec`；未宣称真实 Runtime 可执行。Daemon Host 仍默认 Mock。
+
+7. **UI 设计系统（T11 共享层）**
+   `packages/ui/src/tokens.ts` 以 AgentHub 的语义角色重建 token 真源（四档字号 display/title/body/meta、8/12/16 圆角 + 22% 标记、4/8/12/16/24/32 间距、浅/深主题、5 主题色、8 浅色画布、Agent 色槽），由 `tokensAsCssVariables()` 生成 CSS 变量；`packages/ui/src/theme.ts` 提供 `light`/`dark`/`system`、accent、canvas 的读取/写入/落地并拒绝未知取值。`apps/desktop/src/renderer/styles.css` 提供语义 class 层，`renderer/components/` 提供 `Page`/`Card`/`Button`/`Badge`/`Input`/`Tabs`/`List`/`Notice`/`EmptyState` 等基础组件与内联 SVG 图标，`renderer/app/theme.tsx` 在 React 挂载前同步落地主题避免闪色，设置页新增「外观」卡片（主题三档 + 主题色 + 浅色画布，深色下画布控件禁用并说明原因）。T12/T13 页面改为只组合这些组件，不再写 inline style 或第二套色值（`features/projects/ui.ts` 已删除）。**不新增运行依赖**：未引入 Tailwind / Radix / CVA / lucide-react / class-variance-authority，根 lockfile 与构建链未变。**未实现：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 等复合组件，以及焦点陷阱与减动效的自动化测试。详见 [UI 设计系统](../product-ui/04-design-system.md)。
 
 ## 4. M3 主路径对照
 

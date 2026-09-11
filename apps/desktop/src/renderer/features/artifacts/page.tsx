@@ -5,15 +5,9 @@ import type {
 } from "@workforce/desktop-client";
 import type { ReactNode } from "react";
 
+import { Card, ErrorText, LoadingText, Muted, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import {
-  getT13Client,
-  T13Card,
-  T13Error,
-  T13Page,
-  t13Styles,
-  useT13Query,
-} from "../_t13_client.js";
+import { getT13Client, useT13Query } from "../_t13_client.js";
 import {
   artifactVersionHeading,
   decodeArtifactContent,
@@ -25,9 +19,11 @@ export function ArtifactsPage(props: FeaturePageProps): ReactNode {
   const versionId = props.params.versionId;
   if (artifactId === undefined || versionId === undefined || isUnversionedArtifactPath(versionId)) {
     return (
-      <T13Page title="产物" subtitle="必须打开精确的 ArtifactVersion。">
-        <T13Error message="产物查看必须指定 artifactId 与 versionId，不能使用 latest 或无版本内容。" />
-      </T13Page>
+      <Page title="产物" subtitle="必须打开精确的 ArtifactVersion。">
+        <ErrorText>
+          产物查看必须指定 artifactId 与 versionId，不能使用 latest 或无版本内容。
+        </ErrorText>
+      </Page>
     );
   }
   return <ArtifactVersionPage artifactId={artifactId} versionId={versionId} />;
@@ -45,9 +41,9 @@ function ArtifactVersionPage(props: { artifactId: string; versionId: string }): 
     return { artifact, version, content, lineage };
   });
   return (
-    <T13Page title="产物" subtitle={`${props.artifactId} / versions / ${props.versionId}`}>
-      <T13Error message={query.error} />
-      {query.loading && query.data === null ? <p style={t13Styles.muted}>加载中…</p> : null}
+    <Page title="产物" subtitle={`${props.artifactId} / versions / ${props.versionId}`}>
+      <ErrorText>{query.error}</ErrorText>
+      {query.loading && query.data === null ? <LoadingText /> : null}
       {query.data ? (
         <ArtifactVersionView
           artifact={query.data.artifact}
@@ -56,7 +52,7 @@ function ArtifactVersionPage(props: { artifactId: string; versionId: string }): 
           lineage={query.data.lineage}
         />
       ) : null}
-    </T13Page>
+    </Page>
   );
 }
 
@@ -68,43 +64,43 @@ export function ArtifactVersionView(props: {
 }): ReactNode {
   const decoded = decodeArtifactContent(props.content);
   return (
-    <div>
-      <T13Card testId="artifact-meta">
-        <h2 style={{ ...t13Styles.title, fontSize: "var(--wf-font-body)" }}>
+    <>
+      <Card testId="artifact-meta">
+        <p className="wf-list-row-title">
           {artifactVersionHeading(props.artifact.id, props.version)}
-        </h2>
-        <p>
+        </p>
+        <p className="wf-body-note">
           {props.artifact.logicalName} · {props.artifact.kind}
         </p>
-        <p style={t13Styles.muted}>
+        <Muted>
           版本 {props.version.id} · hash {props.version.hash} · {props.version.size} 字节 ·{" "}
           {props.version.mediaType}
-        </p>
-        <p style={t13Styles.muted}>固定版本内容，不读取无版本 content。</p>
-      </T13Card>
-      <T13Card testId="artifact-content">
-        <h2 style={{ ...t13Styles.title, fontSize: "var(--wf-font-body)" }}>内容</h2>
-        <pre style={t13Styles.pre}>{decoded.text}</pre>
-      </T13Card>
-      <T13Card testId="artifact-lineage">
-        <h2 style={{ ...t13Styles.title, fontSize: "var(--wf-font-body)" }}>血缘</h2>
-        <p style={t13Styles.muted}>父版本</p>
+        </Muted>
+        <Muted>固定版本内容，不读取无版本 content。</Muted>
+      </Card>
+      <Card title="内容" testId="artifact-content">
+        <pre className="wf-mono">{decoded.text}</pre>
+      </Card>
+      <Card title="血缘" testId="artifact-lineage">
+        <Muted>父版本</Muted>
         <IdList ids={props.lineage.parents} empty="无父版本" />
-        <p style={t13Styles.muted}>子版本</p>
+        <Muted>子版本</Muted>
         <IdList ids={props.lineage.children} empty="无子版本" />
-      </T13Card>
-    </div>
+      </Card>
+    </>
   );
 }
 
 function IdList(props: { ids: string[]; empty: string }): ReactNode {
   if (props.ids.length === 0) {
-    return <p style={t13Styles.muted}>{props.empty}</p>;
+    return <Muted>{props.empty}</Muted>;
   }
   return (
-    <ul>
+    <ul className="wf-list">
       {props.ids.map((id) => (
-        <li key={id}>{id}</li>
+        <li key={id} className="wf-list-row">
+          <span className="wf-mono">{id}</span>
+        </li>
       ))}
     </ul>
   );

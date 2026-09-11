@@ -76,6 +76,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [页面信息架构](product-ui/01-information-architecture.md)（§2 一级导航；`P0`/`P1` 是切片深度不是侧栏可见性；项目详情六标签以 §4.3 为准）
 - [核心用户流程](product-ui/02-core-user-flows.md)
 - [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 M3 只读目录过渡；§10–§12 为 M7 画布、Team 与 D17 authoring；§13 为 M8 双执行模式）
+- [UI 设计系统](product-ui/04-design-system.md)（token、字号、圆角、组件与状态规则；含与 AgentHub 的对齐基线与刻意差异）
 
 ## 设计评审、冻结决策与开发任务
 

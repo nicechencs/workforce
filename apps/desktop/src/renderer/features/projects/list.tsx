@@ -1,21 +1,21 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
 import type { DesktopClient, ProjectDto } from "@workforce/desktop-client";
 
+import {
+  Button,
+  Card,
+  ErrorText,
+  Field,
+  Input,
+  List,
+  ListRow,
+  Muted,
+  Page,
+  Textarea,
+} from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { commandOptions } from "./command.js";
 import { emptyCreateForm, projectStatusLabel, reduceCreateProjectForm } from "./model.js";
-import {
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  inputStyle,
-  labelStyle,
-  listItemStyle,
-  listStyle,
-  mutedStyle,
-  titleStyle,
-  warningStyle,
-} from "./ui.js";
 
 export function ProjectList(props: FeaturePageProps & { client: DesktopClient }) {
   const { client, navigate } = props;
@@ -61,75 +61,65 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
   }
 
   return (
-    <div>
-      <h1 style={titleStyle}>项目</h1>
-      {loadError ? <div style={errorStyle}>{loadError}</div> : null}
-      <section style={cardStyle}>
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>新建项目</h2>
+    <Page title="项目" subtitle="围绕一个 Project 编排 Team、Tasks 与 Workflow。">
+      <ErrorText>{loadError}</ErrorText>
+      <Card title="新建项目">
         <form onSubmit={onCreate}>
-          <label style={labelStyle} htmlFor="wf-project-name">
-            名称
-          </label>
-          <input
-            id="wf-project-name"
-            name="name"
-            style={inputStyle}
-            value={form.name}
-            onChange={(event) =>
-              dispatch({ type: "change", field: "name", value: event.target.value })
-            }
-            required
-          />
-          <label style={labelStyle} htmlFor="wf-project-objective">
-            目标
-          </label>
-          <textarea
-            id="wf-project-objective"
-            name="objective"
-            style={{ ...inputStyle, minHeight: "80px" }}
-            value={form.objective}
-            onChange={(event) =>
-              dispatch({ type: "change", field: "objective", value: event.target.value })
-            }
-            required
-          />
+          <Field label="名称" htmlFor="wf-project-name">
+            <Input
+              id="wf-project-name"
+              name="name"
+              value={form.name}
+              onChange={(event) =>
+                dispatch({ type: "change", field: "name", value: event.target.value })
+              }
+              required
+            />
+          </Field>
+          <Field label="目标" htmlFor="wf-project-objective">
+            <Textarea
+              id="wf-project-objective"
+              name="objective"
+              rows={4}
+              value={form.objective}
+              onChange={(event) =>
+                dispatch({ type: "change", field: "objective", value: event.target.value })
+              }
+              required
+            />
+          </Field>
           {form.error ? (
-            <div style={form.needsRefresh ? warningStyle : errorStyle}>
-              {form.error}
-              {form.needsRefresh ? " 请刷新后重试。" : null}
-            </div>
+            <>
+              <ErrorText>{form.error}</ErrorText>
+              {form.needsRefresh ? <Muted>请刷新后重试。</Muted> : null}
+            </>
           ) : null}
-          <button
+          <Button
             type="submit"
+            variant="primary"
             disabled={form.submitting}
-            style={buttonStyle("primary", form.submitting)}
-            data-testid="project-create"
+            testId="project-create"
           >
             {form.submitting ? "创建中…" : "创建项目"}
-          </button>
+          </Button>
         </form>
-      </section>
-      <section style={cardStyle}>
-        <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>项目列表</h2>
+      </Card>
+      <Card title="项目列表">
         {projects.length === 0 ? (
-          <p style={mutedStyle}>还没有项目。</p>
+          <Muted>还没有项目。</Muted>
         ) : (
-          <ul style={listStyle}>
+          <List>
             {projects.map((project) => (
-              <li
+              <ListRow
                 key={project.id}
-                style={listItemStyle}
+                title={project.name}
+                meta={`${projectStatusLabel(project)} · ${project.updatedAt}`}
                 onClick={() => navigate(`/projects/${project.id}`)}
-              >
-                <strong>{project.name}</strong>
-                <div style={mutedStyle}>
-                  {projectStatusLabel(project)} · {project.updatedAt}
-                </div>
-              </li>
+              />
             ))}
-          </ul>
+          </List>
         )}
-      </section>
-    </div>
+      </Card>
+    </Page>
   );
 }

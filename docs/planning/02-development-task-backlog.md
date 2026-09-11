@@ -254,7 +254,7 @@ flowchart TD
 
 ### T11 — Electron 进程边界与 UI 外壳
 
-**所有权：** apps/desktop/src/main/、preload/、renderer/app/、renderer/routes/、renderer/components/、packages/ui/；desktop main/preload/app 层测试。排除 renderer/features/。
+**所有权：** apps/desktop/src/main/、preload/、renderer/app/、renderer/routes/、renderer/components/、packages/ui/；`packages/ui/src/tokens.ts` 与 `theme.ts`、`renderer/styles.css` 与 `renderer/components/`（设计系统、基础组件、图标、应用壳）、`renderer/app/theme.tsx`；desktop main/preload/app 层测试。排除 renderer/features/。
 
 **工作：** 独立 Daemon 生命周期、单实例与版本握手、短期凭据代理、Main 转发 REST/SSE、白名单 typed preload；应用导航、页面注册约定、设计 tokens、共享错误/加载/离线展示；目录选择授权交给 Workspace 服务。
 
@@ -466,6 +466,7 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 | 所有数据库 migration/schema | T04 |
 | Daemon composition root | T10，联调时可明确移交 T16 |
 | Electron preload、路由、共享 UI | T11 |
+| 设计 token、主题模型、`renderer/styles.css`、`renderer/components/` 基础组件 | T11；页面只在 features 内组合，不得新增全局样式或第二套色值 |
 | Workflow 与业务状态转换 | T09 |
 | planning/delivery/authoring 业务编排 | T14，调用 T09 公共用例；T20-B 后端唯一 owner |
 | 工作流画布 UI | T18；图协议归 T02，发布校验归 T09，HTTP 归 T10 |

@@ -1,16 +1,17 @@
 import type { HealthDto, ReadyDto, VersionDto } from "@workforce/desktop-client";
 import type { ReactNode } from "react";
 
-import type { FeaturePageProps } from "../contract.js";
 import {
-  getT13Client,
-  T13Button,
-  T13Card,
-  T13Error,
-  T13Page,
-  t13Styles,
-  useT13Query,
-} from "../_t13_client.js";
+  Button,
+  Card,
+  ErrorText,
+  LoadingText,
+  Muted,
+  Page,
+  StatusText,
+} from "../../components/ui.js";
+import type { FeaturePageProps } from "../contract.js";
+import { getT13Client, useT13Query } from "../_t13_client.js";
 import {
   formatProbeSummary,
   isLocalNodeId,
@@ -23,21 +24,21 @@ export function NodesPage(props: FeaturePageProps): ReactNode {
   const nodeId = props.params.nodeId;
   if (nodeId !== undefined && nodeId.length > 0 && !isLocalNodeId(nodeId)) {
     return (
-      <T13Page
+      <Page
         title="节点详情"
         subtitle={nodeId}
         actions={
-          <T13Button
+          <Button
             onClick={() => {
               props.navigate("/nodes");
             }}
           >
             返回本机节点
-          </T13Button>
+          </Button>
         }
       >
         <RemoteNodePlaceholder nodeId={nodeId} />
-      </T13Page>
+      </Page>
     );
   }
   return <LocalNodePage {...props} nodeId={nodeId ?? LOCAL_NODE_ID} />;
@@ -55,12 +56,12 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
   });
   const detail = props.path.includes("/nodes/");
   return (
-    <T13Page
+    <Page
       title={detail ? "节点详情" : "执行节点"}
       subtitle={detail ? props.nodeId : "V0.1 仅本机节点。远程 enrollment 未接入。"}
     >
-      <T13Error message={query.error} />
-      {query.loading && query.data === null ? <p style={t13Styles.muted}>加载中…</p> : null}
+      <ErrorText>{query.error}</ErrorText>
+      {query.loading && query.data === null ? <LoadingText /> : null}
       <LocalNodeCard
         nodeId={LOCAL_NODE_ID}
         health={query.data?.health ?? null}
@@ -75,7 +76,7 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
               }
         }
       />
-    </T13Page>
+    </Page>
   );
 }
 
@@ -88,54 +89,50 @@ export function LocalNodeCard(props: {
   onOpen?: (() => void) | undefined;
 }): ReactNode {
   const status = localNodeStatusLabel({ health: props.health, ready: props.ready });
-  const toneStyle =
-    status.tone === "health"
-      ? t13Styles.health
-      : status.tone === "warning"
-        ? t13Styles.warning
-        : t13Styles.muted;
+  const tone =
+    status.tone === "health" ? "success" : status.tone === "warning" ? "warning" : "muted";
   return (
-    <T13Card testId="local-node-card">
-      <div style={t13Styles.header}>
+    <Card testId="local-node-card">
+      <div className="wf-card-header wf-card-header-flush">
         <div>
-          <strong>本机 / Mock</strong>
-          <p style={toneStyle} data-testid="local-node-status">
-            {status.label}
-          </p>
+          <p className="wf-list-row-title">本机 / Mock</p>
+          <span data-testid="local-node-status">
+            <StatusText tone={tone}>{status.label}</StatusText>
+          </span>
         </div>
-        {props.onOpen ? <T13Button onClick={props.onOpen}>查看详情</T13Button> : null}
+        {props.onOpen ? <Button onClick={props.onOpen}>查看详情</Button> : null}
       </div>
-      <p style={t13Styles.muted} data-testid="local-node-probe">
-        {localNodeSubtitle()}
-      </p>
-      <ul>
+      <Muted>
+        <span data-testid="local-node-probe">{localNodeSubtitle()}</span>
+      </Muted>
+      <ul className="wf-list">
         {formatProbeSummary({
           health: props.health,
           ready: props.ready,
           version: props.version,
         }).map((line) => (
-          <li key={line} style={t13Styles.muted}>
-            {line}
+          <li key={line} className="wf-list-row">
+            <span className="wf-list-row-meta">{line}</span>
           </li>
         ))}
       </ul>
       {props.detail === true ? (
-        <p style={t13Styles.muted}>
+        <Muted>
           listNodes / listRuntimes 尚未出现在 typed client 中时，不把本机卡片渲染成远程在线机群。
-        </p>
+        </Muted>
       ) : null}
-    </T13Card>
+    </Card>
   );
 }
 
 export function RemoteNodePlaceholder(props: { nodeId: string }): ReactNode {
   return (
-    <T13Card testId="remote-node-placeholder">
-      <strong>远程节点（未接入）</strong>
-      <p data-testid="remote-node-status" style={t13Styles.muted}>
-        离线占位 · {props.nodeId}
-      </p>
-      <p style={t13Styles.muted}>不是在线机群。V0.1 不把远程占位显示为可用节点。</p>
-    </T13Card>
+    <Card testId="remote-node-placeholder">
+      <p className="wf-list-row-title">远程节点（未接入）</p>
+      <Muted>
+        <span data-testid="remote-node-status">离线占位 · {props.nodeId}</span>
+      </Muted>
+      <Muted>不是在线机群。V0.1 不把远程占位显示为可用节点。</Muted>
+    </Card>
   );
 }

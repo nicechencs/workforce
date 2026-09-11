@@ -1,84 +1,203 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type { BannerModel, ShellView } from "@workforce/ui";
 
-import { bannerToneClass } from "./banners.js";
+import { nextThemeMode, themeModeLabel, useTheme } from "../app/theme.js";
+import { cn } from "./cn.js";
+import { IconMoon, IconPanelClose, IconPanelOpen, IconSun, IconSystem } from "./icons.js";
+import { Button, NavIcon, Notice, StatusText } from "./ui.js";
 
-export function ShellFrame(props: {
+const NAV_COLLAPSED_KEY = "workforce:nav-collapsed";
+
+function readCollapsed(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(NAV_COLLAPSED_KEY, String(collapsed));
+  } catch {
+    // 存储不可用时不持久化，仍保留本次会话的折叠状态。
+  }
+}
+
+export interface ShellFrameProps {
   view: ShellView;
   onNavigate: (path: string) => void;
-  onBannerAction?: (action: NonNullable<BannerModel["action"]>["id"]) => void;
+  onBannerAction?: ((action: NonNullable<BannerModel["action"]>["id"]) => void) | undefined;
   children: ReactNode;
-}): ReactNode {
+}
+
+export function ShellFrame(props: ShellFrameProps): ReactNode {
   const { view, onNavigate, onBannerAction, children } = props;
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  useEffect(() => {
+    writeCollapsed(collapsed);
+  }, [collapsed]);
+
   return (
-    <div className="wf-shell">
-      <aside className="wf-nav" aria-label="一级导航">
-        <div className="wf-brand">Workforce</div>
-        <nav className="wf-nav-list">
-          {view.nav.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={item.current ? "wf-nav-item is-current" : "wf-nav-item"}
-              disabled={!item.enabled}
-              aria-current={item.current ? "page" : undefined}
+    <div className="wf-shell" data-nav-collapsed={collapsed ? "true" : "false"}>
+      <div className="wf-shell-body">
+        <aside className="wf-nav" aria-label="一级导航">
+          <div className="wf-nav-header">
+            <span className="wf-brand">
+              <span className="wf-brand-mark" aria-hidden="true">
+                W
+              </span>
+              <span className="wf-brand-label">Workforce</span>
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
               onClick={() => {
-                if (item.enabled) {
-                  onNavigate(item.path);
-                }
+                setCollapsed((current) => !current);
               }}
             >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      </aside>
-      <header className="wf-top">
-        <div className="wf-top-context">
-          <span className="wf-top-workspace">本机</span>
-          <span className="wf-top-sep" aria-hidden="true">
-            /
-          </span>
-          <span className="wf-top-page">{view.title}</span>
-        </div>
-        <div className="wf-top-actions">
-          <span className={`wf-connection wf-connection-${view.connection.status}`}>
-            {connectionLabel(view.connection.status)}
-          </span>
-          <button type="button" className="wf-top-button" disabled>
-            通知
-          </button>
-          <button type="button" className="wf-top-button" disabled>
-            新建
-          </button>
-        </div>
-      </header>
-      <main className="wf-main">
-        {view.banner ? (
-          <div className={bannerToneClass(view.banner)} role="status">
-            <strong>{view.banner.title}</strong>
-            <p>{view.banner.message}</p>
-            {view.banner.action ? (
+              {collapsed ? <IconPanelOpen size={16} /> : <IconPanelClose size={16} />}
+            </Button>
+          </div>
+          <nav className="wf-nav-list">
+            <div className="wf-nav-group-label">工作台</div>
+            {view.nav.map((item) => (
               <button
+                key={item.id}
                 type="button"
-                className="wf-banner-action"
-                onClick={() => onBannerAction?.(view.banner?.action?.id ?? "retry")}
+                className={cn("wf-nav-item", item.current && "is-current")}
+                disabled={!item.enabled}
+                aria-current={item.current ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
+                onClick={() => {
+                  if (item.enabled) {
+                    onNavigate(item.path);
+                  }
+                }}
               >
-                {view.banner.action.label}
+                <NavIcon slot={item.slot} size={18} strokeWidth={1.6} />
+                <span className="wf-nav-item-label">{item.label}</span>
               </button>
+            ))}
+          </nav>
+        </aside>
+
+        <div className="wf-shell-main">
+          <header className="wf-topbar">
+            <div className="wf-topbar-context">
+              <span className="wf-topbar-page">{view.title}</span>
+              <span className="wf-topbar-sep" aria-hidden="true">
+                /
+              </span>
+              <span className="wf-topbar-workspace">本机</span>
+            </div>
+            <div className="wf-topbar-actions">
+              <StatusText tone={connectionTone(view.connection.status)}>
+                {connectionLabel(view.connection.status)}
+              </StatusText>
+              <ThemeToggle />
+            </div>
+          </header>
+          <main className={view.mainEnabled ? "wf-main" : "wf-main is-disabled"}>
+            {view.banner ? (
+              <div className="wf-main-banner">
+                <Notice
+                  tone={bannerTone(view.banner)}
+                  title={view.banner.title}
+                  actions={
+                    view.banner.action ? (
+                      <Button
+                        variant="primary"
+                        onClick={() => {
+                          onBannerAction?.(view.banner?.action?.id ?? "retry");
+                        }}
+                      >
+                        {view.banner.action.label}
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  <p className="wf-body-note">{view.banner.message}</p>
+                </Notice>
+              </div>
             ) : null}
-          </div>
-        ) : null}
-        {view.overlay === "loading" ? (
-          <div className="wf-overlay" role="status">
-            正在连接本地 Daemon
-          </div>
-        ) : null}
-        <div className={view.mainEnabled ? "wf-outlet" : "wf-outlet is-disabled"}>{children}</div>
-      </main>
+            {view.overlay === "loading" ? (
+              <div className="wf-overlay" role="status">
+                <span className="wf-spinner" aria-hidden="true" />
+                正在连接本地 Daemon
+              </div>
+            ) : null}
+            <div className="wf-outlet">{children}</div>
+          </main>
+        </div>
+      </div>
+      <footer className="wf-statusbar">
+        {view.connection.status === "online" ? (
+          <span className="wf-inline-status">
+            协议 {view.connection.protocolVersion} ·{" "}
+            {view.connection.mode === "spawn" ? "本机启动" : "重连"}
+          </span>
+        ) : (
+          <StatusText tone={connectionTone(view.connection.status)}>
+            {connectionLabel(view.connection.status)}
+          </StatusText>
+        )}
+        <span className="wf-push">Workforce · 本机 Daemon</span>
+      </footer>
     </div>
   );
+}
+
+function ThemeToggle(): ReactNode {
+  const theme = useTheme();
+  const next = nextThemeMode(theme.mode);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={`主题：${themeModeLabel(theme.mode)}，点击切换到${themeModeLabel(next)}`}
+      title={`主题：${themeModeLabel(theme.mode)}`}
+      onClick={() => {
+        theme.setMode(next);
+      }}
+    >
+      {theme.mode === "light" ? (
+        <IconSun size={16} />
+      ) : theme.mode === "dark" ? (
+        <IconMoon size={16} />
+      ) : (
+        <IconSystem size={16} />
+      )}
+    </Button>
+  );
+}
+
+function bannerTone(banner: BannerModel): "info" | "warning" | "danger" {
+  return banner.tone;
+}
+
+function connectionTone(
+  status: ShellView["connection"]["status"],
+): "success" | "warning" | "danger" {
+  switch (status) {
+    case "online":
+      return "success";
+    case "loading":
+    case "offline":
+      return "warning";
+    case "version-mismatch":
+    case "error":
+      return "danger";
+  }
 }
 
 function connectionLabel(status: ShellView["connection"]["status"]): string {
