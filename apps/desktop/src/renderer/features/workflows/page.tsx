@@ -96,7 +96,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
     <main style={pageStyle}>
       <h1 style={titleStyle}>工作流</h1>
       <p style={mutedStyle}>{note}</p>
-      <p style={mutedStyle}>模板、版本和结构化步骤。V0.1 没有画布编辑器。</p>
+      <p style={mutedStyle}>模板、版本和结构化步骤（只读目录）。画布编辑器尚未实现。</p>
       <section style={cardStyle}>
         {workflows.length === 0 ? (
           <CatalogListStatus source={source} />

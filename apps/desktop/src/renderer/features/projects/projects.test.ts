@@ -179,6 +179,22 @@ describe("draft config and budget", () => {
     );
   });
 
+  it("renders the connected project budget instead of claiming the route is missing", () => {
+    const text = budgetPlaceholder({
+      kind: "estimated",
+      currency: "USD",
+      reservedMinor: 500,
+      settledMinor: 100,
+      estimatedLimitMinor: 1000,
+    });
+
+    expect(text).toContain("已预留 500");
+    expect(text).toContain("已结算 100");
+    expect(text).toContain("上限 1000");
+    expect(text).toContain("USD");
+    expect(text).not.toContain("待接入");
+  });
+
   it("shows only the grant label, never an authorization id that looks like a path", () => {
     expect(publicWorkspaceLabel(null)).toBe("未绑定");
     expect(publicWorkspaceLabel({ displayLabel: "repo" })).toBe("repo");

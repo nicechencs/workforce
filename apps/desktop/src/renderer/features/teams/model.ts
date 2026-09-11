@@ -74,7 +74,7 @@ export function teamPageModel(input: { liveTeams?: TeamView[] | null } = {}): Te
 }
 
 export function rejectCustomTeamSave(): { ok: false; reason: string } {
-  return { ok: false, reason: "自定义团队编排后置，当前仅只读预设，不会保存成功。" };
+  return { ok: false, reason: "自定义团队编排尚未实现，当前仅只读预设，不会保存成功。" };
 }
 
 export function asTeamView(value: unknown): TeamView | null {

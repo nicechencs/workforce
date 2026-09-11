@@ -266,11 +266,30 @@ export function budgetPlaceholder(budget: unknown): string {
         ? `预算：未知（${currency}，不得当作已结算金额）`
         : "预算：未知（不得当作已结算金额）";
     }
+    const minor = (value: unknown): number | undefined =>
+      typeof value === "number" ? value : undefined;
+    // ProjectBudgetDto carries reserved/settled/limit as costMinor integers, never a bare costMinor.
+    const limit = minor(record.estimatedLimitMinor) ?? minor(record.settledLimitMinor);
+    const parts: string[] = [];
+    const reserved = minor(record.reservedMinor);
+    if (reserved !== undefined) {
+      parts.push(`已预留 ${reserved}`);
+    }
+    const settled = minor(record.settledMinor);
+    if (settled !== undefined) {
+      parts.push(`已结算 ${settled}`);
+    }
+    if (limit !== undefined) {
+      parts.push(`上限 ${limit}`);
+    }
+    if (parts.length > 0) {
+      return `预算：${parts.join(" · ")}${currency ? `（${currency} 最小货币单位）` : ""}`;
+    }
     if (typeof record.costMinor === "number" && kind !== undefined) {
       return `预算：${String(record.costMinor)} ${currency}`.trim();
     }
   }
-  return "预算：待接入 GET /projects/{id}/budget（未知用量不得当作已结算金额）";
+  return "预算：不可用（未返回可识别的预算字段；未知用量不得当作已结算金额）";
 }
 
 export function pendingApprovalCount(items: Array<{ status: string }>): number {

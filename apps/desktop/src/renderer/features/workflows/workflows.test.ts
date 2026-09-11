@@ -104,7 +104,7 @@ describe("workflow pages", () => {
       }),
     );
     expect(html).toContain("工作流");
-    expect(html).toContain("没有画布编辑器");
+    expect(html).toContain("画布编辑器尚未实现");
     expect(html).toContain("workflow-loading");
     expect(html).not.toContain("workflow-empty");
     expect(html).not.toContain("不得发明 endpoint");

@@ -156,7 +156,7 @@ export function workflowPageModel(
 export function rejectWorkflowCanvas(): { ok: false; reason: string } {
   return {
     ok: false,
-    reason: "V0.1 不提供可视化 Workflow 编辑器；页面只展示模板、版本和结构化步骤。",
+    reason: "可视化 Workflow 编辑器尚未实现；当前只展示模板、版本和结构化步骤。",
   };
 }
 
