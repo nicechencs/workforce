@@ -61,12 +61,8 @@ export type {
   WorkflowStepDto,
   WorkflowVersionDto,
   WorkspaceDto,
-  CreateTeamInput,
-  CreateTeamVersionInput,
   CreateWorkflowInput,
   CreateWorkflowVersionInput,
-  PatchTeamInput,
-  PatchTeamVersionInput,
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
 } from "./types.js";

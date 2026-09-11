@@ -113,11 +113,7 @@ export interface TeamWriteClient {
   getTeam?: (id: string) => Promise<unknown>;
   getTeamVersion?: (id: string, versionId: string) => Promise<unknown>;
   createTeam?: (input: { name: string }, options: TeamWriteOptions) => Promise<unknown>;
-  patchTeam?: (
-    id: string,
-    input: { name?: string },
-    options: TeamWriteOptions,
-  ) => Promise<unknown>;
+  patchTeam?: (id: string, input: { name?: string }, options: TeamWriteOptions) => Promise<unknown>;
   createTeamVersion?: (
     id: string,
     input: { members: TeamMemberWritePayload[] },
@@ -547,7 +543,8 @@ function pickActiveVersion(record: Record<string, unknown>): Record<string, unkn
   const activeId = typeof record.activeVersionId === "string" ? record.activeVersionId : null;
   if (activeId) {
     const matched = versions.find(
-      (item) => item.id === activeId || item.version === activeId || item.teamVersionId === activeId,
+      (item) =>
+        item.id === activeId || item.version === activeId || item.teamVersionId === activeId,
     );
     if (matched) {
       return matched;
@@ -874,7 +871,9 @@ function readId(value: unknown): string | null {
 
 function readStateRevision(value: unknown): number | undefined {
   const record = asRecord(value);
-  return record && typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)
+  return record &&
+    typeof record.stateRevision === "number" &&
+    Number.isInteger(record.stateRevision)
     ? record.stateRevision
     : undefined;
 }
@@ -953,7 +952,11 @@ export async function persistTeamDraft(
   }
 
   if (!versionId) {
-    const version = await client.createTeamVersion!(teamId, { members }, options(teamStateRevision));
+    const version = await client.createTeamVersion!(
+      teamId,
+      { members },
+      options(teamStateRevision),
+    );
     const createdVersionId = readId(version);
     const record = asRecord(version);
     if (!createdVersionId) {
@@ -1001,8 +1004,7 @@ export async function publishPersistedTeamVersion(
   input: { teamId: string; versionId: string; versionStateRevision?: number },
   options: (ifMatch?: number) => TeamWriteOptions = writeOptions,
 ): Promise<
-  | { ok: true; published: true; versionId: string }
-  | { ok: false; published: false; reason: string }
+  { ok: true; published: true; versionId: string } | { ok: false; published: false; reason: string }
 > {
   if (typeof client.publishTeamVersion !== "function") {
     return { ok: false, published: false, reason: TEAM_WRITE_API_MISSING };

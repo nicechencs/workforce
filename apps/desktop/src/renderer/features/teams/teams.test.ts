@@ -186,9 +186,9 @@ describe("team write probe", () => {
 describe("publish and bind honesty", () => {
   it("does not treat a draft or empty publish response as success", () => {
     expect(isPublishedTeamVersion({ id: "tmv_1", status: "draft", version: "0.2.0" })).toBe(false);
-    expect(
-      isPublishedTeamVersion({ id: "tmv_1", status: "published", version: "0.2.0" }),
-    ).toBe(false);
+    expect(isPublishedTeamVersion({ id: "tmv_1", status: "published", version: "0.2.0" })).toBe(
+      false,
+    );
     expect(interpretPublishResponse({ id: "tmv_1", status: "draft", version: "0.2.0" }).ok).toBe(
       false,
     );
@@ -476,11 +476,10 @@ describe("team draft persistence", () => {
       version: "0.1.0",
     };
     await expect(
-      publishPersistedTeamVersion(
-        client,
-        { teamId: "tm_1", versionId: "tmv_1" },
-        () => ({ idempotencyKey: "idem_2", operationId: "op_2" }),
-      ),
+      publishPersistedTeamVersion(client, { teamId: "tm_1", versionId: "tmv_1" }, () => ({
+        idempotencyKey: "idem_2",
+        operationId: "op_2",
+      })),
     ).resolves.toMatchObject({ ok: false, published: false });
     client.publishResult = {
       id: "tmv_1",
@@ -489,11 +488,10 @@ describe("team draft persistence", () => {
       version: "0.1.0",
     };
     await expect(
-      publishPersistedTeamVersion(
-        client,
-        { teamId: "tm_1", versionId: "tmv_1" },
-        () => ({ idempotencyKey: "idem_3", operationId: "op_3" }),
-      ),
+      publishPersistedTeamVersion(client, { teamId: "tm_1", versionId: "tmv_1" }, () => ({
+        idempotencyKey: "idem_3",
+        operationId: "op_3",
+      })),
     ).resolves.toEqual({ ok: true, published: true, versionId: "tmv_1" });
   });
 });
