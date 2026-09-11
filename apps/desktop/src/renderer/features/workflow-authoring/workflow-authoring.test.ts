@@ -17,6 +17,7 @@ import {
   parseStructuredIntent,
   reduceAuthoring,
   rejectChatSubmit,
+  type AuthoringSessionDto,
   type AuthoringWriteClient,
   type LandedDraft,
 } from "./model.js";
@@ -59,8 +60,12 @@ function fakeVersion(workflowId = "wfd_1") {
 }
 
 describe("workflow-authoring protocol honesty", () => {
-  it("does not freeze or enable chat session protocol", () => {
+  it("keeps chat send disabled after the session DTO freeze", () => {
     expect(CHAT_SESSION_PROTOCOL_FROZEN).toBe(false);
+    expect(CHAT_SESSION_GAP).toContain("AuthoringSessionDto");
+    expect(CHAT_SESSION_GAP).toContain("发送仍禁用");
+    const compileOnly: AuthoringSessionDto | null = null;
+    expect(compileOnly).toBeNull();
     const model = emptyAuthoringModel();
     expect(model.chat.enabled).toBe(false);
     expect(model.chat.submitEnabled).toBe(false);
@@ -100,7 +105,7 @@ describe("structured intent", () => {
       return;
     }
     expect(parsed.code).toBe("empty_intent");
-    expect(parsed.reason).toContain("会话协议未冻结");
+    expect(parsed.reason).toContain("发送未接线");
   });
 
   it("rejects a blank form without claiming generation succeeded", () => {

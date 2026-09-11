@@ -11,11 +11,17 @@ import type {
   WorkflowVersionDto,
 } from "@workforce/desktop-client";
 
-/** T02 has not frozen a conversational session / draft DTO. Do not invent a chat path. */
+/** Compile-only: session/draft DTO is frozen. Send is not wired. */
+export type { AuthoringDraftDto, AuthoringSessionDto } from "@workforce/desktop-client";
+
+/**
+ * DTO exists in `@workforce/protocol`. Do not flip this until a follow-up
+ * wires send without claiming Agent generation works.
+ */
 export const CHAT_SESSION_PROTOCOL_FROZEN = false;
 
 export const CHAT_SESSION_GAP =
-  "T02 必须先冻结对话会话 DTO（及可选草稿投影）。能力矩阵不列 chat endpoint；本页不能发送编排对话，也不能把假的 Agent 回复渲染成生成成功。";
+  "T02 已冻结对话会话 / 草稿 DTO（AuthoringSessionDto / AuthoringDraftDto）。能力矩阵仍不列 chat endpoint；本页发送仍禁用，也不能把假的 Agent 回复渲染成生成成功。后续接线才能打开发送。";
 
 export const AUTHORING_ROUTE_GAP =
   "T11 路由表与 FEATURE_SLOTS 没有预留 workflow-authoring slot。本特征可导入，由工作流页用 ?authoring=1 挂入，不改 catalog.ts。";
@@ -179,7 +185,7 @@ export function parseStructuredIntent(form: AuthoringForm): IntentParseResult {
       ok: false,
       code: hasFreeText ? "empty_intent" : "validation_failed",
       reason: hasFreeText
-        ? "只有自由文本、没有可落库的工作流名称。会话协议未冻结，不能把这段文字当成 Agent 已生成的草稿。"
+        ? "只有自由文本、没有可落库的工作流名称。会话 DTO 已冻结但发送未接线，不能把这段文字当成 Agent 已生成的草稿。"
         : "请填写工作流名称后再写入未发布草稿。",
     };
   }

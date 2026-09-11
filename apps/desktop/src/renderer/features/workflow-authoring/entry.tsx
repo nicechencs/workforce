@@ -8,7 +8,7 @@ export function WorkflowAuthoringEntry(props: { navigate: (path: string) => void
     <section style={cardStyle} data-testid="workflow-authoring-entry">
       <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>对话生成</h2>
       <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-        <span style={badgeStyle("muted")}>会话协议未冻结</span>
+        <span style={badgeStyle("muted")}>会话 DTO 已冻结；发送未接线</span>
       </div>
       <p style={mutedStyle}>{CHAT_SESSION_GAP}</p>
       <p style={mutedStyle}>
