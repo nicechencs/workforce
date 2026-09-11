@@ -11,11 +11,7 @@ import type {
 } from "@workforce/process";
 import { createStartRunRequest, RuntimeSdkError } from "@workforce/runtime-sdk";
 
-import {
-  CodexRuntimeAdapter,
-  CODEX_ADAPTER_ID,
-  createCodexRuntime,
-} from "./adapter.js";
+import { CodexRuntimeAdapter, CODEX_ADAPTER_ID, createCodexRuntime } from "./adapter.js";
 import { buildCodexExecArgv } from "./command.js";
 import type { CodexResolvedStartContext } from "./start-context.js";
 
@@ -98,12 +94,14 @@ class FakeProcessController implements ProcessController {
 
 class FakeCaptured implements CapturedProcess {
   readonly handle: ProcessHandle;
-  readonly output: AsyncIterable<ProcessOutput>;
+  readonly output: AsyncIterable<ProcessOutput> = this;
   alive = true;
+  private readonly chunks: ProcessOutput[];
   private readonly exitResult: { exitCode: number | null; signal: string | null };
   private readonly hang: boolean;
   private cancelled = false;
-  private readonly waiters: Array<() => void> = [];
+  private readonly hangPromise: Promise<void>;
+  private resolveHang!: () => void;
 
   constructor(
     handle: ProcessHandle,
@@ -114,25 +112,24 @@ class FakeCaptured implements CapturedProcess {
     },
   ) {
     this.handle = handle;
+    this.chunks = planned.chunks;
     this.exitResult = planned.exit ?? { exitCode: 0, signal: null };
     this.hang = planned.hang === true;
-    const chunks = planned.chunks;
-    const self = this;
-    this.output = {
-      async *[Symbol.asyncIterator]() {
-        for (const chunk of chunks) {
-          if (self.cancelled) {
-            return;
-          }
-          yield chunk;
-        }
-        if (self.hang) {
-          await new Promise<void>((resolve) => {
-            self.waiters.push(resolve);
-          });
-        }
-      },
-    };
+    this.hangPromise = new Promise((resolve) => {
+      this.resolveHang = resolve;
+    });
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<ProcessOutput> {
+    for (const chunk of this.chunks) {
+      if (this.cancelled) {
+        return;
+      }
+      yield chunk;
+    }
+    if (this.hang) {
+      await this.hangPromise;
+    }
   }
 
   cancel(): void {
@@ -140,17 +137,12 @@ class FakeCaptured implements CapturedProcess {
     this.alive = false;
     this.exitResult.signal = "SIGKILL";
     this.exitResult.exitCode = null;
-    const waiters = this.waiters.splice(0);
-    for (const waiter of waiters) {
-      waiter();
-    }
+    this.resolveHang();
   }
 
   async wait(): Promise<{ exitCode: number | null; signal: string | null }> {
-    if (this.hang && !this.cancelled) {
-      await new Promise<void>((resolve) => {
-        this.waiters.push(resolve);
-      });
+    if (this.hang) {
+      await this.hangPromise;
     }
     this.alive = false;
     return this.exitResult;
@@ -193,9 +185,9 @@ describe("CodexRuntimeAdapter", () => {
     expect(descriptor.capabilities.find((item) => item.name === "event.resume")?.available).toBe(
       false,
     );
-    expect(descriptor.capabilities.find((item) => item.name === "lifecycle.cancel")?.available).toBe(
-      false,
-    );
+    expect(
+      descriptor.capabilities.find((item) => item.name === "lifecycle.cancel")?.available,
+    ).toBe(false);
     expect(descriptor.capabilities.find((item) => item.name === "usage.reporting")).toMatchObject({
       available: false,
       constraints: { monetaryCost: "unknown" },
@@ -364,11 +356,19 @@ describe("CodexRuntimeAdapter", () => {
       platform: "linux",
     });
     const handle = await adapter.start(startRequest());
-    const streaming = collect(adapter.stream(handle));
+    const iterator = adapter.stream(handle)[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: "runtime.started" } });
     await expect(adapter.cancel(handle)).resolves.toMatchObject({ accepted: true });
     expect(processPort.cancelled).toEqual([handle.process]);
-    const events = (await streaming) as Array<{ type: string }>;
-    expect(events.at(-1)?.type).toBe("runtime.cancelled");
+    const events: string[] = ["runtime.started"];
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) {
+        break;
+      }
+      events.push((next.value as { type: string }).type);
+    }
+    expect(events.at(-1)).toBe("runtime.cancelled");
     await expect(adapter.inspect(handle)).resolves.toMatchObject({ status: "cancelled" });
   });
 

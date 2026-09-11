@@ -63,5 +63,5 @@ review-bot 对每个 PR 核对下列**决策登记**红线；任一项回归则 
 
 未单独立项、未由项目管理-bot 领取前，不要在普通 PR 里“顺便做”：
 
-1. **Codex live exec**（T15：探测已有，`start` 仍拒绝；需已安装 CLI 的机器跑授权 `codex exec`）
+1. **Codex live exec**（T15：Process 已接线；本机无 live `codex exec`。需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**

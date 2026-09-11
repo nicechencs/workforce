@@ -1,3 +1,5 @@
+import { TextDecoder } from "node:util";
+
 import type { CapturedProcess, ProcessController, ProcessHandle } from "@workforce/process";
 import { UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS } from "@workforce/process";
 import type { StartRunRequest } from "@workforce/protocol";
@@ -28,10 +30,7 @@ import type {
 import { buildCodexExecArgv } from "./command.js";
 import { detectCodex, type CodexDetection } from "./detect.js";
 import { CodexJsonlDecoder } from "./jsonl.js";
-import {
-  parseCodexResolvedStartContext,
-  type ResolveCodexStartContext,
-} from "./start-context.js";
+import { parseCodexResolvedStartContext, type ResolveCodexStartContext } from "./start-context.js";
 
 export const CODEX_ADAPTER_ID = "codex";
 export const CODEX_ADAPTER_VERSION = "0.1.0";
@@ -518,7 +517,8 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     }
     session.status = "failed";
     this.emitLocal(session, "runtime.failed", {
-      reason: exit && exit.exitCode !== 0 ? "codex_process_exit" : "codex_exited_without_terminal_event",
+      reason:
+        exit && exit.exitCode !== 0 ? "codex_process_exit" : "codex_exited_without_terminal_event",
       ...(exit ? { exitCode: exit.exitCode, signal: exit.signal } : {}),
       contentRedacted: true,
     });

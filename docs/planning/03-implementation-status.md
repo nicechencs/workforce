@@ -28,7 +28,7 @@
 | T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流（模板·版本·结构化步骤，夹具；无画布编辑器）；项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
-| T15 | **本轮起步** | detect/describe/validate；**拒绝** live start |
+| T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
 | T16 | **本轮起步** | HTTP M3 + typed client；桌面 happy-dom 页 driver（非真窗口） |
 | T17 | 未开始 | 打包/签名 |
 
@@ -80,8 +80,13 @@ pnpm check:docs
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **Codex**  
-   `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）、validate、start 抛 `unsupported_capability`。  
-   本机 Linux **没有** Codex CLI；未跑 live `codex exec`。
+   `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
+   `start/stream/cancel` 走注入的 captured Process：CLI + validate + `resolveStart` 齐备时 `spawnCaptured`；缺 CLI 为 `validation_failed`；缺 Process/`resolveStart`/不完整 context/win32 capture 为 `unsupported_capability`。  
+   证据（2026-09-11，Linux，Node v22.14.0，pnpm 9.4.0）：  
+   `pnpm --filter @workforce/runtime-codex typecheck` 退出 0；  
+   `pnpm --filter @workforce/daemon typecheck` 退出 0；  
+   `pnpm exec vitest run runtimes/codex apps/daemon/tests/codex-composition.test.ts` → 6 files / 34 tests 通过（含 fake Process 与 `OsProcessController` + `fixtures/jsonl-double.mjs`，**不是** Codex CLI）。  
+   本机 Linux **没有**授权 live `codex exec`；未宣称真实 Runtime 可执行。Daemon Host 仍默认 Mock。
 
 ## 4. M3 主路径对照
 
@@ -105,7 +110,7 @@ Approval(gate=artifact)                     ✅
 ## 5. 剩余工作
 
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
-2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
+2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
 4. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。  
 5. 项目详情 Tasks 依赖边、可写项目策略与远程节点范围仍缺公开 DTO/API，UI 只展示诚实空态或只读说明，未伪造已接入。  
