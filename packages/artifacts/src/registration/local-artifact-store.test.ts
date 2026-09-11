@@ -92,12 +92,27 @@ describe("LocalArtifactStore", () => {
       taskId: "tsk_1",
       runId: "run_1",
     });
+    const publishedPlan = await store.register({
+      slotId: "plan",
+      mediaType: KIND_MEDIA_TYPES.plan,
+      body: encodeUtf8(
+        JSON.stringify({
+          protocol: "workforce.plan",
+          protocolVersion: "0.1",
+          workflowId: "software-development-team.feature-delivery",
+          objective: "Deliver a two-slice mock feature on a frozen baseline.",
+        }),
+      ),
+      kind: "plan",
+    });
 
     expect(plan.status).toBe("available");
     expect(diff.status).toBe("available");
     expect(tests.status).toBe("available");
     expect(review.status).toBe("available");
     expect(review.kind).toBe("evaluation");
+    expect(publishedPlan.status).toBe("available");
+    expect(publishedPlan.kind).toBe("plan");
     expect(plan.version).toBe(1);
     expect(diff.kind).toBe("git_diff");
     expect(tests.kind).toBe("test_result");

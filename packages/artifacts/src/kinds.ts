@@ -104,6 +104,12 @@ function parseJsonBody(body: Uint8Array, label: string): unknown {
 
 function verifyPlan(body: Uint8Array): unknown {
   const parsed = asRecord(parseJsonBody(body, "plan"), "plan");
+  if (parsed.protocol === "workforce.plan") {
+    requireString(parsed, "protocolVersion", "plan");
+    requireString(parsed, "workflowId", "plan");
+    requireString(parsed, "objective", "plan");
+    return parsed;
+  }
   requireString(parsed, "title", "plan");
   requireString(parsed, "summary", "plan");
   if (parsed.steps !== undefined && !Array.isArray(parsed.steps)) {

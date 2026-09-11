@@ -483,12 +483,7 @@ export class ComposedAppServices implements AppServices {
       });
       const live = this.requireProject(id);
       if (live.planArtifactVersionId) {
-        const planDocument = {
-          title: "Mock software development plan",
-          summary: MOCK_PLAN_DOCUMENT.objective,
-          ...MOCK_PLAN_DOCUMENT,
-        };
-        const body = encoder.encode(`${JSON.stringify(planDocument, null, 2)}\n`);
+        const body = encoder.encode(`${JSON.stringify(MOCK_PLAN_DOCUMENT, null, 2)}\n`);
         await this.commitArtifact({
           artifactId: live.planArtifactVersionId,
           aliasVersionId: live.planArtifactVersionId,
@@ -1336,6 +1331,9 @@ export class ComposedAppServices implements AppServices {
     if (content?.body) {
       try {
         const parsed: unknown = JSON.parse(new TextDecoder().decode(content.body));
+        if (isCanonicalMockPlan(parsed)) {
+          return MOCK_PLAN_DOCUMENT;
+        }
         return parsed;
       } catch {
         return { hash: content.hash };
@@ -1904,6 +1902,19 @@ function asRegistrableKind(kind: string, slotId: string, mediaType: string): Reg
 
 function mediaTypeForKind(kind: RegistrableKind, fallback: string): string {
   return KIND_MEDIA_TYPES[kind] ?? fallback;
+}
+
+function isCanonicalMockPlan(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.protocol === MOCK_PLAN_DOCUMENT.protocol &&
+    record.protocolVersion === MOCK_PLAN_DOCUMENT.protocolVersion &&
+    record.workflowId === MOCK_PLAN_DOCUMENT.workflowId &&
+    record.templateId === MOCK_PLAN_DOCUMENT.templateId
+  );
 }
 
 function toVersionDto(record: ArtifactContentRecord): ArtifactVersionDto {
