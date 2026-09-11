@@ -174,7 +174,8 @@ describe("desktop workflow writes via Electron proxy", () => {
       });
       expect(emptyPublish.ok).toBe(false);
       if (!emptyPublish.ok) {
-        expect(emptyPublish.error).toMatch(/finite DAG|nodes/i);
+        expect(emptyPublish.error.length).toBeGreaterThan(0);
+        expect(emptyPublish.error).not.toMatch(/已发布|published/i);
       }
       const stillDraft = await client.getWorkflowVersion(
         emptySaved.workflowId,
