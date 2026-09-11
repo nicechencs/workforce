@@ -138,7 +138,14 @@ export class SqliteRunRepository {
    * Insert a Run at an arbitrary status (snapshot / recovery). The one-active-run
    * partial unique index still applies.
    */
-  insert(tx: Tx, input: StartRunInput & { status?: string; stateRevision?: number }): void {
+  insert(
+    tx: Tx,
+    input: StartRunInput & {
+      status?: string;
+      stateRevision?: number;
+      cancelRequestedAt?: string;
+    },
+  ): void {
     const db = sqliteDbOf(tx);
     try {
       db.prepare(
@@ -163,7 +170,7 @@ export class SqliteRunRepository {
         input.workspaceInstanceId ?? null,
         input.runtimeAdapter ?? null,
         input.snapshotRef ?? null,
-        null,
+        input.cancelRequestedAt ?? null,
         input.createdAt,
       );
     } catch (error) {
@@ -175,6 +182,18 @@ export class SqliteRunRepository {
       }
       throw error;
     }
+  }
+
+  /**
+   * Persist the first accepted cancellation request. A later snapshot cannot
+   * clear or replace the original request timestamp.
+   */
+  recordCancelRequest(tx: Tx, runId: string, requestedAt: string): void {
+    sqliteDbOf(tx)
+      .prepare(
+        "UPDATE runs SET cancel_requested_at = COALESCE(cancel_requested_at, ?) WHERE id = ?",
+      )
+      .run(requestedAt, runId);
   }
 
   updateStatus(
