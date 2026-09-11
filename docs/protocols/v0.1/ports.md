@@ -73,7 +73,15 @@ interface RuntimeAdapter {
 }
 ```
 
-`StartRunRequest` 必须包含 D07 的 node/runtime/workspace binding。`transport` ∈ `process | sdk | http`。
+`StartRunRequest` 是 **Adapter SPI 边界上的请求**，因此必须包含 D07 的 node/runtime/workspace binding：Application 只把已解析的绑定交给 Host，Host 用 `placement.executionNodeId` 校验目标节点（`packages/runtime-sdk` 的 `assertNode`/`bindingFor`）。
+
+执行位置与编排方式**不进入 `StartRunRequest`**，它们冻结为 `packages/protocol/src/execution.ts` 的三条正交轴：
+
+- `orchestrationMode` ∈ `workflow_bound | direct`：是否进入本次 Workflow 调度。`workflow_bound` 必须带 `executionSnapshotId`（Project Execution Snapshot），`direct` 必须不带；retry 创建新 Run 并保留模式，不改写旧 Run。
+- `transport` ∈ `process | sdk | http`：Adapter 的接入方式，只能来自选定的 RuntimeProfile/RuntimeInstallation，客户端不得改写。`remote` **不是** transport 取值。
+- `placement`：`placementIntent`（`automatic | local_only | remote_only | specific_node`，请求侧偏好、永不权威）与 `placementSnapshot`（已解析的唯一绑定：node、node session、RuntimeInstallation、WorkspaceInstance、lease/fencing）是两个不同对象。
+
+解析顺序按 `blueprint/03` 与 `diagrams/node-scheduling-flow.md`：解析 placement intent → Policy/Budget/Approval → 选 Node + RuntimeInstallation → Lease/fencing → WorkspaceInstance → 解析 transport + orchestrationMode → 组装 `PlacementSnapshot` → 原子创建 Run + 冻结快照 + Event/Outbox。Run 进入 `starting` 前 `placementSnapshot` 必须完整；`placementIntent` 不得被当作已解析绑定使用。
 
 ## Workspace / Process / Policy / Artifact
 

@@ -96,3 +96,31 @@ updated: 2026-09-11
 - **文档影响：** [AGENTS.md](../../AGENTS.md) 红线与「按任务读取」的合入目标改为 `dev`；[04-collab-and-review.md](04-collab-and-review.md) 新增 §0 分支模型，PR 管道的合并目标与角色表改为 `dev`；[04-repository-structure.md](../blueprint/04-repository-structure.md) §17 GitHub 基线改为默认分支 `dev` 并补 `release`；[01-product-vision-prd.md](../blueprint/01-product-vision-prd.md) §13 与 [12-mvp-implementation-plan.md](../blueprint/12-mvp-implementation-plan.md) 的建仓步骤改为设置 `dev` 保护。
 - **不改动：** `docs/spikes/` 里的 `main` 是隔离实验仓的分支名，保留为历史记录；`05-task-protocol.md`、`11-api-design.md` 中 DTO 示例的 `ref` / `baseRef: "main"` 是任意 ref 取值示例，不是分支策略，本轮不改协议。
 - **状态：** 本地 **implemented**（`dev` 已建立并含原 `main` 与待合并任务分支的全部内容）。远程默认分支、远程 `main` 的处置与 `release` 发布流程 **未实现**：远程仍为 `origin/main`，推送与改默认分支需本次任务之外的明确授权，`release` 流程属 T17。
+
+---
+
+## 2026-09-11（Asia/Taipei）D15–D18 落地方案与实现前检查点
+
+- **决定：** 为最近三轮文档冻结的 D15–D18 语义（画布、自定义 Team、对话生成、双执行模式）补一份**实现前检查点**，把「文档要求」翻译成可领取的顺序，不改任何已冻结规则。就本轮代码核查得出四条影响顺序的判断：(1) migration 的 **expand 阶段必须先于任何会写 Run 的 D17/D18 代码**，否则会积累第三批需要 backfill 的历史数据；(2) 当前 `StartRunRequest.placement` 要求调用方先给出已解析的节点/Workspace，与文档冻结的「先解析 intent、守卫通过后才选定」顺序相反，wire 契约与执行顺序必须显式二选一（保持 `0.1` 并把 `placement` 降级为 intent，或升协议版本）；(3) `ProjectExecutionSnapshot` 的写入时机要挪：现在 `:confirm-plan` 直接创建 `WorkflowInstance`，文档要求只创建 snapshot 并进入 `ready`，由 `:start` 创建实例；(4) SQLite 当前是 `world.json` 之后的事后投影且投影吞掉约束错误，因此文档的 `switch/contract` 阶段缺少「谁是权威」的前提，需先让投影失败可见。
+- **文档影响：** 新增 [05-d17-d18-landing-plan.md](05-d17-d18-landing-plan.md) 并在 [docs/README.md](../README.md) 两处索引挂入口。该文档只记录本轮实际读取到的代码事实（含文件与行号）、公共契约缺口 C1–C13、S0–S5 落地序列、验收与测试矩阵、风险登记，以及本轮**未能运行测试**的环境限制。**未修改** decision-register、state-matrix、api-capability-matrix 与 02-development-task-backlog 的任何结论；T18–T21 仍为 planned/未实现。
+- **不改动：** `.github/workflows/pull-request.yml` 仍在 `push.branches: [main]`，远程默认分支仍是 `origin/main`；本轮文档已记该不一致，但改 CI 触发分支与远程默认分支属仓库配置与远程操作，需明确授权。根 `README.md` 未改。
+- **状态：** **planned**。本轮只新增方案文档与索引；无源码改动，无迁移执行，无 endpoint 变更。本轮**未运行任何单元/集成测试**（DSH 文件沙箱禁止程序管道捕获子进程输出，`pnpm`/`vitest`/`node --test` 均 EPERM；`node tooling/docs/check-docs.mjs` 可正常执行），该限制与待补验证项已写在方案文档 §8。
+
+---
+
+## 2026-09-11（Asia/Taipei）T02 切片：执行三轴公共契约冻结（加法式）
+
+- **决定：** 领取 T02 的第一个可交付切片，冻结 D07/D18 的执行三轴公共契约。关键取舍：**不改 `StartRunRequest`**。原方案（把 `StartRunRequest.placement` 从必填已解析绑定改成可选 intent）经读码评估会波及 `packages/runtime-sdk` 的 `assertNode`/`bindingFor`、mock/codex adapter 与 5 个测试文件，属于顺手重写运行时，超出契约冻结范围。改为**加法式**：新增 `packages/protocol/src/execution.ts` 承载三条正交轴，`StartRunRequest` 作为 Adapter SPI 边界请求保持「必须带已解析绑定」不变，并以回归测试锁定其键集合。
+- **契约内容：** `orchestrationModes = workflow_bound | direct`；`runtimeTransports = process | sdk | http`（`remote` 不是 transport 取值）；`placementIntentModes = automatic | local_only | remote_only | specific_node`；`placementSnapshotSchema` 为唯一已解析绑定（node / nodeSession / runtimeInstallation / workspaceInstance / lease / fencing，含仅由 backfill 写入的 `legacySchemaVersion`）；`runExecutionSnapshotSchema` 用 `superRefine` 强制 `workflow_bound` 必带 `executionSnapshotId`、`direct` 必不带。字段名对齐 `blueprint/10` 的 `runs.orchestration_mode` / `transport` / `placement_snapshot_json` / `execution_snapshot_id`，不留映射歧义。
+- **文档影响：** 新增 `packages/protocol/src/execution.ts` 与 `execution.test.ts`（14 例），`packages/protocol/src/index.ts` 增加一行 re-export；新增 fixture `docs/protocols/v0.1/fixtures/run.execution.workflow-bound.json` 与 `illegal.run.execution.direct-with-snapshot.json`；`docs/protocols/v0.1/ports.md` 的 `StartRunRequest` 段落改写，明确它是 Adapter SPI 边界请求、三轴不进该结构，并写入解析顺序。**未改** decision-register、state-matrix、api-capability-matrix、数据库 migration、daemon、desktop。
+- **状态：** 契约层 **implemented**（仅本切片）。验证：`node node_modules/typescript/bin/tsc -p packages/protocol/tsconfig.json --noEmit` 退出 0；含新测试文件的定向 typecheck 退出 0；`node tooling/docs/check-docs.mjs` 通过（50 文件）；14 条断言以纯 Node 复算全部通过。**vitest 未运行**（本环境任何 Node→子进程 spawn 均 EPERM，已实测 `execFileSync(process.execPath)` 与 `cmd.exe` 同样失败）；`turbo run typecheck` 有 2 个包报 `TS2307` 找不到 `@workforce/domain` / `@workforce/application/ports`，经 `git stash` 复测确认**属基线既有**，与本切片无关。调度、数据库迁移、HTTP 与 UI 仍未实现。
+
+---
+
+## 2026-09-11（Asia/Taipei）T04 切片：D17/D18 migration 的 expand 阶段
+
+- **决定：** 承接 T02 切片，落地 `blueprint/10` §12 的 **expand → backfill → switch → contract** 中的 **expand**。严格限定为加法：5 张新表（`team_drafts`、`workflow_drafts`、`authoring_change_sets`、`authoring_change_set_steps`、`project_execution_snapshots`）+ 6 个**可空**列（`projects.execution_snapshot_id`、`workflow_instances.execution_snapshot_id`、`runs.orchestration_mode` / `transport` / `execution_snapshot_id` / `placement_snapshot_json`）+ 2 个索引。**本阶段不加 `NOT NULL`、不加互斥 CHECK、不做 backfill**——历史 M3 Run 的 mode/transport/placement/snapshot 事实必须由 S3 从既有 Runtime/Local Node/Workspace 证据回填，不能猜测。新增迁移版本 `005_execution_axes_expand`；001–004 保持不可改写。
+- **文档影响：** `packages/database/src/schema.ts` 新增 `MIGRATION_005_SQL` 并挂入 `MIGRATIONS`；`packages/database/src/index.ts` 导出该常量；`packages/database/src/persistence.test.ts` 同步两处既有迁移列表断言并新增两例（001–004 带真实历史 `runs` 行的升级、checksum 守卫拒绝篡改的 001）。方案文档 [05-d17-d18-landing-plan.md](05-d17-d18-landing-plan.md) 补 S1 进度、并把 §8 的环境限制改写为实测结论与可用验证手段表。**未改** daemon、desktop、desktop-client、runtime-sdk 或任何 endpoint。
+- **状态：** expand 层 **implemented**（仅本切片）。验证：6 条 Node 真实探针全部通过——空库 5 个迁移全绿且 5 张表存在；从 001–004 升级后历史行四列均为 `NULL`、列保持 `notnull=0`、`runs` 表 SQL 不含互斥 CHECK、`projects`/`workflow_instances` 新列存在；checksum 守卫抛 `checksum mismatch`；迁移可重入；新 DDL 的 CHECK 与 `(change_set_id, target_type, target_id)` 唯一约束确实生效。
+- **新记录的环境阻塞（非代码问题）：** 本会话沙箱**禁止任何 Node 进程创建子进程**，故 `vitest`、`node --test`、`pnpm install` 均无法运行（`tsc`/`turbo` 可用）。另有**独立的 pnpm store 不完整**：`packages/database` 声明了 `@workforce/domain`/`@workforce/policy` 但 `node_modules/@workforce/` 下只有 `application`；`packages/process` 声明了 `@workforce/application` 却只装了 `domain`。这解释了 `turbo run typecheck` 的两个 `TS2307`，也解释了为何按包独立 typecheck 不可用。修复需一次 `pnpm install`，本环境无法执行。
+- **未做（诚实登记）：** backfill、switch、contract 收紧、`current-M3 upgrade fixture`（T16）、`ProjectExecutionSnapshot` 的 repository 与写入路径（S2a）、调度与三轴解析（S2b）、作者面（S2c/S2d）、HTTP 与 UI。

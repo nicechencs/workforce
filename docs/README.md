@@ -44,6 +44,7 @@ Git does not retain empty directories. The `protocols` and `operations` director
 - [Development task backlog](planning/02-development-task-backlog.md)
 - [Implementation status (verified)](planning/03-implementation-status.md)
 - [Collaboration and review process](planning/04-collab-and-review.md)
+- [D15–D18 落地方案（实现前检查点）](planning/05-d17-d18-landing-plan.md)
 
 ## Development Agent governance
 
@@ -81,6 +82,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [开发任务清单与 agent 交接模板](planning/02-development-task-backlog.md)
 - [实现进度（已验证）](planning/03-implementation-status.md)
 - [协作与评审流程](planning/04-collab-and-review.md)
+- [D15–D18 落地方案（实现前检查点）](planning/05-d17-d18-landing-plan.md)
 - [决策登记（项目制主对象；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
 - [产品沟通历史](planning/communication-history.md)
 - [状态矩阵](planning/state-matrix.md)

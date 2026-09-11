@@ -12,6 +12,7 @@ import {
   MIGRATION_001_SQL,
   MIGRATION_002_SQL,
   MIGRATION_003_SQL,
+  MIGRATION_004_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -75,7 +76,12 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("001_init", checksumSql(MIGRATION_001_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["002_entity_alignment", "003_budget_alignment", "004_policy_grants"]);
+      expect(ran).toEqual([
+        "002_entity_alignment",
+        "003_budget_alignment",
+        "004_policy_grants",
+        "005_execution_axes_expand",
+      ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       const columns = db.connection.prepare("PRAGMA table_info(projects)").all();
@@ -150,12 +156,112 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("003_budget_alignment", checksumSql(MIGRATION_003_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["004_policy_grants"]);
+      expect(ran).toEqual(["004_policy_grants", "005_execution_axes_expand"]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));
       expect(applied.get("003_budget_alignment")).toBe(checksumSql(MIGRATION_003_SQL));
       expect(tableExists(db.connection, "policy_grants")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("applies the D17/D18 expand on a database that already has 001-004", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      db.connection.exec(MIGRATION_001_SQL);
+      db.connection.exec(MIGRATION_002_SQL);
+      db.connection.exec(MIGRATION_003_SQL);
+      db.connection.exec(MIGRATION_004_SQL);
+      for (const [version, sql] of [
+        ["001_init", MIGRATION_001_SQL],
+        ["002_entity_alignment", MIGRATION_002_SQL],
+        ["003_budget_alignment", MIGRATION_003_SQL],
+        ["004_policy_grants", MIGRATION_004_SQL],
+      ] as const) {
+        db.connection
+          .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+          .run(version, checksumSql(sql), now);
+      }
+
+      // An M3 run row exists before the expand, with no execution-axis facts.
+      db.seedMinimalGraph(ids, now);
+      db.connection
+        .prepare(
+          `INSERT INTO runs (id, organization_id, task_id, attempt, generation,
+             definition_revision, status, state_revision, created_at)
+           VALUES ('run_legacy', ?, ?, 1, 1, 1, 'succeeded', 1, ?)`,
+        )
+        .run(ids.organizationId, ids.taskId, now);
+
+      const ran = migrate(db.connection);
+      expect(ran).toEqual(["005_execution_axes_expand"]);
+
+      for (const table of [
+        "team_drafts",
+        "workflow_drafts",
+        "authoring_change_sets",
+        "authoring_change_set_steps",
+        "project_execution_snapshots",
+      ]) {
+        expect(tableExists(db.connection, table)).toBe(true);
+      }
+
+      // Historical rows keep NULL execution facts: the expand must not guess them.
+      const legacy = db.connection
+        .prepare(
+          `SELECT orchestration_mode, transport, execution_snapshot_id, placement_snapshot_json
+             FROM runs WHERE id = 'run_legacy'`,
+        )
+        .get() as Record<string, unknown>;
+      expect(legacy.orchestration_mode).toBeNull();
+      expect(legacy.transport).toBeNull();
+      expect(legacy.execution_snapshot_id).toBeNull();
+      expect(legacy.placement_snapshot_json).toBeNull();
+
+      // Expand stage must stay constraint-free so the backfill can run first.
+      const runColumns = db.connection.prepare("PRAGMA table_info(runs)").all() as Array<
+        Record<string, unknown>
+      >;
+      for (const name of [
+        "orchestration_mode",
+        "transport",
+        "execution_snapshot_id",
+        "placement_snapshot_json",
+      ]) {
+        const column = runColumns.find((entry) => entry.name === name);
+        expect(column).toBeDefined();
+        expect(column?.notnull).toBe(0);
+      }
+      const runSql = db.connection
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'runs'")
+        .get() as { sql: string };
+      expect(runSql.sql).not.toMatch(/CHECK\s*\(\s*orchestration_mode/);
+
+      // The expand is additive: pre-existing reads and writes keep working.
+      expect(tableExists(db.connection, "runs")).toBe(true);
+      db.projects.get("prj_test");
+      expect(db.runs.get("run_legacy")?.status).toBe("succeeded");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("keeps a checksum guard on the expand so 001-004 stay immutable", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      db.connection.exec(MIGRATION_001_SQL);
+      db.connection
+        .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+        .run("001_init", checksumSql(`${MIGRATION_001_SQL}-- tampered`), now);
+      expect(() => migrate(db.connection)).toThrow(/checksum mismatch/);
     } finally {
       db.close();
     }

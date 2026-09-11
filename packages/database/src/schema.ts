@@ -608,9 +608,109 @@ CREATE TABLE policy_grants (
 );
 `;
 
+/**
+ * D17/D18 expand step. Additive only: new tables plus nullable columns.
+ *
+ * This stage deliberately adds NO `NOT NULL` and NO CHECK constraint. Existing
+ * M3 Runs have no mode/transport/placement/snapshot facts, and the target
+ * mutual-exclusion CHECK (`workflow_bound` requires an execution snapshot,
+ * `direct` forbids one) can only be applied after the backfill has run and the
+ * upgrade fixture has been rehearsed. See `docs/blueprint/10-database-schema.md`
+ * §12 "T04 D17/D18 schema migration".
+ *
+ * Forward-only: do not rewrite 001-004.
+ */
+export const MIGRATION_005_SQL = `
+CREATE TABLE team_drafts (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  status TEXT NOT NULL CHECK (status = 'draft'),
+  definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  UNIQUE (team_id, revision)
+);
+
+CREATE TABLE workflow_drafts (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  status TEXT NOT NULL CHECK (status = 'draft'),
+  graph_json TEXT NOT NULL CHECK (json_valid(graph_json)),
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  UNIQUE (workflow_id, revision)
+);
+
+CREATE TABLE authoring_change_sets (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  workflow_id TEXT,
+  source_run_id TEXT NOT NULL REFERENCES runs(id),
+  status TEXT NOT NULL CHECK (status IN (
+    'proposed','validating','applying','applied','partially_applied',
+    'failed','cancelled','expired'
+  )),
+  proposal_ref TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  failure_json TEXT CHECK (failure_json IS NULL OR json_valid(failure_json))
+);
+
+CREATE TABLE authoring_change_set_steps (
+  id TEXT PRIMARY KEY,
+  change_set_id TEXT NOT NULL REFERENCES authoring_change_sets(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal > 0),
+  target_type TEXT NOT NULL CHECK (target_type IN ('team','task','workflow')),
+  target_id TEXT NOT NULL,
+  expected_revision INTEGER NOT NULL CHECK (expected_revision > 0),
+  status TEXT NOT NULL CHECK (status IN (
+    'pending','applying','applied','failed','cancelled','expired'
+  )),
+  patch_ref TEXT NOT NULL,
+  result_revision INTEGER,
+  failure_json TEXT CHECK (failure_json IS NULL OR json_valid(failure_json)),
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE (change_set_id, ordinal),
+  UNIQUE (change_set_id, target_type, target_id)
+);
+
+CREATE TABLE project_execution_snapshots (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  workflow_version_id TEXT NOT NULL REFERENCES workflow_versions(id),
+  team_version_id TEXT NOT NULL REFERENCES team_versions(id),
+  content_hash TEXT NOT NULL,
+  policy_snapshot_json TEXT NOT NULL CHECK (json_valid(policy_snapshot_json)),
+  budget_snapshot_json TEXT CHECK (budget_snapshot_json IS NULL OR json_valid(budget_snapshot_json)),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_authoring_change_sets_project
+  ON authoring_change_sets(project_id, status);
+CREATE INDEX idx_project_execution_snapshots_project
+  ON project_execution_snapshots(project_id);
+
+ALTER TABLE projects ADD COLUMN execution_snapshot_id TEXT;
+
+ALTER TABLE workflow_instances ADD COLUMN execution_snapshot_id TEXT;
+
+ALTER TABLE runs ADD COLUMN orchestration_mode TEXT;
+ALTER TABLE runs ADD COLUMN transport TEXT;
+ALTER TABLE runs ADD COLUMN execution_snapshot_id TEXT;
+ALTER TABLE runs ADD COLUMN placement_snapshot_json TEXT;
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
   { version: "003_budget_alignment", sql: MIGRATION_003_SQL },
   { version: "004_policy_grants", sql: MIGRATION_004_SQL },
+  { version: "005_execution_axes_expand", sql: MIGRATION_005_SQL },
 ] as const;

@@ -1,0 +1,13 @@
+{
+  "orchestrationMode": "direct",
+  "transport": "sdk",
+  "executionSnapshotId": "snp_01JTESTEXECSNAPSHOT000000",
+  "placementSnapshot": {
+    "nodeId": "ndl_01JTESTLOCALNODE000000000",
+    "nodeSessionId": "nss_01JTESTNODESESSION000000",
+    "runtimeInstallationId": "rtm_01JTESTMOCKINSTALL000000",
+    "workspaceInstanceId": "wsi_01JTESTDEVA_WT0000000000",
+    "executionLeaseId": "lse_01JTESTEXECLEASE00000000",
+    "fencingToken": 1
+  }
+}
