@@ -608,9 +608,78 @@ CREATE TABLE policy_grants (
 );
 `;
 
+/**
+ * M7 catalog drafts: WorkflowDefinition / WorkflowVersion and Team / TeamVersion.
+ * Distinct from execution `workflow_versions` / `team_versions` FK stubs.
+ * Forward-only: do not rewrite 001–004.
+ */
+export const MIGRATION_005_SQL = `
+CREATE TABLE catalog_workflows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  definition_revision INTEGER NOT NULL CHECK (definition_revision > 0),
+  active_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE catalog_workflow_versions (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL REFERENCES catalog_workflows(id),
+  version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  immutable INTEGER NOT NULL CHECK (immutable IN (0,1)),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+  published_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (workflow_id, version)
+);
+
+CREATE TABLE catalog_teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  definition_revision INTEGER NOT NULL CHECK (definition_revision > 0),
+  active_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE catalog_team_versions (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES catalog_teams(id),
+  version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  immutable INTEGER NOT NULL CHECK (immutable IN (0,1)),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+  published_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (team_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_workflows_status
+  ON catalog_workflows(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_catalog_workflow_versions_workflow
+  ON catalog_workflow_versions(workflow_id, status);
+CREATE INDEX IF NOT EXISTS idx_catalog_teams_status
+  ON catalog_teams(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_catalog_team_versions_team
+  ON catalog_team_versions(team_id, status);
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
   { version: "003_budget_alignment", sql: MIGRATION_003_SQL },
   { version: "004_policy_grants", sql: MIGRATION_004_SQL },
+  { version: "005_catalog_definitions", sql: MIGRATION_005_SQL },
 ] as const;

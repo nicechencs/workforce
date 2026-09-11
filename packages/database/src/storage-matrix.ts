@@ -91,6 +91,20 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     recovery: "unpublished outbox WHERE published_at IS NULL; never replay Event to spawn",
   },
   {
+    record: "Catalog WorkflowDefinition / WorkflowVersion",
+    location:
+      "catalog_workflows + catalog_workflow_versions (definition_json carrier for nodes/edges)",
+    uniqueness: "PK id; UNIQUE (workflow_id, version)",
+    recovery:
+      "load catalog_* after restart; published rows are immutable; world.json does not carry catalog drafts",
+  },
+  {
+    record: "Catalog Team / TeamVersion",
+    location: "catalog_teams + catalog_team_versions (definition_json carrier for members)",
+    uniqueness: "PK id; UNIQUE (team_id, version)",
+    recovery: "load catalog_* after restart; unpublished TeamVersion must not bind :start-planning",
+  },
+  {
     record: "Inbox dedup",
     location: "inbox_receipts (table)",
     uniqueness: "PRIMARY KEY (consumer, message_id)",

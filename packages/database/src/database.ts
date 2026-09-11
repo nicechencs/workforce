@@ -22,6 +22,7 @@ import { seedMinimalGraph, type SeededGraph } from "./seed.js";
 import { SqliteTaskRepository } from "./tasks.js";
 import { SqliteTimerRepository } from "./timers.js";
 import { SqliteUnitOfWork } from "./uow.js";
+import { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 import { SqliteWorkflowInstanceRepository } from "./workflows.js";
 import { SqliteWorldSnapshot } from "./world-snapshot.js";
 
@@ -49,6 +50,8 @@ export class WorkforceSqlite {
   readonly resources: SqliteResourceRepository;
   readonly inbox: SqliteInbox;
   readonly grants: SqliteGrantStore;
+  readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
+  readonly catalogTeams: SqliteTeamCatalogRepository;
 
   private constructor(
     readonly path: string,
@@ -73,6 +76,8 @@ export class WorkforceSqlite {
     this.resources = new SqliteResourceRepository(connection);
     this.inbox = new SqliteInbox(connection);
     this.grants = new SqliteGrantStore(connection, this.uow);
+    this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
+    this.catalogTeams = new SqliteTeamCatalogRepository(connection);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {

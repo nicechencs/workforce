@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  isExecutableWorkflowVersion,
   parseWorkflow,
   parseWorkflowPage,
   parseWorkflowVersion,
@@ -66,7 +67,39 @@ describe("workflow catalog DTO", () => {
         status: "draft",
         activeVersionId: "0.1.0",
         versions: [],
+        executionMode: "direct",
       }),
     ).toThrow();
+  });
+
+  it("accepts a draft definition with an unpublished graph", () => {
+    const workflow = parseWorkflow({
+      id: "wfd_1",
+      name: "Custom DAG",
+      description: "",
+      protocolVersion: "0.1",
+      status: "draft",
+      stateRevision: 1,
+      definitionRevision: 1,
+      activeVersionId: "wfv_1",
+      versions: [
+        {
+          id: "wfv_1",
+          workflowId: "wfd_1",
+          version: "1",
+          status: "draft",
+          immutable: false,
+          stateRevision: 1,
+          entry: "plan",
+          nodes: [{ id: "plan", kind: "task", role: "planner", title: "Plan" }],
+          edges: [],
+          steps: [{ id: "plan", kind: "task", title: "Plan", notes: [] }],
+        },
+      ],
+    });
+    expect(workflow.status).toBe("draft");
+    expect(workflow.versions[0]?.immutable).toBe(false);
+    expect(workflow.versions[0]?.nodes?.[0]?.kind).toBe("task");
+    expect(isExecutableWorkflowVersion(workflow.versions[0]!)).toBe(false);
   });
 });

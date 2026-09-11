@@ -2,6 +2,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import "./fastify-augment.js";
 
+import {
+  parseCreateTeamInput,
+  parseCreateWorkflowInput,
+  parsePatchTeamInput,
+  parsePatchWorkflowInput,
+  parseTeamVersionWrite,
+  parseWorkflowVersionWrite,
+} from "@workforce/protocol";
+
 import { AppError } from "../modules/errors.js";
 import type { AppServices, CommandContext, ListQuery } from "../modules/index.js";
 import type { IdFactory } from "../modules/ids.js";
@@ -18,7 +27,7 @@ import {
   requiredString,
 } from "./body.js";
 import { executeCommand, type CommandOutcome, type CommandSpec } from "./commands.js";
-import { commandRoute } from "./rewrite.js";
+import { commandRoute, nestedVersionCommandRoute } from "./rewrite.js";
 
 interface RouteDeps {
   services: AppServices;
@@ -133,9 +142,16 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/v1/projects", async (request) => deps.services.listProjects(listQuery(request)));
 
   app.get("/api/v1/teams", async (request) => deps.services.listTeams(listQuery(request)));
+  app.get("/api/v1/teams/:id/versions/:versionId", async (request) =>
+    requireFound(
+      deps.services.getTeamVersion(param(request, "id"), param(request, "versionId")),
+      "Team version not found",
+    ),
+  );
   app.get("/api/v1/teams/:id", async (request) =>
     requireFound(deps.services.getTeam(param(request, "id")), "Team not found"),
   );
+  registerCatalogWrites(app, cmd, deps);
   app.get("/api/v1/workflows", async (request) => deps.services.listWorkflows(listQuery(request)));
   app.get("/api/v1/workflows/:id/versions/:versionId", async (request) =>
     requireFound(
@@ -198,12 +214,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         requireIfMatch: true,
       },
       (ctx, body) => {
-        rejectUnknownFields(body, ["name", "objective", "operationId"]);
-        const input: { name?: string; objective?: string } = {};
+        rejectUnknownFields(body, ["name", "objective", "teamVersionId", "operationId"]);
+        const input: { name?: string; objective?: string; teamVersionId?: string } = {};
         const name = optionalString(body, "name");
         const objective = optionalString(body, "objective");
+        const teamVersionId = optionalString(body, "teamVersionId");
         if (name !== undefined) input.name = name;
         if (objective !== undefined) input.objective = objective;
+        if (teamVersionId !== undefined) input.teamVersionId = teamVersionId;
         return deps.services.patchProject(ctx, param(request, "id"), input);
       },
     );
@@ -433,6 +451,185 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const current = deps.sessions.getCurrent();
     void reply;
     return { sessionToken: current.token, principalId: current.principalId };
+  });
+}
+
+function withoutOperationId(body: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...body };
+  delete rest.operationId;
+  return rest;
+}
+
+function parseProtocol<T>(parse: (input: unknown) => T, body: Record<string, unknown>): T {
+  try {
+    return parse(withoutOperationId(body));
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Request body failed schema validation";
+    throw new AppError("validation_failed", message);
+  }
+}
+
+function registerCatalogWrites(app: FastifyInstance, cmd: CommandFn, deps: RouteDeps): void {
+  app.post("/api/v1/workflows", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      { canonicalOperation: "POST /workflows", resource: () => "workflows", requireIfMatch: false },
+      (ctx, body) =>
+        deps.services.createWorkflow(ctx, parseProtocol(parseCreateWorkflowInput, body)),
+    );
+  });
+  app.patch("/api/v1/workflows/:id", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /workflows/{id}",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchWorkflow(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parsePatchWorkflowInput, body),
+        ),
+    );
+  });
+  app.post("/api/v1/workflows/:id/versions", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workflows/{id}/versions",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.createWorkflowVersion(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parseWorkflowVersionWrite, body),
+        ),
+    );
+  });
+  app.patch("/api/v1/workflows/:id/versions/:versionId", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /workflows/{id}/versions/{versionId}",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchWorkflowVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+          parseProtocol(parseWorkflowVersionWrite, body),
+        ),
+    );
+  });
+  app.post(nestedVersionCommandRoute("workflows", "publish"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workflows/{id}/versions/{versionId}:publish",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.publishWorkflowVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+        );
+      },
+    );
+  });
+
+  app.post("/api/v1/teams", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      { canonicalOperation: "POST /teams", resource: () => "teams", requireIfMatch: false },
+      (ctx, body) => deps.services.createTeam(ctx, parseProtocol(parseCreateTeamInput, body)),
+    );
+  });
+  app.patch("/api/v1/teams/:id", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /teams/{id}",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchTeam(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parsePatchTeamInput, body),
+        ),
+    );
+  });
+  app.post("/api/v1/teams/:id/versions", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /teams/{id}/versions",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.createTeamVersion(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parseTeamVersionWrite, body),
+        ),
+    );
+  });
+  app.patch("/api/v1/teams/:id/versions/:versionId", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /teams/{id}/versions/{versionId}",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchTeamVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+          parseProtocol(parseTeamVersionWrite, body),
+        ),
+    );
+  });
+  app.post(nestedVersionCommandRoute("teams", "publish"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /teams/{id}/versions/{versionId}:publish",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.publishTeamVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+        );
+      },
+    );
   });
 }
 

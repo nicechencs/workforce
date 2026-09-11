@@ -50,11 +50,10 @@ describe("REST proxy", () => {
     expect(version.path).toBe(
       "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
     );
-    expect(() =>
-      assertSafeApiRequest({
-        method: "POST",
-        path: "/api/v1/workflows",
-      }),
-    ).toThrow(/not on the Desktop allowlist/);
+    const created = assertSafeApiRequest({
+      method: "POST",
+      path: "/api/v1/workflows",
+    });
+    expect(created.path).toBe("/api/v1/workflows");
   });
 });

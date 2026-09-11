@@ -41,7 +41,8 @@ describe("M3 mock loop via typed desktop client", () => {
         "0.1.0",
       );
       expect(version.immutable).toBe(true);
-      expect(version.steps.map((step) => step.id)).toContain("planning");
+      expect(version.steps).toBeDefined();
+      expect(version.steps?.map((step) => step.id)).toContain("planning");
       const nodes = await client.listNodes();
       expect(nodes.items.some((node) => node.id === "ndl_local" && node.status === "online")).toBe(
         true,

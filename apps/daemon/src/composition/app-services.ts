@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  CatalogService,
   HostCapabilityError,
   MOCK_PLAN_DOCUMENT,
   UseCaseError,
@@ -60,9 +61,18 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  TeamVersionDto,
   WorkflowDto,
   WorkflowVersionDto,
   WorkspaceDto,
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
 } from "../modules/dto.js";
 import { AppError } from "../modules/errors.js";
 import type { AppServices, CommandResult } from "../modules/index.js";
@@ -78,14 +88,9 @@ import {
   MOCK_RUNTIME_INSTALLATION_ID,
   ORGANIZATION_ID,
   PROTOCOL_VERSION,
-  SOFTWARE_TEAM,
-  TEAM_ID,
   TEAM_VERSION_ID,
-  findPublishedWorkflow,
-  findPublishedWorkflowVersion,
   mockPlanGraph,
   pageOf,
-  publishedWorkflows,
   unknownProjectBudget,
 } from "./catalog.js";
 import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
@@ -105,6 +110,17 @@ import {
 import { MemoryIntegrationStore } from "./integration-store.js";
 import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
+import {
+  assertBindableTeamVersionId,
+  createAuthoringCatalog,
+  listedTeams,
+  listedWorkflows,
+  resolveTeam,
+  resolveTeamVersion,
+  resolveWorkflow,
+  resolveWorkflowVersion,
+} from "../modules/authoring-catalog.js";
+import { validateWorkflowGraph } from "@workforce/workflow-engine";
 
 const encoder = new TextEncoder();
 type SqliteWriter = typeof dualWriteSqlite;
@@ -129,6 +145,7 @@ export class ComposedAppServices implements AppServices {
   readonly artifacts: LocalArtifactStore;
   readonly worktrees: CompositionWorktreeHost;
   readonly policy: CompositionPolicy;
+  readonly authoring: CatalogService;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly sqliteWriter: SqliteWriter;
@@ -152,6 +169,7 @@ export class ComposedAppServices implements AppServices {
     worktrees: CompositionWorktreeHost;
     policy: CompositionPolicy;
     sqliteWriter: SqliteWriter;
+    authoring: CatalogService;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -162,6 +180,7 @@ export class ComposedAppServices implements AppServices {
     this.worktrees = input.worktrees;
     this.policy = input.policy;
     this.sqliteWriter = input.sqliteWriter;
+    this.authoring = input.authoring;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -207,6 +226,12 @@ export class ComposedAppServices implements AppServices {
       principalId,
       clientId,
     });
+    const authoring = createAuthoringCatalog({
+      ids: { ulid: (prefix) => app.world.ids.ulid(prefix) },
+      now: () => app.world.nowIso(),
+      validateWorkflowGraph,
+    }).service;
+    hydrateCatalog(sqlite, authoring);
     const services = new ComposedAppServices({
       stateDir: options.stateDir,
       app,
@@ -216,6 +241,7 @@ export class ComposedAppServices implements AppServices {
       artifacts,
       worktrees,
       policy,
+      authoring,
       sqliteWriter:
         (options as InternalComposedAppServicesOptions)[sqliteWriterOption] ?? dualWriteSqlite,
     });
@@ -309,24 +335,187 @@ export class ComposedAppServices implements AppServices {
 
   listTeams(_query: ListQuery): PageDto<TeamDto> {
     void _query;
-    return pageOf([SOFTWARE_TEAM]);
+    return pageOf(listedTeams(this.authoring));
   }
 
   getTeam(id: string): TeamDto | null {
-    return id === TEAM_ID ? SOFTWARE_TEAM : null;
+    return resolveTeam(this.authoring, id);
+  }
+
+  getTeamVersion(id: string, versionId: string): TeamVersionDto | null {
+    return resolveTeamVersion(this.authoring, id, versionId);
+  }
+
+  createTeam(ctx: CommandContext, input: CreateTeamInput): Promise<CommandResult<TeamDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const team = this.authoring.createTeam(input);
+      await this.persistCatalogTeam(team.id);
+      return {
+        status: 201,
+        body: resolveTeam(this.authoring, team.id)!,
+        revision: team.stateRevision,
+      };
+    });
+  }
+
+  patchTeam(
+    ctx: CommandContext,
+    id: string,
+    input: PatchTeamInput,
+  ): Promise<CommandResult<TeamDto>> {
+    return this.exclusive(async () => {
+      const team = this.authoring.patchTeam(id, input, ctx.ifMatch);
+      await this.persistCatalogTeam(id);
+      return {
+        status: 200,
+        body: resolveTeam(this.authoring, id)!,
+        revision: team.stateRevision,
+      };
+    });
+  }
+
+  createTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateTeamVersionInput,
+  ): Promise<CommandResult<TeamVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.createTeamVersion(id, input, ctx.ifMatch);
+      await this.persistCatalogTeam(id);
+      return {
+        status: 201,
+        body: resolveTeamVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
+  }
+
+  patchTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchTeamVersionInput,
+  ): Promise<CommandResult<TeamVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.patchTeamVersion(id, versionId, input, ctx.ifMatch);
+      await this.persistCatalogTeam(id);
+      return {
+        status: 200,
+        body: resolveTeamVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
+  }
+
+  publishTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): Promise<CommandResult<TeamVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.publishTeamVersion(id, versionId, ctx.ifMatch);
+      await this.persistCatalogTeam(id);
+      return {
+        status: 200,
+        body: resolveTeamVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
   }
 
   listWorkflows(_query: ListQuery): PageDto<WorkflowDto> {
     void _query;
-    return pageOf(publishedWorkflows());
+    return pageOf(listedWorkflows(this.authoring));
   }
 
   getWorkflow(id: string): WorkflowDto | null {
-    return findPublishedWorkflow(id);
+    return resolveWorkflow(this.authoring, id);
   }
 
   getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null {
-    return findPublishedWorkflowVersion(id, versionId);
+    return resolveWorkflowVersion(this.authoring, id, versionId);
+  }
+
+  createWorkflow(
+    ctx: CommandContext,
+    input: CreateWorkflowInput,
+  ): Promise<CommandResult<WorkflowDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const workflow = this.authoring.createWorkflow(input);
+      await this.persistCatalogWorkflow(workflow.id);
+      return {
+        status: 201,
+        body: resolveWorkflow(this.authoring, workflow.id)!,
+        revision: workflow.stateRevision,
+      };
+    });
+  }
+
+  patchWorkflow(
+    ctx: CommandContext,
+    id: string,
+    input: PatchWorkflowInput,
+  ): Promise<CommandResult<WorkflowDto>> {
+    return this.exclusive(async () => {
+      const workflow = this.authoring.patchWorkflow(id, input, ctx.ifMatch);
+      await this.persistCatalogWorkflow(id);
+      return {
+        status: 200,
+        body: resolveWorkflow(this.authoring, id)!,
+        revision: workflow.stateRevision,
+      };
+    });
+  }
+
+  createWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateWorkflowVersionInput,
+  ): Promise<CommandResult<WorkflowVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.createWorkflowVersion(id, input, ctx.ifMatch);
+      await this.persistCatalogWorkflow(id);
+      return {
+        status: 201,
+        body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
+  }
+
+  patchWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchWorkflowVersionInput,
+  ): Promise<CommandResult<WorkflowVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.patchWorkflowVersion(id, versionId, input, ctx.ifMatch);
+      await this.persistCatalogWorkflow(id);
+      return {
+        status: 200,
+        body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
+  }
+
+  publishWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): Promise<CommandResult<WorkflowVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.publishWorkflowVersion(id, versionId, ctx.ifMatch);
+      await this.persistCatalogWorkflow(id);
+      return {
+        status: 200,
+        body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+        revision: version.stateRevision,
+      };
+    });
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {
@@ -454,6 +643,10 @@ export class ComposedAppServices implements AppServices {
       if (input.objective !== undefined) {
         project.objective = input.objective;
       }
+      if (input.teamVersionId !== undefined) {
+        assertBindableTeamVersionId(this.authoring, input.teamVersionId);
+        project.teamVersionId = input.teamVersionId;
+      }
       project.stateRevision += 1;
       project.updatedAt = this.app.world.nowIso();
       this.persist();
@@ -465,6 +658,8 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
+      const teamVersionId = project.teamVersionId ?? TEAM_VERSION_ID;
+      assertBindableTeamVersionId(this.authoring, teamVersionId);
       const workspace = await this.workspaceFor(project);
       const planDigest = sha256Hex(canonicalJson(MOCK_PLAN_DOCUMENT));
       const started = await this.app.startPlanning({
@@ -472,7 +667,7 @@ export class ComposedAppServices implements AppServices {
         idempotencyKey: ctx.operationId,
         projectId: project.id,
         workspaceId: workspace.id,
-        teamVersionId: TEAM_VERSION_ID,
+        teamVersionId,
         runtimeId: MOCK_RUNTIME_ID,
         budgetId: project.budgetId ?? DEFAULT_BUDGET_ID,
         executionNodeId: LOCAL_NODE_ID,
@@ -564,6 +759,17 @@ export class ComposedAppServices implements AppServices {
           ? { budgetHardLimitMinor: input.budgetHardLimitMinor }
           : {}),
       });
+      if (project.workflowVersionId) {
+        const catalogVersion = this.authoring.catalog.findWorkflowVersion(
+          project.workflowVersionId,
+        );
+        if (catalogVersion) {
+          this.authoring.assertExecutableWorkflowVersion(
+            catalogVersion.workflowId,
+            catalogVersion.id,
+          );
+        }
+      }
       const started = await this.app.start({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
@@ -1364,6 +1570,32 @@ export class ComposedAppServices implements AppServices {
     });
   }
 
+  private async persistCatalogWorkflow(id: string): Promise<void> {
+    const workflow = this.authoring.catalog.workflows.get(id);
+    if (!workflow) {
+      return;
+    }
+    await this.sqlite.uow.withTransaction(async (tx) => {
+      this.sqlite.catalogWorkflows.upsert(tx, workflow);
+      for (const version of this.authoring.catalog.listWorkflowVersions(id)) {
+        this.sqlite.catalogWorkflows.upsertVersion(tx, version);
+      }
+    });
+  }
+
+  private async persistCatalogTeam(id: string): Promise<void> {
+    const team = this.authoring.catalog.teams.get(id);
+    if (!team) {
+      return;
+    }
+    await this.sqlite.uow.withTransaction(async (tx) => {
+      this.sqlite.catalogTeams.upsert(tx, team);
+      for (const version of this.authoring.catalog.listTeamVersions(id)) {
+        this.sqlite.catalogTeams.upsertVersion(tx, version);
+      }
+    });
+  }
+
   private persist(): void {
     if (this.closed) {
       try {
@@ -1598,6 +1830,9 @@ export class ComposedAppServices implements AppServices {
     if (project.planArtifactVersionId !== undefined) {
       dto.planArtifactVersionId = project.planArtifactVersionId;
     }
+    if (project.teamVersionId !== undefined) {
+      dto.teamVersionId = project.teamVersionId;
+    }
     return dto;
   }
 
@@ -1776,6 +2011,21 @@ export async function createComposedAppServicesForTest(
     [sqliteWriterOption]: sqliteWriter,
   };
   return ComposedAppServices.open(internalOptions);
+}
+
+function hydrateCatalog(sqlite: WorkforceSqlite, authoring: CatalogService): void {
+  for (const workflow of sqlite.catalogWorkflows.listAll()) {
+    authoring.catalog.workflows.set(workflow.id, workflow);
+  }
+  for (const version of sqlite.catalogWorkflows.listVersions()) {
+    authoring.catalog.workflowVersions.set(version.id, version);
+  }
+  for (const team of sqlite.catalogTeams.listAll()) {
+    authoring.catalog.teams.set(team.id, team);
+  }
+  for (const version of sqlite.catalogTeams.listVersions()) {
+    authoring.catalog.teamVersions.set(version.id, version);
+  }
 }
 
 function optionalRevision(expectedStateRevision: number | undefined): {
