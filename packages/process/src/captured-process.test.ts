@@ -73,6 +73,16 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
     await expect(collect(captured.output)).resolves.toEqual({ stdout: "", stderr: "" });
   });
 
+  it("reliably captures 300 immediately exiting processes", async () => {
+    const controller = new OsProcessController();
+
+    for (let index = 0; index < 300; index += 1) {
+      const captured = await controller.spawnCaptured({ argv: ["/bin/true"], cwd });
+      await expect(captured.wait()).resolves.toEqual({ exitCode: 0, signal: null });
+      await expect(collect(captured.output)).resolves.toEqual({ stdout: "", stderr: "" });
+    }
+  }, 30_000);
+
   it("treats a child closing a large stdin early as a settled pipe", async () => {
     const controller = new OsProcessController();
     const captured = await controller.spawnCaptured({
@@ -147,6 +157,30 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
     await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
   });
 
+  it("force-cancels when output return is called before the first next", async () => {
+    const controller = new OsProcessController();
+    const captured = await controller.spawnCaptured({ argv: ["/bin/sleep", "60"], cwd });
+    const iterator = captured.output[Symbol.asyncIterator]();
+
+    await expect(withTimeout(iterator.return!(), 5_000)).resolves.toMatchObject({ done: true });
+    await expect(withTimeout(iterator.return!(), 5_000)).resolves.toMatchObject({ done: true });
+    await expect(withTimeout(captured.wait(), 5_000)).resolves.toMatchObject({ signal: "SIGKILL" });
+    await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+  });
+
+  it("return wakes a pending output next and terminates the process", async () => {
+    const controller = new OsProcessController();
+    const captured = await controller.spawnCaptured({ argv: ["/bin/sleep", "60"], cwd });
+    const iterator = captured.output[Symbol.asyncIterator]();
+    const pending = iterator.next();
+
+    const returning = iterator.return!();
+    await expect(withTimeout(pending, 1_000)).resolves.toMatchObject({ done: true });
+    await expect(withTimeout(returning, 5_000)).resolves.toMatchObject({ done: true });
+    await expect(withTimeout(captured.wait(), 5_000)).resolves.toMatchObject({ signal: "SIGKILL" });
+    await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+  });
+
   it("uses a captured handle with the existing inspect and cancel path", async () => {
     const controller = new OsProcessController();
     const captured = await controller.spawnCaptured({ argv: ["/bin/sleep", "60"], cwd });
@@ -185,6 +219,56 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
 });
 
 linuxProcess("POSIX managed process group", () => {
+  it("allows another controller to cancel a verified live root and its complete group", async () => {
+    const owner = new OsProcessController();
+    const other = new OsProcessController();
+    const sentinelController = new OsProcessController();
+    const dir = fs.mkdtempSync(`${tmpdir()}/wf-cross-controller-`);
+    const childFile = `${dir}/child.pid`;
+    let handle: { pid: number; startIdentity: string } | undefined;
+    let sentinel: { pid: number; startIdentity: string } | undefined;
+    let childPid: number | undefined;
+
+    try {
+      handle = await owner.spawn({
+        argv: [
+          "/bin/sh",
+          "-c",
+          'sleep 60 & child=$!; printf "%s\\n" "$child" > "$WF_CHILD_PID_FILE"; wait',
+        ],
+        cwd,
+        env: { WF_CHILD_PID_FILE: childFile },
+      });
+      sentinel = await sentinelController.spawn({ argv: ["/bin/sleep", "60"], cwd });
+      expect(await pollUntil(() => fs.existsSync(childFile), 5_000)).toBe(true);
+      childPid = Number(fs.readFileSync(childFile, "utf8").trim());
+      expect(isLiveLinuxPid(handle.pid)).toBe(true);
+      expect(isLiveLinuxPid(childPid)).toBe(true);
+      expect(isLiveLinuxPid(sentinel.pid)).toBe(true);
+
+      await other.cancel(handle, "force");
+
+      expect(await pollUntil(() => !isLiveLinuxPid(handle!.pid), 5_000)).toBe(true);
+      expect(await pollUntil(() => !isLiveLinuxPid(childPid!), 5_000)).toBe(true);
+      expect(isLiveLinuxPid(sentinel.pid)).toBe(true);
+    } finally {
+      if (handle) {
+        await owner.cancel(handle, "force");
+      }
+      if (sentinel) {
+        await sentinelController.cancel(sentinel, "force");
+      }
+      if (childPid && isLiveLinuxPid(childPid)) {
+        try {
+          process.kill(childPid, "SIGKILL");
+        } catch {
+          // already stopped
+        }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("inspects and force-cancels a group after its root exits", async () => {
     const controller = new OsProcessController();
     const nonOwner = new OsProcessController();
@@ -202,7 +286,14 @@ linuxProcess("POSIX managed process group", () => {
       expect(await pollUntil(() => !isLiveLinuxPid(captured.handle.pid), 5_000)).toBe(true);
       expect(isLiveLinuxPid(childPid)).toBe(true);
 
-      await nonOwner.cancel(captured.handle, "force");
+      await expect(nonOwner.inspect(captured.handle)).rejects.toMatchObject({
+        code: "process_group_unverified",
+        operation: "inspect",
+      });
+      await expect(nonOwner.cancel(captured.handle, "force")).rejects.toMatchObject({
+        code: "process_group_unverified",
+        operation: "cancel",
+      });
       expect(isLiveLinuxPid(childPid)).toBe(true);
       await expect(controller.inspect(captured.handle)).resolves.toEqual({
         alive: true,
@@ -220,6 +311,19 @@ linuxProcess("POSIX managed process group", () => {
     } finally {
       await controller.cancel(captured.handle, "force");
     }
+  });
+
+  it("treats an untracked exited handle with no remaining group as dead", async () => {
+    const owner = new OsProcessController();
+    const other = new OsProcessController();
+    const handle = await owner.spawn({ argv: ["/bin/true"], cwd });
+
+    expect(await pollUntil(() => !isLiveLinuxPid(handle.pid), 5_000)).toBe(true);
+    await expect(other.inspect(handle)).resolves.toEqual({
+      alive: false,
+      startIdentity: handle.startIdentity,
+    });
+    await expect(other.cancel(handle, "force")).resolves.toBeUndefined();
   });
 
   it("rejects a mismatched root identity without killing the live group", async () => {

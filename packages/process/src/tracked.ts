@@ -16,6 +16,7 @@ export type TrackedProcess = {
   child?: ChildProcess;
   completion?: Promise<TrackedProcessExit>;
   output?: ManagedCapturedOutput;
+  cleanupTimer?: NodeJS.Timeout;
   posixGroup?: {
     pgid: number;
     sessionId: number;

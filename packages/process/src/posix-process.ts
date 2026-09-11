@@ -51,7 +51,7 @@ export async function spawnPosix(req: {
         // The just-spawned root may already have exited.
       }
     }
-    throw unverifiedProcessGroupError(child.pid);
+    throw unverifiedProcessGroupError(child.pid, "spawn");
   }
   const tracked: TrackedProcess = {
     handle: { pid: child.pid, startIdentity },
@@ -77,16 +77,27 @@ export async function inspectPosix(
   },
   tracked?: TrackedProcess,
 ): Promise<{ alive: boolean; startIdentity: string }> {
-  if (posixAlive(handle.pid)) {
-    const observed = queryPosixStartIdentity(handle.pid);
-    if (observed === handle.startIdentity) {
-      return { alive: true, startIdentity: observed };
+  const root = livePosixProcessInfo(handle.pid);
+  if (root) {
+    if (root.startIdentity === handle.startIdentity) {
+      return { alive: true, startIdentity: handle.startIdentity };
     }
     releaseTrackedGroup(tracked, handle);
     return { alive: false, startIdentity: handle.startIdentity };
   }
-  if (isTrackedHandle(tracked, handle) && trackedPosixGroupAlive(tracked)) {
-    return { alive: true, startIdentity: handle.startIdentity };
+  if (isTrackedHandle(tracked, handle)) {
+    const state = trackedPosixGroupState(tracked);
+    if (state === "alive") {
+      return { alive: true, startIdentity: handle.startIdentity };
+    }
+    if (state === "unknown") {
+      throw unverifiedProcessGroupError(handle.pid, "inspect");
+    }
+  } else {
+    const state = untrackedPosixGroupState(handle);
+    if (state === "alive" || state === "unknown") {
+      throw unverifiedProcessGroupError(handle.pid, "inspect");
+    }
   }
   return { alive: false, startIdentity: handle.startIdentity };
 }
@@ -97,48 +108,48 @@ export async function cancelPosix(
   tracked: TrackedProcess | undefined,
 ): Promise<void> {
   const signal = mode === "graceful" ? "SIGTERM" : "SIGKILL";
-  if (posixAlive(handle.pid)) {
-    const observed = queryPosixStartIdentity(handle.pid);
-    if (!posixAlive(handle.pid)) {
-      return cancelTrackedGroup(handle, signal, tracked);
-    }
-    if (observed !== handle.startIdentity) {
+  const root = livePosixProcessInfo(handle.pid);
+  if (root) {
+    if (root.startIdentity !== handle.startIdentity) {
       releaseTrackedGroup(tracked, handle);
-      throw identityMismatchError(handle, observed);
+      throw identityMismatchError(handle, root.startIdentity);
     }
   } else {
     return cancelTrackedGroup(handle, signal, tracked);
   }
 
-  if (isTrackedHandle(tracked, handle) && trackedPosixGroupAlive(tracked)) {
+  if (isTrackedHandle(tracked, handle) && tracked.posixGroup) {
     signalProcessGroup(tracked, signal);
     return;
   }
-  try {
-    process.kill(handle.pid, signal);
-  } catch {
-    if (mode === "graceful") {
-      tracked?.child?.stdin?.end();
-    }
-  }
+  signalVerifiedUntrackedGroup(handle, root, signal);
 }
 
 export function trackedPosixGroupAlive(tracked: TrackedProcess): boolean {
+  return trackedPosixGroupState(tracked) !== "dead";
+}
+
+type GroupState = "alive" | "dead" | "unknown";
+
+function trackedPosixGroupState(tracked: TrackedProcess): GroupState {
   const group = tracked.posixGroup;
   if (!group?.owned) {
-    return false;
+    return "dead";
   }
   const members = queryPosixGroupMembers(group.pgid, group.sessionId);
+  if (!members) {
+    return "unknown";
+  }
   const leader = members.find((member) => member.pid === group.pgid);
   if (leader && leader.startIdentity !== group.rootStartIdentity) {
     group.owned = false;
-    return false;
+    return "dead";
   }
   if (members.length === 0) {
     group.owned = false;
-    return false;
+    return "dead";
   }
-  return true;
+  return "alive";
 }
 
 function cancelTrackedGroup(
@@ -146,7 +157,18 @@ function cancelTrackedGroup(
   signal: NodeJS.Signals,
   tracked: TrackedProcess | undefined,
 ): void {
-  if (!isTrackedHandle(tracked, handle) || !trackedPosixGroupAlive(tracked)) {
+  if (!isTrackedHandle(tracked, handle)) {
+    const state = untrackedPosixGroupState(handle);
+    if (state === "alive" || state === "unknown") {
+      throw unverifiedProcessGroupError(handle.pid, "cancel");
+    }
+    return;
+  }
+  const state = trackedPosixGroupState(tracked);
+  if (state === "unknown") {
+    throw unverifiedProcessGroupError(handle.pid, "cancel");
+  }
+  if (state === "dead") {
     return;
   }
   signalProcessGroup(tracked, signal);
@@ -154,7 +176,14 @@ function cancelTrackedGroup(
 
 function signalProcessGroup(tracked: TrackedProcess, signal: NodeJS.Signals): void {
   const group = tracked.posixGroup;
-  if (!group?.owned || !trackedPosixGroupAlive(tracked)) {
+  if (!group?.owned) {
+    return;
+  }
+  const state = trackedPosixGroupState(tracked);
+  if (state === "unknown") {
+    throw unverifiedProcessGroupError(group.pgid, "cancel");
+  }
+  if (state === "dead") {
     return;
   }
   try {
@@ -166,6 +195,63 @@ function signalProcessGroup(tracked: TrackedProcess, signal: NodeJS.Signals): vo
     }
     throw error;
   }
+}
+
+function signalVerifiedUntrackedGroup(
+  handle: { pid: number; startIdentity: string },
+  root: PosixProcessInfo,
+  signal: NodeJS.Signals,
+): void {
+  if (
+    root.startIdentity !== handle.startIdentity ||
+    root.pgrp !== handle.pid ||
+    root.sessionId !== handle.pid
+  ) {
+    throw unverifiedProcessGroupError(handle.pid, "cancel");
+  }
+  const verified = livePosixProcessInfo(handle.pid);
+  if (!verified) {
+    const state = untrackedPosixGroupState(handle);
+    if (state === "alive" || state === "unknown") {
+      throw unverifiedProcessGroupError(handle.pid, "cancel");
+    }
+    return;
+  }
+  if (
+    verified.startIdentity !== handle.startIdentity ||
+    verified.pgrp !== handle.pid ||
+    verified.sessionId !== handle.pid
+  ) {
+    if (verified.startIdentity !== handle.startIdentity) {
+      throw identityMismatchError(handle, verified.startIdentity);
+    }
+    throw unverifiedProcessGroupError(handle.pid, "cancel");
+  }
+  try {
+    process.kill(-handle.pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
+function untrackedPosixGroupState(handle: { pid: number; startIdentity: string }): GroupState {
+  const members = queryPosixGroupMembers(handle.pid, handle.pid);
+  if (!members) {
+    return "unknown";
+  }
+  const leader = members.find((member) => member.pid === handle.pid);
+  if (leader) {
+    if (leader.startIdentity === handle.startIdentity) {
+      return "alive";
+    }
+    if (leader.startIdentity !== undefined) {
+      return "dead";
+    }
+    return "unknown";
+  }
+  return members.length === 0 ? "dead" : "unknown";
 }
 
 function releaseTrackedGroup(
@@ -188,20 +274,9 @@ function isTrackedHandle(
   );
 }
 
-function posixAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) {
-    return false;
-  }
-  if (process.platform === "linux") {
-    const info = queryLinuxProcessInfo(pid);
-    return info !== undefined && info.state !== "Z";
-  }
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as { code?: string }).code === "EPERM";
-  }
+function livePosixProcessInfo(pid: number): PosixProcessInfo | undefined {
+  const info = queryPosixProcessInfo(pid);
+  return info && !info.state.startsWith("Z") ? info : undefined;
 }
 
 function queryPosixStartIdentity(pid: number): string | undefined {
@@ -288,14 +363,14 @@ function queryLinuxProcessInfo(pid: number): PosixProcessInfo | undefined {
   }
 }
 
-function queryPosixGroupMembers(pgid: number, sessionId: number): PosixProcessInfo[] {
+function queryPosixGroupMembers(pgid: number, sessionId: number): PosixProcessInfo[] | undefined {
   if (process.platform === "linux") {
     const members: PosixProcessInfo[] = [];
     let entries: string[];
     try {
       entries = fs.readdirSync("/proc");
     } catch {
-      return [];
+      return undefined;
     }
     for (const entry of entries) {
       if (!/^\d+$/.test(entry)) {
@@ -333,14 +408,17 @@ function queryPosixGroupMembers(pgid: number, sessionId: number): PosixProcessIn
     }
     return members;
   } catch {
-    return [];
+    return undefined;
   }
 }
 
-function unverifiedProcessGroupError(pid: number): Error {
-  const error = new Error(`captured process group for pid ${pid} could not be verified`);
+function unverifiedProcessGroupError(
+  pid: number,
+  operation: "spawn" | "inspect" | "cancel",
+): Error {
+  const error = new Error(`process group for pid ${pid} could not be verified during ${operation}`);
   error.name = "UnverifiedProcessGroupError";
-  Object.assign(error, { code: "process_group_unverified" });
+  Object.assign(error, { code: "process_group_unverified", operation, pid });
   return error;
 }
 

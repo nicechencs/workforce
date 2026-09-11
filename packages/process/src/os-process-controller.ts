@@ -42,12 +42,23 @@ export class OsProcessController implements ProcessController {
     const handle = publicHandle(tracked);
     output.setAbortHandler(() => this.cancel(handle, "force"));
     const stdinCompletion = finishStdin(child.stdin, req.stdin);
-    const settled = Promise.all([completion, stdinCompletion]);
+    const settled = Promise.race([
+      Promise.all([completion, stdinCompletion]).then(([processResult, stdinResult]) => ({
+        kind: "complete" as const,
+        processResult,
+        stdinResult,
+      })),
+      output.abortFailure.then((error) => ({ kind: "abort-error" as const, error })),
+    ]);
     return {
       handle,
       output: output.iterable,
       async wait() {
-        const [processResult, stdinResult] = await settled;
+        const result = await settled;
+        if (result.kind === "abort-error") {
+          throw result.error;
+        }
+        const { processResult, stdinResult } = result;
         if (processResult.kind === "error") {
           throw processResult.error;
         }
@@ -82,6 +93,7 @@ export class OsProcessController implements ProcessController {
     }
     const status = await inspectPosix(handle, tracked);
     if (!status.alive && this.#tracked.get(key) === tracked) {
+      clearCleanupTimer(tracked);
       this.#tracked.delete(key);
     }
     return status;
@@ -103,15 +115,32 @@ export class OsProcessController implements ProcessController {
 
   #releaseTrackedWhenStopped(key: string, tracked: TrackedProcess | undefined): void {
     if (!tracked || this.#tracked.get(key) !== tracked) {
+      clearCleanupTimer(tracked);
       return;
     }
     if (tracked.platform === "posix" && trackedPosixGroupAlive(tracked)) {
-      const timer = setTimeout(() => this.#releaseTrackedWhenStopped(key, tracked), 1_000);
+      if (tracked.cleanupTimer) {
+        return;
+      }
+      const timer = setTimeout(() => {
+        delete tracked.cleanupTimer;
+        this.#releaseTrackedWhenStopped(key, tracked);
+      }, 1_000);
+      tracked.cleanupTimer = timer;
       timer.unref();
       return;
     }
+    clearCleanupTimer(tracked);
     this.#tracked.delete(key);
   }
+}
+
+function clearCleanupTimer(tracked: TrackedProcess | undefined): void {
+  if (!tracked?.cleanupTimer) {
+    return;
+  }
+  clearTimeout(tracked.cleanupTimer);
+  delete tracked.cleanupTimer;
 }
 
 function trackKey(handle: ProcessHandle): string {

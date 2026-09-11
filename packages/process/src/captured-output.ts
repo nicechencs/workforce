@@ -5,8 +5,12 @@ import type { ProcessOutput, ProcessOutputSource } from "@workforce/application/
 
 export const CAPTURED_OUTPUT_BUFFER_LIMIT = 8 * 1024 * 1024;
 
+type AbortOutcome = { ok: true } | { ok: false; error: Error };
+
 export interface ManagedCapturedOutput {
   readonly iterable: AsyncIterable<ProcessOutput>;
+  /** Resolves only if a requested process abort fails. */
+  readonly abortFailure: Promise<Error>;
   setAbortHandler(handler: () => Promise<void>): void;
 }
 
@@ -20,16 +24,23 @@ export function captureChildOutput(child: ChildProcess): ManagedCapturedOutput {
 class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessOutput> {
   readonly #queue: ProcessOutput[] = [];
   readonly #ended = new Set<ProcessOutputSource>();
+  readonly abortFailure: Promise<Error>;
+  #resolveAbortFailure!: (error: Error) => void;
   #queuedBytes = 0;
   #consumerStarted = false;
   #discarding = false;
+  #stopped = false;
   #failure: Error | undefined;
-  #wakeConsumer: (() => void) | undefined;
+  #pending: PendingNext | undefined;
   #abortHandler: (() => Promise<void>) | undefined;
   #abortRequested = false;
-  #abortPromise: Promise<void> | undefined;
+  #abortOutcome: Promise<AbortOutcome> | undefined;
+  #resolveAbortOutcome: ((outcome: AbortOutcome) => void) | undefined;
 
   constructor(stdout: Readable, stderr: Readable) {
+    this.abortFailure = new Promise((resolve) => {
+      this.#resolveAbortFailure = resolve;
+    });
     this.#drain(stdout, "stdout");
     this.#drain(stderr, "stderr");
   }
@@ -43,9 +54,7 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
       throw new Error("captured output abort handler is already set");
     }
     this.#abortHandler = handler;
-    if (this.#abortRequested) {
-      void this.#abort();
-    }
+    this.#startAbort();
   }
 
   [Symbol.asyncIterator](): AsyncIterator<ProcessOutput> {
@@ -53,39 +62,41 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
       return failedIterator(new Error("captured process output supports only one consumer"));
     }
     this.#consumerStarted = true;
-    return this.#iterate();
+    return new CapturedOutputIterator(this);
   }
 
-  async *#iterate(): AsyncGenerator<ProcessOutput> {
-    let reachedEnd = false;
-    try {
-      while (true) {
-        const next = this.#queue.shift();
-        if (next) {
-          this.#queuedBytes -= next.chunk.byteLength;
-          yield next;
-          continue;
-        }
-        if (this.#failure) {
-          throw this.#failure;
-        }
-        if (this.#ended.size === 2) {
-          reachedEnd = true;
-          return;
-        }
-        await new Promise<void>((resolve) => {
-          this.#wakeConsumer = resolve;
-        });
-        this.#wakeConsumer = undefined;
-      }
-    } finally {
-      if (!reachedEnd && !this.#failure) {
-        this.#discarding = true;
-        this.#queue.length = 0;
-        this.#queuedBytes = 0;
-        await this.#requestAbort();
-      }
+  next(): Promise<IteratorResult<ProcessOutput>> {
+    const next = this.#queue.shift();
+    if (next) {
+      this.#queuedBytes -= next.chunk.byteLength;
+      return Promise.resolve({ done: false, value: next });
     }
+    if (this.#failure) {
+      return this.#terminalFailure();
+    }
+    if (this.#stopped || this.#ended.size === 2) {
+      return Promise.resolve(doneResult());
+    }
+    if (this.#pending) {
+      return Promise.reject(
+        new Error("captured process output does not support concurrent next()"),
+      );
+    }
+    return new Promise((resolve, reject) => {
+      this.#pending = { resolve, reject };
+    });
+  }
+
+  stop(reason?: unknown): Promise<IteratorResult<ProcessOutput>> {
+    if (!this.#stopped) {
+      this.#stopped = true;
+      this.#discarding = true;
+      this.#queue.length = 0;
+      this.#queuedBytes = 0;
+      this.#settlePendingDone();
+      this.#requestAbort();
+    }
+    return this.#finishStop(reason);
   }
 
   #drain(stream: Readable, source: ProcessOutputSource): void {
@@ -94,13 +105,18 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
         return;
       }
       const chunk = toBytes(raw);
+      if (this.#pending) {
+        const pending = this.#pending;
+        this.#pending = undefined;
+        pending.resolve({ done: false, value: { source, chunk } });
+        return;
+      }
       if (this.#queuedBytes + chunk.byteLength > CAPTURED_OUTPUT_BUFFER_LIMIT) {
         this.#fail(outputOverflowError());
         return;
       }
       this.#queue.push({ source, chunk });
       this.#queuedBytes += chunk.byteLength;
-      this.#wake();
     });
     stream.once("error", (error) => {
       this.#fail(error);
@@ -116,42 +132,121 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
 
   #markEnded(source: ProcessOutputSource): void {
     this.#ended.add(source);
-    this.#wake();
+    if (this.#ended.size === 2 && this.#queue.length === 0) {
+      this.#settlePendingDone();
+    }
   }
 
   #fail(error: Error): void {
-    if (!this.#failure) {
-      this.#failure = error;
-    }
+    this.#failure ??= error;
     this.#discarding = true;
     this.#queue.length = 0;
     this.#queuedBytes = 0;
-    this.#wake();
-    void this.#requestAbort();
+    this.#requestAbort();
+    this.#settlePendingFailure();
   }
 
-  #wake(): void {
-    this.#wakeConsumer?.();
-  }
-
-  #requestAbort(): Promise<void> {
+  #requestAbort(): Promise<AbortOutcome> {
     this.#abortRequested = true;
-    return this.#abort();
+    if (!this.#abortOutcome) {
+      this.#abortOutcome = new Promise((resolve) => {
+        this.#resolveAbortOutcome = resolve;
+      });
+    }
+    this.#startAbort();
+    return this.#abortOutcome;
   }
 
-  #abort(): Promise<void> {
-    if (this.#abortPromise) {
-      return this.#abortPromise;
+  #startAbort(): void {
+    const resolve = this.#resolveAbortOutcome;
+    if (!this.#abortRequested || !this.#abortHandler || !resolve) {
+      return;
     }
-    if (!this.#abortHandler) {
-      return Promise.resolve();
-    }
-    this.#abortPromise = this.#abortHandler().catch((error: unknown) => {
-      this.#failure ??= toError(error);
-      this.#wake();
-    });
-    return this.#abortPromise;
+    this.#resolveAbortOutcome = undefined;
+    void Promise.resolve()
+      .then(() => this.#abortHandler?.())
+      .then(
+        () => resolve({ ok: true }),
+        (error: unknown) => {
+          const normalized = toError(error);
+          this.#resolveAbortFailure(normalized);
+          resolve({ ok: false, error: normalized });
+        },
+      );
   }
+
+  async #finishStop(reason: unknown): Promise<IteratorResult<ProcessOutput>> {
+    const outcome = await this.#requestAbort();
+    if (!outcome.ok) {
+      if (reason !== undefined) {
+        throw new AggregateError([toError(reason), outcome.error], "captured output abort failed");
+      }
+      throw outcome.error;
+    }
+    if (reason !== undefined) {
+      throw reason;
+    }
+    return doneResult();
+  }
+
+  async #terminalFailure(): Promise<IteratorResult<ProcessOutput>> {
+    const failure = this.#failure;
+    if (!failure) {
+      return doneResult();
+    }
+    const outcome = await this.#requestAbort();
+    if (!outcome.ok && outcome.error !== failure) {
+      throw new AggregateError([failure, outcome.error], "captured output and abort failed");
+    }
+    throw failure;
+  }
+
+  #settlePendingDone(): void {
+    const pending = this.#pending;
+    if (!pending) {
+      return;
+    }
+    this.#pending = undefined;
+    pending.resolve(doneResult());
+  }
+
+  #settlePendingFailure(): void {
+    const pending = this.#pending;
+    if (!pending) {
+      return;
+    }
+    this.#pending = undefined;
+    void this.#terminalFailure().then(pending.resolve, pending.reject);
+  }
+}
+
+type PendingNext = {
+  resolve: (result: IteratorResult<ProcessOutput>) => void;
+  reject: (error: unknown) => void;
+};
+
+class CapturedOutputIterator implements AsyncIterator<ProcessOutput> {
+  readonly #mux: CapturedOutputMux;
+
+  constructor(mux: CapturedOutputMux) {
+    this.#mux = mux;
+  }
+
+  next(): Promise<IteratorResult<ProcessOutput>> {
+    return this.#mux.next();
+  }
+
+  return(): Promise<IteratorResult<ProcessOutput>> {
+    return this.#mux.stop();
+  }
+
+  throw(error?: unknown): Promise<IteratorResult<ProcessOutput>> {
+    return this.#mux.stop(error ?? new Error("captured process output iteration aborted"));
+  }
+}
+
+function doneResult(): IteratorReturnResult<undefined> {
+  return { done: true, value: undefined };
 }
 
 function toBytes(raw: unknown): Uint8Array {

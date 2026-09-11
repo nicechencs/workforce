@@ -192,6 +192,7 @@ async function trySpawnInJob(req: {
       stdio: ["pipe", "ignore", "ignore"],
     },
   );
+  const helperCompletion = observeChild(helper);
 
   try {
     await waitForChildSpawn(helper);
@@ -211,6 +212,10 @@ async function trySpawnInJob(req: {
         helper,
         dir,
       };
+      tracked.completion = helperCompletion.then((result) => {
+        cleanupJobArtifacts(tracked);
+        return result;
+      });
       return tracked;
     }
   } catch {
@@ -345,12 +350,20 @@ async function cleanupTracked(tracked: TrackedProcess | undefined): Promise<void
     }
   }
   if (tracked.dir) {
-    try {
-      fs.rmSync(tracked.dir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    cleanupJobArtifacts(tracked);
   }
+}
+
+function cleanupJobArtifacts(tracked: TrackedProcess): void {
+  if (!tracked.dir) {
+    return;
+  }
+  try {
+    fs.rmSync(tracked.dir, { recursive: true, force: true });
+  } catch {
+    // cleanup is best-effort; the helper and target are already observably stopped
+  }
+  delete tracked.dir;
 }
 
 function helperEnv(): Record<string, string> {
