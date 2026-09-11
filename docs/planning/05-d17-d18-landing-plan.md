@@ -31,7 +31,7 @@ updated: 2026-09-11
 > 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。
 > 3. **S2a 已落地 `SqliteProjectExecutionSnapshotRepository`**（insert-once，无 update）与 `MemoryWorld.executionSnapshots`。但 `confirmPlan` 仍直接创建 `WorkflowInstance`，D02「确认时只写 snapshot、启动时才建实例」**未实现**。
 >
-> 仍成立的行为结论：2.3 的「SQLite 是事实上的事后投影」与 2.4 的 `confirmPlan` 语义、2.6 的 `workflow_versions` 被 upsert 覆写且 `content_hash` 恒为 `sha256:empty`。2.3 中「投影失败被吞掉」本轮只做到**部分可见**：非约束类失败改由 `persist()` 经 `console.error` 报告，`dualWriteSqlite` 仍吞掉 `isConstraintError` 覆盖的 UNIQUE/PK 失败（§3.6 的伴随项仍未完成，也即本页 §6 验收与测试矩阵的「投影失败可见性」仍为未达成目标），见 [03-implementation-status.md](03-implementation-status.md) §3 持久化回归修复切片；SQLite 仍是投影而非权威。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
+> 仍成立的行为结论：2.3 的「SQLite 是事实上的事后投影」与 2.4 的 `confirmPlan` 语义、2.6 的 `workflow_versions` 被 upsert 覆写且 `content_hash` 恒为 `sha256:empty`。2.3 中「投影失败被吞掉」已在两轮内收口：实体 repository 早已把 2067/1555 映射为 `PersistenceError("conflict")` 向上抛，真正静默的只是 `persist()` 的 fire-and-forget `catch`（已改为 `console.error`）；`dualWriteSqlite` 外层 `isConstraintError` 分支也已改为上报，但它只覆盖未被 repository 包装的原始约束错误（实体的 insert / upsert 路径不会走到；`node_instances.update`、`runs.updateStatus` 与 `receipts.putPending` 仍可到达）。本页 §6 验收与测试矩阵的「投影失败可见性」现已满足其字面要求（失败可被观测）；更强的「可阻断 / 可对账」仍属 planned。见 [03-implementation-status.md](03-implementation-status.md) §3 持久化回归修复切片；SQLite 仍是投影而非权威。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
 ### 2.1 公共契约现状
 
@@ -96,7 +96,7 @@ HTTP command
 两个直接后果：
 
 - **SQLite 是投影，不是权威。** 读取侧 `loadComposition()` 先读 `world.json`，仅当 `entities.projects.length > 0` 时才用 SQLite 实体表覆盖（`persist.ts:443-445`）。所以「从 `ProjectExecutionSnapshot` 读版本」这类不变量，**必须先在内存模型里成立**，否则会出现「SQLite 列已按新语义写、行为仍按旧语义跑」的分叉。
-- **投影失败被吞掉（仅约束类）。** `dualWriteSqlite` 在外层 catch 里丢弃所有 `isConstraintError`（`persist.ts:591-595`；非约束类失败自 2026-09-11 起由 `persist()` 经 `console.error` 报出，约束类仍被吞），并在 handle 写入处丢弃 `revision_conflict`（`persist.ts:552-556`）；同一时刻 `world.json` 已经写成功。这意味着：**在 expand 之后新增的 NOT NULL/CHECK 列，如果忘记同步某条 insert/update SQL，失败会静默发生**，表现为 SQLite 落后于 `world.json`，而不是报错。
+- **投影失败被吞掉（仅约束类，已于 2026-09-11 收口）。** 本节其余内容为 `c613609` 时点的事实；该条已被后续修复超越，保留原文仅作历史记录：原先 `dualWriteSqlite` 在外层 catch 里丢弃所有 `isConstraintError`（`persist.ts:591-595`），并在 handle 写入处丢弃 `revision_conflict`（`persist.ts:552-556`）。**现已改为上报而非丢弃**，且真正的静默点是 `persist()` 的 fire-and-forget `catch`（也已改为 `console.error`），详见 [03-implementation-status.md](03-implementation-status.md) §3 与本页 §2 顶部的更正说明。
 
 另外 `SqliteWorldSnapshot.save` 会在 `state_revision` 跳变时用裸 `UPDATE runs SET state_revision = ?` 绕过 CAS（`world-snapshot.ts:251-255`）。
 
@@ -250,7 +250,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
   - `CREATE TABLE project_execution_snapshots`（只写一次；`workflow_version_id NOT NULL`、`team_version_id NOT NULL`、`content_hash`）。
   - `ALTER TABLE projects ADD COLUMN execution_snapshot_id`；`ALTER TABLE workflow_instances ADD COLUMN execution_snapshot_id`。
   - `ALTER TABLE runs ADD COLUMN orchestration_mode` / `execution_snapshot_id` / `transport` / `placement_snapshot_json`——**全部 nullable**，此阶段不加 CHECK、不加 NOT NULL。
-- **伴随项（§3.6）**：让投影失败可见。至少做到「新增列的约束失败不再被 `dualWriteSqlite` 吞掉」，否则后续 backfill 审计与 contract 收紧都不可观测。这条会改变现有「整世界写永远成功」的假设，属高风险，需独立审查。
+- **伴随项（§3.6）**：让投影失败可见。**已部分完成（2026-09-11）**：约束类与非约束类投影失败现在都会被上报（`console.error`），不再静默丢弃，因此后续 backfill 审计具备观测前提。**仍未完成：** 把失败升级为「可阻断 / 可对账」——这才会改变现有「整世界写永远成功」的假设，属高风险，需独立审查后才应进入 contract 收紧。
 - **验收**：空库全量迁移通过；从上一发布 schema（含真实 M3 Runs）执行 expand 不报错；旧列仍可读；checksum 行为不变（回改旧 migration 应失败）。
 - **风险**：`foreign_keys = ON` 下新增 FK 列的历史行为空，不能在此阶段加 `REFERENCES` + `NOT NULL` 组合。若 `execution_snapshot_id` 需要 FK，SQLite 的 `ALTER TABLE ADD COLUMN` 加 FK 需默认 NULL，符合本阶段设计。
 
@@ -366,7 +366,7 @@ Renderer 侧目前有**两套并行的 client 装配**（`features/_t13_client.t
 | 作者面部分失败与恢复 | T14/T16 | 部分应用可枚举 step、可重试/取消/过期；不宣称完整成功 |
 | 无能力组合 | T10/T21 | 启动前 `unsupported_capability`，不做假 mode |
 | 迁移后崩溃窗口 | T16 | 命令已提交进程未启动 / 进程已启动 Handle 未提交 / Artifact 落盘元数据未提交，三者可测 |
-| 投影失败可见性 | T04 | 新增列的约束失败不再被 `dualWriteSqlite` 吞掉；world.json 与 SQLite 不一致可被观测 |
+| 投影失败可见性 | T04 | 新增列的约束失败不再被 `dualWriteSqlite` 吞掉；world.json 与 SQLite 不一致可被观测（已满足：失败改为上报；「可阻断 / 可对账」仍为 planned） |
 | Electron 写路径闸门 | T10/T11/T18 | 新写路径同时进 daemon 路由与 allowlist，并同步 `ipc-whitelist.test.ts` 的固定断言 |
 
 `docs/blueprint/08-workflow-state-machine.md` §19 的九条验收标准与 `docs/blueprint/10-database-schema.md` §14 的七条同样适用；本表只补 D15–D18 新增部分，不复制既有条目。
