@@ -1,9 +1,9 @@
 # Workforce 页面信息架构
 
 **版本：** V0.1 Draft  
-**状态：** Product UI baseline（§4.3 为项目详情现行规范）  
+**状态：** Product UI baseline（§4.3 为项目详情现行规范；§4.6 / §6.2 含 M7 画布与自定义 Team）  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — §6.2：能力矩阵已允许 P1 只读工作流目录 `GET /workflows`（及模板/版本详情）；仍无画布编辑器，目录不是可执行 Runtime。§4.3.2：已发布执行图的公开 Task DTO 必须返回 `dependsOn`；UI 展示真实依赖边，字段缺失时才写“依赖：未返回”。2026-09-10 — §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性；一级导航全部出现在左侧栏。§4.3 从“建议标签”改为现行条款，并消解与线框 §3 的冲突。
+**修订：** 2026-09-11 — 可视化画布编辑器与自定义 Team 编排升为产品必达（D15/D16）。只读 `GET /workflows` 是已接通的 M3 过渡切片，不是可执行 Runtime。§4.3.2：已发布执行图的公开 Task DTO 必须返回 `dependsOn`；UI 展示真实依赖边，字段缺失时才写“依赖：未返回”。2026-09-10 — §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性；一级导航全部出现在左侧栏。§4.3 从“建议标签”改为现行条款，并消解与线框 §3 的冲突。
 
 ## 1. 设计目标
 
@@ -24,21 +24,21 @@ UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime �
 |---|---|---|---|
 | 工作台 | Project、Run、Approval、Node | 掌握全局状态与下一步行动 | P0 |
 | 项目 | Project、Workflow、Task、Artifact | 创建、推进和验收工作 | P0 |
-| AI 团队 | Team、Worker、Role、RuntimeProfile | 组建和配置数字员工团队 | P0 |
+| AI 团队 | Team、Worker、Role、RuntimeProfile | 组建和配置数字员工团队（M3 只读预设；M7 自定义编排） | P0 |
 | 执行节点 | ExecutionNode、RuntimeInstallation、Capacity | 查看本机与服务器执行能力 | P0 |
 | 审批中心 | Approval、PolicyDecision | 集中处理人工决策 | P0 |
 | 运行记录 | Run、Event、Usage | 查询执行历史和诊断问题 | P1 |
-| 工作流 | WorkflowDefinition、WorkflowVersion | 查看可复用模板、版本和结构化步骤 | P1 |
+| 工作流 | WorkflowDefinition、WorkflowVersion | 查看、编辑和发布可复用工作流（M3 只读目录；M7 可视化画布） | P1 |
 | 设置 | Runtime、CredentialRef、Policy、Preferences | 配置运行环境与安全边界 | P0 |
 
 `V0.1` 列是**交付切片深度**，不是“是否出现在一级导航”：
 
 - **P0**：M3 主路径必须达到的页面深度（见 [api-capability-matrix.md](../planning/api-capability-matrix.md)）。
-- **P1**：仍是本表中的一级导航，**必须出现在左侧栏**；页面可以更薄（只读目录、无编辑器）。
+- **P1**：仍是本表中的一级导航，**必须出现在左侧栏**。M3 深度可以更薄（只读目录已接通）；M7 要求画布编辑器与可写 Team（[D15](../planning/decision-register.md#d15-可视化工作流画布编辑器) / [D16](../planning/decision-register.md#d16-自定义-team-编排)）。
 
 不要把 P1 理解成隐藏入口。线框若只画了部分 P1 项，以本表为准，并回改线框。壳实现用 `primary: true` 表示侧栏可见，用 `priority: "p0" | "p1"` 表示切片深度。
 
-V0.1 不建立大型可视化 Workflow 编辑器。工作流页面以模板、版本和结构化步骤为主。
+产品**必须**有可视化工作流画布编辑器（M7）。M3 可用只读模板/版本/结构化步骤作为过渡，不得再写「V0.1 不做画布」。
 
 ## 3. 页面层级
 
@@ -152,10 +152,32 @@ Task 页面展示“应该做什么”；Runtime 原始日志放在 Run 页面�
 
 ### 4.6 AI 团队
 
-- Team 和 TeamVersion
-- Worker、Role、RuntimeProfile、能力与策略
-- Worker 当前 Run 和负载
+目的：让用户查看预设团队，并在 M7 组建自己的数字员工团队。入口固定在一级导航「AI 团队」，不另开隐藏页。
+
+**M3（当前实现深度）：**
+
+- 只读预设 Team / TeamVersion（Software Development Team）
+- Worker、Role、RuntimeProfile、能力与策略只读展示
+- Worker 当前 Run 和负载（有数据则展示；无则诚实空态）
+- 「新建团队 / 保存编排」不得渲染为可点击成功态
+
+**M7（必达，尚未实现）：**
+
+- 创建自定义 Team 草稿，编辑成员（role + RuntimeProfile + quantity），发布不可变 TeamVersion
+- 新项目可绑定已发布自定义 TeamVersion；未发布草稿不能开始规划
+- 编辑已发布编排必须新建 version
+
+空态：
+
+- 无自定义团队：说明仍可使用预设 Software Development Team，并提供「新建团队」（M7 才可点成功）
+- 发布失败 / 412：保留用户输入，提示刷新，不假装已保存
+- 列表失败：诚实错误，不回退夹具冒充已接通写接口
+
+非目标：
+
 - 不把 Worker 标记为固定运行在某台机器；节点由 Placement 决定
+- 无云端组织、Marketplace、跨用户分享
+- 不把只读预设页写成「自定义编排已完成」
 
 ### 4.7 执行节点
 
@@ -210,7 +232,29 @@ V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续
 
 ### 6.2 工作流
 
-- 只读查看可复用 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤。
-- 查询走能力矩阵已列的只读目录：`GET /workflows`、`GET /workflows/{id}`、`GET /workflows/{id}/versions/{versionId}`。数据来自已发布模板（如 software-development-team feature-delivery），不是项目内已实例化的执行图。
-- 不是完整流程管理，也无画布编辑器（能力矩阵：可视化 Workflow 编辑器 = later）。无写接口。
-- 目录为空时展示诚实空态，不回退夹具冒充已接通。目录接通不等于 Mock/Codex Runtime 可执行这些定义。
+目的：浏览可复用工作流，并在 M7 用可视化画布编辑、发布。入口固定在一级导航「工作流」。
+
+**M3 过渡切片（只读目录已接通，可与画布并存）：**
+
+- 查看已发布 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤
+- 查询走能力矩阵已列的只读目录：`GET /workflows`、`GET /workflows/{id}`、`GET /workflows/{id}/versions/{versionId}`。空目录展示诚实空态，不回退夹具冒充已接通
+- 数据来自已发布模板（如 software-development-team feature-delivery），不是项目内已实例化的执行图
+- 只读目录是过渡切片，不是终态；与画布目标兼容，不是「V0.1 不做画布」
+
+**M7 必达（可视化画布，尚未实现）：**
+
+- 主编辑面是画布：创建草稿、拖拽/连接有限 DAG、保存、发布不可变版本
+- 已发布版本只读；再编辑创建新 version
+- 画布与目录共用本导航：列表/详情可进入「在画布中编辑」
+
+空态：
+
+- 无已发布工作流：说明可从预设复制或新建空白图（M7）；M3 展示目录或诚实空列表
+- 草稿未发布：明确写「未发布，Runtime 不会执行此图」
+- 保存/发布失败：保留画布内容，不假装已发布
+
+非目标：
+
+- 不宣称 Mock 或真实 Runtime 执行未发布图，也不把目录接通写成「已可执行」
+- 不把画布当成通用 iPaaS / Marketplace；节点类型以领域模型为限
+- 不在画布上原地改活动执行 DAG（确认计划后的执行图仍按 D02 冻结）

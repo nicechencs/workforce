@@ -112,7 +112,7 @@ updated: 2026-09-11
 | P1 本地壳 | Orkas、AGNT | Orkas：Commander + 专科并行进度 UI。AGNT：Electron + 本地 Express + SQLite，骨架接近 desktop ↔ daemon ↔ SQLite；看 evals / traces 缺口即可。 |
 | P1 审批 UX | Aider、Cline | Aider：commit 作为审计单元 → Artifact 谱系想法（[D10](../planning/decision-register.md#d10-r10-代码汇总) / Artifact 精确版本）。Cline：逐步人批节奏，对照我们的 plan gate vs artifact gate（[D02](../planning/decision-register.md#d02-r02-planner-与不可变-dag)、[D11](../planning/decision-register.md#d11-r11-审批与接管)、[IA §4.8](../product-ui/01-information-architecture.md#48-审批中心)）。 |
 | P1 角色 vs 流 | CrewAI Flows | Crew（模板角色）vs Flow（确认后不可变执行图）。模板角色只对 `templates/software-development-team` 有启发。 |
-| 只看 IA | Dify、n8n | 工作流页 + 运行记录的壳信息架构（[IA §2](../product-ui/01-information-architecture.md#2-一级导航)、[§6.1](../product-ui/01-information-architecture.md#61-运行记录)、[§6.2](../product-ui/01-information-architecture.md#62-工作流)）。PRD 不是大型可视化编辑器；不采用其栈。 |
+| 只看 IA | Dify、n8n | 工作流页 + 运行记录的壳信息架构（[IA §2](../product-ui/01-information-architecture.md#2-一级导航)、[§6.1](../product-ui/01-information-architecture.md#61-运行记录)、[§6.2](../product-ui/01-information-architecture.md#62-工作流)）。我们的画布编辑 Workforce 有限 DAG（[D15](../planning/decision-register.md#d15-可视化工作流画布编辑器)），不采用其栈。 |
 | 语义对照 | Temporal、Inngest | 耐久 / 幂等 Run 语义，只服务测试与状态矩阵。V0.1 **明确不**上 Temporal（[ADR 0002](../adr/0002-multi-node-technology-strategy.md)）。 |
 | 叙事即可 | Continue | 本地 IDE host 叙事；不要把范围扩成「再做一个 Continue」。 |
 | 模板角色 | MetaGPT、ChatDev | 只给软件开发团队模板看角色图，不引入其框架。 |
@@ -124,5 +124,5 @@ updated: 2026-09-11
 - 全自动无人值守（跳过 plan / artifact / budget gate）。
 - 一上来换成 Temporal 或把 Inngest 当工作流引擎。
 - 用 Mock、单测或 happy-dom / opt-in Electron helper 冒充 headed 真窗口或 Codex live。
-- 把 Dify / n8n 当架构蓝本，或做大型可视化 Workflow 编辑器（[IA §6.2](../product-ui/01-information-architecture.md#62-工作流)、[决策登记 §7](../planning/decision-register.md#7-明确不在本冻结内)）。
+- 把 Dify / n8n 当架构蓝本或通用 iPaaS。画布是产品能力（[D15](../planning/decision-register.md#d15-可视化工作流画布编辑器)、[IA §6.2](../product-ui/01-information-architecture.md#62-工作流)），不是后置项，也不采用其栈。
 - 换用 Eigent 的 Python / CAMEL 栈，或未经单独评估就引入 LangChain monorepo。

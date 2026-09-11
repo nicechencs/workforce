@@ -91,7 +91,9 @@ V0.1 只验证一条可信、可观察、可恢复的端到端闭环：
 - 跨平台桌面端：Windows、macOS、Linux
 - Project、Workspace、Team、Worker、Task、Run、Artifact、Event 基础模型
 - 软件开发团队模板
+- 自定义 Team 编排：创建并版本化 Team / 角色 / RuntimeProfile，不只使用预设
 - 轻量 DAG/状态机 Workflow
+- 可视化工作流画布编辑器：在「工作流」中编辑有限 DAG 并发布不可变 WorkflowVersion；未发布图不可执行
 - Codex Runtime Adapter（首选）
 - 第二 Runtime Adapter 的接口预留；是否实现 Claude Code 取决于首轮集成成本
 - 本地进程、终端、文件系统与 Git 操作
@@ -106,7 +108,7 @@ V0.1 只验证一条可信、可观察、可恢复的端到端闭环：
 ### 明确不做
 
 - Agent/Workflow Marketplace
-- 大型无代码可视化 Workflow 编辑器
+- 把未发布画布图当作 Runtime，或做成 n8n/Dify 式通用 iPaaS / 任意 connector 生态
 - 自主无限循环与完全无人值守运行
 - 生产环境自动部署
 - 企业级 SSO、SCIM、复杂组织管理

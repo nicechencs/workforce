@@ -1,11 +1,11 @@
 # V0.1 决策登记
 
-日期：2026-09-10  
-状态：**已冻结（M0–M3 开工基线）**  
-范围：设计评审 R01–R09 及评审推荐默认值。  
+日期：2026-09-11  
+状态：**已冻结（M0–M3 开工基线；M7 画布与自定义 Team 已写入）**  
+范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定把可视化画布编辑器与自定义 Team 编排升为产品必达能力。  
 协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。
 
-本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。
+本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被本节 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。
 
 未测的真实 Runtime 能力转交 T03，不得用猜测当决定。
 
@@ -177,7 +177,8 @@ SSE：
 以 [api-capability-matrix.md](api-capability-matrix.md) 为准。硬规则：
 
 - 前端不得私自创造矩阵中不存在的 endpoint
-- Team 首版只读预设模板；自定义编排后置
+- Team：M3 Mock 主路径只读预设模板；自定义编排是 **M7 必达**（D16），不是后置或放弃
+- 工作流：M3 只读已发布目录（`GET /workflows` 已接通）；可视化画布编辑器是 **M7 必达**（D15），不是后置或放弃
 - 项目归档可延后，列表不展示伪造的归档成功
 - Artifact content / read / verify / approval / input **必须**带 `artifactVersionId` 或精确 `version`；`latest` 只用于非执行性浏览
 - 公开 `TaskDto` **必须**包含 `dependsOn: { taskId, waitFor }[]`，映射已发布执行 DAG；无依赖返回 `[]`，不得省略后让 UI 编造边
@@ -272,12 +273,14 @@ RunStatus 仍为：`pending | starting | running | waiting_input | paused | succ
 | `packages/workflow-engine`, `application/src/use-cases/{projects,tasks,runs,approvals,budgets,recovery}` | T09 | 等 T02 |
 | `apps/daemon`, `packages/desktop-client` | T10 | 等 T02 |
 | `apps/desktop/src/{main,preload,renderer/app,renderer/routes,renderer/components}`, `packages/ui` | T11 | 等 T02 |
-| `renderer/features/{projects,tasks,teams}` | T12 | 等 UI 约定 |
+| `renderer/features/{projects,tasks,teams}` | T12（M3 只读 Team） | 等 UI 约定；可写 Team 归 T19 |
 | `renderer/features/{runs,artifacts,approvals,nodes,settings,dashboard}` | T13 | 等 UI 约定 |
 | `templates/software-development-team`, `application/src/use-cases/{planning,delivery}` | T14 | 等 T02 |
 | `runtimes/codex` | T15 | 等 T02+T03 |
 | `tests/{contract,integration,e2e,platform}` | T16 / 协调者 | 从 T02 起可写场景 |
 | `tooling/release`, 打包配置 | T17 | 后置 |
+| `renderer/features/workflows` 画布与目录 | T18 | M7；M3 只读页可由现有桌面切片维护 |
+| `renderer/features/teams` 可写编排 | T19 | M7；领取前不与 T12 同时改同一文件 |
 
 公共类型缺口：提交契约变更请求，禁止复制类型或改邻接模块。
 
@@ -318,13 +321,73 @@ RunStatus 仍为：`pending | starting | running | waiting_input | paused | succ
 - 真实 Codex 能力（T03 实测后才能写入能力矩阵的 live 列）
 - 三平台安装签名/公证（T17）
 - 远程节点控制面、云账号、GitHub PR、自动 push
-- 自定义 Team 编排、可视化 Workflow 编辑器、复杂仪表盘
+- 复杂仪表盘
 
-## 8. 交接
+可视化画布编辑器与自定义 Team 编排**已迁出本节**，见 [§8](#8-画布与自定义-teamm7) / D15 / D16。不得再把它们写成 later、后置或「V0.1 不做」。
+
+## 8. 画布与自定义 Team（M7）
+
+用户决定（2026-09-11）：产品**必须**包含这两项。它们是承诺能力，不是调研项。M3 Mock 主路径仍可用预设 Team + 已发布/夹具工作流走完，不阻塞 M4–M6。**实现仍未开始**；进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+
+M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）并行可排，但不并进 M3 闭环，也不并进 T17 发布任务。未领取 T18/T19 前，禁止在普通 PR 里顺便做画布或可写 Team。
+
+### D15 — 可视化工作流画布编辑器
+
+**范围（M7 必达）：**
+
+1. 「工作流」一级导航提供可视化画布，用于创建/编辑可复用 `WorkflowDefinition` 的有限 DAG（节点与边），并发布不可变 `WorkflowVersion`。
+2. 节点类型对齐领域模型：Task / Approval / Condition / Parallel（及现有软件开发模板已用的交付/审批步）。不引入任意第三方 connector 节点。
+3. 已发布版本不可变。编辑已发布图必须新建 version；不得原地改活动执行图（D02 仍有效）。
+4. 只读已发布目录（模板、版本、结构化步骤；`GET /workflows` 已接通）是 **M3/P1 过渡切片**，不是终态。目录与画布共用「工作流」入口：先浏览，再进入画布编辑。只读目录实现与本决定兼容，不得关掉目录去只留画布承诺。
+
+**M3 Mock 仍允许：**
+
+- 只用预设 Team 与只读已发布目录走规划 → 确认 → 执行。
+- 页面可以没有画布、没有写接口；不得假成功保存。
+- 不把夹具或目录接通写成「Runtime 已执行这些定义」。
+
+**M7 起变为必需：**
+
+- 用户能新建草稿、在画布上保存、发布通过校验的有限 DAG。
+- 发布走矩阵中的写 endpoint（T02 生成 schema；见能力矩阵 Workflows 行）。
+- 空目录、无草稿、发布失败必须诚实空态/错误，不回退夹具冒充已保存。
+
+**非目标：**
+
+- 画布不是 Runtime。未发布图、未绑定到已确认 Plan / 已发布执行 `WorkflowVersion` 的图，**不得**被 Mock 或真实 Runtime 执行。
+- 不把画布当成 n8n/Dify 式通用自动化或 Marketplace。
+- 不支持 V0.1 任意循环；仍是有限 DAG。
+- 不宣称「画布上点运行」等于 Task/Run 已完成。
+
+### D16 — 自定义 Team 编排
+
+**范围（M7 必达）：**
+
+1. 「AI 团队」提供自定义 Team 编排：创建 Team、编辑成员/角色/RuntimeProfile、版本化并发布不可变 `TeamVersion`。
+2. Project 仍绑定 **TeamVersion 快照**（D02：draft 先配齐 Workspace / Team / Runtime / 预算才能开始规划）。绑定未发布草稿不得 `:start-planning`。
+3. 预设 Software Development Team 保留，作为 M3 主路径与默认选项。自定义 Team 是新增能力，不删除模板。
+
+**M3 Mock 仍允许：**
+
+- 只读预设列表（`GET /teams` / `GET /teams/{id}`）。
+- 无写接口；UI 不得把「新建团队」渲染为可点击成功态。
+
+**M7 起变为必需：**
+
+- 写接口见能力矩阵 Team 行；成员可嵌在 `TeamVersion` payload（role + RuntimeProfile + quantity）。不另开 Worker Marketplace。
+- 已发布 `TeamVersion` 可供新项目绑定；编辑已发布编排必须新建 version。
+
+**非目标：**
+
+- 云端组织、SSO、跨用户分享团队、Agent Marketplace。
+- 把 Worker 标成固定跑在某台机器（节点仍由 Placement 决定）。
+- 自定义 Team 不是 M3 Mock 闭环的硬依赖。
+
+## 9. 交接
 
 - 决策：本文
 - 状态： [state-matrix.md](state-matrix.md)
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把本节字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。
+T02 必须把本节字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口是 T02 的兼容扩展，不回退已冻结的 M3 字段。

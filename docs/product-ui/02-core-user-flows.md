@@ -2,8 +2,8 @@
 
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
-**日期：** 2026-09-10  
-**修订：** 2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**日期：** 2026-09-11  
+**修订：** 2026-09-11 — 增补 §7 画布与 §8 自定义 Team（M7）。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
@@ -111,3 +111,30 @@ flowchart TD
 - Task、Event 与 CoordinationMessage 传递状态、请求、反馈和 handoff。
 - 消息只传 ArtifactRef，不内嵌大文件。
 - 默认禁止 Agent 直接写主分支。
+
+## 7. 编辑并发布工作流（M7 画布）
+
+```mermaid
+flowchart TD
+  List[工作流目录] --> Edit[画布编辑草稿]
+  Edit --> Save[保存未发布版本]
+  Save --> Publish{发布}
+  Publish -->|校验失败| Edit
+  Publish -->|通过| Frozen[不可变 WorkflowVersion]
+  Frozen --> Bind[确认计划后绑定执行图]
+```
+
+未发布图不能被 Runtime 执行。活动执行图仍按 D02 冻结，不在画布上原地改。
+
+## 8. 自定义 Team 编排（M7）
+
+```mermaid
+flowchart TD
+  Preset[预设 Software Dev Team] --> Use[项目绑定已发布版本]
+  New[新建自定义 Team] --> Draft[编辑成员与 RuntimeProfile]
+  Draft --> Pub{发布 TeamVersion}
+  Pub -->|通过| Use
+  Pub -->|失败| Draft
+```
+
+未发布草稿不能 `:start-planning`。预设模板始终可选。
