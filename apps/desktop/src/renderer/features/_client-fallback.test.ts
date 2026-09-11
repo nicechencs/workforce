@@ -77,8 +77,10 @@ describe("preload transport", () => {
     });
     const catalog = asCatalogClient(client);
     expect(hasCatalogMethod(catalog, "listTeams")).toBe(true);
+    expect(hasCatalogMethod(catalog, "getTeam")).toBe(true);
     expect(hasCatalogMethod(catalog, "getTeamVersion")).toBe(true);
     expect(hasCatalogMethod(catalog, "createTeam")).toBe(true);
+    expect(hasCatalogMethod(catalog, "patchTeam")).toBe(true);
     expect(hasCatalogMethod(catalog, "publishTeamVersion")).toBe(true);
     expect(hasCatalogMethod(catalog, "createProjectWorkspace")).toBe(true);
     expect(hasCatalogMethod(catalog, "getProjectBudget")).toBe(true);

@@ -21,9 +21,13 @@ import {
   isPresetTeamId,
   isPublishedTeamVersion,
   isTeamReadyForPlanning,
+  loadTeamDetail,
+  membersToPayload,
   mergeCatalogTeams,
+  persistTeamDraft,
   probeTeamWriteSupport,
   projectTeamVersionId,
+  publishPersistedTeamVersion,
   publishTeamButton,
   reduceTeamDraftForm,
   rejectCustomTeamPublish,
@@ -117,10 +121,12 @@ describe("team write probe", () => {
   it("stays disabled when getTeamVersion is missing or 404s", async () => {
     await expect(
       probeTeamWriteSupport({
-        createTeam: () => undefined,
-        createTeamVersion: () => undefined,
-        patchTeamVersion: () => undefined,
-        publishTeamVersion: () => undefined,
+        createTeam: async () => undefined,
+        patchTeam: async () => undefined,
+        createTeamVersion: async () => undefined,
+        patchTeamVersion: async () => undefined,
+        publishTeamVersion: async () => undefined,
+        getTeam: async () => undefined,
         patchProject: () => undefined,
         listTeams: async () => ({ items: [PRESET_TEAM] }),
       }),
@@ -128,10 +134,12 @@ describe("team write probe", () => {
 
     await expect(
       probeTeamWriteSupport({
-        createTeam: () => undefined,
-        createTeamVersion: () => undefined,
-        patchTeamVersion: () => undefined,
-        publishTeamVersion: () => undefined,
+        createTeam: async () => undefined,
+        patchTeam: async () => undefined,
+        createTeamVersion: async () => undefined,
+        patchTeamVersion: async () => undefined,
+        publishTeamVersion: async () => undefined,
+        getTeam: async () => undefined,
         getTeamVersion: async () => {
           throw problemFrom({ code: "not_found", status: 404, detail: "missing route" });
         },
@@ -141,22 +149,29 @@ describe("team write probe", () => {
     ).resolves.toMatchObject({ create: false, versionRead: false });
   });
 
-  it("enables write actions only when a version payload is actually returned", async () => {
+  it("enables write actions when preset getTeamVersion succeeds even if listTeams is empty", async () => {
     const support = await probeTeamWriteSupport({
-      createTeam: () => undefined,
-      createTeamVersion: () => undefined,
-      patchTeamVersion: () => undefined,
-      publishTeamVersion: () => undefined,
-      getTeamVersion: async () => ({
-        id: "tmv_1",
-        teamId: "tm_software_development",
-        version: "0.1.0",
-        status: "published",
-        protocolVersion: "0.1",
-        members: [],
-      }),
+      createTeam: async () => undefined,
+      patchTeam: async () => undefined,
+      createTeamVersion: async () => undefined,
+      patchTeamVersion: async () => undefined,
+      publishTeamVersion: async () => undefined,
+      getTeam: async () => undefined,
+      getTeamVersion: async (id, versionId) => {
+        if (id !== "tm_software_development" || versionId !== "0.1.0") {
+          throw problemFrom({ code: "not_found", status: 404, detail: "unexpected probe" });
+        }
+        return {
+          id: "tmv_software_development_0_1_0",
+          teamId: "tm_software_development",
+          version: "0.1.0",
+          status: "published",
+          immutable: true,
+          members: [],
+        };
+      },
       patchProject: () => undefined,
-      listTeams: async () => ({ items: [{ id: "tm_software_development", version: "0.1.0" }] }),
+      listTeams: async () => ({ items: [] }),
     });
     expect(support).toEqual({
       methodsPresent: true,
@@ -171,11 +186,19 @@ describe("team write probe", () => {
 describe("publish and bind honesty", () => {
   it("does not treat a draft or empty publish response as success", () => {
     expect(isPublishedTeamVersion({ id: "tmv_1", status: "draft", version: "0.2.0" })).toBe(false);
+    expect(
+      isPublishedTeamVersion({ id: "tmv_1", status: "published", version: "0.2.0" }),
+    ).toBe(false);
     expect(interpretPublishResponse({ id: "tmv_1", status: "draft", version: "0.2.0" }).ok).toBe(
       false,
     );
     expect(
-      interpretPublishResponse({ id: "tmv_1", status: "published", version: "0.2.0" }),
+      interpretPublishResponse({
+        id: "tmv_1",
+        status: "published",
+        immutable: true,
+        version: "0.2.0",
+      }),
     ).toEqual({
       ok: true,
       published: true,
@@ -185,6 +208,7 @@ describe("publish and bind honesty", () => {
       interpretPublishResponse({
         id: "tmv_1",
         status: "published",
+        immutable: true,
         version: "0.2.0",
         publishedAt: "",
       }).ok,
@@ -354,7 +378,7 @@ describe("team catalog parsing", () => {
       name: "Docs team",
       version: "0.2.0",
       status: "draft",
-      members: [{ role: "developer", runtimeProfile: "mock", quantity: 2, title: "Dev" }],
+      members: [{ role: "developer", runtimeProfileId: "mock", quantity: 2, title: "Dev" }],
     });
     expect(custom).toMatchObject({
       kind: "custom",
@@ -362,12 +386,189 @@ describe("team catalog parsing", () => {
       readonly: false,
       members: [{ role: "developer", quantity: 2, runtimeProfile: "mock" }],
     });
+    const fromVersions = asTeamView({
+      id: "tm_software_development",
+      name: "Software Development Team",
+      version: "0.1.0",
+      status: "published",
+      activeVersionId: "tmv_software_development_0_1_0",
+      versions: [
+        {
+          id: "tmv_software_development_0_1_0",
+          teamId: "tm_software_development",
+          version: "0.1.0",
+          status: "published",
+          immutable: true,
+          stateRevision: 1,
+          members: [
+            { id: "planner", role: "planner", runtimeProfileId: "mock", quantity: 1 },
+            { id: "developer", role: "developer", runtimeProfileId: "mock", quantity: 2 },
+            { id: "reviewer", role: "reviewer", runtimeProfileId: "mock", quantity: 1 },
+          ],
+        },
+      ],
+    });
+    expect(fromVersions?.versionId).toBe("tmv_software_development_0_1_0");
+    expect(fromVersions?.members.map((member) => member.quantity)).toEqual([1, 2, 1]);
+    expect(membersToPayload(custom!.members)).toEqual([
+      { role: "developer", runtimeProfileId: "mock", quantity: 2 },
+    ]);
     const merged = mergeCatalogTeams([custom!]);
     expect(merged[0]).toEqual(PRESET_TEAM);
     expect(merged[1]?.id).toBe("tm_custom");
-    expect(TEAM_WRITE_API_MISSING).toContain("M7");
+    expect(TEAM_WRITE_API_MISSING).toContain("只读");
   });
 });
+
+describe("team draft persistence", () => {
+  it("creates via write methods and still resolves after a catalog-only reload miss", async () => {
+    const store = new Map<string, unknown>();
+    const client = memoryTeamClient(store);
+    const result = await persistTeamDraft(
+      client,
+      {
+        name: "Squad",
+        members: [
+          {
+            id: "developer",
+            role: "developer",
+            title: "Developer",
+            runtimeProfile: "mock",
+            quantity: 2,
+          },
+        ],
+        teamId: null,
+        versionId: null,
+      },
+      () => ({ idempotencyKey: "idem_1", operationId: "op_1" }),
+    );
+    expect(result.teamId).toBe("tm_1");
+    expect(result.versionId).toBe("tmv_1");
+    expect(result.team.status).toBe("draft");
+    expect(client.calls).toEqual(["createTeam", "createTeamVersion", "getTeam"]);
+    expect(client.lastMembers).toEqual([
+      { role: "developer", runtimeProfileId: "mock", quantity: 2 },
+    ]);
+
+    const reloaded = await loadTeamDetail(client, "tm_1", []);
+    expect(reloaded?.name).toBe("Squad");
+    expect(reloaded?.status).toBe("draft");
+    expect(reloaded?.members[0]).toMatchObject({ role: "developer", quantity: 2 });
+  });
+
+  it("refuses to mark publish success unless the version is published and immutable", async () => {
+    const store = new Map<string, unknown>();
+    const client = memoryTeamClient(store);
+    await persistTeamDraft(
+      client,
+      {
+        name: "Squad",
+        members: PRESET_TEAM.members,
+        teamId: null,
+        versionId: null,
+      },
+      () => ({ idempotencyKey: "idem_1", operationId: "op_1" }),
+    );
+    client.publishResult = {
+      id: "tmv_1",
+      status: "draft",
+      immutable: false,
+      version: "0.1.0",
+    };
+    await expect(
+      publishPersistedTeamVersion(
+        client,
+        { teamId: "tm_1", versionId: "tmv_1" },
+        () => ({ idempotencyKey: "idem_2", operationId: "op_2" }),
+      ),
+    ).resolves.toMatchObject({ ok: false, published: false });
+    client.publishResult = {
+      id: "tmv_1",
+      status: "published",
+      immutable: true,
+      version: "0.1.0",
+    };
+    await expect(
+      publishPersistedTeamVersion(
+        client,
+        { teamId: "tm_1", versionId: "tmv_1" },
+        () => ({ idempotencyKey: "idem_3", operationId: "op_3" }),
+      ),
+    ).resolves.toEqual({ ok: true, published: true, versionId: "tmv_1" });
+  });
+});
+
+function memoryTeamClient(store: Map<string, unknown>) {
+  const client = {
+    calls: [] as string[],
+    lastMembers: [] as unknown[],
+    publishResult: undefined as unknown,
+    createTeam: async (input: { name: string }) => {
+      client.calls.push("createTeam");
+      const team = {
+        id: "tm_1",
+        name: input.name,
+        status: "draft",
+        stateRevision: 1,
+        protocolVersion: "0.1",
+        version: "",
+        roles: [],
+      };
+      store.set("tm_1", team);
+      return team;
+    },
+    patchTeam: async (id: string, input: { name?: string }) => {
+      client.calls.push("patchTeam");
+      const current = store.get(id) as Record<string, unknown>;
+      const next = { ...current, ...input, stateRevision: Number(current.stateRevision ?? 1) + 1 };
+      store.set(id, next);
+      return next;
+    },
+    createTeamVersion: async (
+      id: string,
+      input: { members: Array<{ role: string; runtimeProfileId: string; quantity: number }> },
+    ) => {
+      client.calls.push("createTeamVersion");
+      client.lastMembers = input.members;
+      const version = {
+        id: "tmv_1",
+        teamId: id,
+        version: "0.1.0",
+        status: "draft",
+        immutable: false,
+        members: input.members,
+        stateRevision: 1,
+      };
+      const current = store.get(id) as Record<string, unknown>;
+      store.set(id, {
+        ...current,
+        version: "0.1.0",
+        activeVersionId: "tmv_1",
+        versions: [version],
+        stateRevision: Number(current.stateRevision ?? 1) + 1,
+      });
+      return version;
+    },
+    patchTeamVersion: async () => {
+      client.calls.push("patchTeamVersion");
+      return store.get("tmv_1");
+    },
+    publishTeamVersion: async () => {
+      client.calls.push("publishTeamVersion");
+      return client.publishResult;
+    },
+    getTeam: async (id: string) => {
+      client.calls.push("getTeam");
+      const found = store.get(id);
+      if (!found) {
+        throw problemFrom({ code: "not_found", status: 404, detail: "missing team" });
+      }
+      return found;
+    },
+    getTeamVersion: async () => ({ id: "tmv_1", version: "0.1.0" }),
+  };
+  return client;
+}
 
 function publishedCustom(): TeamView {
   return {

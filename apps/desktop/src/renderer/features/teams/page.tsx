@@ -3,7 +3,7 @@ import type { DesktopClient, PageDto } from "@workforce/desktop-client";
 
 import type { FeaturePageProps } from "../contract.js";
 import { asCatalogClient, hasCatalogMethod, useWorkforceClient } from "../hooks.js";
-import { commandOptions, errorMessage, isRevisionConflict } from "../projects/command.js";
+import { errorMessage, isRevisionConflict } from "../projects/command.js";
 import {
   badgeStyle,
   buttonStyle,
@@ -26,10 +26,11 @@ import {
   draftFormFromTeam,
   draftMembersValid,
   emptyTeamDraftForm,
-  interpretPublishResponse,
-  membersToPayload,
+  loadTeamDetail,
+  persistTeamDraft,
   PRESET_TEAM,
   PRESET_RUNTIME_ID,
+  publishPersistedTeamVersion,
   publishTeamButton,
   reduceTeamDraftForm,
   rejectCustomTeamPublish,
@@ -37,11 +38,11 @@ import {
   removeDraftMember,
   TEAM_ROLES,
   TEAM_WRITE_API_MISSING,
-  teamById,
   teamPageModel,
   teamWriteMethodsPresent,
   probeTeamWriteSupport,
   updateDraftMember,
+  writeOptions,
   type TeamDraftForm,
   type TeamMemberView,
   type TeamView,
@@ -127,6 +128,21 @@ export function TeamsPage(props: FeaturePageProps) {
   const teamId = props.params.teamId;
   const creating = teamId === "new";
 
+  function upsertTeam(team: TeamView) {
+    setTeams((current) => {
+      const without = current.filter((item) => item.id !== team.id);
+      return teamPageModel({
+        liveTeams: [team, ...without],
+        writeSupport,
+      }).teams;
+    });
+  }
+
+  function openTeam(team: TeamView) {
+    upsertTeam(team);
+    props.navigate(`/teams/${team.id}`);
+  }
+
   if (creating) {
     return (
       <main style={pageStyle}>
@@ -135,30 +151,28 @@ export function TeamsPage(props: FeaturePageProps) {
           client={client}
           writeSupport={writeSupport}
           runtimes={runtimes}
-          onPublished={(team) => props.navigate(`/teams/${team.id}`)}
+          onPersisted={openTeam}
+          onPublished={openTeam}
         />
       </main>
     );
   }
 
   if (teamId) {
-    const team = teamById(teams, teamId) ?? (teamId === PRESET_TEAM.id ? PRESET_TEAM : null);
     return (
       <main style={pageStyle}>
         <BackButton onClick={() => props.navigate("/teams")} />
-        {team ? (
-          <TeamDetail
-            team={team}
-            note={note}
-            source={source}
-            writeSupport={writeSupport}
-            runtimes={runtimes}
-            client={client}
-            onPublished={(next) => props.navigate(`/teams/${next.id}`)}
-          />
-        ) : (
-          <p>未找到该团队。</p>
-        )}
+        <TeamDetailRoute
+          teamId={teamId}
+          catalog={teams}
+          note={note}
+          source={source}
+          writeSupport={writeSupport}
+          runtimes={runtimes}
+          client={client}
+          onPersisted={openTeam}
+          onPublished={openTeam}
+        />
       </main>
     );
   }
@@ -232,6 +246,57 @@ function BackButton(props: { onClick: () => void }) {
   );
 }
 
+function TeamDetailRoute(props: {
+  teamId: string;
+  catalog: TeamView[];
+  note: string | null;
+  source: "preset" | "live";
+  writeSupport: TeamWriteSupport;
+  runtimes: string[];
+  client: DesktopClient;
+  onPersisted: (team: TeamView) => void;
+  onPublished: (team: TeamView) => void;
+}) {
+  const [team, setTeam] = useState<TeamView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const loaded = await loadTeamDetail(props.client, props.teamId, props.catalog);
+      if (cancelled) {
+        return;
+      }
+      setTeam(loaded);
+      setLoading(false);
+      setLoadError(loaded ? null : "未找到该团队。");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.client, props.teamId, props.catalog]);
+
+  if (loading && !team) {
+    return <p style={mutedStyle}>加载团队…</p>;
+  }
+  if (!team) {
+    return <p data-testid="team-not-found">{loadError ?? "未找到该团队。"}</p>;
+  }
+  return (
+    <TeamDetail
+      team={team}
+      note={props.note}
+      source={props.source}
+      writeSupport={props.writeSupport}
+      runtimes={props.runtimes}
+      client={props.client}
+      onPersisted={props.onPersisted}
+      onPublished={props.onPublished}
+    />
+  );
+}
+
 function TeamDetail(props: {
   team: TeamView;
   note: string | null;
@@ -239,11 +304,11 @@ function TeamDetail(props: {
   writeSupport: TeamWriteSupport;
   runtimes: string[];
   client: DesktopClient;
+  onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
   const { writeSupport } = props;
-  const [forked, setForked] = useState<TeamView | null>(null);
-  const team = forked ?? props.team;
+  const team = props.team;
   const preset = team.kind === "preset";
   const editingDraft = !preset && team.status === "draft" && writeSupport.create;
   if (editingDraft) {
@@ -253,6 +318,7 @@ function TeamDetail(props: {
         writeSupport={writeSupport}
         runtimes={props.runtimes}
         initial={draftFormFromTeam(team)}
+        onPersisted={props.onPersisted}
         onPublished={props.onPublished}
       />
     );
@@ -263,7 +329,7 @@ function TeamDetail(props: {
       note={props.note}
       source={props.source}
       writeSupport={writeSupport}
-      onForked={writeSupport.create ? setForked : undefined}
+      onForked={writeSupport.create ? props.onPersisted : undefined}
       client={props.client}
     />
   );
@@ -291,27 +357,21 @@ function TeamCard(props: {
     setForking(true);
     setForkError(null);
     try {
-      const created = await props.client.createTeamVersion(
-        props.team.id,
-        { members: membersToPayload(props.team.members) },
-        commandOptions(props.team.definitionRevision),
+      const persisted = await persistTeamDraft(
+        props.client,
+        {
+          name: `${props.team.name} 草稿`,
+          members: props.team.members,
+          teamId: null,
+          versionId: null,
+        },
+        writeOptions,
       );
-      if (created.status === "published") {
+      if (persisted.team.status === "published") {
         setForkError("已发布版本不能原地改写；新建草稿响应仍是 published，未当作可编辑草稿。");
         return;
       }
-      const forked = asTeamView({
-        id: props.team.id,
-        name: props.team.name,
-        status: "draft",
-        version: created.version,
-        teamVersionId: created.id,
-        members: created.members ?? props.team.members,
-        definitionRevision: created.definitionRevision,
-      });
-      if (forked) {
-        props.onForked?.(forked);
-      }
+      props.onForked?.(persisted.team);
     } catch (caught) {
       setForkError(errorMessage(caught));
     } finally {
@@ -375,6 +435,7 @@ function TeamEditor(props: {
   writeSupport: TeamWriteSupport;
   runtimes: string[];
   initial?: TeamDraftForm;
+  onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
   const [form, setForm] = useState<TeamDraftForm>(props.initial ?? emptyTeamDraftForm());
@@ -382,7 +443,8 @@ function TeamEditor(props: {
   const publish = publishTeamButton(props.writeSupport);
   const valid = form.name.trim().length > 0 && draftMembersValid(form.members);
   const canSave = props.writeSupport.create && valid && !form.submitting;
-  const canPublish = props.writeSupport.publish && valid && !form.submitting;
+  const canPublish =
+    props.writeSupport.publish && valid && draftMembersValid(form.members) && !form.submitting;
 
   async function run(action: "save" | "publish") {
     if (action === "save" && !props.writeSupport.create) {
@@ -405,75 +467,80 @@ function TeamEditor(props: {
     }
     setForm((current) => reduceTeamDraftForm(current, { type: "submit", action }));
     try {
-      const snapshot = action === "save" ? form : form;
-      const name = snapshot.name.trim();
-      let teamId = snapshot.teamId;
-      let versionId = snapshot.versionId;
-      if (!teamId) {
-        const created = await props.client.createTeam({ name }, commandOptions());
-        teamId = created.id;
-        if (typeof created.teamVersionId === "string" && created.teamVersionId.length > 0) {
-          versionId = created.teamVersionId;
-        }
-      }
-      const members = membersToPayload(snapshot.members);
-      if (!versionId) {
-        const version = await props.client.createTeamVersion(teamId, { members }, commandOptions());
-        versionId = version.id || version.version;
-        if (version.status === "published" && action === "save") {
-          setForm((current) =>
-            reduceTeamDraftForm(current, {
-              type: "failure",
-              error: new Error("创建版本的响应已是 published；未当作可继续编辑的草稿成功态。"),
-            }),
-          );
-          return;
-        }
-      } else {
-        await props.client.patchTeamVersion(
-          teamId,
-          versionId,
-          { members },
-          commandOptions(snapshot.definitionRevision),
-        );
-      }
+      const persisted = await persistTeamDraft(
+        props.client,
+        {
+          name: form.name,
+          members: form.members,
+          teamId: form.teamId,
+          versionId: form.versionId,
+          teamStatus: form.teamStatus,
+          ...(form.teamStateRevision !== undefined
+            ? { teamStateRevision: form.teamStateRevision }
+            : {}),
+          ...(form.versionStateRevision !== undefined
+            ? { versionStateRevision: form.versionStateRevision }
+            : {}),
+        },
+        writeOptions,
+      );
       if (action === "save") {
         setForm((current) =>
-          reduceTeamDraftForm(current, { type: "saved", teamId, versionId: versionId ?? teamId }),
+          reduceTeamDraftForm(current, {
+            type: "saved",
+            teamId: persisted.teamId,
+            versionId: persisted.versionId,
+            ...(persisted.teamStateRevision !== undefined
+              ? { teamStateRevision: persisted.teamStateRevision }
+              : {}),
+            ...(persisted.versionStateRevision !== undefined
+              ? { versionStateRevision: persisted.versionStateRevision }
+              : {}),
+          }),
         );
+        props.onPersisted(persisted.team);
         return;
       }
-      const published = await props.client.publishTeamVersion(
-        teamId,
-        versionId,
-        commandOptions(snapshot.definitionRevision),
+      const interpreted = await publishPersistedTeamVersion(
+        props.client,
+        {
+          teamId: persisted.teamId,
+          versionId: persisted.versionId,
+          ...(persisted.versionStateRevision !== undefined
+            ? { versionStateRevision: persisted.versionStateRevision }
+            : {}),
+        },
+        writeOptions,
       );
-      const interpreted = interpretPublishResponse(published);
       if (!interpreted.ok) {
         setForm((current) =>
-          reduceTeamDraftForm(current, { type: "failure", error: new Error(interpreted.reason) }),
+          reduceTeamDraftForm(current, {
+            type: "failure",
+            error: new Error(interpreted.reason),
+          }),
         );
+        props.onPersisted(persisted.team);
+        return;
+      }
+      const confirmed = await loadTeamDetail(props.client, persisted.teamId);
+      if (!confirmed || confirmed.status !== "published") {
+        setForm((current) =>
+          reduceTeamDraftForm(current, {
+            type: "failure",
+            error: new Error("发布响应不是带 published + immutable 的 TeamVersion。"),
+          }),
+        );
+        props.onPersisted(persisted.team);
         return;
       }
       setForm((current) =>
         reduceTeamDraftForm(current, {
           type: "published",
-          teamId,
+          teamId: persisted.teamId,
           versionId: interpreted.versionId,
         }),
       );
-      const view = asTeamView({
-        ...published,
-        id: teamId,
-        name,
-        status: "published",
-        version: interpreted.versionId,
-        teamVersionId: interpreted.versionId,
-        members: snapshot.members,
-      });
-      if (view) {
-        props.onPublished(view);
-      }
+      props.onPublished(confirmed);
     } catch (caught) {
       setForm((current) => reduceTeamDraftForm(current, { type: "failure", error: caught }));
       if (isRevisionConflict(caught)) {

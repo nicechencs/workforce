@@ -34,6 +34,8 @@ export interface TeamView {
   workers: TeamWorkerView[];
   publishedAt?: string;
   definitionRevision?: number;
+  stateRevision?: number;
+  versionStateRevision?: number;
 }
 
 export const PRESET_MEMBERS: TeamMemberView[] = [
@@ -77,7 +79,7 @@ export const LIVE_CATALOG_NOTE =
   "目录来自 GET /teams。预设 Software Development Team 只读保留；自定义团队必须发布 TeamVersion 后才能绑定到项目。";
 
 export const TEAM_WRITE_API_MISSING =
-  "自定义团队写接口尚未接通（依赖 M7 TeamVersion 写 API / T10）。发布/保存不会成功；预设 Software Development Team 仍只读可用。";
+  "自定义团队写接口尚未接通或探测失败。发布/保存不会成功；预设 Software Development Team 仍只读可用。";
 
 export const UNPUBLISHED_BIND_REASON = "未发布的 Team 草稿不能绑定到项目，也不能开始规划。";
 
@@ -94,14 +96,44 @@ export interface TeamWriteSupport {
   bind: boolean;
 }
 
+export interface TeamWriteOptions {
+  idempotencyKey: string;
+  operationId?: string;
+  ifMatch?: number;
+}
+
+export interface TeamMemberWritePayload {
+  role: string;
+  runtimeProfileId: string;
+  quantity: number;
+}
+
 export interface TeamWriteClient {
   listTeams?: () => Promise<{ items: unknown[] }>;
   getTeam?: (id: string) => Promise<unknown>;
   getTeamVersion?: (id: string, versionId: string) => Promise<unknown>;
-  createTeam?: (...args: never[]) => unknown;
-  createTeamVersion?: (...args: never[]) => unknown;
-  patchTeamVersion?: (...args: never[]) => unknown;
-  publishTeamVersion?: (...args: never[]) => unknown;
+  createTeam?: (input: { name: string }, options: TeamWriteOptions) => Promise<unknown>;
+  patchTeam?: (
+    id: string,
+    input: { name?: string },
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
+  createTeamVersion?: (
+    id: string,
+    input: { members: TeamMemberWritePayload[] },
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
+  patchTeamVersion?: (
+    id: string,
+    versionId: string,
+    input: { members: TeamMemberWritePayload[] },
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
+  publishTeamVersion?: (
+    id: string,
+    versionId: string,
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
   patchProject?: (...args: never[]) => unknown;
 }
 
@@ -132,7 +164,10 @@ export interface TeamDraftForm {
   members: TeamMemberView[];
   teamId: string | null;
   versionId: string | null;
+  teamStatus: "draft" | "published";
   definitionRevision?: number;
+  teamStateRevision?: number;
+  versionStateRevision?: number;
   error: string | null;
   needsRefresh: boolean;
   submitting: boolean;
@@ -145,7 +180,14 @@ export type TeamDraftFormEvent =
   | { type: "changeName"; value: string }
   | { type: "setMembers"; members: TeamMemberView[] }
   | { type: "submit"; action: "save" | "publish" }
-  | { type: "saved"; teamId: string; versionId: string; definitionRevision?: number }
+  | {
+      type: "saved";
+      teamId: string;
+      versionId: string;
+      definitionRevision?: number;
+      teamStateRevision?: number;
+      versionStateRevision?: number;
+    }
   | { type: "published"; teamId: string; versionId: string }
   | { type: "failure"; error: unknown; keepPublished?: boolean };
 
@@ -162,9 +204,11 @@ export function unavailableTeamWriteSupport(): TeamWriteSupport {
 export function teamWriteMethodsPresent(client: TeamWriteClient): boolean {
   return (
     typeof client.createTeam === "function" &&
+    typeof client.patchTeam === "function" &&
     typeof client.createTeamVersion === "function" &&
     typeof client.patchTeamVersion === "function" &&
     typeof client.publishTeamVersion === "function" &&
+    typeof client.getTeam === "function" &&
     typeof client.getTeamVersion === "function"
   );
 }
@@ -190,18 +234,33 @@ export async function probeTeamWriteSupport(client: TeamWriteClient): Promise<Te
   if (!methodsPresent || typeof client.getTeamVersion !== "function") {
     return supportFromFlags({ methodsPresent, versionRead: false, bindMethod });
   }
-  let versionRead = false;
+  const versionRead = await probePublishedVersionRead(client);
+  return supportFromFlags({ methodsPresent, versionRead, bindMethod });
+}
+
+async function probePublishedVersionRead(client: TeamWriteClient): Promise<boolean> {
+  if (typeof client.getTeamVersion !== "function") {
+    return false;
+  }
+  try {
+    const preset = await client.getTeamVersion(LIVE_PRESET_TEAM_ID, PRESET_TEAM_VERSION);
+    if (isTeamVersionPayload(preset)) {
+      return true;
+    }
+  } catch {
+    // Fall through to the published catalog; listTeams never includes drafts.
+  }
   try {
     const page = client.listTeams ? await client.listTeams() : { items: [] };
     const first = page.items.map(asTeamView).find((item): item is TeamView => item !== null);
-    if (first) {
-      const version = await client.getTeamVersion(first.id, first.versionId || first.version);
-      versionRead = isTeamVersionPayload(version);
+    if (!first) {
+      return false;
     }
+    const version = await client.getTeamVersion(first.id, first.versionId || first.version);
+    return isTeamVersionPayload(version);
   } catch {
-    versionRead = false;
+    return false;
   }
-  return supportFromFlags({ methodsPresent, versionRead, bindMethod });
 }
 
 export function teamPageModel(
@@ -321,7 +380,7 @@ export function isPublishedTeamVersion(value: unknown): boolean {
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (record.status !== "published") {
+  if (record.status !== "published" || record.immutable !== true) {
     return false;
   }
   if (record.publishedAt !== undefined) {
@@ -432,20 +491,34 @@ export function asTeamView(value: unknown): TeamView | null {
   if (typeof record.id !== "string") {
     return null;
   }
+  const active = pickActiveVersion(record);
   const name = typeof record.name === "string" ? record.name : record.id;
-  const version = typeof record.version === "string" ? record.version : PRESET_TEAM_VERSION;
+  const version =
+    (typeof record.version === "string" && record.version.length > 0
+      ? record.version
+      : undefined) ??
+    (active && typeof active.version === "string" ? active.version : undefined) ??
+    PRESET_TEAM_VERSION;
   const versionId =
-    typeof record.teamVersionId === "string"
-      ? record.teamVersionId
-      : typeof record.versionId === "string"
-        ? record.versionId
-        : version;
+    (typeof record.activeVersionId === "string" && record.activeVersionId) ||
+    (typeof record.teamVersionId === "string" && record.teamVersionId) ||
+    (typeof record.versionId === "string" && record.versionId) ||
+    (active && typeof active.id === "string" && active.id) ||
+    version;
   const status = record.status === "draft" ? "draft" : "published";
   const kind = isPresetTeamId(record.id) || name === PRESET_TEAM.name ? "preset" : "custom";
-  const members = parseMembers(record);
-  const publishedAt = typeof record.publishedAt === "string" ? record.publishedAt : undefined;
+  const members = parseMembers(record, active);
+  const publishedAt =
+    typeof record.publishedAt === "string"
+      ? record.publishedAt
+      : typeof active?.publishedAt === "string"
+        ? active.publishedAt
+        : undefined;
   const definitionRevision =
     typeof record.definitionRevision === "number" ? record.definitionRevision : undefined;
+  const stateRevision = typeof record.stateRevision === "number" ? record.stateRevision : undefined;
+  const versionStateRevision =
+    typeof active?.stateRevision === "number" ? active.stateRevision : undefined;
   return {
     id: record.id,
     name,
@@ -459,10 +532,50 @@ export function asTeamView(value: unknown): TeamView | null {
     workers: members.map(memberToWorker),
     ...(publishedAt !== undefined ? { publishedAt } : {}),
     ...(definitionRevision !== undefined ? { definitionRevision } : {}),
+    ...(stateRevision !== undefined ? { stateRevision } : {}),
+    ...(versionStateRevision !== undefined ? { versionStateRevision } : {}),
   };
 }
 
-function parseMembers(record: Record<string, unknown>): TeamMemberView[] {
+function pickActiveVersion(record: Record<string, unknown>): Record<string, unknown> | null {
+  if (!Array.isArray(record.versions)) {
+    return null;
+  }
+  const versions = record.versions.filter(
+    (item): item is Record<string, unknown> => typeof item === "object" && item !== null,
+  );
+  const activeId = typeof record.activeVersionId === "string" ? record.activeVersionId : null;
+  if (activeId) {
+    const matched = versions.find(
+      (item) => item.id === activeId || item.version === activeId || item.teamVersionId === activeId,
+    );
+    if (matched) {
+      return matched;
+    }
+  }
+  if (record.status === "draft") {
+    const draft = versions.find((item) => item.status === "draft");
+    if (draft) {
+      return draft;
+    }
+  }
+  return (
+    versions.find((item) => item.status === "published") ?? versions[versions.length - 1] ?? null
+  );
+}
+
+function parseMembers(
+  record: Record<string, unknown>,
+  active: Record<string, unknown> | null,
+): TeamMemberView[] {
+  if (active && Array.isArray(active.members)) {
+    const parsed = active.members
+      .map((item, index) => asMemberView(item, index))
+      .filter((item): item is TeamMemberView => item !== null);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+  }
   if (Array.isArray(record.members)) {
     const parsed = record.members
       .map((item, index) => asMemberView(item, index))
@@ -502,11 +615,13 @@ function asMemberView(value: unknown, index: number): TeamMemberView | null {
   const id = typeof record.id === "string" ? record.id : `${role}-${index}`;
   const title = typeof record.title === "string" ? record.title : roleLabel(role);
   const runtimeProfile =
-    typeof record.runtimeProfile === "string"
-      ? record.runtimeProfile
-      : typeof record.runtime === "string"
-        ? record.runtime
-        : PRESET_RUNTIME_ID;
+    typeof record.runtimeProfileId === "string"
+      ? record.runtimeProfileId
+      : typeof record.runtimeProfile === "string"
+        ? record.runtimeProfile
+        : typeof record.runtime === "string"
+          ? record.runtime
+          : PRESET_RUNTIME_ID;
   const quantity = parseQuantity(record.quantity);
   return { id, role, title, runtimeProfile, quantity };
 }
@@ -562,6 +677,7 @@ export function emptyTeamDraftForm(): TeamDraftForm {
     members: PRESET_MEMBERS.map((member) => ({ ...member })),
     teamId: null,
     versionId: null,
+    teamStatus: "draft",
     error: null,
     needsRefresh: false,
     submitting: false,
@@ -577,8 +693,13 @@ export function draftFormFromTeam(team: TeamView): TeamDraftForm {
     members: team.members.map((member) => ({ ...member })),
     teamId: team.id,
     versionId: team.status === "draft" ? team.versionId : null,
+    teamStatus: team.status,
     ...(team.definitionRevision !== undefined
       ? { definitionRevision: team.definitionRevision }
+      : {}),
+    ...(team.stateRevision !== undefined ? { teamStateRevision: team.stateRevision } : {}),
+    ...(team.versionStateRevision !== undefined
+      ? { versionStateRevision: team.versionStateRevision }
       : {}),
     error: null,
     needsRefresh: false,
@@ -616,8 +737,15 @@ export function reduceTeamDraftForm(
         published: false,
         teamId: event.teamId,
         versionId: event.versionId,
+        teamStatus: "draft",
         ...(event.definitionRevision !== undefined
           ? { definitionRevision: event.definitionRevision }
+          : {}),
+        ...(event.teamStateRevision !== undefined
+          ? { teamStateRevision: event.teamStateRevision }
+          : {}),
+        ...(event.versionStateRevision !== undefined
+          ? { versionStateRevision: event.versionStateRevision }
           : {}),
       };
     case "published":
@@ -715,20 +843,176 @@ export function removeDraftMember(members: TeamMemberView[], index: number): Tea
   return members.filter((_, current) => current !== index);
 }
 
-export function membersToPayload(members: TeamMemberView[]): Array<{
-  id: string;
-  role: string;
-  runtimeProfile: string;
-  quantity: number;
-  title: string;
-}> {
+export function membersToPayload(members: TeamMemberView[]): TeamMemberWritePayload[] {
   return members.map((member) => ({
-    id: member.id,
     role: member.role,
-    runtimeProfile: member.runtimeProfile,
+    runtimeProfileId: member.runtimeProfile,
     quantity: member.quantity,
-    title: member.title,
   }));
+}
+
+export function writeOptions(ifMatch?: number): TeamWriteOptions {
+  const bytes = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random()}`;
+  const options: TeamWriteOptions = {
+    idempotencyKey: `idem_${bytes}`,
+    operationId: `op_${bytes}`,
+  };
+  if (ifMatch !== undefined) {
+    options.ifMatch = ifMatch;
+  }
+  return options;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function readId(value: unknown): string | null {
+  const record = asRecord(value);
+  return record && typeof record.id === "string" && record.id.length > 0 ? record.id : null;
+}
+
+function readStateRevision(value: unknown): number | undefined {
+  const record = asRecord(value);
+  return record && typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)
+    ? record.stateRevision
+    : undefined;
+}
+
+export async function loadTeamDetail(
+  client: TeamWriteClient,
+  teamId: string,
+  catalog: TeamView[] = [],
+): Promise<TeamView | null> {
+  if (typeof client.getTeam === "function") {
+    try {
+      const loaded = asTeamView(await client.getTeam(teamId));
+      if (loaded) {
+        return loaded;
+      }
+    } catch {
+      // Drafts are absent from GET /teams; a missing GET /teams/{id} is a real miss.
+    }
+  }
+  return (
+    teamById(catalog, teamId) ??
+    (isPresetTeamId(teamId) || teamId === PRESET_TEAM.id ? PRESET_TEAM : null)
+  );
+}
+
+export interface PersistTeamDraftInput {
+  name: string;
+  members: TeamMemberView[];
+  teamId: string | null;
+  versionId: string | null;
+  teamStatus?: "draft" | "published";
+  teamStateRevision?: number;
+  versionStateRevision?: number;
+}
+
+export interface PersistTeamDraftResult {
+  teamId: string;
+  versionId: string;
+  teamStateRevision?: number;
+  versionStateRevision?: number;
+  team: TeamView;
+}
+
+export async function persistTeamDraft(
+  client: TeamWriteClient,
+  input: PersistTeamDraftInput,
+  options: (ifMatch?: number) => TeamWriteOptions = writeOptions,
+): Promise<PersistTeamDraftResult> {
+  if (!teamWriteMethodsPresent(client)) {
+    throw new Error(TEAM_WRITE_API_MISSING);
+  }
+  const name = input.name.trim();
+  if (name.length === 0) {
+    throw new Error("团队名称不能为空。");
+  }
+  if (!draftMembersValid(input.members)) {
+    throw new Error("成员必须包含 role、RuntimeProfile 与 quantity ≥ 1。");
+  }
+  const members = membersToPayload(input.members);
+  let teamId = input.teamId;
+  let versionId = input.versionId;
+  let teamStateRevision = input.teamStateRevision;
+  let versionStateRevision = input.versionStateRevision;
+
+  if (!teamId) {
+    const created = await client.createTeam!({ name }, options());
+    const createdId = readId(created);
+    if (!createdId) {
+      throw new Error("createTeam 未返回 Team id，未当作草稿成功。");
+    }
+    teamId = createdId;
+    teamStateRevision = readStateRevision(created);
+  } else if (input.teamStatus !== "published") {
+    const patched = await client.patchTeam!(teamId, { name }, options(teamStateRevision));
+    teamStateRevision = readStateRevision(patched) ?? teamStateRevision;
+  }
+
+  if (!versionId) {
+    const version = await client.createTeamVersion!(teamId, { members }, options(teamStateRevision));
+    const createdVersionId = readId(version);
+    const record = asRecord(version);
+    if (!createdVersionId) {
+      throw new Error("createTeamVersion 未返回 Version id，未当作草稿成功。");
+    }
+    if (record?.status === "published") {
+      throw new Error("创建版本的响应已是 published；未当作可继续编辑的草稿成功态。");
+    }
+    versionId = createdVersionId;
+    versionStateRevision = readStateRevision(version);
+  } else {
+    const version = await client.patchTeamVersion!(
+      teamId,
+      versionId,
+      { members },
+      options(versionStateRevision),
+    );
+    versionId = readId(version) ?? versionId;
+    versionStateRevision = readStateRevision(version) ?? versionStateRevision;
+  }
+
+  const confirmed = await loadTeamDetail(client, teamId);
+  if (!confirmed) {
+    throw new Error("保存后 GET /teams/{id} 未返回该团队，未当作草稿成功。");
+  }
+  return {
+    teamId,
+    versionId: confirmed.versionId || versionId,
+    ...(confirmed.stateRevision !== undefined
+      ? { teamStateRevision: confirmed.stateRevision }
+      : teamStateRevision !== undefined
+        ? { teamStateRevision }
+        : {}),
+    ...(confirmed.versionStateRevision !== undefined
+      ? { versionStateRevision: confirmed.versionStateRevision }
+      : versionStateRevision !== undefined
+        ? { versionStateRevision }
+        : {}),
+    team: confirmed,
+  };
+}
+
+export async function publishPersistedTeamVersion(
+  client: TeamWriteClient,
+  input: { teamId: string; versionId: string; versionStateRevision?: number },
+  options: (ifMatch?: number) => TeamWriteOptions = writeOptions,
+): Promise<
+  | { ok: true; published: true; versionId: string }
+  | { ok: false; published: false; reason: string }
+> {
+  if (typeof client.publishTeamVersion !== "function") {
+    return { ok: false, published: false, reason: TEAM_WRITE_API_MISSING };
+  }
+  const response = await client.publishTeamVersion(
+    input.teamId,
+    input.versionId,
+    options(input.versionStateRevision),
+  );
+  return interpretPublishResponse(response);
 }
 
 export function teamById(teams: TeamView[], teamId: string): TeamView | null {
