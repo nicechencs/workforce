@@ -99,9 +99,9 @@ describe("IPC whitelist", () => {
     expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/teams" })).toBe(true);
     expect(isAllowedApiRequest({ method: "PATCH", path: "/api/v1/teams/tm_1" })).toBe(true);
     expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/teams/tm_1/versions" })).toBe(true);
-    expect(isAllowedApiRequest({ method: "PATCH", path: "/api/v1/teams/tm_1/versions/tmv_1" })).toBe(
-      true,
-    );
+    expect(
+      isAllowedApiRequest({ method: "PATCH", path: "/api/v1/teams/tm_1/versions/tmv_1" }),
+    ).toBe(true);
     expect(
       isAllowedApiRequest({ method: "POST", path: "/api/v1/teams/tm_1/versions/tmv_1:publish" }),
     ).toBe(true);
