@@ -65,7 +65,12 @@ const server = await createServer({
   root,
 });
 await server.listen();
-const url = server.resolvedUrls?.local[0] ?? "http://127.0.0.1:5173/";
+const url = server.resolvedUrls?.local[0];
+if (!url) {
+  await server.close();
+  throw new Error("Vite did not publish a local URL for the desktop dev shell");
+}
+process.stdout.write(`Renderer dev server: ${url}\n`);
 
 const electron = spawn(electronPath, [path.join(root, "dist/main/electron-main.js")], {
   cwd: root,
