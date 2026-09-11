@@ -68,6 +68,7 @@ describe("SqliteWorldSnapshot", () => {
       expect(loaded.budgets).toEqual(snapshot.budgets);
       expect(loaded.reservations).toEqual(snapshot.reservations);
       expect(loaded.usageKeys).toEqual(snapshot.usageKeys);
+      expect(loaded.executionSnapshots).toEqual(snapshot.executionSnapshots);
       expect(reopened.projects.get(ids.projectId)?.workspaceId).toBe("ws_1");
       expect(reopened.projects.get(ids.projectId)?.runtimeId).toBe("rt_mock");
       expect(reopened.projects.get(ids.projectId)?.budgetId).toBe("bdg_1");
@@ -76,6 +77,35 @@ describe("SqliteWorldSnapshot", () => {
     } finally {
       reopened.close();
     }
+  });
+
+  it("writes an execution snapshot after its parent rows in the same save", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const path = join(dir, "workforce.sqlite");
+    const db = WorkforceSqlite.open(path);
+    const snapshot = sampleSnapshot();
+    // The snapshot FKs reference projects / workflow_versions / team_versions that only
+    // exist once the project and workflow loops of the same save have run.
+    snapshot.executionSnapshots = [
+      {
+        id: "snp_snap",
+        projectId: ids.projectId,
+        workflowVersionId: "wfv_snap",
+        teamVersionId: "tmv_1",
+        contentHash: "sha256:snp",
+        policySnapshot: { policyVersion: 1 },
+        createdAt: now,
+      },
+    ];
+    await db.uow.withTransaction(async (tx) => {
+      db.worldSnapshot.save(tx, snapshot, now);
+    });
+    const loaded = db.worldSnapshot.load();
+    expect(loaded.executionSnapshots).toHaveLength(1);
+    expect(loaded.executionSnapshots[0]?.workflowVersionId).toBe("wfv_snap");
+    expect(loaded.executionSnapshots[0]?.teamVersionId).toBe("tmv_1");
+    db.close();
   });
 
   it("reloads budget, active reservation, and usage keys after reopen", async () => {

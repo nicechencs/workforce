@@ -135,7 +135,7 @@ function parseJsonObject(value: SqlValue | undefined, field: string): Record<str
   const text = requiredText(value, field);
   const parsed: unknown = JSON.parse(text);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new PersistenceError("validation_failed", `${field} must be a JSON object`);
+    throw new PersistenceError("constraint", `${field} must be a JSON object`);
   }
   return parsed as Record<string, unknown>;
 }

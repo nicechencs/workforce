@@ -124,7 +124,11 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("002_entity_alignment", checksumSql(MIGRATION_002_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["003_budget_alignment", "004_policy_grants"]);
+      expect(ran).toEqual([
+        "003_budget_alignment",
+        "004_policy_grants",
+        "005_execution_axes_expand",
+      ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));

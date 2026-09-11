@@ -1367,13 +1367,22 @@ export class ComposedAppServices implements AppServices {
   private persist(): void {
     if (this.closed) {
       try {
-        void this.writeSnapshot().catch(() => undefined);
-      } catch {
-        return;
+        void this.writeSnapshot().catch((error) => this.reportPersistFailure(error));
+      } catch (error) {
+        this.reportPersistFailure(error);
       }
       return;
     }
-    void this.writeSnapshot().catch(() => undefined);
+    void this.writeSnapshot().catch((error) => this.reportPersistFailure(error));
+  }
+
+  /**
+   * A swallowed SQLite projection failure makes world.json silently outrun the
+   * entity tables that are the restart authority (D04). Persist stays
+   * fire-and-forget for the request path, but the failure must be observable.
+   */
+  private reportPersistFailure(error: unknown): void {
+    console.error("[workforce] persist failed; SQLite entity tables may be stale", error);
   }
 
   private persistDurably(): Promise<void> {

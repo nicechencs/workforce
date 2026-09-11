@@ -7,6 +7,7 @@ import type {
   BudgetRecord,
   MemoryWorld,
   NodeInstanceRecord,
+  ProjectExecutionSnapshotRecord,
   ProjectRecord,
   RunRecord,
   TaskRecord,
@@ -72,6 +73,7 @@ export interface PersistedWorld {
   receipts: CommandReceipt[];
   operations: CommandReceipt[];
   artifactContents: ArtifactContentRecord[];
+  executionSnapshots: ProjectExecutionSnapshotRecord[];
   workspaces: WorkspaceDto[];
 }
 
@@ -306,6 +308,7 @@ export function dumpWorld(input: {
     receipts: [...receiptsInner.byOperation.values()].map((receipt) => clone(receipt)),
     operations: input.operations.map((receipt) => clone(receipt)),
     artifactContents: input.artifactContents.map((record) => clone(sidecarArtifact(record))),
+    executionSnapshots: [...input.world.executionSnapshots.values()].map((record) => clone(record)),
     workspaces: input.workspaces.map((record) => clone(record)),
   };
 }
@@ -331,6 +334,7 @@ export async function hydrateWorld(
   replaceMap(world.workflows, snapshot.workflows, (record) => record.id);
   replaceMap(world.nodes, snapshot.nodes, (record) => record.id);
   replaceMap(world.budgets, snapshot.budgets, (record) => record.id);
+  replaceMap(world.executionSnapshots, snapshot.executionSnapshots ?? [], (record) => record.id);
 
   world.usageKeys.clear();
   for (const key of snapshot.usageKeys) {
@@ -405,7 +409,7 @@ export function loadSnapshot(stateDir: string): CompositionSnapshot | undefined 
   if (!world) {
     return undefined;
   }
-  return { world, host };
+  return { world: { ...world, executionSnapshots: world.executionSnapshots ?? [] }, host };
 }
 
 function emptyWorld(): PersistedWorld {
@@ -428,6 +432,7 @@ function emptyWorld(): PersistedWorld {
     receipts: [],
     operations: [],
     artifactContents: [],
+    executionSnapshots: [],
     workspaces: [],
   };
 }
@@ -476,6 +481,7 @@ export async function loadComposition(
     artifacts: entities.artifacts,
     workflows: entities.workflows,
     nodes: entities.nodes,
+    executionSnapshots: entities.executionSnapshots,
     events: sqliteEvents.length > 0 ? (sqliteEvents as WorkforceEvent[]) : base.events,
     budgets: sqliteHasBudgets ? entities.budgets : base.budgets,
     reservations: sqliteHasBudgets
@@ -532,6 +538,7 @@ export async function dualWriteSqlite(
               ...(value.runId !== undefined ? { runId: value.runId } : {}),
             })),
             usageKeys: snapshot.usageKeys,
+            executionSnapshots: snapshot.executionSnapshots ?? [],
           },
           snapshot.clock,
         );

@@ -69,11 +69,11 @@ describe("project execution snapshot", () => {
     };
   }
 
-  it("writes a snapshot and reads it back with the exact versions", () => {
+  it("writes a snapshot and reads it back with the exact versions", async () => {
     const db = openDb();
     try {
       seedProject(db);
-      db.uow.withTransaction(async (tx) => {
+      await db.uow.withTransaction(async (tx) => {
         db.worldSnapshot.executionSnapshots.insert(tx, snapshot());
       });
       const stored = db.worldSnapshot.executionSnapshots.get("snp_1");
@@ -86,14 +86,14 @@ describe("project execution snapshot", () => {
     }
   });
 
-  it("is insert-once: re-inserting the same content is a no-op", () => {
+  it("is insert-once: re-inserting the same content is a no-op", async () => {
     const db = openDb();
     try {
       seedProject(db);
-      db.uow.withTransaction(async (tx) => {
+      await db.uow.withTransaction(async (tx) => {
         db.worldSnapshot.executionSnapshots.insert(tx, snapshot());
       });
-      db.uow.withTransaction(async (tx) => {
+      await db.uow.withTransaction(async (tx) => {
         db.worldSnapshot.executionSnapshots.insert(tx, snapshot());
       });
       expect(db.worldSnapshot.executionSnapshots.listAll()).toHaveLength(1);
@@ -102,14 +102,14 @@ describe("project execution snapshot", () => {
     }
   });
 
-  it("rejects an attempt to rewrite a snapshot with different content", () => {
+  it("rejects an attempt to rewrite a snapshot with different content", async () => {
     const db = openDb();
     try {
       seedProject(db);
-      db.uow.withTransaction(async (tx) => {
+      await db.uow.withTransaction(async (tx) => {
         db.worldSnapshot.executionSnapshots.insert(tx, snapshot());
       });
-      expect(() =>
+      await expect(
         db.uow.withTransaction(async (tx) => {
           db.worldSnapshot.executionSnapshots.insert(
             tx,
@@ -123,11 +123,11 @@ describe("project execution snapshot", () => {
     }
   });
 
-  it("round-trips through the world snapshot", () => {
+  it("round-trips through the world snapshot", async () => {
     const db = openDb();
     try {
       seedProject(db);
-      db.uow.withTransaction(async (tx) => {
+      await db.uow.withTransaction(async (tx) => {
         db.worldSnapshot.executionSnapshots.insert(
           tx,
           snapshot({ budgetSnapshot: { limitMinor: 100 } }),
@@ -142,11 +142,11 @@ describe("project execution snapshot", () => {
     }
   });
 
-  it("requires the referenced versions to exist", () => {
+  it("requires the referenced versions to exist", async () => {
     const db = openDb();
     try {
       seedProject(db);
-      expect(() =>
+      await expect(
         db.uow.withTransaction(async (tx) => {
           db.worldSnapshot.executionSnapshots.insert(
             tx,
