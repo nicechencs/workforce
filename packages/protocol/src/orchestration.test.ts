@@ -4,10 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { parseStartRunRequest } from "./command.js";
-import {
-  DEFAULT_ORCHESTRATION_MODE,
-  parseOrchestrationMode,
-} from "./orchestration.js";
+import { DEFAULT_ORCHESTRATION_MODE, parseOrchestrationMode } from "./orchestration.js";
 
 const fixtures = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -15,9 +12,10 @@ const fixtures = resolve(
 );
 
 function startFixture(): Record<string, unknown> {
-  return JSON.parse(
-    readFileSync(resolve(fixtures, "command.run.start.json"), "utf8"),
-  ) as Record<string, unknown>;
+  return JSON.parse(readFileSync(resolve(fixtures, "command.run.start.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
 describe("orchestrationMode", () => {
