@@ -883,13 +883,8 @@ export async function loadTeamCatalog(client: TeamWriteClient): Promise<TeamView
     return [];
   }
   const published = await client.listTeams();
-  let drafts: unknown[] = [];
-  try {
-    const draftPage = await client.listTeams({ status: "draft" });
-    drafts = draftPage.items;
-  } catch {
-    drafts = [];
-  }
+  const draftPage = await client.listTeams({ status: "draft" }).catch(() => ({ items: [] }));
+  const drafts = draftPage.items;
   const byId = new Map<string, TeamView>();
   for (const item of [...published.items, ...drafts]) {
     const view = asTeamView(item);
