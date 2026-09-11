@@ -33,7 +33,10 @@ function cloneGrant(grant: ApprovalGrant): ApprovalGrant {
   return copy;
 }
 
-/** In-memory fake. Durable approval records belong to T04/T09. */
+/**
+ * In-memory GrantStore for tests. Production composition uses SqliteGrantStore
+ * (`policy_grants`). Approval records (`approvals`) are a different object.
+ */
 export class InMemoryGrantStore implements GrantStore {
   private readonly byId = new Map<string, ApprovalGrant>();
   private seq = 0;

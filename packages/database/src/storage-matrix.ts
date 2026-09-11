@@ -59,6 +59,14 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
       "load budgets + active reservations + usage keys after restart; world.json is sidecar only",
   },
   {
+    record: "Policy grant (consume-once)",
+    location: "policy_grants (table; not approvals)",
+    uniqueness:
+      "PRIMARY KEY id; UNIQUE (action_type, digest, resource, version, principal_id, policy_version)",
+    recovery:
+      "load by grant identity after restart; consumed_at and expiry stay fail-closed; world.json does not carry grants",
+  },
+  {
     record: "usage dedup and resource occupancy",
     location: "usage_ledger.idempotency_key; resource_allocations (tables)",
     uniqueness: "UNIQUE (organization_id, idempotency_key); UNIQUE run_id on allocations",

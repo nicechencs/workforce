@@ -1,6 +1,6 @@
 # V0.1 实现进度（以代码与测试为准）
 
-日期：2026-09-10  
+日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。
 
 ## 1. 本轮目标与结果
@@ -17,10 +17,10 @@
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` + contract tests |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | 完成库并接入 composition | migration 002/003 + entity repos；重启以 SQLite 实体表为准（含预算/reservation），world.json 仅 sidecar |
+| T04 | 完成库并接入 composition | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
-| T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest |
+| T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
 | T08 | 完成库，部分接线 | `LocalArtifactStore` 打开；Mock 产物主要在 world snapshot |
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
@@ -44,12 +44,25 @@ pnpm --filter @workforce/desktop-client typecheck
 pnpm exec vitest run      # 全量 unit + integration + happy-dom 页 driver
 ```
 
+Grant 持久化切片补充（Linux，2026-09-11；未重跑全量 `pnpm test` / `pnpm build`）：
+
+```text
+pnpm --filter @workforce/database typecheck
+pnpm --filter @workforce/policy typecheck
+pnpm --filter @workforce/daemon typecheck
+pnpm exec vitest run packages/database packages/policy \
+  apps/daemon/tests/grant-store.test.ts apps/daemon/tests/policy.test.ts
+pnpm exec vitest run apps/daemon/tests/composition.test.ts
+pnpm check:docs
+```
+
 关键场景：
 
 1. **Daemon HTTP M3**（`apps/daemon/tests/composition.test.ts`）  
    创建项目 → 绑定 workspace 授权引用 → `:start-planning`（空 body，内部填 Mock 预设）→ `:confirm-plan`（冻结 fixture：`dev_alpha` / `dev_bravo` / `review_integration`）→ `:start` → Mock 运行完成并绑定产物 → artifact 审批 consumed。  
    同 `stateDir` 重启后项目仍在；重放同一 `operationId` **不**新增 Run。  
    删除 `world.json` 后预算/reservation/usage key 仍从 SQLite 恢复；硬货币上限仍为 `422 unknown_cost_not_enforceable`。  
+   删除 `world.json` 后未消费 Policy grant 仍可 `decide` 一次；已消费 grant 重启后仍为 `grant_consumed`，不能再消费。`credential.copy_env` 即使有 grant 行仍 deny。  
    Mock pause → `422 unsupported_capability`。  
    硬货币上限 → `InMemoryPolicyEngine.decideStart` → `422 unknown_cost_not_enforceable`。  
    计划审批 `actionDigest` 为 `plan.apply` 规范化 digest；digest 不一致的 confirm/approve → `409 conflict`。
@@ -84,6 +97,7 @@ Approval(gate=artifact)                     ✅
 导出 bundle/report                          ✅ POST /projects/{id}:export
 重启不重复 Run                              ✅ SQLite 实体表权威（可删 world.json）
 重启保留预算/reservation                     ✅ SQLite budgets / budget_reservations / usage_ledger
+重启保留 Policy grant                        ✅ SQLite `policy_grants`（与 `approvals` 分表；不写 world.json）
 ```
 
 壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的为「查看模板、版本和结构化步骤」，不用「管理」暗示画布。线框 §1 侧栏与 §7 只读页含「工作流」。实现仍是夹具只读；不发明 `GET /workflows`，不宣称真实 Runtime 可执行。
@@ -93,9 +107,9 @@ Approval(gate=artifact)                     ✅
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：探测已有；`start` 仍拒绝。需在已安装 CLI 的机器上跑授权 `codex exec --json`。  
 3. **T17** 打包。  
-4. Policy grant store 仍为进程内；持久化审批记录与 digest 以 SQLite/world 为准。  
-5. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。  
-6. 项目详情 Tasks 依赖边、可写项目策略与远程节点范围仍缺公开 DTO/API，UI 只展示诚实空态或只读说明，未伪造已接入。
+4. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。  
+5. 项目详情 Tasks 依赖边、可写项目策略与远程节点范围仍缺公开 DTO/API，UI 只展示诚实空态或只读说明，未伪造已接入。  
+6. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。
 
 ## 6. 如何跑
 

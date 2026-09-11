@@ -170,7 +170,7 @@ export class ComposedAppServices implements AppServices {
     const engine = createEnginePort();
     const policy = options.policyEngine
       ? new CompositionPolicy(options.policyEngine)
-      : createCompositionPolicy({ principalId });
+      : createCompositionPolicy({ principalId, grants: sqlite.grants });
     const composed: { services?: ComposedAppServices } = {};
     const worktrees = await CompositionWorktreeHost.open({ stateDir: options.stateDir });
     const host = new ComposedMockHost({
