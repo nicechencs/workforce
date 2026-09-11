@@ -8,9 +8,9 @@
 
 Workforce 是一个通用 AI Workforce 编排平台。用户提交目标，平台将工作拆分为可执行任务，分配给具备不同角色与能力的 AI Worker，在受控 Workspace 中调用合适的 Runtime 与工具，产出可追踪的 Artifact，并通过评估、审批和失败恢复完成闭环。
 
-Workforce 不是单一 Coding Agent，也不是让多个 Agent 自由聊天的界面。核心产品动作是：
+Workforce 不是单一 Coding Agent，也不是让多个 Agent 自由聊天的界面。产品是**项目制**：主对象是 Project。围着一个项目，用户编排 Team（含自定义）、编排 Tasks、编排 Workflow（含可视化画布），再执行与验收。核心产品动作是：
 
-> 将 Task 交给合适的 Worker，在受控环境中执行，并验证其 Output。
+> 围绕一个 Project，把工作交给配好的 Team，按编排好的 Workflow 执行 Task，并验证其 Output。
 
 ## 2. 产品愿景
 
@@ -37,7 +37,7 @@ Workforce 不是单一 Coding Agent，也不是让多个 Agent 自由聊天的�
 | 对象 | 定义 |
 |---|---|
 | Organization | 用户、团队、策略、凭据和预算的治理边界 |
-| Project | 围绕一个目标组织起来的工作单元 |
+| Project | **主对象**。围绕一个目标组织 Team、Task、Workflow、Workspace 与 Artifact |
 | Workspace | Worker 实际执行工作的环境与资源集合 |
 | Team | 为项目协作的一组 Worker |
 | Worker | 具备角色、能力、工具、策略和 Runtime 配置的执行者 |

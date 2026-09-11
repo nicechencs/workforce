@@ -65,4 +65,4 @@ review-bot 对每个 PR 核对下列**决策登记**红线；任一项回归则 
 
 1. **Codex live exec**（T15：Process 已接线；本机无 live `codex exec`。需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**
-3. **可视化画布 / 自定义 Team 写接口**（M7 / T18–T19：已是产品必达，不是放弃。未领取前不要在普通 PR 里顺便做）
+3. **项目制循环上的画布 / 自定义 Team 写接口**（M7 / T18–T19：给 Project 编排 Team 与 Workflow，不是外挂。未领取前不要在普通 PR 里顺便做）

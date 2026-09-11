@@ -1,17 +1,19 @@
 # V0.1 页面与 API 能力矩阵
 
 日期：2026-09-11  
-状态：**已冻结（首版按钮与 endpoint；M7 画布/自定义 Team 已列入）**  
-权威：[decision-register.md](decision-register.md) D08、D15、D16。  
+状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排）**  
+权威：[decision-register.md](decision-register.md) §0、D08、D15、D16。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — 可视化画布与自定义 Team 从 `later` 迁出，列入 **M7**。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。画布写接口仍为 M7。
+修订：2026-09-11 — 主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。
+
+**项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布编排 Workflow」。
 
 图例：
 
 - **M3**：Mock 闭环必须可用
 - **M4**：真实 Codex 接入后
 - **M5**：治理全链路
-- **M7**：画布编辑器与自定义 Team 编排（产品必达；M3 之后领取，见 D15/D16）
+- **M7**：补齐项目制循环上的画布与自定义 Team（产品必达；M3 之后领取，见 D15/D16）
 - **later**：V0.1 后或不做（**不含**画布与自定义 Team）
 - **readonly**：可展示，不可改（M3 过渡深度）
 - **unsupported**：探测后禁用
@@ -24,13 +26,13 @@ P0 最小切片（M3 必须能走完主路径）：
 |---|---|---|
 | 应用壳 / 连接状态 | 必须 | Daemon 健康、重连、版本不兼容错误 |
 | 工作台 | 部分 | 待审批、运行中 Run、活跃项目；不做复杂统计 |
-| 项目列表 / 创建 / 详情 | 必须 | 创建、配置、规划确认、Task DAG。详情分区见 IA §4.3：配置写入在 Settings，DAG 在 Tasks，项目命令在页头 |
+| 项目列表 / 创建 / 详情 | 必须 | **主对象**。创建、配置（Workspace / Team / 预算）、规划确认、Task DAG。详情分区见 IA §4.3：配置写入在 Settings，DAG 在 Tasks，项目命令在页头 |
 | Task 详情 | 必须 | 依赖、验收、Run 历史 |
 | Run 控制台 | 必须 | 时间线、日志、取消、用量（未知成本展示） |
 | Artifact 查看 | 必须 | 固定版本 diff/内容/Evaluation |
 | 审批卡 | 必须 | plan + artifact；digest/版本/到期 |
 | 本机诊断 / Local Node | 必须 | 只读本机节点与 Mock/Codex 探测 |
-| AI 团队 | readonly → M7 | M3：只读预设 Software Development Team。M7：自定义编排（创建/版本/发布）。见 D16 |
+| AI 团队 | readonly → M7 | 项目循环第一环。M3：只读预设 Software Development Team。M7：为项目自定义编排（创建/版本/发布）。见 D16 |
 | 设置 | 部分 | 本机 Runtime 探测、预算展示 |
 
 P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-architecture.md)）：
@@ -38,14 +40,14 @@ P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-
 | 页面 | 阶段 | 说明 |
 |---|---|---|
 | 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
-| 工作流目录 / 画布 | M3 readonly → M7 必达 | M3：只读目录已接通 `GET /workflows`（及模板/版本详情）。M7：可视化画布 + 写接口（D15）。目录不是可执行 Runtime，不得宣称 Mock/Codex 已执行这些定义 |
+| 工作流目录 / 画布 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口，发布后绑定到 Project（D15）。目录不是可执行 Runtime |
 
-M7 必达（当前**未实现**；未领取前不要塞进随机 PR）：
+M7 必达——补齐项目制循环（当前**未实现**；未领取前不要塞进随机 PR）：
 
 | 页面/动作 | 处理 |
 |---|---|
-| 可视化工作流画布编辑器 | M7；与只读目录共用「工作流」入口 |
-| 自定义 Team 编排 | M7；M3 只读预设仍必须可用 |
+| 可视化工作流画布编辑器 | 为项目编排 Workflow；与只读目录共用「工作流」入口 |
+| 自定义 Team 编排 | 为项目配团队；M3 只读预设仍必须可用 |
 
 仍后置或示意（与 D15/D16 无关）：
 

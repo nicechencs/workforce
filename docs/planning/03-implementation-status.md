@@ -2,11 +2,11 @@
 
 日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-11 — 同步公开 Task `dependsOn` 与 `LocalArtifactStore` Mock 产物权威；不宣称 live Codex 或画布编辑器。
+修订：2026-09-11 — 同步公开 Task `dependsOn` 与 `LocalArtifactStore` Mock 产物权威；不宣称 live Codex。画布与自定义 Team 为项目制循环上的 M7 已规划、未实现。
 
 ## 1. 本轮目标与结果
 
-目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。
+目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布与自定义 Team 是该循环上 **M7 已规划、未实现** 的编排面，不是外挂功能。
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
@@ -14,7 +14,7 @@
 
 | ID | 状态 | 证据 |
 |---|---|---|
-| T00 | 完成（M7 决策已补写） | M0–M3 冻结仍有效；2026-09-11 写入 D15/D16（画布 + 自定义 Team）。**未实现**这些 UI/API |
+| T00 | 完成（项目制 + M7 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 为项目循环上的画布与自定义 Team。**未实现**这些 UI/API |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
