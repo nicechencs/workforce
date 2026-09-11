@@ -57,6 +57,39 @@ describe("desktop-client", () => {
     ]);
   });
 
+  it("sends M7 workflow and team write paths", async () => {
+    const { transport, calls } = memoryTransport();
+    const client = createDesktopClient({ transport });
+    const options = { idempotencyKey: "k2", ifMatch: 1 };
+    await client.createWorkflow({ name: "Draft" }, { idempotencyKey: "k1" });
+    await client.createWorkflowVersion("wfd_1", { nodes: [], edges: [] }, options);
+    await client.patchWorkflowVersion(
+      "wfd_1",
+      "wfv_1",
+      { nodes: [{ id: "a", kind: "task" }], edges: [] },
+      options,
+    );
+    await client.publishWorkflowVersion("wfd_1", "wfv_1", options);
+    await client.createTeam({ name: "Squad" }, { idempotencyKey: "k3" });
+    await client.createTeamVersion(
+      "tm_1",
+      { members: [{ role: "developer", runtimeProfileId: "mock", quantity: 1 }] },
+      options,
+    );
+    await client.publishTeamVersion("tm_1", "tmv_1", options);
+    await client.getTeamVersion("tm_software_development", "tmv_software_development_0_1_0");
+    expect(calls.map((item) => `${item.method} ${item.path}`)).toEqual([
+      "POST /api/v1/workflows",
+      "POST /api/v1/workflows/wfd_1/versions",
+      "PATCH /api/v1/workflows/wfd_1/versions/wfv_1",
+      "POST /api/v1/workflows/wfd_1/versions/wfv_1:publish",
+      "POST /api/v1/teams",
+      "POST /api/v1/teams/tm_1/versions",
+      "POST /api/v1/teams/tm_1/versions/tmv_1:publish",
+      "GET /api/v1/teams/tm_software_development/versions/tmv_software_development_0_1_0",
+    ]);
+  });
+
   it("throws ProblemError for problem+json responses", async () => {
     const { transport } = memoryTransport();
     const client = createDesktopClient({ transport });

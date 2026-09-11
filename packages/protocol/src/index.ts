@@ -8,4 +8,5 @@ export * from "./expected-output.js";
 export * from "./money.js";
 export * from "./run.js";
 export * from "./task.js";
+export * from "./team.js";
 export * from "./workflow.js";

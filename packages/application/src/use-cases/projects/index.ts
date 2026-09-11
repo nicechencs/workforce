@@ -1,4 +1,10 @@
-export { UseCaseError, notFound, revisionConflict, validationFailed } from "./errors.js";
+export {
+  UseCaseError,
+  invalidTransition,
+  notFound,
+  revisionConflict,
+  validationFailed,
+} from "./errors.js";
 export type {
   BudgetAmount,
   BudgetDecision,

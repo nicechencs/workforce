@@ -51,6 +51,7 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("002_entity_alignment")).toBe(true);
       expect(applied.has("003_budget_alignment")).toBe(true);
       expect(applied.has("004_policy_grants")).toBe(true);
+      expect(applied.has("005_catalog_definitions")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -59,6 +60,8 @@ describe("WorkforceSqlite", () => {
       expect(tableExists(db.connection, "timers")).toBe(true);
       expect(tableExists(db.connection, "node_instances")).toBe(true);
       expect(tableExists(db.connection, "policy_grants")).toBe(true);
+      expect(tableExists(db.connection, "catalog_workflows")).toBe(true);
+      expect(tableExists(db.connection, "catalog_teams")).toBe(true);
     } finally {
       db.close();
     }
@@ -75,7 +78,12 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("001_init", checksumSql(MIGRATION_001_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["002_entity_alignment", "003_budget_alignment", "004_policy_grants"]);
+      expect(ran).toEqual([
+        "002_entity_alignment",
+        "003_budget_alignment",
+        "004_policy_grants",
+        "005_catalog_definitions",
+      ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       const columns = db.connection.prepare("PRAGMA table_info(projects)").all();
@@ -118,7 +126,7 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("002_entity_alignment", checksumSql(MIGRATION_002_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["003_budget_alignment", "004_policy_grants"]);
+      expect(ran).toEqual(["003_budget_alignment", "004_policy_grants", "005_catalog_definitions"]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));
@@ -150,12 +158,13 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("003_budget_alignment", checksumSql(MIGRATION_003_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["004_policy_grants"]);
+      expect(ran).toEqual(["004_policy_grants", "005_catalog_definitions"]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));
       expect(applied.get("003_budget_alignment")).toBe(checksumSql(MIGRATION_003_SQL));
       expect(tableExists(db.connection, "policy_grants")).toBe(true);
+      expect(tableExists(db.connection, "catalog_workflows")).toBe(true);
     } finally {
       db.close();
     }

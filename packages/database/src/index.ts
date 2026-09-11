@@ -43,7 +43,9 @@ export {
   MIGRATION_002_SQL,
   MIGRATION_003_SQL,
   MIGRATION_004_SQL,
+  MIGRATION_005_SQL,
 } from "./schema.js";
+export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
 export { SqliteWorldSnapshot, type WorldEntitySnapshot } from "./world-snapshot.js";

@@ -51,6 +51,7 @@ export interface ProjectDto {
   createdAt: string;
   updatedAt: string;
   planArtifactVersionId?: string;
+  teamVersionId?: string;
 }
 
 export interface RunDto {
@@ -174,6 +175,7 @@ export interface CreateProjectInput {
 export interface PatchProjectInput {
   name?: string;
   objective?: string;
+  teamVersionId?: string;
 }
 
 export interface ConfirmPlanInput {
@@ -206,22 +208,25 @@ export interface SessionDto {
   principalId: string;
 }
 
-export interface TeamRoleDto {
-  id: string;
-  role: string;
-  version: string;
-}
-
-export interface TeamDto {
-  id: string;
-  name: string;
-  version: string;
-  status: "published";
-  protocolVersion: "0.1";
-  roles: TeamRoleDto[];
-}
-
-export type { WorkflowDto, WorkflowStepDto, WorkflowVersionDto } from "@workforce/protocol";
+export type {
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
+  TeamDto,
+  TeamMemberDto,
+  TeamRoleDto,
+  TeamVersionDto,
+  WorkflowDto,
+  WorkflowGraphEdgeDto,
+  WorkflowGraphNodeDto,
+  WorkflowStepDto,
+  WorkflowVersionDto,
+} from "@workforce/protocol";
 
 export interface NodeDto {
   id: string;

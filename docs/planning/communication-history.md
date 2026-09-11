@@ -63,3 +63,11 @@ updated: 2026-09-11
   - [04-collab-and-review.md](04-collab-and-review.md) 将 T20/T21 列入禁止塞进随机 PR 的后置项。
   - [docs/README.md](../README.md)、[AGENTS.md](../../AGENTS.md) 增加本文件入口；规划文档变更须回写本历史。
 - **状态：** 全部 **planned**。当前代码仍是 M3 目录/只读 + M7 画布/自定义 Team **已规划未实现**。对话生成、生成后画布编辑、按 Agent 直接执行均 **未实现**。
+
+---
+
+## 2026-09-11（Asia/Taipei）M7 写 API + 协议切片（非画布 / 非 M7 完成）
+
+- **决定：** 按 D15/D16 与能力矩阵补齐 Workflow / Team 的写契约与 Daemon 写路由，让后续画布（T18）与可写 Team UI（T19）有同一套 protocol，而不是第二套图协议。不发明 chat 或 `executionMode` endpoint（D17/D18 仍 planned）。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 只把写 API / protocol / SQLite catalog 记为已验证；T18/T19 UI 仍未实现。协议索引增加 `team.schema.json`，并扩展 `workflow-catalog.schema.json` 的 draft + nodes/edges。
+- **状态：** 写 API + 协议 **implemented**（本切片）。画布、可写 Team UI、对话生成、双执行模式 **planned**。M7 **未完成**。

@@ -26,6 +26,13 @@ describe("desktop-client paths", () => {
     expect(paths.workflowVersion("software-development-team.feature-delivery", "0.1.0")).toBe(
       "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
     );
+    expect(paths.workflowVersionPublish("wfd_1", "wfv_1")).toBe(
+      "/api/v1/workflows/wfd_1/versions/wfv_1:publish",
+    );
+    expect(paths.teamVersion("tm_1", "tmv_1")).toBe("/api/v1/teams/tm_1/versions/tmv_1");
+    expect(paths.teamVersionPublish("tm_1", "tmv_1")).toBe(
+      "/api/v1/teams/tm_1/versions/tmv_1:publish",
+    );
     expect(paths.runtimeCapabilities("mock")).toBe("/api/v1/runtimes/mock/capabilities");
     expect(paths.projectBudget("prj_1")).toBe("/api/v1/projects/prj_1/budget");
     expect(paths.projectWorkspaces("prj_1")).toBe("/api/v1/projects/prj_1/workspaces");

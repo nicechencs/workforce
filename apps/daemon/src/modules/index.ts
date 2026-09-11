@@ -28,9 +28,18 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  TeamVersionDto,
   WorkflowDto,
   WorkflowVersionDto,
   WorkspaceDto,
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
 } from "./dto.js";
 
 export type { AppError } from "./errors.js";
@@ -51,9 +60,57 @@ export interface AppServices {
 
   listTeams(query: ListQuery): PageDto<TeamDto>;
   getTeam(id: string): TeamDto | null;
+  getTeamVersion(id: string, versionId: string): TeamVersionDto | null;
+  createTeam(ctx: CommandContext, input: CreateTeamInput): MaybeAsync<CommandResult<TeamDto>>;
+  patchTeam(
+    ctx: CommandContext,
+    id: string,
+    input: PatchTeamInput,
+  ): MaybeAsync<CommandResult<TeamDto>>;
+  createTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateTeamVersionInput,
+  ): MaybeAsync<CommandResult<TeamVersionDto>>;
+  patchTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchTeamVersionInput,
+  ): MaybeAsync<CommandResult<TeamVersionDto>>;
+  publishTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): MaybeAsync<CommandResult<TeamVersionDto>>;
   listWorkflows(query: ListQuery): PageDto<WorkflowDto>;
   getWorkflow(id: string): WorkflowDto | null;
   getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null;
+  createWorkflow(
+    ctx: CommandContext,
+    input: CreateWorkflowInput,
+  ): MaybeAsync<CommandResult<WorkflowDto>>;
+  patchWorkflow(
+    ctx: CommandContext,
+    id: string,
+    input: PatchWorkflowInput,
+  ): MaybeAsync<CommandResult<WorkflowDto>>;
+  createWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateWorkflowVersionInput,
+  ): MaybeAsync<CommandResult<WorkflowVersionDto>>;
+  patchWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchWorkflowVersionInput,
+  ): MaybeAsync<CommandResult<WorkflowVersionDto>>;
+  publishWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): MaybeAsync<CommandResult<WorkflowVersionDto>>;
   listNodes(query: ListQuery): PageDto<NodeDto>;
   getNode(id: string): NodeDto | null;
   listRuntimes(query: ListQuery): PageDto<RuntimeDto>;
