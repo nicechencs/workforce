@@ -84,7 +84,7 @@ M3 可以先使用固定模板和 Mock Plan；V0.1 最终必须覆盖真实 Plan
 
 ### R07：Node 补充协议与本地模型必填约束不一致
 
-证据：ADR 0001 要求 node-aware Run；[07 §18 Node-aware](../blueprint/07-runtime-protocol.md#18-node-aware-runtime-binding) 要求本地生成 NodeExecutionBinding；[10 末节](../blueprint/10-database-schema.md#18-execution-node-数据表补充) 允许 Run node 外键先为空；RuntimeDescriptor.transport 仍包含 remote，但新补充明确 transport 与 Placement 正交。
+证据：ADR 0001 要求 node-aware Run；[07 §18 Node-aware](../blueprint/07-runtime-protocol.md#18-node-aware-runtime-binding) 要求本地生成唯一 `PlacementSnapshot` resolved binding；[10 末节](../blueprint/10-database-schema.md#18-execution-node-数据表补充) 允许 Run node 外键先为空。早期蓝图曾把 `remote` 放进 RuntimeDescriptor.transport；D07 已冻结为 `process | sdk | http`，位置改由 Placement 表达。
 
 建议：新建本地 Run 即记录必需的 nodeId、runtimeInstallationId、workspaceInstanceId 或明确“分配前可空、starting 前必填”的阶段约束。移除 transport 中的 remote 含义，以 Placement 表达位置。区分 workflowNodeId 与 executionNodeId，避免 nodeId 双重含义。M3 实现单机容量与 Node ports，远程 enrollment/heartbeat/服务器 lease 只保留版本化契约和 Mock。
 

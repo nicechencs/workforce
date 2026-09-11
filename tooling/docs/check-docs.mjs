@@ -36,6 +36,13 @@ function managedMarkdownFiles(projectRoot = rootDir) {
   ].sort();
 }
 
+function documentationMarkdownFiles(projectRoot = rootDir) {
+  return [...new Set([
+    ...managedMarkdownFiles(projectRoot),
+    ...collectMarkdown(join(projectRoot, 'docs')),
+  ])].sort();
+}
+
 function parseFrontMatter(content) {
   const lines = content.split(/\r?\n/);
   if (lines[0]?.trim() !== '---') return null;
@@ -61,19 +68,73 @@ function headingSlug(text) {
     .replace(/^-+|-+$/g, '');
 }
 
+function fenceToken(line) {
+  const match = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/);
+  if (!match) return null;
+  return { char: match[2][0], length: match[2].length, info: match[3] };
+}
+
+function closesFence(token, opening) {
+  return token
+    && token.char === opening.char
+    && token.length >= opening.length
+    && token.info.trim() === '';
+}
+
 function markdownLines(content) {
   const output = [];
   let fence = null;
   for (const [index, line] of content.split(/\r?\n/).entries()) {
-    const marker = line.match(/^\s*(```+|~~~+)/)?.[1];
-    if (marker) {
-      if (!fence) fence = marker[0];
-      else if (marker[0] === fence) fence = null;
+    const token = fenceToken(line);
+    if (token) {
+      if (!fence) fence = token;
+      else if (closesFence(token, fence)) fence = null;
       continue;
     }
     if (!fence) output.push({ line, number: index + 1 });
   }
   return output;
+}
+
+function mermaidAndFenceErrors(content, shown = 'fixture.md') {
+  const errors = [];
+  let fence = null;
+  let fenceLine = 0;
+  let mermaid = null;
+  let mermaidHasBody = false;
+  let mermaidFirstLine = '';
+  for (const [index, line] of content.split(/\r?\n/).entries()) {
+    const token = fenceToken(line);
+    const info = token?.info.trim();
+    if (!fence && token && /^mermaid$/i.test(info)) {
+      fence = token;
+      fenceLine = index + 1;
+      mermaid = { line: fenceLine };
+      mermaidHasBody = false;
+      mermaidFirstLine = '';
+      continue;
+    }
+    if (!fence && token) {
+      fence = token;
+      fenceLine = index + 1;
+      continue;
+    }
+    if (fence && closesFence(token, fence)) {
+      if (mermaid && !mermaidHasBody) errors.push(`${shown}:${mermaid.line} empty Mermaid block`);
+      if (mermaid && mermaidHasBody && !/^(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|erDiagram|classDiagram|gantt|journey|mindmap|timeline|quadrantChart|pie|gitGraph)\b/i.test(mermaidFirstLine)) {
+        errors.push(`${shown}:${mermaid.line} Mermaid block has unknown diagram type`);
+      }
+      fence = null;
+      mermaid = null;
+      continue;
+    }
+    if (mermaid && line.trim()) {
+      mermaidHasBody = true;
+      if (!mermaidFirstLine) mermaidFirstLine = line.trim();
+    }
+  }
+  if (fence) errors.push(`${shown}:${fenceLine} unclosed Markdown fence`);
+  return errors;
 }
 
 function headings(content) {
@@ -102,12 +163,13 @@ function isWithinRoot(candidate, projectRoot) {
 function validateFile(file, projectRoot, errors) {
   const content = readFileSync(file, 'utf8');
   const shown = relative(projectRoot, file).replaceAll('\\', '/');
-  const isManagedDoc = shown === 'docs/README.md'
+  const existingManagedDoc = shown === 'docs/README.md'
     || shown === 'docs/STYLE.md'
     || shown.startsWith('docs/guides/')
     || shown.startsWith('docs/reference/');
-  if (isManagedDoc) {
-    const metadata = parseFrontMatter(content);
+  const metadata = parseFrontMatter(content);
+  const migratedCurrentDoc = metadata?.get('status') === 'current';
+  if (existingManagedDoc || migratedCurrentDoc) {
     if (!metadata) errors.push(`${shown}:1 missing YAML front matter`);
     else {
       for (const key of requiredMetadata) if (!metadata.get(key)) errors.push(`${shown}:1 missing metadata: ${key}`);
@@ -116,6 +178,8 @@ function validateFile(file, projectRoot, errors) {
       if (metadata.get('updated') && !/^\d{4}-\d{2}-\d{2}$/.test(metadata.get('updated'))) errors.push(`${shown}:1 updated must use YYYY-MM-DD`);
     }
   }
+
+  errors.push(...mermaidAndFenceErrors(content, shown));
 
   const seen = new Map();
   for (const heading of headings(content)) {
@@ -165,7 +229,7 @@ function validateFile(file, projectRoot, errors) {
 
 function runChecks(projectRoot = rootDir) {
   const errors = [];
-  const files = managedMarkdownFiles(projectRoot);
+  const files = documentationMarkdownFiles(projectRoot);
   for (const file of files) validateFile(file, projectRoot, errors);
   return { files, errors };
 }
@@ -177,10 +241,18 @@ function main() {
     for (const error of result.errors) console.error(`- ${error}`);
     process.exitCode = 1;
   } else {
-    console.log(`Documentation checks passed (${result.files.length} managed Markdown files).`);
+    console.log(`Documentation checks passed (${result.files.length} Markdown files).`);
   }
 }
 
-export { headingSlug, links, managedMarkdownFiles, parseFrontMatter, runChecks };
+export {
+  documentationMarkdownFiles,
+  headingSlug,
+  links,
+  managedMarkdownFiles,
+  mermaidAndFenceErrors,
+  parseFrontMatter,
+  runChecks,
+};
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) main();

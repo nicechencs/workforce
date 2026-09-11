@@ -1,3 +1,11 @@
+---
+title: Workforce V0.1 Decision Register
+type: decision
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # V0.1 决策登记
 
 日期：2026-09-11  
@@ -92,8 +100,8 @@ SSE `data` 必须是完整 `WorkforceEvent` JSON，或明确的投影 DTO；禁�
 
 1. 新建 Project 先进入 `draft`：绑定 Workspace、Team（M3 只读预设；M7 可为已发布自定义 TeamVersion）、Runtime、权限、预算。配置未完成不得启动 Planner。桌面 V0.1：WorkspaceBinding 写入在项目详情 Settings；页头只读展示绑定状态；开始规划 / 确认计划 / 开始执行留在页头（IA §4.3.4）。这是项目制循环的入口，不是「先做完项目再另开团队/画布产品」。
 2. 配置齐备后进入 `planning`。Planner 是普通 Task/Run（Mock 或真实），产出不可变 **Plan Artifact**（精确 ArtifactVersion）。
-3. 用户确认指定 Plan 版本（gate 类型 `plan`）。确认成功后原子发布/引用 **执行 WorkflowVersion**，Project 进入 `ready`。
-4. 开发 DAG 只绑定已发布 WorkflowVersion。Planner **不得**修改活动执行图。
+3. 用户确认指定 Plan 版本（gate 类型 `plan`）。确认成功后原子创建唯一 **ProjectExecutionSnapshot**（精确 WorkflowVersion/TeamVersion/Policy/Budget），Project 写入 `executionSnapshotId` 并进入 `ready`。
+4. 开发 DAG 只从 ProjectExecutionSnapshot 读取已发布 WorkflowVersion/TeamVersion。Planner **不得**修改活动执行图。
 5. 取消或重生成计划：保留旧 Plan Artifact 与审批记录；新 Plan 新版本。已发布执行图不原地改；若需改计划，取消或完成后走新 WorkflowInstance。
 6. M3 允许固定 Mock Plan fixture；V0.1 最终必须接真实 Planner。未批准 Plan 不得启动 Developer。
 
@@ -186,6 +194,10 @@ SSE：
 - V0.1 实现单机容量与 Node ports。远程 enrollment / heartbeat / 服务器 lease：版本化契约 + Mock，不建服务器控制面。
 - Lease 到期 ≠ 旧进程已停。fencing 只阻止旧结果被平台接纳，不能阻止旧进程写外部系统。
 - 恢复不确定时不得直接重跑。取消与 inspect 必须有明确授权路径。
+
+执行字段冻结为三条正交轴：`transport`（`process | sdk | http`，Adapter 接入方式）、`placement`（`automatic | local_only | remote_only | specific_node`，节点/Workspace 位置）和 `orchestrationMode`（`workflow_bound | direct`，是否进入本次 Workflow 调度）。旧名 `executionMode` 不再承载任何一轴；Runtime descriptor 不使用 `remote` 作为 transport。
+
+默认与覆盖层级冻结为：启动命令的显式、经 Capability/Policy 允许的 override → Task 定义/Placement intent → Project 配置 → Team/Worker/RuntimeProfile 默认 → V0.1 系统默认。三轴分别解析：`orchestrationMode` 的系统默认是 `workflow_bound`（M3 兼容）；`placement` 的系统默认是 `local_only` Local Node；`transport` 必须来自选定 RuntimeProfile/RuntimeInstallation，不能由 UI 任意改写。缺失字段按上述默认补齐并写入 Run snapshot；任何 override 不得放宽 Policy、预算、Workspace 或 capability。
 
 ### D08 / R08 — 首版 API 与页面
 
@@ -355,7 +367,7 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 **范围（M7 必达）：**
 
-1. 用户在项目循环中编排 Workflow：创建/编辑可复用 `WorkflowDefinition` 的有限 DAG（节点与边），发布不可变 `WorkflowVersion`，再经确认计划绑定到该 Project 的执行实例（D02）。
+1. 用户在项目循环中编排 Workflow identity：创建/编辑可复用 `WorkflowGraphDefinition` 的有限 DAG（节点与边），保存为 `WorkflowDraft`，发布产生不可变 `WorkflowVersion`，再经确认计划绑定到该 Project 的执行实例（D02）。
 2. 一级导航「工作流」与项目详情共用这套定义；画布编辑的是可复用定义，执行仍只绑定已发布版本。
 3. 节点类型对齐领域模型：Task / Approval / Condition / Parallel（及现有软件开发模板已用的交付/审批步）。不引入任意第三方 connector 节点。
 4. 已发布版本不可变。编辑已发布图必须新建 version；不得原地改活动执行图（D02 仍有效）。
@@ -386,7 +398,7 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 **范围（M7 必达）：**
 
-1. 围着 Project 编排 Team：创建 Team、编辑成员/角色/RuntimeProfile、版本化并发布不可变 `TeamVersion`，供该项目（及后续项目）绑定。
+1. 围着 Project 编排 Team：创建 Team identity，在 `TeamDraft` 中编辑成员/角色/RuntimeProfile 并以 revision/CAS 保存；发布 Draft 才产生不可变、带 `publishedAt` 的 `TeamVersion`，供该项目（及后续项目）绑定。
 2. Project 仍绑定 **TeamVersion 快照**（D02：draft 先配齐 Workspace / Team / Runtime / 预算才能开始规划）。绑定未发布草稿不得 `:start-planning`。
 3. 预设 Software Development Team 保留，作为 M3 主路径与默认选项。自定义 Team 补齐项目循环，不删除模板。
 
@@ -397,8 +409,8 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 **M7 起变为必需：**
 
-- 写接口见能力矩阵 Team 行；成员可嵌在 `TeamVersion` payload（role + RuntimeProfile + quantity）。不另开 Worker Marketplace。
-- 已发布 `TeamVersion` 可供项目绑定；编辑已发布编排必须新建 version。
+- 写接口见能力矩阵 Team 行；成员可嵌在 `TeamDraft` payload（role + RuntimeProfile + quantity）。不另开 Worker Marketplace。
+- 已发布 `TeamVersion` 可供项目绑定；编辑已发布编排必须创建新的 `TeamDraft` revision，不能 UPDATE 旧 version。
 
 **非目标：**
 
@@ -418,10 +430,12 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 **范围（M7 扩展，必达，尚未实现）：**
 
-1. 用户用自然语言描述意图，例如：创建 bot1（角色）、bot2、bot3；跑流程 X；某个 bot 负责任务 Y。编排 Agent 理解后**生成**草稿：Team 角色、Tasks、有限 DAG 的 `WorkflowDefinition` / 未发布 `WorkflowVersion`。
+1. 用户用自然语言描述意图，例如：创建 bot1（角色）、bot2、bot3；跑流程 X；某个 bot 负责任务 Y。编排 Agent 理解后**生成**草稿：Team 角色、Tasks、有限 DAG 的 `WorkflowDraft` / canonical graph；此阶段不产生可执行的 `WorkflowVersion`。
 2. 生成结果必须可编辑：进入 D15 画布或结构化编辑面，改节点/边/角色/任务后再保存、发布。禁止「对话一次生成即锁定、不可改」。
 3. 发布仍走 D02 / D15：已发布 `WorkflowVersion` 不可变；未发布图不得被 Mock 或真实 Runtime 执行。
 4. 高度可定制是本条与 D15 的共同产品要求：用户能按项目改角色、步骤与边，而不是只能选预设模板。
+
+Authoring 契约：对话 turn/raw intent 先由 Application 创建受治理 authoring Task/Run，通过 Runtime SPI 执行编排 Agent，`AuthoringProposal` / `ChangeSet` 是该 Run 的输出；Application 再做 schema、Policy、Budget、CredentialRef、DAG 和 Project 边界校验，以 `expectedRevision` 执行 CAS 原子应用，跨 Team/Task/Workflow 无法同事务提交时使用持久化 staged apply。成功只代表草稿 revision 更新，不代表发布或执行生成出的 Workflow。生成、应用、取消、重试、失败与过期事件均保存脱敏摘要/引用；会话原文按 Project retention/redaction policy 管理，禁止进入 Secret、Task、Event 或 Artifact。
 
 **M3 Mock 仍允许：**
 
@@ -447,9 +461,9 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 **范围（M8 必达，尚未实现）：**
 
 1. **workflow-bound：** 跟随该项目已确认、已发布的 `WorkflowVersion`（D02）。Agent 只执行图中轮到它的节点，不得暗改活动执行图。
-2. **direct：** 直接执行用户/任务此刻给出的目标（ad-hoc / 绕过该次已发布图）。仍受 Policy、Workspace、预算、Approval 与 capability probe 约束；不是「无协议乱跑」。
+2. **direct：** 直接执行用户/任务此刻给出的目标（ad-hoc / 绕过该次已发布图）。Application 先创建项目内 ad-hoc Task，待三轴解析与同一 Policy、Workspace、预算、Approval、Artifact/Evaluation、capability probe 治理完成后再创建正常 Run；它只绕过 WorkflowInstance 调度，不绕过控制面，不是「无协议乱跑」。direct 永不推进 WorkflowInstance 或 Project；若吸收成果，必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收，原 direct Run 不改变父聚合。
 3. 两种模式都必须在 UI 与 API **诚实**出现：用 `GET /capabilities` 或 Runtime/Agent probe 决定能否选；无能力则禁用或启动前 `422 unsupported_capability`；禁止假 mode、假成功、把只读文案做成可点。
-4. 模式记录在 Run / 启动命令的可审计字段上（具体名字待 T02）；重试创建新 Run，不改写旧 Run 的模式。
+4. 模式记录在 Run / 启动命令的可审计字段 `orchestrationMode` 上（与 `transport`、`placement` 分轴；三者及版本/Policy/Budget/Workspace 写入不可变 snapshot）；重试创建新 Run，不改写旧 Run 的模式。M3 缺省请求兼容解析为 `workflow_bound`，不得将缺省当 direct。
 
 **M3 Mock 仍允许：**
 

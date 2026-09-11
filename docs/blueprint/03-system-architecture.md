@@ -1,8 +1,16 @@
+---
+title: Workforce System Architecture
+type: architecture
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — System Architecture
 
 **版本：** V0.1 Draft  
 **状态：** Architecture baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 架构目标
 
@@ -30,6 +38,7 @@ flowchart TB
   subgraph Local[Local Execution Plane]
     API[Local Daemon API]
     Core[Task and Workflow Engine]
+    Authoring[Workflow Authoring Use Case]
     Adapter[Runtime Adapter Host]
     Workspace[Workspace Manager]
     Guard[Policy and Credential Broker]
@@ -50,6 +59,8 @@ flowchart TB
 
   UI --> Main --> API
   API --> Core
+  API --> Authoring
+  Authoring --> Core
   Core --> Adapter
   Core --> Workspace
   Core --> Guard
@@ -57,6 +68,7 @@ flowchart TB
   Adapter --> Codex
   Adapter --> Claude
   Adapter --> Custom
+  Authoring -. Proposal / Draft / CAS .-> Store
   API -. Sync and Remote Control .-> CloudAPI
   CloudAPI --> CloudDB
   CloudAPI --> Object
@@ -115,6 +127,14 @@ Renderer 必须启用 `contextIsolation`，关闭 `nodeIntegration`，并通过 
 - 使用短期 session token、origin 校验和请求版本
 - 不向 Renderer 暴露 Credential 明文
 
+### 5.1A Workflow Authoring Service
+
+对话生成和画布编辑共用 Application 层的 authoring use case，不在 Renderer 或 Runtime Adapter 内复制业务规则。T20-B 接收 conversation turn/raw intent 后，先创建受治理的 authoring Task/Run；Application 通过 Runtime Ports 调用编排 Agent，`AuthoringProposal` / `ChangeSet` 是该 Run 的结构化输出，可包含 Team 角色、Task 模板、节点、边和解释。该 Run 不会执行生成出的 Workflow。
+
+后端流程为：authoring Run 产生 proposal → 校验 proposal → 为每个 Team/Task/Workflow 目标读取其 `expectedRevision`，再以 CAS 原子应用到 `WorkflowDraft`（跨目标无法同事务提交时建立持久化 staged steps，逐项记录 pending/applying/applied/failed/cancelled/expired）→ 返回新的 draft revision → 由用户/画布编辑 → 通过同一发布校验生成不可变 `WorkflowVersion`。`WorkflowDraft` 始终是 draft，作者操作状态只属于 `AuthoringChangeSet`。每次生成、应用、step 状态变化、失败、取消和重试都写 Event，并记录 usage/budget；Policy、Budget、CredentialRef、限流、保留期和脱敏在 Application/Policy 边界执行。对话上下文默认只保存脱敏摘要和引用，原始内容按 Project Policy 保留，不把 Secret 写入 Task、Event 或 Artifact。
+
+该 use case 不发明独立 Runtime 或未冻结的 chat endpoint；API/会话 DTO 由 T02/T10 冻结，HTTP handler 仍只调用 Application。authoring Agent 的 Runtime 失败、取消、超时、预算耗尽或重试必须按普通 Task/Run 治理返回可诊断结果；生成失败或部分 apply 不能回退 Mock 当作成功。
+
 ### 5.2 Project Service
 
 - 管理 Project、Team、Worker 与配置快照
@@ -130,6 +150,8 @@ Renderer 必须启用 `contextIsolation`，关闭 `nodeIntegration`，并通过 
 - 管理 retry、timeout、pause、cancel、approval
 - 在每次副作用前后写入 Event
 - V0.1 使用数据库持久化轻量状态机，不引入 Temporal
+
+Workflow-bound 与 direct 在调度层汇合到同一 Task/Run 治理：direct 由 Application 创建项目内 ad-hoc Task，再走正常 Policy、Workspace、Budget、Approval、Capability 和 Runtime SPI；它仅绕过 WorkflowInstance 图调度，不绕过控制面。
 
 ### 5.4 Runtime Adapter Host
 
@@ -246,20 +268,42 @@ V0.1 至少控制：
 
 ```mermaid
 sequenceDiagram
-  participant UI as Desktop
+  participant UI as Desktop Renderer
+  participant D as Daemon
+  participant App as Application Use Case
   participant WF as Workflow Engine
+  participant Task as Task/Run Service
   participant P as Policy Engine
+  participant L as Placement/Lease Manager
   participant W as Workspace Manager
-  participant R as Runtime Adapter
-  UI->>WF: Start eligible Task
-  WF->>P: Authorize run
-  P-->>WF: Allow / approval required
-  WF->>W: Provision isolated workspace
-  W-->>WF: Workspace snapshot
-  WF->>R: StartRunRequest
-  R-->>WF: Runtime events
-  WF-->>UI: Persisted event stream
+  participant Ports as Runtime Ports
+  participant R as Runtime Adapter/Process
+  UI->>D: typed start command
+  D->>App: receive typed command
+  alt workflow_bound
+    App->>WF: resolve WorkflowInstance by executionSnapshotId
+    WF->>Task: create or advance ready Task (no Run yet)
+  else direct
+    App->>Task: create ad-hoc Task only
+  end
+  App->>App: resolve placement intent only
+  App->>P: authorize Task + placement intent + budget/approval
+  P-->>App: Allow / approval required
+  App->>L: select Node/RuntimeInstallation + acquire lease
+  L-->>App: selected Node/RuntimeInstallation + ExecutionLease
+  App->>W: Provision isolated workspace
+  W-->>App: WorkspaceInstance
+  App->>App: resolve transport + orchestrationMode; assemble PlacementSnapshot
+  App->>Task: atomically create Run + immutable snapshot + Event/Outbox
+  App->>Ports: StartRunRequest (transport + placement + orchestration snapshot)
+  Ports->>R: Start runtime process
+  R-->>Ports: Runtime events
+  Ports-->>App: typed runtime events
+  App-->>D: persisted Event / Outbox
+  D-->>UI: typed SSE projection
 ```
+
+`workflow_bound` 先按唯一 `ProjectExecutionSnapshot` 解析已确认的 WorkflowVersion/TeamVersion，并创建/推进 `WorkflowInstance`；`direct` 只由 Application 先创建 ad-hoc Task，随后仅解析 placement intent，完成授权后选择 Node/Runtime、Lease 和 Workspace，再解析其余 transport/orchestration mode 并组装 PlacementSnapshot，最后才创建正常 Run。direct 永不推进 WorkflowInstance 或 Project；若吸收成果，必须另发 workflow-bound/follow-up command，引用精确 ArtifactVersion 并重新验收。两种路径都必须经过 `placement intent → Policy/Budget/Approval → Node/Runtime → Lease → Workspace → PlacementSnapshot → Run → Runtime SPI`，Renderer 不得直接 spawn Runtime。
 
 ### 7.2 完成与验收
 
@@ -278,7 +322,7 @@ sequenceDiagram
 | Desktop 崩溃 | Daemon 继续；重启后重连事件流 |
 | Daemon 崩溃 | 重启扫描非终态 Run 并 reconcile |
 | Workspace 冲突 | 阻止执行；重新 provision |
-| Artifact 不完整 | Run 不得成功；进入 failed/review |
+| Artifact 不完整 | Run 保留 Runtime 执行终态；Task/Evaluation 不得通过，进入 review/fail |
 | 审批长时间未处理 | 保持等待；到期升级或取消 |
 | 预算超限 | 阻止新 Run；请求批准 |
 | Credential 失效 | 暂停并提示重新授权，不自动降权绕过 |
@@ -307,6 +351,8 @@ UI Commands
   → Adapters
   → OS / Runtime / Storage
 ```
+
+启动命令携带三条正交执行轴的解析结果：`transport`（Adapter 接入方式）、`placement`（ExecutionNode/Workspace 位置）和 `orchestrationMode`（`workflow_bound | direct`）。Application 在授权后先把它们、Project/Team/Workflow 的精确版本引用、Policy/Budget/Workspace、唯一 `PlacementSnapshot` 和 `runSnapshotDigest` 写入不可变 Run snapshot 与 Outbox，再调用 Ports/Runtime；不得以旧的 `executionMode` 统称、让 Renderer 自行推断，或启动后才补冻结字段。
 
 禁止：
 

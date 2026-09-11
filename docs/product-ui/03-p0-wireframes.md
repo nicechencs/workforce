@@ -1,15 +1,23 @@
+---
+title: Workforce P0 页面线框规范
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce P0 页面线框规范
 
 **版本：** V0.1 Draft  
 **状态：** Ready for visual design  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — §7 只读 `GET /workflows` 目录为 M3 过渡（不是夹具冒充接通）；§10 画布与 §11 自定义 Team 为 M7 必达。2026-09-10 — 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；§3 与 IA §4.3 对齐（概览不是 Overview；Task DAG 不在默认画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
+**修订：** 2026-09-11 — §7 只读 `GET /workflows` 目录为 M3 过渡（不是夹具冒充接通）；§10 画布、§11 自定义 Team、§12 对话生成与 §13 双执行模式为 M7/M8 planned 必达。2026-09-10 — 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；§3 与 IA §4.3 对齐（概览不是 Overview；Task DAG 不在默认画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
 
 ## 1. 全局框架
 
 桌面端采用左侧一级导航、顶部上下文区和主工作区。首屏不放营销内容。
 
-侧栏成员以 [页面信息架构 §2](01-information-architecture.md) 为准：`P0`/`P1` 是切片深度，P1「运行记录」「工作流」必须画在左侧栏。§2–§6 与 §8 细化 P0 主工作区；§7 是 M3 工作流只读目录（`GET /workflows` 过渡）；§10 / §11 是 M7 画布与自定义 Team。
+侧栏成员以 [页面信息架构 §2](01-information-architecture.md) 为准：`P0`/`P1` 是切片深度，P1「运行记录」「工作流」必须画在左侧栏。§2–§6 与 §8 细化 P0 主工作区；§7 是 M3 工作流只读目录（`GET /workflows` 过渡）；§10 / §11 / §12 是 M7 画布、自定义 Team 与对话 authoring；§13 是 M8 双执行模式。
 
 ```text
 ┌──────────────┬─────────────────────────────────────────────┐
@@ -209,3 +217,47 @@ V0.1 的执行位置默认值为“本机”；未来存在远程节点时可选
 ```
 
 未发布草稿不能绑定后开始规划。无 Marketplace。
+
+## 12. 对话生成工作流（M7 planned）
+
+按 [D17](../planning/decision-register.md#d17-对话式-agent-编排工作流)。这是 Workflow 的作者入口；authoring Agent 本身通过受治理 Runtime 执行，但不是生成出的 Workflow 的执行窗口。结果必须落为可编辑草稿并进入 §10。
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│ 工作流 / 对话生成                         生成草稿  清空   │
+├──────────────────────────────┬─────────────────────────────┤
+│ 用户                          │ 结构化草稿预览              │
+│ 创建 bot1（角色…）            │ Team 角色 / Tasks / DAG      │
+│ bot2、bot3；流程 X；任务 Y    │ draft revision: 4            │
+│                              │ 未发布：生成图不会执行       │
+│ [描述意图……]     发送        │ [打开画布编辑]               │
+├──────────────────────────────┴─────────────────────────────┤
+│ 状态：proposal 已生成 / 校验失败 / CAS 冲突 / 部分应用      │
+│ 对话上下文按 Project retention/redaction policy 保存         │
+└────────────────────────────────────────────────────────────┘
+```
+
+M3 不显示可点击成功的生成入口。M7 的 authoring Run 通过受治理 Runtime SPI 执行编排 Agent，生成、CAS/staged apply、usage、budget、取消、重试和失败均须由 Application authoring use case 诚实返回；生成出的 Workflow 不得在发布/计划确认前执行，也不得写入 Secret。
+
+## 13. Agent 执行模式（M8 planned）
+
+按 [D18](../planning/decision-register.md#d18-双执行模式绑定工作流与直接执行)。模式选择只在 capability probe 支持时启用，两个选项最终都创建受治理 Task/Run。
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│ 启动 Agent Task                         能力：已探测         │
+├────────────────────────────────────────────────────────────┤
+│ 执行模式                                                     │
+│ ○ 跟随已发布工作流  WorkflowVersion: v3                      │
+│   只执行图中轮到该 Agent 的节点                              │
+│ ○ 直接执行（ad-hoc）                                          │
+│   当前目标；仍受 Policy / Workspace / Budget / Approval       │
+│                                                            │
+│ transport: process    placement: Local Node                  │
+│ [开始]  [取消]                                                │
+├────────────────────────────────────────────────────────────┤
+│ 无能力时：模式 disabled，显示 unsupported_capability 原因      │
+└────────────────────────────────────────────────────────────┘
+```
+
+`workflow_bound` 需要已确认 Project Execution Snapshot，并从中读取 WorkflowVersion/TeamVersion；`direct` 只绕过本次图调度，仍创建项目内 ad-hoc Task/Run，永不推进 WorkflowInstance/Project。若吸收成果，必须另发 workflow-bound/follow-up command，引用精确 ArtifactVersion 并重新验收。M3 隐藏该选择面；未冻结字段前不得实现假按钮。

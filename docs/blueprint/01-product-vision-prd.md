@@ -1,8 +1,16 @@
+---
+title: Workforce Product Vision & PRD
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Product Vision & PRD
 
 **版本：** V0.1 Draft  
 **状态：** Baseline for architecture design  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 产品定义
 
@@ -73,6 +81,10 @@ V0.1 只验证一条可信、可观察、可恢复的端到端闭环：
 7. 失败任务支持超时、取消和有限次数重试。
 8. 项目可以从创建运行到最终完成，并保留完整审计轨迹。
 
+### M7/M8 与 V0.1 release gate
+
+M3–M6 是可独立演示和验收的基础切片；V0.1 产品整体 release gate 还包括 M7 与 M8。M7 必须完成项目制 TeamVersion/WorkflowDraft/画布作者环（含 D17 对话生成后可编辑并发布），M8 必须完成每个 Agent 的 `workflow_bound`/`direct` 双执行及 capability/Policy/Task/Run 证据。未达 M7/M8 时，只能报告已验证的早期切片，不能宣称 V0.1 产品需求全部完成。
+
 ### V0.1 首个 Workflow
 
 ```text
@@ -93,7 +105,8 @@ V0.1 只验证一条可信、可观察、可恢复的端到端闭环：
 - 软件开发团队模板
 - 自定义 Team 编排：创建并版本化 Team / 角色 / RuntimeProfile，不只使用预设
 - 轻量 DAG/状态机 Workflow
-- 可视化工作流画布编辑器：在「工作流」中编辑有限 DAG 并发布不可变 WorkflowVersion；未发布图不可执行
+- 高度可定制的 Workflow 作者环：对话生成可编辑草稿、画布/结构化编辑、校验后发布不可变 WorkflowVersion；未发布图不可执行（M7）
+- 每个 Agent 可选择 `workflow_bound` 或 `direct` 执行模式；两者均经过 Task/Run、Policy、Workspace、预算、Approval 与 capability probe（M8）
 - Codex Runtime Adapter（首选）
 - 第二 Runtime Adapter 的接口预留；是否实现 Claude Code 取决于首轮集成成本
 - 本地进程、终端、文件系统与 Git 操作
@@ -108,7 +121,8 @@ V0.1 只验证一条可信、可观察、可恢复的端到端闭环：
 ### 明确不做
 
 - Agent/Workflow Marketplace
-- 把未发布画布图当作 Runtime，或做成 n8n/Dify 式通用 iPaaS / 任意 connector 生态
+- 通用 iPaaS、任意 connector 生态或脱离 Project 的工作流 IDE
+- 把未发布画布图当作 Runtime，或把产品做成脱离 Project 的通用 IDE
 - 自主无限循环与完全无人值守运行
 - 生产环境自动部署
 - 企业级 SSO、SCIM、复杂组织管理
@@ -180,6 +194,7 @@ V0.1 成功不是功能数量，而是以下闭环可重复运行：
 - Workspace 的默认隔离等级与各平台差异
 - Artifact 文件存储在本地还是同时支持对象存储
 - 项目级预算的首版计量口径
+- T02 冻结 D17 会话/草稿 DTO 与 D18 执行模式字段前，不在 PRD 发明 endpoint；具体 path 以能力矩阵为准
 
 ## 13. 下一阶段交付物
 

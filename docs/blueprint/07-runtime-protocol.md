@@ -1,9 +1,17 @@
+---
+title: Workforce Runtime Protocol
+type: protocol
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Runtime Protocol
 
 **协议名：** Workforce Runtime Protocol  
 **协议版本：** `0.1`  
 **状态：** Draft  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目的
 
@@ -36,7 +44,7 @@ Runtime Protocol 定义 Workforce Platform 与 Codex、Claude Code、自定义 A
 1. Adapter 只能返回结果或发出事件，不能直接写 Task、Run 或 Workflow 表。
 2. Runtime 报告的 `completed` 仅代表执行结束候选；平台验收后才决定 Run 是否成功。
 3. 每次重试创建新 Run 和新 Runtime Handle。
-4. Run 启动后绑定不可变的 Task、Worker、Policy、Workspace 与 Runtime 快照。
+4. Run 启动前绑定并冻结不可变的 Task、Worker、Policy、Workspace 与 Runtime 快照；启动后只能读取该快照。
 5. Credential 明文不得进入请求快照、事件、日志或 Artifact 元数据。
 
 ## 3. 协议 Envelope
@@ -121,7 +129,7 @@ interface RuntimeDescriptor {
     id: string;
     displayName: string;
     version?: string;
-    transport: "process" | "sdk" | "http" | "remote";
+    transport: "process" | "sdk" | "http";
   };
   platforms: Array<"windows" | "macos" | "linux">;
   capabilities: RuntimeCapability[];
@@ -167,7 +175,7 @@ interface RuntimeDescriptor {
 interface RuntimeConfig {
   adapterId: string;
   executable?: string;
-  transport?: Record<string, unknown>;
+  transportOptions?: Record<string, unknown>;
   credentialRefs?: string[];
   options?: Record<string, unknown>;
 }
@@ -187,6 +195,8 @@ interface ValidationResult {
 
 ## 7. 启动 Run
 
+字段定义见 §18 `PlacementSnapshot`；本节使用它作为唯一的 resolved binding。
+
 ```ts
 interface StartRunRequest {
   operationId: string;
@@ -194,6 +204,13 @@ interface StartRunRequest {
   taskSnapshot: TaskExecutionSnapshot;
   workerSnapshot: WorkerExecutionSnapshot;
   runtimeSnapshot: RuntimeProfileSnapshot;
+  execution: {
+    transport: "process" | "sdk" | "http";
+    placement: PlacementSnapshot;
+    orchestrationMode: "workflow_bound" | "direct";
+    executionSnapshotId?: string;
+    runSnapshotDigest: string;
+  };
   contextBundleRef: string;
   workspace: WorkspaceGrant;
   permissionGrant: PermissionGrant;
@@ -204,6 +221,8 @@ interface StartRunRequest {
   extensions?: Record<string, unknown>;
 }
 ```
+
+`StartRunRequest` 是已经由 Application 解析后的内部 Runtime Ports 请求，不是 `workforce.task/0.1` wire DTO。`transport` 只描述 Adapter 接入方式；`placement` 是唯一的 resolved binding，包含 Node session、Runtime installation、Workspace instance、Lease/fencing；`orchestrationMode` 描述是否进入本次 Workflow 调度。三者是正交轴，禁止用 `executionMode` 或 `remote` 代替。`workflow_bound` 必须带已确认的 ProjectExecutionSnapshot，并从中读取 WorkflowVersion/TeamVersion；`direct` 仍由 Application 先创建 ad-hoc Task，完成同一治理链后再创建 Run，不绕过 Policy、Budget、Approval、Workspace 或 capability probe，且永不推进 WorkflowInstance/Project。Application 必须先解析三轴、授权并原子写入不可变 Run snapshot 与 Outbox，再调用 Ports/Runtime；不得启动后才补冻结字段。retry 新建 Run 并沿用模式。
 
 启动规则：
 
@@ -232,7 +251,7 @@ interface RuntimeHandle {
     id: string;
     resumeTokenRef?: string;
   };
-  transport?: Record<string, unknown>;
+  transportOptions?: Record<string, unknown>;
   lastCursor?: string;
 }
 ```
@@ -615,19 +634,20 @@ Runtime Protocol V0.1 在以下条件满足时可冻结：
 
 Runtime transport 与执行位置是两个正交概念：`process | sdk | http` 描述 Adapter 如何调用 Runtime；`local | remote` 由 ExecutionNode 与 Placement 表达。
 
-`StartRunRequest` 增加：
+`PlacementSnapshot` 是唯一的 resolved Node/Workspace binding；`StartRunRequest.execution.placement` 与 Run snapshot 必须引用同一对象，不再另设 `NodeExecutionBinding` 平行模型：
 
 ```ts
-interface NodeExecutionBinding {
+interface PlacementSnapshot {
+  mode: "automatic" | "local_only" | "remote_only" | "specific_node";
   nodeId: string;
   nodeSessionId: string;
   runtimeInstallationId: string;
+  workspaceInstanceId: string;
   executionLeaseId: string;
   fencingToken: number;
-  workspaceInstanceId: string;
 }
 ```
 
 RuntimeHandle 增加 `nodeId`、`nodeSessionId` 与 `runtimeInstallationId`。所有 start、input、pause、resume、cancel 和 reconcile 必须校验有效 Lease/fencing token，防止失联旧节点恢复后继续提交结果。同一节点可以托管多个 Handle；进程、容器、事件 cursor 和资源配额必须按 Handle 隔离。
 
-V0.1 的 Local Runtime Host 生成本地 NodeExecutionBinding；远程注册、网络 heartbeat 和分布式 Lease 延后实现，但契约字段与 Mock Node 测试现在保留。
+V0.1 的 Local Runtime Host 生成本地 `PlacementSnapshot`；远程注册、网络 heartbeat 和分布式 Lease 延后实现，但契约字段与 Mock Node 测试现在保留。Run 进入 `starting` 前必须拥有完整 binding；Lease/fencing 未确认时不得调用 Runtime。

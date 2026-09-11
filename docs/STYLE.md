@@ -3,7 +3,7 @@ title: Workforce 文档风格与治理
 type: governance
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # 文档风格与治理
@@ -48,11 +48,13 @@ updated: 2026-09-10
 
 ## 文档检查
 
-`pnpm check:docs` 以渐进方式检查当前治理入口：
+`pnpm check:docs` 以渐进方式检查固定根文档（`AGENTS.md`、根 `README.md`、`CONTRIBUTING.md`）与全部 `docs/**/*.md`；元数据仍只对已迁移 current 文档强制：
 
 - 必需元数据；
 - 重复标题锚点；
 - 仓库内链接和标题片段；
-- 链接不得逃出仓库。
+- 链接不得逃出仓库；
+- Markdown fenced block 的 CommonMark 开闭标记（字符、长度与尾随 info）；
+- Mermaid fenced block 非空且使用已知图类型。
 
-检查范围未来可以扩大，但扩大前应先单独清理旧文档，避免功能 PR 被历史问题阻塞。
+历史文档不因一次性迁移元数据而阻塞，但其链接、标题锚点和 fenced block 仍会被检查。Mermaid 语法以 fenced block/图类型为本地静态门禁；需要完整渲染时另行使用 Mermaid renderer。

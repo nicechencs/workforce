@@ -1,7 +1,15 @@
+---
+title: Workforce V0.1 State Matrix
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # V0.1 状态矩阵
 
-日期：2026-09-10  
-状态：**已冻结（M0–M3）**  
+日期：2026-09-11
+状态：**已冻结（M0–M3；M7/M8 planned 扩展）**
 权威：[decision-register.md](decision-register.md) D02/D03/D09/D13。  
 未列出的转换一律非法，返回对应 `*_INVALID_TRANSITION`。状态写入必须带 `expectedStateRevision` / `If-Match`。
 
@@ -37,6 +45,10 @@
 
 `pending | approved | rejected | changes_requested | expired | consumed | superseded | cancelled`
 
+### TeamDraftStatus / TeamVersionStatus
+
+`TeamDraftStatus = draft`；`TeamVersionStatus = published`。TeamDraft 以 `revision` 做 CAS 可编辑；TeamVersion 只有发布成功后产生，必须有 `publishedAt` 且 immutable，不能原地编辑。
+
 ### ArtifactVersionStatus
 
 `staging | available | quarantined | archived`
@@ -45,13 +57,21 @@
 
 `pending | committed | failed`
 
+### AuthoringChangeSetStatus（M7 planned）
+
+`proposed | validating | applying | applied | partially_applied | failed | cancelled | expired`
+
+Authoring status is a change-set operation, not a Task/Run or WorkflowInstance status. A successful `applied` result only advances a `WorkflowDraft`/TeamDraft revision; it never publishes or starts the generated Workflow.
+
+`WorkflowDraft` 始终保持 `status=draft`；`validating`、`applying`、`partially_applied`、`failed`、`cancelled` 和 `expired` 只属于 `AuthoringChangeSet`/step。每个 Team/Task/Workflow 目标保存独立 `expectedRevision`，step 状态持久化在 `authoring_change_set_steps`，恢复从最后一个已提交 step 继续。
+
 ## 2. Project
 
 | 当前 | 命令/事实 | 守卫 | 下一状态 | Event | 事务内 | 非法时 |
 |---|---|---|---|---|---|---|
 | — | `project.create` | 名称非空 | `draft` | `project.created` | 插入 Project | 校验错误 |
 | `draft` | `workspace.bind` + team/runtime/budget 齐备 | 本机路径一次性授权、预设 Team 存在、Runtime 可探测或允许 Mock | `planning` | `project.planning_started` | 更新配置快照 | 缺配置 |
-| `planning` | Plan Artifact available + `approval.approve` (gate=plan) | 精确 Plan 版本、digest 未变、审批未过期 | `ready` | `project.plan_confirmed`；发布 WorkflowVersion | 审批消费 + 版本发布 | 未批准不得 start 开发图 |
+| `planning` | Plan Artifact available + `approval.approve` (gate=plan) | 精确 Plan 版本、published TeamVersion、digest 未变、审批未过期 | `ready` | `project.plan_confirmed`；引用现有或发布 Planner Draft 为 WorkflowVersion | 审批消费 + 版本/快照绑定 | 未批准不得 start 开发图 |
 | `ready` | `workflow.start` | 无活动 WorkflowInstance | `running` | `workflow.started` | 创建实例 | 已有活动实例 |
 | `running` | 必需终点完成且最终 artifact 审批通过 | 同一 content digest | `completed` | `project.completed` | 收尾 | 缺产物不能完成 |
 | `running` | `project.pause` | Policy 允许 | `paused` | `project.paused` | 停新调度 | 不自动杀进程 |
@@ -62,13 +82,35 @@
 
 `planning` 期间 Planner Run 失败：Project 保持 `planning`，允许重试 Planner 或取消。不得直接进入开发 DAG。
 
+Project 配置必须保存精确 `teamVersionId`；未发布 TeamDraft 不满足 `team/runtime/budget` 配置守卫。计划确认时必须有 published `TeamVersion`，生成 `ProjectExecutionSnapshot`（统一 `contentHash`、WorkflowVersion、TeamVersion、Policy、Budget 和关键引用），并把 `executionSnapshotId` 写回 Project；WorkflowInstance 与后续 workflow-bound Run 只读该快照，Project 上的候选 version 字段不再作为执行来源。
+
+## 2A. Workflow Authoring（M7 planned）
+
+| 当前 | 命令/事实 | 守卫 | 下一状态 | 说明 |
+|---|---|---|---|---|
+| — | `authoring.start` | Project 可见、输入脱敏、预算/能力可用 | `proposed` | 创建受治理 authoring Task/Run，通过 Runtime SPI 执行编排 Agent；不执行生成出的 Workflow |
+| `proposed` | `validate` | Schema、Project 边界、DAG、Policy、Capability | `validating` | 写入逐目标 expected revision；不通过返回结构化错误 |
+| `validating` | 校验失败 | Schema、Project 边界、DAG、Policy、Capability 不满足 | `failed` | `workflow.authoring.failed`；Draft 保持 draft |
+| `validating` | `apply` | `expectedRevision`/CAS；跨聚合按 staged apply | `applying` | 事务内写 draft/change-set 记录 |
+| `applying` | 全部应用 | 每个聚合提交成功 | `applied` | 返回新 `WorkflowDraft`/TeamDraft revision，可进入画布 |
+| `applying` | 部分失败 | 已持久化步骤可恢复 | `partially_applied` | 不宣称完整生成；可重试/取消/人工修复 |
+| `partially_applied` | step 不可恢复 | 失败原因已持久化 | `failed` | `workflow.authoring.failed`；已应用步骤不回滚 |
+| `partially_applied` | `cancel` | 未完成 steps 停止且保留审计 | `cancelled` | `workflow.authoring.cancelled` |
+| `partially_applied` | retention deadline | 未完成且超过保留期限 | `expired` | `workflow.authoring.expired`；原文脱敏/清理 |
+| `partially_applied`/`failed` | `retry` | 原 Run 已终止、预算/attempt 仍允许 | `applying` | 新 authoring Run；保留旧 Run/usage/error |
+| `proposed`/`validating`/`applying` | `cancel` | 未产生不可逆外部副作用 | `cancelled` | 保留脱敏会话与审计事件 |
+| `proposed`/`validating`/`applying` | retention deadline | 未完成且超过保留期限 | `expired` | 脱敏/删除原文，保留可审计摘要 |
+| `applied` | `publish` | 由画布/结构化面通过发布校验 | `applied`（不变） | 插入新的 published `WorkflowVersion`；ChangeSet 保持终态，未发布草稿不得执行 |
+
+Authoring Agent 的 Task/Run 有自己的 usage、budget、cancel、retry、failure 和 Event；ChangeSet 与每个 step 的状态也分别写 Event。生成、CAS/staged apply、编辑和发布均不创建 WorkflowInstance。Project 计划确认时只创建 `ProjectExecutionSnapshot` 并进入 `ready`；后续 `workflow.start` 才创建引用该 snapshot 的 WorkflowInstance。Snapshot 必须引用现有 published version，或先发布 Planner 生成的 Draft。
+
 ## 3. WorkflowInstance
 
 沿用蓝图 `08 §5`，补充计划发布：
 
 | 当前 | 命令/事实 | 守卫 | 下一状态 | 主要副作用 |
 |---|---|---|---|---|
-| — | Plan 确认后 `workflow.publish+instantiate` | Plan 版本已批准 | `created` | 冻结 WorkflowVersion、Policy、Budget 快照 |
+| — | Project `ready` 后 `workflow.start` | 已有经批准且 digest 未变的 `ProjectExecutionSnapshot`；无活动实例 | `created` | 创建只引用既有 execution snapshot 的实例；不在此时重新发布或冻结版本 |
 | `created` | `validate` | 版本存在 | `validating` | DAG/绑定/权限/预算校验 |
 | `validating` | 通过 | — | `ready` | 创建 NodeInstance generation=1 |
 | `validating` | 失败 | — | `failed` | 结构化失败 |
@@ -109,7 +151,7 @@ Reviewer Task 的输入是固定 ArtifactVersion，完成条件是 Evaluation + 
 
 | 当前 | 命令/事实 | 守卫 | 下一状态 | 说明 |
 |---|---|---|---|---|
-| — | `run.start` | starting 前 node/runtime/workspace 已分配；幂等键未冲突 | `pending` | 写 receipt pending + Outbox |
+| — | `run.start` | starting 前 node/runtime/workspace 已分配；幂等键未冲突；三轴已解析 | `pending` | 写 receipt pending + Outbox |
 | `pending` | Host 开始 spawn | Handle 将写入 | `starting` | 崩溃窗口 1 |
 | `starting` | Handle 已提交且进程附着 | 进程 identity 匹配 | `running` | 崩溃窗口 2：无 Handle 则 reconcile，不重开第二个活动 Run |
 | `running` | Adapter waiting_input | 能力支持 | `waiting_input` | 输入带 operationId |
@@ -125,6 +167,8 @@ Reviewer Task 的输入是固定 ArtifactVersion，完成条件是 Evaluation + 
 同一 Task 同时最多一个非终态 Run。重复 start：同 key 同 payload 返回原 Run；不同 payload 冲突。
 
 lease 过期：fencing 拒绝迟到 `succeeded`；提供 inspect/安全 terminate；不自动 start 新 Run。
+
+Run 启动命令在 wire 层可省略未冻结的 `orchestrationMode`，但 Application 必须在 canonical snapshot 中显式归一化 `orchestrationMode`、`transport` 与 `placement`。`workflow_bound` 必须引用已确认的 Project Execution Snapshot，并从中读取 WorkflowVersion/TeamVersion；`direct` 仍绑定项目内 ad-hoc Task 并经过同一治理链，只是不创建 NodeInstance，且永不推进 WorkflowInstance 或 Project。若吸收成果，必须新建 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收。M3 缺省 mode 统一解析为 `workflow_bound`。
 
 ## 6. Approval
 
@@ -150,7 +194,7 @@ lease 过期：fencing 拒绝迟到 `succeeded`；提供 inspect/安全 terminat
 | `staging`/`available` | hash 不匹配 | — | `quarantined` | 不得验收 |
 | `available` | `archive` | 无执行引用强制 | `archived` | 不删盘 |
 
-读取、审批、Task input 必须引用 `artifactVersionId`。新版本不继承旧 Evaluation pass。
+读取、审批、Task input 必须引用 `artifactVersionId`。新版本不继承旧 Evaluation pass。API 必须使用 `/artifacts/{artifactId}/versions/{artifactVersionId}` 及其 `/content`、`/lineage`、`:verify` 子路径；旧的无版本 `/artifacts/{artifactId}/content` 路由不再属于当前契约。
 
 ## 8. 计数样例
 

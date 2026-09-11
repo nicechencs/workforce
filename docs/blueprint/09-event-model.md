@@ -1,9 +1,17 @@
+---
+title: Workforce Event Model
+type: protocol
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Event Model
 
 **协议名：** Workforce Event Protocol  
 **协议版本：** `0.1`  
 **状态：** Draft  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目的
 
@@ -113,6 +121,14 @@ V0.1 标准集合：
 project.created              workflow.instance.created
 project.updated              workflow.instance.started
                               workflow.instance.completed
+workflow.draft.created        workflow.authoring.proposed
+workflow.draft.revised        workflow.authoring.applied
+workflow.authoring.partially_applied  workflow.authoring.failed
+workflow.authoring.cancelled  workflow.authoring.retried
+workflow.authoring.expired    workflow.version.published
+workflow.authoring.step.started      workflow.authoring.step.applied
+workflow.authoring.step.failed       workflow.authoring.step.cancelled
+workflow.authoring.step.expired
 team.assigned                 workflow.instance.failed
 worker.assigned
 worker.unassigned             task.created
@@ -134,6 +150,8 @@ approval.expired              approval.cancelled
 budget.threshold_reached      budget.exceeded
 evaluation.completed
 ```
+
+Authoring Event 只保存脱敏 proposal/change-set 摘要、Project/Workflow/Team/Task 目标、逐目标 `expectedRevision`、step ordinal/status/result revision、CAS/staged apply 结果、authoring `sourceRunId`/attempt、usage/budget 引用、failure/cancel/retry/expiry 结果和会话引用；不得保存原始 Prompt、Credential 或未授权文件内容。Proposal 是 authoring Run 的输出引用，不是 Workflow 执行事实。Run 事件的 `data` 必须包含不可变的 `orchestrationMode`（`workflow_bound | direct`）以及解析后的 `transport`/唯一 `PlacementSnapshot` 快照引用和 `runSnapshotDigest`。direct 仍以正常 Task/Run 事件审计，永不推进 WorkflowInstance 或 Project；吸收成果必须由新的 workflow-bound/follow-up command 引用精确 ArtifactVersion 并重新验收。
 
 领域状态转换应在同一数据库事务中写入实体状态和 Outbox Event。Event 发布失败不得导致状态事实丢失。
 

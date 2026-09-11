@@ -1,3 +1,11 @@
+---
+title: Workforce V0.1 Implementation Status
+type: status
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # V0.1 实现进度（以代码与测试为准）
 
 日期：2026-09-11  
@@ -10,6 +18,8 @@
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
+M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：M7 需完成 TeamVersion/WorkflowDraft/画布与 D17 authoring 闭环，M8 需完成 `workflow_bound`/`direct` 双模式及 capability/Policy/Run 证据。当前两者均未实现。D17/D18 所需 T04 schema migration（含 snapshot-only contract）及 T16 current-M3 upgrade fixture 也只是规划项，未由现有 M3 migration/测试实现。
+
 ## 2. 任务状态（对照实现，不是旧清单）
 
 | ID | 状态 | 证据 |
@@ -18,7 +28,7 @@
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | 完成库并接入 composition | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar |
+| T04 | M3 持久化完成；D17/D18 migration planned，未实现 | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar。authoring ChangeSet/step、snapshot backfill、switch/contract 仍待实现 |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
@@ -30,12 +40,13 @@
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
-| T16 | **本轮起步** | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口） |
+| T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口）。current-M3 schema upgrade fixture、迁移恢复和 ChangeSet staged recovery 尚未运行 |
 | T17 | 未开始 | 打包/签名 |
 | T18 | 已规划，未实现 | 可视化工作流画布（D15）。只读目录已接通 `GET /workflows`（含 #18 Desktop IPC allowlist）；画布与写接口未实现 |
 | T19 | 已规划，未实现 | 自定义 Team 编排（D16）。当前 teams 页仍是只读预设 |
-| T20 | 已规划，未实现 | 对话式工作流编排（D17）。无对话入口、无生成用例、无会话协议 |
-| T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `executionMode` 字段 |
+| T20 | 已规划，未实现 | 对话式工作流编排 UI（D17）。无对话入口、无生成用例、无会话协议 |
+| T20-B | 已规划，未实现 | D17 Application authoring use case（T14 owner）。无 proposal/change-set、CAS/staged apply 或会话保留/脱敏实现 |
+| T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `orchestrationMode` 字段 |
 
 ## 3. 实际验证
 
@@ -133,8 +144,8 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 3. **T17** 打包。  
 4. **M7 可视化画布（T18）未实现**：只读目录已接通 `GET /workflows`（及模板/版本详情；Desktop IPC allowlist 见 #18）；无画布、无写接口。目录接通不等于画布完成，也不等于 Mock/Codex Runtime 可执行这些定义。  
 5. **M7 自定义 Team 编排（T19）未实现**：AI 团队仍只读预设；无创建/发布 TeamVersion。  
-6. **M7 对话生成工作流（T20）未实现**：无对话入口，无生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。  
-7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode。  
+6. **M7 对话生成工作流（T20/T20-B）未实现**：无对话入口，无 Application authoring use case、proposal/change-set、CAS/staged apply 或生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。
+7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode；M3 缺省 mode 仍按协议兼容为 `workflow_bound`。
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；UI 只读说明，未伪造已接入。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。

@@ -1,8 +1,16 @@
+---
+title: Workforce Domain Model
+type: architecture
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Domain Model
 
 **版本：** V0.1 Draft  
 **状态：** Architecture baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 设计目标
 
@@ -20,14 +28,19 @@
 ```mermaid
 flowchart TD
   O[Organization] --> P[Project]
-  O --> T[Team]
+  O --> T[Team / TeamVersion]
   O --> G[Governance]
   P --> W[Workspace]
-  P --> F[Workflow]
-  F --> K[Task]
+  P --> T
+  P --> Draft[WorkflowDraft]
+  Draft --> Published[Published WorkflowVersion]
+  Published --> Snapshot[Project Execution Snapshot]
+  Snapshot --> I[WorkflowInstance]
+  I --> K[Task]
   K --> R[Run]
   R --> A[Artifact]
   R --> E[Event]
+  Direct[Direct orchestration] --> K
   A --> V[Evaluation]
   G --> C[Credential / Policy / Budget]
 ```
@@ -65,15 +78,18 @@ interface Organization {
 
 围绕一个业务目标组织 Team、Workflow、Task、Workspace 和 Artifact。
 
+Project 在 draft/planning 阶段可保存候选 `teamVersionId`/`workflowVersionId`；计划确认后，执行唯一读取 `executionSnapshotId`，WorkflowVersion、TeamVersion、Policy 和 Budget 均从 `ProjectExecutionSnapshot` 派生，候选字段不得被 Run/Instance 直接消费。
+
 ```ts
 interface Project {
   id: ProjectId;
   organizationId: OrganizationId;
   name: string;
   objective: string;
-  status: "draft" | "ready" | "running" | "paused" | "completed" | "failed" | "cancelled";
-  teamId?: TeamId;
+  status: "draft" | "planning" | "ready" | "running" | "paused" | "completed" | "failed" | "cancelled" | "archived";
+  teamVersionId?: TeamVersionId;
   workflowVersionId?: WorkflowVersionId;
+  executionSnapshotId?: SnapshotRef;
   contextRef?: ContextRef;
   budget?: BudgetLimit;
   createdBy: PrincipalRef;
@@ -110,7 +126,28 @@ interface Team {
   organizationId: OrganizationId;
   name: string;
   description?: string;
-  activeVersionId: TeamVersionId;
+  activeVersionId?: TeamVersionId;
+}
+
+interface TeamDraft {
+  id: TeamDraftId;
+  teamId: TeamId;
+  revision: number;
+  status: "draft";
+  members: TeamMember[];
+  contentHash: string;
+  updatedAt: Timestamp;
+}
+
+interface TeamVersion {
+  id: TeamVersionId;
+  teamId: TeamId;
+  version: number;
+  members: TeamMember[];
+  contentHash: string;
+  status: "published";
+  immutable: true;
+  publishedAt: Timestamp;
 }
 
 interface TeamMember {
@@ -144,7 +181,10 @@ interface RuntimeProfile {
   id: RuntimeProfileId;
   adapterType: "codex" | "claude_code" | "custom";
   model?: string;
-  executionMode: "local_process" | "remote_api" | "container";
+  /** Adapter接入方式；不表达机器位置或编排方式。 */
+  transport: "process" | "sdk" | "http";
+  /** 节点/Workspace 选择；由 PlacementPolicy 决定。 */
+  placement: PlacementPolicy;
   capabilities: RuntimeCapability[];
   config: Record<string, unknown>;
 }
@@ -159,16 +199,52 @@ interface RuntimeProfile {
 
 ### 4.6 Workflow
 
-WorkflowDefinition 是可复用定义；WorkflowInstance 属于某个 Project。
+Workflow 模型统一为五类对象：`Workflow`（identity）、`WorkflowGraphDefinition`（节点/边图）、`WorkflowDraft`（可编辑 graph）、published `WorkflowVersion`（不可变版本）和 `AuthoringChangeSet`（proposal 应用过程）。`ProjectExecutionSnapshot` 是独立的执行冻结物，`WorkflowInstance` 是某个 Project 的执行实例；二者都不能与作者态对象或目录 DTO 混用。目录 DTO 只投影 published `WorkflowVersion`。
 
 ```ts
+interface WorkflowDraft {
+  id: WorkflowDraftId;
+  workflowId: WorkflowId;
+  revision: number;
+  graph: WorkflowGraphDefinition;
+  status: "draft";
+  contentHash: string;
+  updatedAt: Timestamp;
+}
+
+interface Workflow {
+  id: WorkflowId;
+  organizationId: OrganizationId;
+  name: string;
+  activeVersionId?: WorkflowVersionId;
+}
+
+interface WorkflowGraphDefinition {
+  entryNodeIds: WorkflowNodeId[];
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  failurePolicy: WorkflowFailurePolicy;
+  concurrencyPolicy: WorkflowConcurrencyPolicy;
+}
+
 interface WorkflowVersion {
   id: WorkflowVersionId;
   workflowId: WorkflowId;
   version: number;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
-  failurePolicy: FailurePolicy;
+  graph: WorkflowGraphDefinition;
+  immutable: true;
+  publishedAt: Timestamp;
+}
+
+interface ProjectExecutionSnapshot {
+  id: SnapshotRef;
+  projectId: ProjectId;
+  workflowVersionId: WorkflowVersionId;
+  contentHash: string;
+  teamVersionId: TeamVersionId;
+  policySnapshotRef: SnapshotRef;
+  budgetSnapshotRef?: SnapshotRef;
+  createdAt: Timestamp;
   immutable: true;
 }
 
@@ -229,8 +305,12 @@ interface Run {
   taskId: TaskId;
   attempt: number;
   status: RunStatus;
+  orchestrationMode: "workflow_bound" | "direct";
+  executionSnapshotId?: SnapshotRef;
   workerVersionId: WorkerVersionId;
   runtimeSnapshot: RuntimeSnapshot;
+  placementSnapshot: PlacementSnapshot;
+  runSnapshotDigest: string;
   workspaceId: WorkspaceId;
   startedAt?: Timestamp;
   endedAt?: Timestamp;
@@ -238,6 +318,16 @@ interface Run {
   failure?: FailureRecord;
   parentRunId?: RunId;
 }
+
+type ResolvedRun =
+  | (Run & {
+      orchestrationMode: "workflow_bound";
+      executionSnapshotId: SnapshotRef;
+    })
+  | (Run & {
+      orchestrationMode: "direct";
+      executionSnapshotId?: never;
+    });
 
 type RunStatus =
   | "pending"
@@ -250,6 +340,22 @@ type RunStatus =
   | "timed_out"
   | "cancelled";
 ```
+
+### 4.9A 执行三轴与 Run 快照
+
+执行配置拆成互不重叠的三条轴，禁止再用 `executionMode` 作为统称：
+
+| 轴 | 字段 | 允许值/含义 |
+|---|---|---|
+| 接入方式 | `transport` | `process | sdk | http`；Adapter 如何调用 Runtime |
+| 执行位置 | `placement` | `automatic | local_only | remote_only | specific_node`；由 Node/Workspace 选择 |
+| 编排方式 | `orchestrationMode` | `workflow_bound | direct`；是否进入本次 Workflow 调度 |
+
+`ProjectExecutionSnapshot` 是 workflow-bound 执行的唯一版本来源，内部通过它解析已确认的 `WorkflowVersion` 与 `TeamVersion`；Run 不重复保存这两个版本字段。`workflow_bound` 只执行图中轮到该 Agent 的节点。`direct` 只绕过本次 Workflow 调度，仍创建项目内的 ad-hoc Task 与正常 Run，并经过同一套 Policy、Workspace、Budget、Approval、Capability 和 Artifact/Evaluation 治理；它永不推进 `WorkflowInstance` 或 Project。若要吸收 direct 产物，必须新建独立 workflow-bound/follow-up command，显式引用精确 `ArtifactVersion` 并重新验收，原 direct Run 不改变父聚合。
+
+`orchestrationMode`、解析后的 `transport`、唯一 `PlacementSnapshot`、Team/Worker/Runtime/Policy/Budget 与 Workspace 均写入不可变 Run/启动快照。`workflow_bound` 的 Run 必须有 `executionSnapshotId`，并在同一事务中从该 snapshot 取得 Workflow/Team 版本；`direct` 不得有 Workflow 或 ProjectExecutionSnapshot 引用，但仍必须有完整的治理与 placement snapshot。retry 必须创建新 Run，沿用同一解析模式与快照语义；不能把旧 Run 改写为另一模式。
+
+三轴默认/覆盖顺序为：启动命令显式且经 Capability/Policy 允许的 override → Task 定义/Placement intent → Project 配置 → Team/Worker/RuntimeProfile 默认 → 系统默认（M3：`workflow_bound` + Local Node）。`transport` 必须来自选定 RuntimeProfile/RuntimeInstallation，UI 不得任意改写；任何 override 不能放宽 Policy、预算、Workspace 或能力限制。
 
 ### 4.9 Artifact
 
@@ -380,7 +486,7 @@ Supervisor 是具备观察、评估、重试、重新分配、暂停和升级权
 
 1. Task 完成必须至少关联一个可验收 Artifact 或明确的无产物结果记录。
 2. 每个 Run 只属于一个 Task；每次重试创建新 Run。
-3. Run 启动后使用不可变的 Worker、Workflow、Prompt、Policy 和 Runtime 快照。
+3. Run 启动前必须冻结 Worker、Workflow（如绑定）、Prompt、Policy、Budget、Runtime、transport、placement 与 orchestrationMode 快照；启动后只能读取该快照。
 4. Artifact 必须记录 creator、task、run、storage 和 lineage。
 5. Credential 明文不得进入 Prompt、Artifact 元数据、Event 或日志。
 6. 所有状态变化都产生带 schema version 的 Event。
@@ -388,6 +494,10 @@ Supervisor 是具备观察、评估、重试、重新分配、暂停和升级权
 8. Task 只有在依赖满足且必要审批通过后才可进入 ready。
 9. Project 取消后不得启动新 Run；运行中的 Run 按策略取消或安全收尾。
 10. Budget 超限必须阻止新 Run 或触发显式批准。
+11. Project 只绑定精确的 `TeamVersion`；未发布 TeamDraft 不得开始规划。
+12. 未发布 WorkflowDraft 不得被 Runtime 执行；发布后的 WorkflowVersion 也必须复制为 Project Execution Snapshot 后才能实例化。
+13. direct Run 必须有 `taskId`，且永不推进 WorkflowInstance 或 Project；吸收其产物必须新建 workflow-bound/follow-up command，引用精确 ArtifactVersion 并重新验收。workflow-bound Run 必须有 ProjectExecutionSnapshot。
+14. 创建或启动 workflow-bound Task/Run 时，事务必须校验 Task 的 `projectId`/租户与 ProjectExecutionSnapshot 的 `projectId`/租户一致，并校验 WorkflowInstance 使用同一 `executionSnapshotId`；版本只从 snapshot 读取。
 
 ## 7. V0.1 关系基数
 
@@ -395,7 +505,9 @@ Supervisor 是具备观察、评估、重试、重新分配、暂停和升级权
 |---|---|
 | Organization → Project | 1:N |
 | Organization → Team | 1:N |
+| Team → TeamVersion | 1:N |
 | TeamVersion → WorkerVersion | N:M |
+| Project → TeamVersion | N:1 (精确快照) |
 | Project → Workspace | 1:N |
 | Project → Task | 1:N |
 | Task → Run | 1:N |

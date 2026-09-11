@@ -63,3 +63,27 @@ updated: 2026-09-11
   - [04-collab-and-review.md](04-collab-and-review.md) 将 T20/T21 列入禁止塞进随机 PR 的后置项。
   - [docs/README.md](../README.md)、[AGENTS.md](../../AGENTS.md) 增加本文件入口；规划文档变更须回写本历史。
 - **状态：** 全部 **planned**。当前代码仍是 M3 目录/只读 + M7 画布/自定义 Team **已规划未实现**。对话生成、生成后画布编辑、按 Agent 直接执行均 **未实现**。
+
+---
+
+## 2026-09-11（Asia/Taipei）D15–D18 契约对齐与流程图复核
+
+- **决定：** 冻结并贯通 D15–D18 的文档语义：`transport`、`placement`、`orchestrationMode` 三轴正交；Project 绑定精确 `TeamVersion`；Workflow 采用 `WorkflowDraft → published WorkflowVersion → ProjectExecutionSnapshot/WorkflowInstance` 三层；direct 仅绕过 Workflow 图调度，仍创建项目内 ad-hoc Task/Run 并经过 Policy、Workspace、Budget、Approval、Capability、Artifact/Evaluation 治理，默认不推进 WorkflowInstance/Project 完成度；M3 缺省模式兼容为 `workflow_bound`。
+- **文档影响：** 更新 blueprint 01/02/03/05/07/08/09/10/11/12、planning decision/state/API/backlog/status、Product UI 核心流程/线框、diagrams 索引与三张既有图；新增 D17 authoring 与 D18 双模式流程图。D17 明确 Application authoring use case（T20-B/T14 owner）负责 proposal/change-set、CAS/staged apply、Policy/Budget/Credential/Event、cancel/retry、retention/redaction；catalog DTO 只作为 published projection；Artifact API 统一精确版本路径。`check-docs` 分阶段扩大为全 docs 链接/锚点及 Mermaid fenced-block 完整性检查，current 元数据仍按迁移范围强制。
+- **状态：** **planned**。本次仅完成文档/检查器契约对齐；D17/D18 代码、公共 schema、endpoint 与真实 Runtime 仍未实现。
+
+---
+
+## 2026-09-11（Asia/Taipei）Reviewer 复核：wire/canonical 与 authoring Runtime 边界修订
+
+- **决定：** 当前严格 `workforce.task/0.1` wire DTO 不接受 `orchestrationMode`；若 T02 保持 `0.1`，只能新增可选字段并由 Application 归一化，否则升级协议。`orchestrationMode` 只在解析后的 canonical Run snapshot 中必填。D17 的 conversation turn/raw intent 通过受治理 authoring Task/Run 与 Runtime SPI 执行编排 Agent，Proposal 是该 Run 输出；生成出的 Workflow 仍须发布和计划确认后才执行。
+- **文档影响：** 补 TeamDraft、WorkflowGraphDefinition、唯一 `PlacementSnapshot`、Project/WorkflowInstance execution snapshot FK 与 DB CHECK；补 authoring usage/budget/cancel/retry/failure/expired/partially_applied 状态、普通 prerequisite edge 投影规则，以及全量 fenced-code 检查测试。旧条目关于 `WorkflowDefinition`/未发布 `WorkflowVersion` 保留为历史记录，不作为现行契约。
+- **状态：** **planned**。本次仍仅调整文档/检查器；T02 公共 schema、T14 authoring use case、M7/M8 代码与真实 Runtime 未实现。
+
+---
+
+## 2026-09-11（Asia/Taipei）最终审阅修订：ChangeSet、snapshot 唯一来源、启动顺序与迁移门槛
+
+- **决定：** `WorkflowDraft` 始终保持 draft，作者操作状态只属于 `AuthoringChangeSet`/step；多目标使用逐目标 `expectedRevision`，staged steps 持久化状态并支持失败、部分应用、取消、过期、重试和恢复。`ProjectExecutionSnapshot` 是 workflow-bound 的唯一版本来源，direct 永不推进 WorkflowInstance/Project；吸收 direct 产物必须新建 workflow-bound/follow-up command，显式引用精确 `ArtifactVersion` 并重新验收。启动流程前段只解析 placement intent，选定 Node/Runtime、Lease、WorkspaceInstance 后组装 PlacementSnapshot，再原子创建 Run、snapshot、Event/Outbox。
+- **文档影响：** `blueprint/10-database-schema.md` 删除 runs CHECK 对已移除 `workflow_version_id` 的引用，统一 step `patchRef` 存储/保留规则，并补齐现行 M3 Run 尚无 mode/transport/placement/snapshot 字段时的 T04 expand → backfill → switch → contract migration；`blueprint/03-system-architecture.md`、`diagrams/node-scheduling-flow.md`、`diagrams/dual-execution-mode-flow.md`、`diagrams/workflow-authoring-flow.md` 与 Product UI 核心流程同步启动顺序和 Run/snapshot/Event/Outbox 原子边界；Project 计划确认只创建 execution snapshot，`workflow.start` 才创建 WorkflowInstance。API blueprint/矩阵保持 `/teams/{id}/drafts...`、`/workflows/{id}/drafts...` 写草稿、`versions` 只读 published。`03-implementation-status.md` 与 MVP 计划明确 T04 migration、T16 current-M3 upgrade fixture 仍 planned/not implemented；`check-docs` fenced block 只识别 0–3 个前导空格，并覆盖 4 空格/tab 测试。
+- **状态：** **planned**。本轮仍只修正文档与文档检查器；T04 migration、T16 upgrade fixture、D17/D18 实现与公共 schema 均未实现。

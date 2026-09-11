@@ -1,9 +1,17 @@
+---
+title: Workforce Task Protocol
+type: protocol
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Task Protocol
 
 **协议名：** Workforce Task Protocol  
 **协议版本：** `0.1`  
 **状态：** Draft  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目的
 
@@ -74,6 +82,28 @@ Task Protocol 定义平台、Workflow、Worker、Runtime 与人类之间共同�
 
 Task 在首次 Run 启动前可以编辑。每个 Run 启动时保存 Task revision 和完整执行快照；后续编辑不得改变已经运行或完成的 Run。
 
+执行快照还必须记录三条正交执行轴：`transport`（`process | sdk | http`，Adapter 接入方式）、`placement`（节点/Workspace 选择）和 `orchestrationMode`（`workflow_bound | direct`，是否进入本次 Workflow 调度）。禁止使用含义不清的 `executionMode`。
+
+`workflow_bound` Task 必须关联已确认的 Project Execution Snapshot，并从 snapshot 读取 WorkflowVersion/TeamVersion。`direct` Task 是项目内 ad-hoc Task：没有 `workflowNodeId` 或 `workflowInstanceId` 也可以执行，但仍创建正常 Run，经过同一套 Policy、Workspace、Budget、Approval、Capability 和 Artifact/Evaluation 治理；它永不推进 WorkflowInstance 或 Project。若要吸收 direct 产物，必须另发 workflow-bound/follow-up command，显式引用精确 `ArtifactVersion` 并重新验收。
+
+wire DTO 与 resolved Run snapshot 分离：当前严格 `workforce.task/0.1` schema 不接受 `orchestrationMode`，所以本节 Task Envelope 与 §21 完整 wire 示例都不携带它。T02 若保持 `0.1`，只能把该字段作为向后兼容的可选扩展并由 Application 归一化；否则必须升级协议版本。T02 冻结前不得把它加入当前 `0.1` 的必填 wire 字段或 API 完整示例。
+
+Application 解析后产生 canonical `ResolvedRunSnapshot`，其中 `orchestrationMode`、三轴、版本引用、治理快照和唯一 `PlacementSnapshot` 必填；M3 对缺失 mode 的旧 wire 请求默认归一化为 `workflow_bound` 并记录兼容事件。wire/task digest 只覆盖实际接收的 `0.1` DTO；`runSnapshotDigest` 在归一化和授权后计算，包含 mode、三轴、精确版本、Policy/Budget/Workspace 与 placement。客户端不得把 wire 缺省解释为 `direct`。
+
+```ts
+interface ResolvedRunSnapshot {
+  taskRevision: number;
+  orchestrationMode: "workflow_bound" | "direct";
+  transport: "process" | "sdk" | "http";
+  placement: PlacementSnapshot;
+  executionSnapshotId?: SnapshotRef;
+  policySnapshotRef: SnapshotRef;
+  budgetSnapshotRef?: SnapshotRef;
+  workspaceSnapshotRef: SnapshotRef;
+  runSnapshotDigest: string;
+}
+```
+
 ## 4. 核心字段
 
 | 字段 | 必需 | 含义 |
@@ -94,6 +124,7 @@ Task 在首次 Run 启动前可以编辑。每个 Run 启动时保存 Task revis
 | `constraints` | 是 | 时间、工具、路径、网络等限制 |
 | `dependencies` | 是 | 前置 Task 及满足规则 |
 | `assignment` | 否 | 指定或动态分配 Worker |
+| `orchestrationMode` | 否（不属于当前 0.1 wire） | 仅在 Application 解析后的 canonical Run snapshot 中必填；`workflow_bound` 或 `direct` |
 | `executionPolicy` | 是 | 重试、超时、审批、并发和取消策略 |
 | `budget` | 是 | 费用、token、时间和工具消耗上限 |
 
@@ -338,7 +369,7 @@ Task constraints 只能收紧上级 Policy，不能放宽 Organization 或 Proje
   "dependencies": [
     {
       "taskId": "tsk_plan",
-      "condition": "completed",
+      "condition": "outputs_ready",
       "requiredArtifacts": ["out_implementation_plan"]
     }
   ]
@@ -351,6 +382,7 @@ Task constraints 只能收紧上级 Policy，不能放宽 Organization 或 Proje
 - 依赖未满足时 Task 状态为 `blocked`。
 - 上游失败后的行为由 Workflow failure policy 决定。
 - 依赖 Artifact 必须通过显式 input binding 进入下游。
+- 默认普通 prerequisite 条件是 `outputs_ready`：上游 required outputs 已绑定精确 ArtifactVersion；只有节点明确要求业务终态时才使用 `completed`。公开 `TaskDto.dependsOn[].waitFor` 只投影这类普通 prerequisite 边；Workflow 的 `failed`、`cancelled`、`any_terminal` 路由边不进入 `dependsOn`，也不与其做五种值的同值映射。
 - Workflow Engine 创建 Task 时必须检测环路。
 
 ## 13. Assignment
@@ -396,6 +428,8 @@ V0.1 可先实现指定 Worker 与按 Role 匹配；智能路由不作为首版�
   }
 }
 ```
+
+`orchestrationMode` 不改变 `executionPolicy`。无论选择 `workflow_bound` 还是 `direct`，启动前都必须创建 Task/Run、解析并冻结三轴、Policy、Workspace、预算和能力快照；retry 只创建新 Run 并沿用已解析模式。
 
 要求：
 
@@ -634,7 +668,7 @@ TaskResult 是 Task 终态摘要，不替代 Artifact 或 Evaluation：
   "dependencies": [
     {
       "taskId": "tsk_auth_plan",
-      "condition": "completed",
+      "condition": "outputs_ready",
       "requiredArtifacts": ["out_plan"]
     }
   ],

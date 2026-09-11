@@ -1,3 +1,11 @@
+---
+title: Workforce 页面信息架构
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce 页面信息架构
 
 **版本：** V0.1 Draft  
@@ -37,7 +45,7 @@ UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime �
 | 执行节点 | ExecutionNode、RuntimeInstallation、Capacity | 查看本机与服务器执行能力 | P0 |
 | 审批中心 | Approval、PolicyDecision | 集中处理人工决策 | P0 |
 | 运行记录 | Run、Event、Usage | 查询执行历史和诊断问题 | P1 |
-| 工作流 | WorkflowDefinition、WorkflowVersion | 为项目编排并发布可复用工作流（M3 只读目录；M7 对话生成 + 可视化画布）。服务项目循环，不是独立 IDE | P1 |
+| 工作流 | Workflow identity、WorkflowGraphDefinition、WorkflowDraft、WorkflowVersion | 为项目编排并发布可复用工作流（M3 只读目录；M7 对话生成 + 可视化画布）。服务项目循环，不是独立 IDE | P1 |
 | 设置 | Runtime、CredentialRef、Policy、Preferences | 配置运行环境与安全边界 | P0 |
 
 `V0.1` 列是**交付切片深度**，不是“是否出现在一级导航”：
@@ -253,7 +261,7 @@ V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续
 
 **M3 过渡切片（只读目录已接通，可与画布并存）：**
 
-- 查看已发布 `WorkflowDefinition` / `WorkflowVersion`：模板列表、不可变版本、结构化步骤
+- 查看已发布 Workflow identity 的 `WorkflowVersion`：模板列表、不可变版本、结构化步骤；`WorkflowDraft` 只在作者面可见
 - 查询走能力矩阵已列的只读目录：`GET /workflows`、`GET /workflows/{id}`、`GET /workflows/{id}/versions/{versionId}`。空目录展示诚实空态，不回退夹具冒充已接通
 - 数据来自已发布模板（如 software-development-team feature-delivery），不是项目内已实例化的执行图
 - 只读目录是过渡切片，不是终态；与画布目标兼容，不是「V0.1 不做画布」

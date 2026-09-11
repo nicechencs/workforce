@@ -1,3 +1,11 @@
+---
+title: Workforce 核心用户流程
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce 核心用户流程
 
 **版本：** V0.1 Draft  
@@ -16,15 +24,36 @@ flowchart TD
   Workspace --> Team[编排 Team]
   Team --> Tasks[编排 Tasks]
   Tasks --> Flow[编排 Workflow]
-  Flow --> Plan[Planner 生成或确认计划]
+  Flow --> Author{作者路径}
+  Author -->|对话生成| Proposal[AuthoringProposal / ChangeSet]
+  Proposal --> Validate[Schema + Policy 校验]
+  Validate --> Apply[CAS / staged apply]
+  Apply --> Draft[WorkflowDraft]
+  Draft --> Canvas[画布编辑]
+  Author -->|画布/结构化编辑| Canvas
+  Canvas --> Publish[发布不可变 WorkflowVersion]
+  Publish --> Plan[Planner 生成或确认计划]
   Plan --> Confirm{人工确认}
   Confirm -->|修改| Plan
-  Confirm -->|通过| Schedule[Scheduler 分配 Worker Runtime 和 Node]
-  Schedule --> Execute[并发执行隔离 Run]
+  Confirm -->|通过| Mode{Agent 执行模式（M8）}
+  Mode -->|workflow_bound| Schedule[Scheduler 准备已确认图节点]
+  Mode -->|direct| AdHoc[Application 创建 ad-hoc Task]
+  Schedule --> ResolveIntent[仅解析 placement intent]
+  AdHoc --> ResolveIntent
+  ResolveIntent --> Guard[Policy/Budget/Approval 授权]
+  Guard --> Select[选择 Worker/Runtime/Node + capability]
+  Select --> Lease[Lease/fencing]
+  Lease --> WorkspaceRun[创建 WorkspaceInstance]
+  WorkspaceRun --> ResolveAxes[解析 transport + orchestrationMode]
+  ResolveAxes --> Binding[组装 PlacementSnapshot]
+  Binding --> Freeze[原子创建 Run + 冻结 snapshot + Event/Outbox]
+  Freeze --> Execute[并发执行隔离 Run]
   Execute --> Review[Evaluation 与 Reviewer]
   Review --> Approval{人工验收}
-  Approval -->|返工| Schedule
-  Approval -->|通过| Complete[项目完成]
+  Approval -->|返工| Retry[按原 orchestrationMode 重新解析]
+  Retry --> Resolve
+  Approval -->|workflow_bound 验收通过| Complete[推进 Workflow / Project 完成]
+  Approval -->|direct 验收通过| DirectDone[完成 ad-hoc Task / Run；永不推进父聚合]
 ```
 
 M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team、画布与对话生成。M8 才要求按 Agent 选择执行模式。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。无 capability 不得渲染直接执行成功态。
@@ -33,13 +62,19 @@ M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要
 
 ```mermaid
 flowchart TD
-  Ready[Ready Tasks] --> Match[能力与 Runtime 匹配]
-  Match --> Capacity{Local Node 有容量?}
+  Ready[Ready Tasks] --> ResolveIntent[仅解析 placement intent]
+  ResolveIntent --> Guard[Policy/Budget/Approval 授权]
+  Guard --> Capacity{Local Node 有容量?}
   Capacity -->|否| Queue[进入容量队列]
   Queue --> Capacity
   Capacity -->|是| Allocate[分配资源]
-  Allocate --> Workspace[创建独立 WorkspaceInstance]
-  Workspace --> Runs[启动多个隔离 Run]
+  Allocate --> Runtime[选择 RuntimeInstallation + capability]
+  Runtime --> Lease[创建 ExecutionLease / fencing]
+  Lease --> Workspace[创建独立 WorkspaceInstance]
+  Workspace --> ResolveAxes[解析 transport + orchestrationMode]
+  ResolveAxes --> Binding[组装 PlacementSnapshot]
+  Binding --> Freeze[原子创建 Run + 冻结 snapshot + Event/Outbox]
+  Freeze --> Runs[启动多个隔离 Run]
   Runs --> Events[事件与 Artifact 入库]
 ```
 
@@ -54,15 +89,21 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  Task[Task Placement Intent] --> Mode{执行位置}
-  Mode -->|本机| Local[Local Node]
-  Mode -->|指定服务器| Remote[Selected Remote Node]
+  Task[Task Placement Intent] --> ResolveIntent[仅解析 placement intent]
+  ResolveIntent --> Policy[Policy/Budget/Approval 授权]
+  Policy --> Mode{执行位置}
+  Mode -->|本机| Local[选择 Local Node + Runtime]
+  Mode -->|指定服务器| Remote[选择 Remote Node + Runtime]
   Mode -->|自动| Select[能力 容量 数据位置 策略匹配]
   Select --> Local
   Select --> Remote
   Local --> Lease[Create Lease]
   Remote --> Lease
-  Lease --> Run[Start Run]
+  Lease --> Workspace[Resolve WorkspaceInstance]
+  Workspace --> ResolveAxes[解析 transport + orchestrationMode]
+  ResolveAxes --> Binding[组装 PlacementSnapshot]
+  Binding --> Snapshot[原子创建 Run + 冻结 snapshot + Event/Outbox]
+  Snapshot --> Run[Start Run]
 ```
 
 V0.1 只实现 Local Node，但界面保留“自动调度 / 本机 / 指定节点”的模型；未实现选项必须清晰标记，而不是伪造可用。
@@ -121,7 +162,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   List[工作流目录] --> Edit[画布编辑草稿]
-  Edit --> Save[保存未发布版本]
+  Edit --> Save[保存 WorkflowDraft]
   Save --> Publish{发布}
   Publish -->|校验失败| Edit
   Publish -->|通过| Frozen[不可变 WorkflowVersion]
@@ -135,8 +176,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   Preset[预设 Software Dev Team] --> Use[项目绑定已发布版本]
-  New[新建自定义 Team] --> Draft[编辑成员与 RuntimeProfile]
-  Draft --> Pub{发布 TeamVersion}
+  New[新建自定义 Team] --> Draft[编辑 TeamDraft 成员与 RuntimeProfile]
+  Draft --> Pub{发布并产生 TeamVersion}
   Pub -->|通过| Use
   Pub -->|失败| Draft
 ```
@@ -150,9 +191,16 @@ flowchart TD
 ```mermaid
 flowchart TD
   Talk[用户描述角色流程与任务] --> Agent[编排 Agent 理解意图]
-  Agent --> Draft[生成 Workflow 与可选 Team/Task 草稿]
+  Agent --> Start[Application 创建受治理 authoring Task / Run]
+  Start --> Runtime[Runtime SPI 执行编排 Agent]
+  Runtime --> Proposal[AuthoringProposal / ChangeSet 输出]
+  Start --> Usage[usage + budget 记录]
+  Start --> Control[cancel / retry / failure / expired]
+  Proposal --> Validate[Application 校验与 Policy/Budget]
+  Validate --> Apply[CAS 原子或 staged apply]
+  Apply --> Draft[WorkflowDraft]
   Draft --> Edit[画布或结构化编辑]
-  Edit --> Save[保存未发布版本]
+  Edit --> Save[保存 WorkflowDraft]
   Save --> Publish{发布}
   Publish -->|校验失败| Edit
   Publish -->|通过| Frozen[不可变 WorkflowVersion]
@@ -161,8 +209,9 @@ flowchart TD
 
 约束：
 
-- 对话只生成定义，不执行 Runtime，也不把聊天回复写成 Task/Run 完成。
+- authoring Run 会通过 Runtime SPI 执行编排 Agent；但生成出的 Workflow 定义不会被该 Run 执行，也不把聊天回复写成目标 Task/Run 完成。
 - 生成结果必须可编辑；禁止一次生成即锁定。
+- authoring Run 的 usage、budget、cancel、retry、failure 和 Event 必须可追踪。
 - 未发布图不能被 Runtime 执行。写接口未就绪时，「对话生成」不得假成功。
 - 会话协议未由 T02 冻结前，本流程只是产品路径，不对应已实现 endpoint。
 
@@ -173,16 +222,24 @@ flowchart TD
   AgentWork[某 Agent 将要做事] --> Probe{capability 支持哪些模式}
   Probe -->|皆无| Deny[禁用并说明]
   Probe -->|有能力| Choose{用户选择}
-  Choose -->|跟随已发布工作流| Bound[只执行图中轮到的节点]
-  Choose -->|直接执行| Direct[即席执行当前目标]
-  Bound --> Policy[Policy Workspace 预算 Approval]
-  Direct --> Policy
-  Policy --> Run[创建新 Run]
+  Choose -->|跟随已发布工作流| Bound[已确认 WorkflowVersion / Execution Snapshot]
+  Choose -->|直接执行| Direct[Application 创建项目内 ad-hoc Task]
+  Bound --> ResolveIntent[仅解析 placement intent]
+  Direct --> ResolveIntent
+  ResolveIntent --> Policy[Policy Workspace 预算 Approval]
+  Policy --> Select[选择 Node + RuntimeInstallation + capability]
+  Select --> Lease[Lease/fencing]
+  Lease --> Workspace[创建 WorkspaceInstance]
+  Workspace --> ResolveAxes[解析 transport + orchestrationMode]
+  ResolveAxes --> Binding[组装 PlacementSnapshot]
+  Binding --> Run[原子创建 Run + 冻结 snapshot + Event/Outbox]
+  Run --> Runtime[Start Runtime]
 ```
 
 约束：
 
 - workflow-bound 与 direct 都是一等模式，UI/API 必须诚实，靠 probe 显隐。
-- direct 仍受 Policy、隔离 worktree、预算与 Approval 约束，不是无协议乱跑。
+- direct 只绕过本次 WorkflowInstance 图调度，仍创建项目内 ad-hoc Task/Run，受 Policy、隔离 worktree、预算与 Approval 约束，不是无协议乱跑；永不推进 WorkflowInstance/Project。若吸收其成果，必须另发 workflow-bound/follow-up command，引用精确 ArtifactVersion 并重新验收。
+- `transport`、`placement`、`orchestrationMode` 分开展示；M3 缺省模式按 `workflow_bound` 兼容解析。
 - 重试创建新 Run，不改写旧 Run 的模式。
 - 当前代码无此选择面；不得预置可点击成功的「直接执行」。

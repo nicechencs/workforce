@@ -1,8 +1,16 @@
+---
+title: Workforce Database Schema
+type: architecture
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Database Schema
 
 **版本：** V0.1 Draft  
 **状态：** Architecture baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目标与原则
 
@@ -54,17 +62,17 @@ Team、Worker、Workflow 使用“逻辑实体 + 不可变版本”模式；Proj
 |---|---|---|
 | `organizations` | `id`, `name`, `slug`, `settings_json`, timestamps | `slug` UNIQUE |
 | `principals` | `id`, `organization_id`, `type`, `external_id`, `display_name` | 用户、服务或 Worker 身份；UNIQUE `(organization_id,type,external_id)` |
-| `projects` | `id`, `organization_id`, `name`, `objective`, `status`, `team_version_id`, `workflow_version_id`, `context_ref`, timestamps | FK 均限制在同一组织，由服务层及复合约束保证 |
+| `projects` | `id`, `organization_id`, `name`, `objective`, `status`, `team_version_id`, `workflow_version_id`, `execution_snapshot_id`, `context_ref`, timestamps | Draft 可暂为空；计划确认后 `team_version_id` 与 `execution_snapshot_id` 必须非空，FK 均限制在同一组织 |
 | `workspaces` | `id`, `organization_id`, `project_id`, `kind`, `platform`, `root_ref`, `isolation`, `status`, `repository_json`, timestamps | `root_ref` 不得保存凭据；软归档用 `archived_at` |
 
 ### 4.2 配置及不可变版本
 
 | 逻辑实体表 | 版本表 | 版本表关键列 |
 |---|---|---|
-| `teams` | `team_versions` | `team_id`, `version`, `definition_json`, `content_hash`, `created_by`, `created_at` |
+| `teams` | `team_drafts` / `team_versions` | Draft `revision`, `status`, `definition_json`, `content_hash`, `updated_at`；published version `version`, `source_draft_id`, `content_hash`, `published_at` |
 | `workers` | `worker_versions` | `worker_id`, `version`, `role_id`, `runtime_profile_version_id`, `prompt_version_id`, `policy_version_id`, `definition_json`, `content_hash` |
-| `workflows` | `workflow_versions` | `workflow_id`, `version`, `definition_json`, `content_hash` |
-| `runtime_profiles` | `runtime_profile_versions` | `runtime_profile_id`, `version`, `adapter_type`, `adapter_version`, `model`, `execution_mode`, `config_json`, `capabilities_json` |
+| `workflows` | `workflow_drafts` / `workflow_versions` | 草稿 `revision`, `graph_json`, `content_hash`；发布版本 `workflow_id`, `version`, `graph_json`, `content_hash`, `published_at` |
+| `runtime_profiles` | `runtime_profile_versions` | `runtime_profile_id`, `version`, `adapter_type`, `adapter_version`, `model`, `transport`, `placement_json`, `config_json`, `capabilities_json` |
 | `policies` | `policy_versions` | `policy_id`, `version`, `rules_json`, `content_hash` |
 | `prompts` | `prompt_versions` | `prompt_id`, `version`, `content_ref`, `content_hash` |
 
@@ -74,7 +82,11 @@ Team、Worker、Workflow 使用“逻辑实体 + 不可变版本”模式；Proj
 
 | 表 | 关键列 |
 |---|---|
-| `workflow_instances` | `id`, `organization_id`, `project_id`, `workflow_version_id`, `status`, `started_at`, `ended_at` |
+| `team_drafts` | `id`, `team_id`, `revision`, `status`, `definition_json`, `content_hash`, `updated_at`, `updated_by` | `status=draft` 可 CAS 更新；发布成功后插入带 `source_draft_id`/`published_at` 的不可变 `team_versions` 并写 Event |
+| `workflow_drafts` | `id`, `workflow_id`, `revision`, `status`, `graph_json`, `content_hash`, `updated_at`, `updated_by` |
+| `authoring_change_sets` / `authoring_change_set_steps` | ChangeSet identity/status/proposal 与逐目标 expected revision、step status、result/error | 持久化 CAS/staged apply，禁止把草稿状态改成 applying/applied |
+| `project_execution_snapshots` | `id`, `project_id`, `workflow_version_id`, `team_version_id NOT NULL`, `content_hash`, `policy_snapshot_json`, `budget_snapshot_json`, `created_at` | 只写一次；Project 计划确认时生成 |
+| `workflow_instances` | `id`, `organization_id`, `project_id`, `execution_snapshot_id NOT NULL`, `status`, `started_at`, `ended_at` | WorkflowVersion/TeamVersion 只从 execution snapshot 读取 |
 | `tasks` | `id`, `organization_id`, `project_id`, `workflow_instance_id`, `workflow_node_id`, `parent_task_id`, `revision`, `title`, `objective`, `instructions`, `status`, `priority`, `assignment_worker_version_id`, `protocol_version`, timestamps |
 | `task_payloads` | `task_id`, `revision`, `payload_json`, `content_hash`, `created_at` |
 | `task_dependencies` | `task_id`, `depends_on_task_id`, `condition`, `required_status`, `created_at` |
@@ -85,7 +97,7 @@ Team、Worker、Workflow 使用“逻辑实体 + 不可变版本”模式；Proj
 
 | 表 | 关键列 | 说明 |
 |---|---|---|
-| `runs` | `id`, `organization_id`, `task_id`, `attempt`, `parent_run_id`, `status`, `worker_version_id`, `workspace_id`, `task_revision`, `runtime_adapter`, `runtime_adapter_version`, `model`, `started_at`, `ended_at`, `heartbeat_at`, `failure_code`, `failure_json`, `created_at` | UNIQUE `(task_id, attempt)` |
+| `runs` | `id`, `organization_id`, `task_id`, `attempt`, `parent_run_id`, `status`, `orchestration_mode`, `execution_snapshot_id`, `worker_version_id`, `workspace_id`, `task_revision`, `runtime_adapter`, `runtime_adapter_version`, `transport`, `placement_snapshot_json`, `model`, `started_at`, `ended_at`, `heartbeat_at`, `failure_code`, `failure_json`, `created_at` | `workflow_bound` 必须有 execution snapshot，WorkflowVersion/TeamVersion 从 snapshot 读取；`direct` execution snapshot 必须为空但仍有不可变 Run/placement snapshot；UNIQUE `(task_id, attempt)` |
 | `run_snapshots` | `run_id`, `task_snapshot_json`, `runtime_snapshot_json`, `context_bundle_ref`, `policy_snapshot_json`, `content_hash` | 一次写入、不可变 |
 | `run_usage` | `run_id`, `input_tokens`, `output_tokens`, `runtime_ms`, `api_cost_minor`, `tool_cost_minor`, `currency`, `usage_json`, `updated_at` | 可累计；最终完成后冻结 |
 
@@ -194,6 +206,73 @@ PostgreSQL 云端阶段为 `events`、`usage_ledger` 按月/组织分区；先�
 ## 10. 示例 DDL（SQLite）
 
 ```sql
+CREATE TABLE team_drafts (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(id),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  status TEXT NOT NULL CHECK (status = 'draft'),
+  definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  UNIQUE(team_id, revision)
+);
+
+CREATE TABLE authoring_change_sets (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  workflow_id TEXT REFERENCES workflows(id),
+  source_run_id TEXT NOT NULL REFERENCES runs(id),
+  status TEXT NOT NULL CHECK (status IN
+    ('proposed','validating','applying','applied','partially_applied',
+     'failed','cancelled','expired')),
+  proposal_ref TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  failure_json TEXT CHECK (failure_json IS NULL OR json_valid(failure_json))
+);
+
+CREATE TABLE authoring_change_set_steps (
+  id TEXT PRIMARY KEY,
+  change_set_id TEXT NOT NULL REFERENCES authoring_change_sets(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal > 0),
+  target_type TEXT NOT NULL CHECK (target_type IN ('team','task','workflow')),
+  target_id TEXT NOT NULL,
+  expected_revision INTEGER NOT NULL CHECK (expected_revision > 0),
+  status TEXT NOT NULL CHECK (status IN
+    ('pending','applying','applied','failed','cancelled','expired')),
+  patch_ref TEXT NOT NULL,
+  result_revision INTEGER,
+  failure_json TEXT CHECK (failure_json IS NULL OR json_valid(failure_json)),
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(change_set_id, ordinal),
+  UNIQUE(change_set_id, target_type, target_id)
+);
+
+CREATE TABLE project_execution_snapshots (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  workflow_version_id TEXT NOT NULL REFERENCES workflow_versions(id),
+  team_version_id TEXT NOT NULL REFERENCES team_versions(id),
+  content_hash TEXT NOT NULL,
+  policy_snapshot_json TEXT NOT NULL CHECK (json_valid(policy_snapshot_json)),
+  budget_snapshot_json TEXT CHECK (budget_snapshot_json IS NULL OR json_valid(budget_snapshot_json)),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE workflow_instances (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  execution_snapshot_id TEXT NOT NULL REFERENCES project_execution_snapshots(id),
+  status TEXT NOT NULL,
+  started_at TEXT,
+  ended_at TEXT
+);
+
 CREATE TABLE tasks (
   id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL REFERENCES organizations(id),
@@ -225,11 +304,15 @@ CREATE TABLE runs (
   attempt INTEGER NOT NULL CHECK (attempt > 0),
   parent_run_id TEXT REFERENCES runs(id),
   status TEXT NOT NULL,
+  orchestration_mode TEXT NOT NULL CHECK (orchestration_mode IN ('workflow_bound','direct')),
+  execution_snapshot_id TEXT REFERENCES project_execution_snapshots(id),
   worker_version_id TEXT NOT NULL REFERENCES worker_versions(id),
   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
   task_revision INTEGER NOT NULL,
   runtime_adapter TEXT NOT NULL,
   runtime_adapter_version TEXT NOT NULL,
+  transport TEXT NOT NULL CHECK (transport IN ('process','sdk','http')),
+  placement_snapshot_json TEXT NOT NULL CHECK (json_valid(placement_snapshot_json)),
   model TEXT,
   started_at TEXT,
   ended_at TEXT,
@@ -237,6 +320,13 @@ CREATE TABLE runs (
   failure_code TEXT,
   failure_json TEXT CHECK (failure_json IS NULL OR json_valid(failure_json)),
   created_at TEXT NOT NULL,
+  CHECK (
+    (orchestration_mode = 'workflow_bound'
+      AND execution_snapshot_id IS NOT NULL)
+    OR
+    (orchestration_mode = 'direct'
+      AND execution_snapshot_id IS NULL)
+  ),
   UNIQUE(task_id, attempt)
 );
 
@@ -263,6 +353,10 @@ CREATE TABLE events (
 );
 ```
 
+`team_drafts` 与 `workflow_drafts` 以 `(team_id|workflow_id, revision)` 唯一并允许 CAS 更新；发布 Draft 时插入带 `source_draft_id`/`published_at` 的 immutable version 并写发布 Event，Draft 本身始终保持 `status=draft`。`authoring_change_sets`/`authoring_change_set_steps` 持久化逐目标 expected revision、步骤状态和恢复信息。`project_execution_snapshots` 只写一次并以统一 `content_hash` 校验；Project 与 WorkflowInstance 都保存 `execution_snapshot_id`，计划确认后的 `team_version_id` 必须非空。Run 的 `orchestration_mode`、`transport` 和唯一 `placement_snapshot_json` 一旦创建不可更新；上面的 CHECK 保证 workflow-bound 必有 snapshot、direct 不带 snapshot。
+
+创建 WorkflowInstance 或 workflow-bound Run 时，Application 必须在同一事务中校验 Task 的 `project_id`/租户、Project 的 `execution_snapshot_id` 与 snapshot 的 `project_id`/租户一致，并从 snapshot 取得唯一 WorkflowVersion/TeamVersion。不得通过分别写入的 version 列绕过该校验；direct Run 不得写 snapshot，也不更新 WorkflowInstance/Project。
+
 ## 11. Drizzle 实现方向
 
 - `packages/database/schema/*` 按 bounded context 拆分：identity、project、configuration、execution、artifact、governance、event。
@@ -280,6 +374,15 @@ CREATE TABLE events (
 - 大表回填分批执行；协议 payload 保留原 schema version，由读取层升级解释。
 - SQLite → PostgreSQL 迁移按主键复制、校验行数和内容哈希，再切换写入端；不依赖数据库自增序列。
 
+### T04 D17/D18 schema migration（planned）
+
+1. **Expand：** 新增 `authoring_change_sets`、`authoring_change_set_steps`；为现行 M3 `runs` 新增 nullable `orchestration_mode`、`execution_snapshot_id`、`transport`、`placement_snapshot_json`。保留历史 `workflow_version_id`/`team_version_id` 兼容读取，不能在此阶段直接套用目标 `NOT NULL/CHECK`。
+2. **Backfill：** 现行 M3 历史 Run 归一化为 `workflow_bound`。依据已有精确 WorkflowVersion、TeamVersion 和 Project/租户关系创建唯一 `ProjectExecutionSnapshot` 并回填 `execution_snapshot_id`；`transport` 只能从既有 RuntimeProfile/adapter 事实解析，`placement_snapshot_json` 只能从既有 Local Node、Workspace 与 Run binding 重建并标注 legacy snapshot schema version。缺失或冲突的 row 进入可审计 repair/quarantine，不猜测版本、不伪造远程能力；保留原 digest，并以 migration record 关联新的 canonical snapshot。D18 上线后产生的历史 direct Run 保持无 execution snapshot 引用。
+3. **Switch：** Application/Repository 改为只从 `ProjectExecutionSnapshot` 读取 WorkflowVersion/TeamVersion，并对新 Run 双写已解析的 `orchestration_mode`、`transport`、`placement_snapshot_json`；新写入先完成 Placement，再原子创建 Run/snapshot/Event/Outbox，authoring step 只通过 ChangeSet 表恢复。旧 version 列只读用于迁移审计。
+4. **Contract：** 回填审计和恢复演练通过后，删除 WorkflowInstance/Run 的冗余 version 列；将 `orchestration_mode`、`transport`、`placement_snapshot_json` 收紧为目标 `NOT NULL/CHECK`，并施加 workflow-bound 必有 `execution_snapshot_id`、direct 必为 `NULL` 的互斥 CHECK，最后关闭旧列读取。
+
+该 migration 方案属于 T04 设计与验收范围，当前未实现；不得把文档 DDL 当作已执行 migration。
+
 ### Retention
 
 | 数据 | 默认策略 |
@@ -290,6 +393,7 @@ CREATE TABLE events (
 | stdout/stderr 高频块 | V0.1 可压缩存文件；数据库只保留索引和摘要，默认 30 天 |
 | Credential audit metadata | 按安全/合规策略保留；Secret 生命周期独立 |
 | Usage ledger | 追加式长期保留，满足计费与审计 |
+| Authoring proposal/patch 原文 | 仅保存受控 `ArtifactRef`；按 Project Policy 或 `expires_at` 脱敏/清除内容，ChangeSet/step 保留哈希、目标 revision、状态与审计摘要，不保留 Secret |
 
 删除采用 tombstone/audit event；真正物理清除由 retention job 完成。Legal hold 覆盖常规清理策略。
 
@@ -340,6 +444,6 @@ V0.1 暂不实现：
 | `resource_allocations` | id, run_id, node_id, cpu, memory, gpu, disk | 并发资源占用 |
 | `coordination_messages` | id, project_id, task_id, run_id, sender, recipients, kind, content_ref | Agent 结构化协作 |
 
-`runs` 增加 `node_id`、`runtime_installation_id`、`workspace_instance_id`、`placement_snapshot_json`。V0.1 为本机创建唯一 Local Node，并允许上述外键为空后逐步收紧；进入远程执行前必须设为强制。
+`runs` 以唯一 `placement_snapshot_json` 保存 `nodeId`、`nodeSessionId`、`runtimeInstallationId`、`workspaceInstanceId`、Lease/fencing 等完整 resolved binding；不再另设平行 NodeExecutionBinding 或同义的运行时版本列。解析阶段可暂为空，但 Run 进入 `starting` 前必须完成 binding；migration 的临时 nullable 仅属于 expand/backfill 窗口，contract 后 workflow-bound Run 的 snapshot 必须存在。
 
 唯一性与并发约束至少包括：一个非终态 Run 只有一个有效 Lease；`(node_session_id, source_sequence)` 唯一；`(run_id, attempt)` 唯一；资源分配释放与 Run 终态在同一事务或可对账流程中完成。

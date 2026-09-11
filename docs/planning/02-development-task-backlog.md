@@ -1,3 +1,11 @@
+---
+title: Workforce V0.1 Development Task Backlog
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
@@ -46,10 +54,11 @@ flowchart TD
   M3 --> Live[真实运行与治理验收 T16]
   T15 --> Live
   Live --> T17[三平台发布 T17]
-  T02 --> Orchestration[画布 T18 / 自定义 Team T19 / 对话生成 T20]
+  T02 --> Orchestration[画布 T18 / 自定义 Team T19 / 对话生成 T20 + Authoring T20-B]
   T10 --> Orchestration
   T09 --> Orchestration
   M3 --> Orchestration
+  T14 --> Orchestration
   Orchestration --> M7[M7 补齐项目制循环]
   M7 --> Dual[双执行模式 T21]
   T09 --> Dual
@@ -67,7 +76,7 @@ flowchart TD
 | T01 | Monorepo 与工具链 | 根配置、包 manifest、tooling 配置、基础 CI | 可立即开始 | 中 / 中 |
 | T02 | Schema、Domain、公共 ports | protocol、domain、runtime-spi、公共 contracts/ports | T00 + T01 | 高影响 / 大 |
 | T03 | 技术可行性实验 | tooling/spikes、docs/spikes | 可立即开始 | 高不确定性 / 中 |
-| T04 | SQLite、事务、Event Store | database、events 的持久化/投递实现 | T02 | 高 / 大 |
+| T04 | SQLite、事务、Event Store | database、events 的持久化/投递实现 | T02；D17 authoring 由 T14 提交存储需求，升级 fixture 与跨模块验收由 T16 协同 | 高 / 大 |
 | T05 | Mock Runtime 与 Local Node Host | runtimes/mock、runtime-sdk | T02 | 高 / 中 |
 | T06 | Workspace、Git 与进程控制 | workspace、process | T02；吸收 T03 平台实验 | 高 / 大 |
 | T07 | Policy、凭据与脱敏 | policy、observability | T02 | 高 / 大 |
@@ -83,8 +92,9 @@ flowchart TD
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
-| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
-| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `executionMode`（或等价）后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
+| T20 | 项目循环：对话生成工作流 UI | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
+| T20-B | 项目循环：Authoring Application 用例 | `application/src/use-cases/authoring`（由 T14 负责）及相关测试 | T02 authoring proposal/change-set DTO；不改 Renderer、Workflow Engine 或 API composition | 高 / 大 |
+| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `orchestrationMode` 后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
@@ -99,7 +109,7 @@ flowchart TD
 **工作：**
 
 - 确认 V0.1 Local Node 范围及远程契约边界，吸收附加章节到主体模型。
-- 冻结 Event、Task/Run、Runtime SPI、ArtifactVersion、NodeExecutionBinding、Approval、Budget 的术语与版本。
+- 冻结 Event、Task/Run、Runtime SPI、ArtifactVersion、唯一 `PlacementSnapshot` resolved binding、Approval、Budget 的术语与版本。
 - 决定 planning → Plan Artifact → 人工确认 → 冻结执行 DAG 的流程，以及成果汇总、接管、retry/rework 语义。
 - 输出完整状态矩阵：含 command、guard、next state、Event、事务边界、非法操作及中间状态。
 - 输出首版页面与 endpoint 能力矩阵，标记只读、后续、不支持。
@@ -162,12 +172,13 @@ flowchart TD
 
 - 将 T02 ports 映射到 SQLite/Drizzle，补足 node instances、timers、handles、command receipts、staging/output binding、approval、budget/resource 记录。
 - UoW、CAS、唯一活动 Run 约束、attempt 分配、迁移锁、备份、forward migration。
+- 按 expand → backfill → switch → contract 实施 D17/D18 schema migration：新增 authoring ChangeSet/step 表；为现行 M3 Run 先增加 nullable `orchestration_mode`、`execution_snapshot_id`、`transport`、`placement_snapshot_json`，再从既有 Runtime/Local Node/Workspace 事实回填 `workflow_bound` 与 legacy snapshot；最终删除冗余 version 列并收紧 mode/transport/placement/snapshot CHECK。全阶段保留可审计 repair/quarantine，不猜测缺失版本或伪造远程能力。
 - 状态/Event/Outbox 同事务，Inbox 去重；stream sequence 与 ingestion cursor 分开。
 - 先持久化再发布，保留/缺口/失败重试与恢复查询；不得用 Event replay 重新执行副作用。
 
-**验收：** 空库迁移、升级失败备份恢复、事务回滚无半状态；重复消息/并发启动不重复 Run；重启后命令收据/Timer/Handle 可读取；SSE 补拉所需顺序与筛选查询可验证。所有表/JSON 载体在存储矩阵中有解释。
+**验收：** 空库迁移、升级失败备份恢复、事务回滚无半状态；重复消息/并发启动不重复 Run；重启后命令收据/Timer/Handle 可读取；SSE 补拉所需顺序与筛选查询可验证。D17 authoring ChangeSet/step 的 CAS、部分应用、取消/过期/失败恢复必须在事务与重启测试中可复现。历史 workflow-bound/legacy snapshot backfill 通过后才允许 contract；缺失版本进入 repair/quarantine。所有表/JSON 载体在存储矩阵中有解释。
 
-**集成依赖：** T02。业务模块需要新表必须提交存储请求，由本任务生成迁移，避免多个 agent 争抢 migration 编号。
+**集成依赖：** T02；D17 authoring 的应用需求由 T14 提交，T16 负责 current-M3 upgrade fixture 与跨模块验收。业务模块需要新表必须提交存储请求，由本任务生成迁移，避免多个 agent 争抢 migration 编号。
 
 ### T05 — Mock Runtime 与 Local Node Host
 
@@ -287,6 +298,8 @@ flowchart TD
 
 **集成依赖：** T06/T08/T09。禁止在本任务实现第二套 Scheduler、绕过 Task/Run 直接调用 Runtime，或自动 push/创建 PR。
 
+T14 同时负责 D17 后端 authoring：实现 Application authoring use case 的 proposal/change-set 校验、CAS/staged apply、跨 Team/Task/Workflow 事务、Policy/Budget/CredentialRef、Event、取消/重试和 retention/redaction；不发明独立 chat endpoint。
+
 ### T15 — Codex Adapter
 
 **所有权：** runtimes/codex/ 及内部 fixtures/tests。不改 Runtime SPI、Workspace/Process 或 Workflow 的公共契约。
@@ -303,7 +316,7 @@ flowchart TD
 
 **所有权：** tests/contract/、integration/、e2e/、platform/ 及统一验收报告；不拥有其他包源码。需要改 composition root 时，先由 T10 修改，或明确短期移交后再改。
 
-**工作：** 从 T02 起编写跨模块场景；依次接通 M3 Mock、M4 Codex、M5 治理全链路。缺陷发回相应模块所有者，不能在测试中绕过生产逻辑。
+**工作：** 从 T02 起编写跨模块场景；依次接通 M3 Mock、M4 Codex、M5 治理全链路。T04 的 D17/D18 schema migration 完成后，由本任务运行 current-M3 upgrade fixture 和恢复/回填验收；缺陷发回相应模块所有者，不能在测试中绕过生产逻辑。
 
 **必须覆盖：**
 
@@ -315,6 +328,7 @@ flowchart TD
 6. 事件重复/乱序/缺口、晚到、cursor expiry、快照/订阅竞争、慢消费者。
 7. worktree 冲突、脏用户仓库、路径越界、secret 跨分块、未授权动作。
 8. 接管期间不双写，人工结果重新注册/验收；审批绑定最终整合版本。
+9. 当前 M3 schema upgrade fixture：从尚无 mode/transport/placement/snapshot 新列的真实 M3 schema 执行 expand；把历史 Run 回填为 `workflow_bound`，从既有 Runtime/Local Node/Workspace 事实重建 transport 与 legacy PlacementSnapshot，回填唯一 ProjectExecutionSnapshot，再 switch snapshot-only 读写；验证 contract 后 mode/transport/placement `NOT NULL/CHECK`、workflow-bound snapshot 必填与 direct 无 snapshot。缺失/冲突历史行必须进入 repair/quarantine。该 fixture 必须真实跑迁移，不得只测空库。
 
 **验收：** 相关 lint/typecheck/build 与 unit/contract/integration/E2E 实际成功；报告清楚区分 Mock/live/平台覆盖；没有未修复的核心数据一致性、安全或恢复问题。首次集成通过后，重复测试应由新变更/失败/未解决风险驱动，避免无意义全量反复运行。
 
@@ -337,7 +351,7 @@ flowchart TD
 **工作：**
 
 - 工作流列表与详情保留只读目录切片；增加「新建 / 在画布中编辑」。
-- 画布编辑未发布 `WorkflowVersion`（nodes/edges）；保存走矩阵写接口；发布产生不可变版本。
+- 画布编辑 `WorkflowDraft.graph`（nodes/edges）；保存走矩阵写接口；发布产生不可变 `WorkflowVersion`。
 - 空态、未发布「Runtime 不会执行此图」、发布失败保留画布内容。
 - 不得在画布上改活动执行图；确认计划后的执行 `WorkflowVersion` 仍按 D02 冻结。
 - 公共 DTO/endpoint 缺口提交 T02/T10/T09，不在 renderer 发明第二套图协议。
@@ -365,7 +379,7 @@ flowchart TD
 
 ### T20 — 对话式工作流编排
 
-**目标：** 兑现 D17：用户能通过对话让 Agent **生成**可编辑的 Workflow / 角色 / 任务草稿（高度可定制的作者路径），再交给 D15 画布编辑与发布。不是独立聊天产品，也不是 Runtime。
+**目标：** 兑现 D17：用户能通过对话让 Agent **生成**可编辑的 Workflow / 角色 / 任务草稿（高度可定制的作者路径），再交给 D15 画布编辑与发布。不是独立聊天产品，也不是生成图的执行 Runtime；authoring Task/Run 通过 Runtime SPI 治理。
 
 **所有权：** `apps/desktop/src/renderer/features/workflow-authoring/` 及包内测试。不改 protocol、daemon composition、workflow-engine、路由表或 T18 画布文件。会话 / 草稿 DTO 缺口提交 T02。
 
@@ -375,26 +389,43 @@ flowchart TD
 - 生成后必须能跳到 T18 画布或结构化编辑；禁止一次生成即锁定。
 - 落草稿复用矩阵已列的 M7 workflow（及可选 Team）写接口；**不发明**未冻结 chat endpoint。
 - 写接口或会话协议未就绪时，入口不得假成功。
-- 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成。
+- 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成；authoring Task/Run 的 usage、budget、cancel、retry、failure 必须可观察。
 - 对话回复不得写成 Task/Run 完成。
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
+### T20-B — Authoring Application 用例
+
+**目标：** 为 T20/T18 提供 D17 的唯一后端 authoring 入口，接收 conversation turn/raw intent，创建受治理 authoring Task/Run 并通过 Runtime SPI 执行编排 Agent；该 Run 输出结构化 `AuthoringProposal` / `ChangeSet`，再生成可编辑 `WorkflowDraft`（及可选 Team/Task 草稿）。生成出的 Workflow 不在此 Run 中执行。
+
+**所有权：** `packages/application/src/use-cases/authoring/` 及相关测试，由 T14 负责；T02 负责公共 DTO/schema，T10 负责 HTTP 接线。不得在 Renderer、Runtime Adapter 或 Workflow Engine 复制此规则。
+
+**工作：**
+
+- 校验 Project 边界、DAG、引用、Policy、Capability、预算和 CredentialRef（仅引用）。
+- 为每个 Team/Task/Workflow 目标保存独立 `expectedRevision`；以目标顺序做 CAS 原子应用；跨聚合无法同事务时使用持久化 staged steps，逐项保存 pending/applying/applied/failed/cancelled/expired，崩溃后可恢复并诚实报告部分失败。
+- 保存脱敏会话引用、proposal/change-set 摘要和 authoring Events；支持 usage/budget、cancel/retry/failure/expired；按 Project retention/redaction 管理上下文，不保存 Secret/原始不必要 Prompt。
+- 应用成功只更新 draft revision；发布、WorkflowInstance 和 Runtime 启动仍走 D15/D02/T09。
+
+**验收：** proposal → draft → CAS/staged apply → 画布编辑 → 发布路径可追溯；revision 冲突、空意图、校验失败、部分失败、取消和重试不假成功；未发布图不会被执行；不同聚合不会被静默部分覆盖。
+
+**集成依赖：** T02、T09、T10、T14；T20 UI 只消费该用例的 typed contract。
+
 ### T21 — 双执行模式
 
 **目标：** 兑现 D18：每个 bot/Agent 做事时可选择 **跟随已发布工作流** 或 **直接执行**；两者皆一等，靠 capability probe 诚实显隐。
 
-**所有权：** 启动/探测相关 Application 接线说明与 `renderer` 中不与 T13/T19 重叠的执行模式切片（领取时锁定精确文件）。不改 protocol / daemon composition / 路由表。`executionMode`（或 T02 所定等价字段）归 T02；调度归 T09；HTTP 归 T10。
+**所有权：** 启动/探测相关 Application 接线说明与 `renderer` 中不与 T13/T19 重叠的执行模式切片（领取时锁定精确文件）。不改 protocol / daemon composition / 路由表。`orchestrationMode` 归 T02；调度归 T09；HTTP 归 T10。
 
 **工作：**
 
 - UI 在 Agent / Task / 启动面展示两种模式；无 probe 则 disabled 并说明。
 - workflow-bound：只执行已确认 `WorkflowVersion` 中轮到的节点。
-- direct：即席执行当前目标，仍走 Policy、Workspace、预算、Approval；不是 Renderer 直接 spawn。
+- direct：Application 先创建项目内 ad-hoc Task，待三轴解析、Policy/Workspace/预算/Approval、Node/Runtime、Lease 完成后再创建正常 Run；仍走治理链，不得由 Renderer 直接 spawn，且永不推进 WorkflowInstance/Project。吸收成果必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收。
 - 模式写入新 Run 的可审计字段；重试新 Run，不改旧 Run。
-- T02 未冻结字段前不发明 `/runs/{id}:direct`，不渲染假 mode。
+- T02 未冻结字段前不发明 `/runs/{id}:direct`，不渲染假 mode；M3 缺省解析为 `workflow_bound`。
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 
@@ -424,7 +455,7 @@ T02 不必一次冻结所有远期协议；M3 必需字段和所有消费者使�
 
 ### 第 3 批：集成与发布
 
-T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19/T20）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。M8（T21）在 T02 冻结执行 mode 字段后领取。最终接线、迁移顺序和主分支验收由一个协调者控制。
+T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19/T20/T20-B）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。M8（T21）在 T02 冻结 `orchestrationMode` 字段后领取。最终接线、迁移顺序和主分支验收由一个协调者控制。
 
 ## 6. 避免冲突的硬规则
 
@@ -436,7 +467,7 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 | Daemon composition root | T10，联调时可明确移交 T16 |
 | Electron preload、路由、共享 UI | T11 |
 | Workflow 与业务状态转换 | T09 |
-| planning/delivery 业务编排 | T14，调用 T09 公共用例 |
+| planning/delivery/authoring 业务编排 | T14，调用 T09 公共用例；T20-B 后端唯一 owner |
 | 工作流画布 UI | T18；图协议归 T02，发布校验归 T09，HTTP 归 T10 |
 | 自定义 Team 写 UI | T19；TeamVersion 契约归 T02，HTTP 归 T10 |
 | 对话生成工作流 UI | T20；会话/草稿契约归 T02，落草稿复用 M7 写接口，画布仍归 T18 |

@@ -1,8 +1,16 @@
+---
+title: Workforce API Design
+type: protocol
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — API Design
 
 **版本：** V0.1 Draft  
 **状态：** Engineering baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目标
 
@@ -180,6 +188,25 @@ revision 不匹配返回 `412 revision_conflict`，并附当前 revision。Run�
 | POST | `/projects/{projectId}:resume` | 恢复调度 |
 | POST | `/projects/{projectId}:cancel` | 请求取消活动 Runs |
 
+### 10.2A Team / Workflow drafts
+
+Draft 与 published version 是不同资源和身份。`/teams/{teamId}/versions/{versionId}` 与 `/workflows/{workflowId}/versions/{versionId}` 只读已发布版本；所有草稿写入使用 `/drafts/{draftId}` 路径，发布成功后插入新 version 并写对应发布 Event，不把 Draft 原地改成 published。
+
+| Method | Path | 说明 |
+|---|---|---|
+| POST | `/teams/{teamId}/drafts` | 创建 TeamDraft |
+| GET | `/teams/{teamId}/drafts/{draftId}` | 读取 TeamDraft 与 revision |
+| PATCH | `/teams/{teamId}/drafts/{draftId}` | 以 If-Match/CAS 编辑 TeamDraft |
+| POST | `/teams/{teamId}/drafts/{draftId}:publish` | 校验并产生不可变 TeamVersion；写 `team.version.published` |
+| GET | `/teams/{teamId}/versions/{versionId}` | 读取已发布 TeamVersion；不可写 |
+| POST | `/workflows/{workflowId}/drafts` | 创建带 `WorkflowGraphDefinition` 的 WorkflowDraft |
+| GET | `/workflows/{workflowId}/drafts/{draftId}` | 读取 WorkflowDraft 与 revision |
+| PATCH | `/workflows/{workflowId}/drafts/{draftId}` | 以 If-Match/CAS 编辑 WorkflowDraft |
+| POST | `/workflows/{workflowId}/drafts/{draftId}:publish` | 校验并产生不可变 WorkflowVersion；写 `workflow.version.published` |
+| GET | `/workflows/{workflowId}/versions/{versionId}` | 读取已发布 WorkflowVersion；不可写 |
+
+这些 M7 写接口仍须由 T02 冻结 DTO/schema 后实现；本节不新增 D17 chat endpoint，也不允许 handler 直连 Runtime。
+
 ### 10.3 Tasks
 
 | Method | Path | 说明 |
@@ -228,9 +255,10 @@ revision 不匹配返回 `412 revision_conflict`，并附当前 revision。Run�
 | POST | `/artifacts` | 注册受管内容或外部引用 |
 | GET | `/artifacts` | 按 project/task/run/type 查询 |
 | GET | `/artifacts/{artifactId}` | 元数据、版本、hash、lineage |
-| GET | `/artifacts/{artifactId}/content` | 在 Policy 允许下流式读取内容 |
-| GET | `/artifacts/{artifactId}/lineage` | 上下游关系 |
-| POST | `/artifacts/{artifactId}:verify` | 重算完整性并记录结果 |
+| GET | `/artifacts/{artifactId}/versions/{artifactVersionId}` | 精确版本元数据、hash、lineage |
+| GET | `/artifacts/{artifactId}/versions/{artifactVersionId}/content` | 在 Policy 允许下流式读取精确版本内容 |
+| GET | `/artifacts/{artifactId}/versions/{artifactVersionId}/lineage` | 精确版本上下游关系 |
+| POST | `/artifacts/{artifactId}/versions/{artifactVersionId}:verify` | 重算精确版本完整性并记录结果 |
 | POST | `/artifacts/{artifactId}:archive` | 标记归档，不直接删除内容 |
 
 大文件不得 base64 塞入 JSON；本地采用受控 stream，未来云端采用短期签名上传/下载 URL。
@@ -268,6 +296,14 @@ revision 不匹配返回 `412 revision_conflict`，并附当前 revision。Run�
 | GET | `/events/stream` | 按 project/run 等过滤的 SSE |
 | GET | `/runs/{runId}/events` | Run 历史，按 sequence |
 
+### 10.10 Authoring 与执行模式（待 T02 冻结字段）
+
+M3 的 Team/Workflow catalog 只读返回已发布版本；可编辑资源分为 draft 与 published version。Project 计划确认后必须绑定精确 `executionSnapshotId`，WorkflowVersion/TeamVersion 只从该 `ProjectExecutionSnapshot` 读取，不得用 `latest` 或 Project 上的候选字段参与执行。M7 的写接口沿用能力矩阵中的版本资源；未发布草稿不能开始规划或被 Runtime 执行。
+
+D17 对话生成只把结构化 `AuthoringProposal` / `ChangeSet` 的结果写入 Application authoring use case：会话 turn/raw intent 先创建受治理 authoring Task/Run，由 Runtime SPI 执行编排 Agent，proposal 是该 Run 的输出；服务为每个 Team/Task/Workflow 目标携带 `expectedRevision`，以 `If-Match`/CAS 应用，或在跨聚合时使用可恢复的 staged steps。`WorkflowDraft` 始终保持 draft，成功只返回目标的新 revision；作者操作的失败/取消/部分应用/过期状态属于 ChangeSet，不改变 Draft 状态。用户再编辑并发布；生成出的 Workflow 不会因 authoring Run 成功而执行。会话协议和具体 DTO 由 T02 冻结，本文不新增 chat endpoint，也不允许 handler 直连 Runtime。
+
+D18 的 canonical Run/StartRunRequest 由 Application 解析三条正交轴：`transport`（`process | sdk | http`）、`placement`（节点/Workspace 位置）和 `orchestrationMode`（`workflow_bound | direct`）。当前严格 `workforce.task/0.1` wire DTO 与本节完整创建 Task 示例不接受 `orchestrationMode`；T02 若保持 `0.1`，只能新增可选字段并在 Application 归一化，否则升级协议版本。解析后的 canonical Run snapshot 才把 mode 作为必填，并包含精确版本、Policy/Budget/Workspace、placement 与 `runSnapshotDigest`。direct 仍创建 ad-hoc Task/Run 并经过 Policy、Workspace、Budget、Approval、Capability；它永不推进 WorkflowInstance 或 Project。若吸收 direct 产物，必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收。字段未冻结前 UI 必须按 capability probe 禁用，不发明 `:direct` 路由。
+
 ## 11. SSE 与 WebSocket
 
 V0.1 默认 SSE，因为主要流向是 Daemon → UI，具备原生重连和较小实现面：
@@ -281,8 +317,10 @@ Last-Event-ID: evt_01J...
 ```text
 id: evt_01J...
 event: run.status_changed
-data: {"eventVersion":"0.1","sequence":18,"runId":"run_01J...","occurredAt":"2026-09-10T10:02:00Z","data":{"from":"running","to":"waiting_review"}}
+data: {"specVersion":"0.1","sequence":18,"runId":"run_01J...","time":"2026-09-10T10:02:00Z","stream":"run/run_01J...","dataSchema":"urn:workforce:event:run.status:0.1","data":{"status":"running"}}
 ```
+
+SSE `data` 必须是完整 `WorkforceEvent`（`specVersion/time/recordedAt/stream/dataSchema/data`）或明确的投影 DTO；Run 不得出现不存在的 `waiting_review` 状态。客户端用不透明 ingestion cursor 补拉。
 
 - Event 必须先持久化，再推送。
 - 客户端以 Event ID/sequence 去重；断线后用 `Last-Event-ID` 恢复。
@@ -318,8 +356,8 @@ Content-Type: application/json
   }],
   "context": { "include": [], "maxBytes": 524288 },
   "requiredCapabilities": [{ "name": "coding", "version": ">=1" }],
-  "expectedOutputs": [{ "type": "code_change", "required": true }],
-  "acceptanceCriteria": [{ "type": "test", "commandRef": "test.default" }],
+  "expectedOutputs": [{ "id": "out_code_change", "kind": "code", "required": true }],
+  "acceptanceCriteria": [{ "id": "ac_default_tests", "type": "test", "commandRef": "test.default" }],
   "constraints": {},
   "dependencies": [],
   "executionPolicy": { "timeoutSeconds": 1800, "maxAttempts": 2 },

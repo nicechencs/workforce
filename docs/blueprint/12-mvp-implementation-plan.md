@@ -1,8 +1,16 @@
+---
+title: Workforce MVP Implementation Plan
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — MVP Implementation Plan
 
 **版本：** V0.1 Draft  
 **状态：** Execution baseline  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. MVP 目标
 
@@ -36,7 +44,7 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 ### 不进入 V0.1
 
 - 强制云端账号和多人实时协作
-- Marketplace、插件商店、无代码 Workflow 编辑器
+- Marketplace、插件商店、通用 iPaaS 或任意 connector 生态
 - 完整 Claude Code Adapter（可做实验，不作为发布门槛）
 - Temporal、Go daemon、完整 OS 强沙箱
 - 企业 SSO/SCIM、多租户计费
@@ -94,6 +102,7 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 
 - branded IDs、entities、state transitions
 - SQLite/Drizzle schema 和 migrations
+- T04 的 D17/D18 migration（expand → backfill → switch → contract）及 T16 的 current-M3 upgrade fixture 作为 planned upgrade gate；当前 M3 migration 不包含该能力
 - repository ports 与实现
 - append-only Event Store
 - 配置版本快照
@@ -181,10 +190,14 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 | M4 Real Coding Run | Codex 修改隔离仓库并产出 diff |
 | M5 Governed Alpha | Evaluation、审批、权限、预算生效 |
 | M6 Cross-platform Alpha | 三平台安装包和 smoke test |
+| M7 Project Authoring | 自定义 TeamVersion、对话生成可编辑 WorkflowDraft、画布发布不可变 WorkflowVersion；未发布图不可执行 |
+| M8 Dual Execution | 每个 Agent 可选 `workflow_bound`/`direct`；两模式共享 Task/Run 治理，unsupported 能力启动前拒绝 |
 
-不在文档中承诺固定日历日期；完成代码仓库初始化和首轮技术 spike 后，再基于实际吞吐量排期。
+M7/M8 是 V0.1 产品 release gate（不是 M3 Mock 闭环 gate）：M7 必须完成项目制编排作者环，M8 必须完成双执行模式及真实 capability/Policy/Run 证据。T04 migration 必须完成历史 workflow-bound/direct 数据的 snapshot 回填、切换和约束收紧，T16 current-M3 upgrade fixture 必须真实验证升级与 repair/quarantine；两者当前均 planned、未实现。未达 M7/M8 时不得宣称产品需求整体完成；M3–M6 可独立演示其已验证切片。仍不在文档中承诺固定日历日期。
 
 ## 6. 工作分解
+
+M7 的 D17 后端由 T14 负责 Application authoring use case（proposal/change-set 校验、CAS/staged apply、Policy/Budget/Credential/Event、取消/重试、保留与脱敏）；T20 负责 Renderer 会话面，T18 负责画布。T04 负责 authoring/snapshot migration，T16 负责 current-M3 upgrade fixture 和恢复验收；这些迁移与 fixture 仍为 planned，不能按现有 M3 代码宣称完成。M8 的 D18 由 T02/T09/T10/T21 共同按契约、调度、API、UI 分层负责。具体会话与 mode endpoint 由 T02 冻结前不在本计划发明。
 
 ### Epic A：Foundation
 
@@ -205,6 +218,7 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 - SQLite schema/migrations
 - repositories 和 transaction manager
 - Event envelope、sequence 和 subscriptions
+- D17/D18 schema upgrade：T04 expand/backfill/switch/contract；T16 current-M3 upgrade fixture、repair/quarantine 与恢复演练（planned）
 - retention、redaction 和 diagnostics
 
 ### Epic D：Workflow
@@ -281,6 +295,7 @@ Desktop “Run Demo”
 - 三平台 smoke 通过
 - 无 P0/P1 已知缺陷
 - 数据库升级与回滚恢复演练通过
+- T04 legacy snapshot migration 与 T16 current-M3 upgrade fixture 通过；未通过不得收紧 workflow-bound/direct 约束
 - secret scan、依赖扫描通过
 - 安装包签名状态明确
 - 已知限制和数据备份方式已发布

@@ -65,7 +65,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 ## 架构决策与流程图
 
 - [ADR 0001：混合与分布式执行模型](adr/0001-hybrid-distributed-execution.md)
-- [架构流程图索引](diagrams/README.md)
+- [架构流程图索引](diagrams/README.md)（含 D17 Authoring、D18 双执行模式；Mermaid 源与蓝图同步）
 - [ADR 0002：多节点技术栈与演进边界](adr/0002-multi-node-technology-strategy.md)
 - [ADR 0003：V0.1 契约冻结与权威来源](adr/0003-v01-contract-freeze.md)
 
@@ -73,7 +73,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 
 - [页面信息架构](product-ui/01-information-architecture.md)（§2 一级导航；`P0`/`P1` 是切片深度不是侧栏可见性；项目详情六标签以 §4.3 为准）
 - [核心用户流程](product-ui/02-core-user-flows.md)
-- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 M3 只读目录过渡；§10/§11 为 M7 画布与自定义 Team；对话生成与双执行见 IA / 核心流程，线框尚未补画面）
+- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 M3 只读目录过渡；§10–§12 为 M7 画布、Team 与 D17 authoring；§13 为 M8 双执行模式）
 
 ## 设计评审、冻结决策与开发任务
 
@@ -86,4 +86,4 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)
 
-协议草案见 [docs/protocols](protocols/README.md)。`operations` 将在 T17 出现首份真实文件时加入 Git。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。
+协议草案见 [docs/protocols](protocols/README.md)。`operations` 将在 T17 出现首份真实文件时加入 Git。`pnpm check:docs` 对固定根文档（`AGENTS.md`、根 `README.md`、`CONTRIBUTING.md`）与全部 `docs/**/*.md` 做链接/锚点、CommonMark fenced-block 和 Mermaid fenced-block 完整性检查，仅对已迁移 current 文档强制元数据；历史文档不会因一次性迁移而阻塞。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。

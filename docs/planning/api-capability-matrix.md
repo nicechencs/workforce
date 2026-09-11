@@ -1,3 +1,11 @@
+---
+title: Workforce V0.1 API and Capability Matrix
+type: reference
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # V0.1 页面与 API 能力矩阵
 
 日期：2026-09-11  
@@ -50,6 +58,8 @@ M7 必达——补齐项目制循环（当前**未实现**；未领取前不要�
 | 可视化工作流画布编辑器 | 为项目编排 Workflow；与只读目录共用「工作流」入口 |
 | 对话生成工作流草稿 | M7 planned（D17）。用户对话生成 bot/角色/流程/任务草稿，再进画布编辑。无冻结 chat endpoint；不得假成功 |
 | 自定义 Team 编排 | 为项目配团队；M3 只读预设仍必须可用 |
+
+D17 后端 owner：T14 的 Application authoring use case 负责 `AuthoringProposal` / `ChangeSet` 的 schema、Project/Team/Task/Workflow 边界、CAS/staged apply、Policy/Budget/CredentialRef、Event、cancel/retry、retention/redaction；T20 只负责 Renderer 会话面，T18 负责画布。未冻结的会话 DTO 不进入本矩阵的 endpoint 清单。
 
 M8 必达——双执行模式（当前**未实现**；未领取前不要塞进随机 PR）：
 
@@ -118,6 +128,8 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | GET | `/runs/{id}/logs` | 必须 | 控制台 |
 | GET | `/runs/{id}/events` | 必须 | 时间线 |
 
+`TaskDto.dependsOn` 只投影普通 prerequisite 边，`waitFor` 允许 `outputs_ready` 或 `completed`；Workflow 的 `failed`、`cancelled`、`any_terminal` 等 failure/cancel/routing 边留在已发布 graph/Event 中，不进入该字段。未来 contract test 必须覆盖投影，UI test 必须覆盖普通依赖与路由边分开展示。
+
 不提供公共 `POST /runtimes/{id}:start`。
 
 ### Approvals / Artifacts / Events
@@ -161,12 +173,13 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | GET | `/nodes/{id}` | 必须 | 容量只读 |
 | GET | `/teams` | 必须 | M3 预设列表；M7 含已发布自定义 Team |
 | GET | `/teams/{id}` | 必须 | M3 只读 Worker 版本 |
-| GET | `/teams/{id}/versions/{versionId}` | M7 | 精确 TeamVersion；Project 绑定快照用此，不用 `latest` 执行 |
+| GET | `/teams/{id}/versions/{versionId}` | M7 | 精确已发布 TeamVersion；Project 绑定快照用此，不用 `latest` 执行 |
 | POST | `/teams` | M7 | 创建自定义 Team 草稿 |
 | PATCH | `/teams/{id}` | M7 | 编辑未发布 Team 元数据 |
-| POST | `/teams/{id}/versions` | M7 | 创建 TeamVersion 草稿（成员/角色/RuntimeProfile 嵌在 payload） |
-| PATCH | `/teams/{id}/versions/{versionId}` | M7 | 编辑未发布编排 |
-| POST | `/teams/{id}/versions/{versionId}:publish` | M7 | 发布不可变 TeamVersion |
+| POST | `/teams/{id}/drafts` | M7 | 创建/保存 `TeamDraft`（成员/角色/RuntimeProfile 嵌在 payload；不产生 TeamVersion） |
+| GET | `/teams/{id}/drafts/{draftId}` | M7 | 读取指定 `TeamDraft` revision |
+| PATCH | `/teams/{id}/drafts/{draftId}` | M7 | 以 If-Match/CAS 编辑指定 `TeamDraft` |
+| POST | `/teams/{id}/drafts/{draftId}:publish` | M7 | 将指定 `TeamDraft` 发布为不可变 TeamVersion，并写 `team.version.published` |
 | GET | `/projects/{id}/budget` | 必须 | 页头只读 + Settings；unknown/estimated/settled |
 | POST | `/projects/{id}/budget:raise` | M5 | 需 budget gate |
 
@@ -174,18 +187,21 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 
 只读目录是 M3/P1 **过渡切片**（`GET /workflows` 已接通）。写接口与画布同属 M7。未发布图不是 Runtime 执行对象。
 
+目录 DTO 是 published `WorkflowVersion` 的只读投影（模板名称、版本、结构化步骤）；它不等价于 `WorkflowDraft`，不含可编辑 CAS 状态，也不是 `WorkflowInstance`/Project Execution Snapshot。画布保存和对话生成都必须落到同一 canonical graph，不能另造目录图协议。
+
 | Method | Path | 阶段 | 说明 |
 |---|---|---|---|
 | GET | `/workflows` | readonly | 已发布模板列表（已接通）。不是 M3 Mock 闭环硬依赖。数据来自已发布模板（如 software-dev feature-delivery），不是项目内执行图 |
 | GET | `/workflows/{id}` | readonly | 单个已发布模板 |
 | GET | `/workflows/{id}/versions/{versionId}` | readonly / M7 | M3：不可变版本 + 结构化步骤（已接通）。M7：同一路径返回已发布图（nodes/edges）；已发布不可改 |
-| POST | `/workflows` | M7 | 创建草稿 WorkflowDefinition |
+| POST | `/workflows` | M7 | 创建 Workflow identity 与初始 `WorkflowDraft` |
 | PATCH | `/workflows/{id}` | M7 | 编辑未发布定义元数据 |
-| POST | `/workflows/{id}/versions` | M7 | 创建草稿图版本 |
-| PATCH | `/workflows/{id}/versions/{versionId}` | M7 | 画布保存未发布图 |
-| POST | `/workflows/{id}/versions/{versionId}:publish` | M7 | 发布不可变 WorkflowVersion；失败不得假装已发布 |
+| POST | `/workflows/{id}/drafts` | M7 | 创建带 `WorkflowGraphDefinition` 的 `WorkflowDraft` |
+| GET | `/workflows/{id}/drafts/{draftId}` | M7 | 读取未发布图草稿与 revision |
+| PATCH | `/workflows/{id}/drafts/{draftId}` | M7 | 画布以 If-Match/CAS 保存未发布图 |
+| POST | `/workflows/{id}/drafts/{draftId}:publish` | M7 | 发布不可变 WorkflowVersion；失败不得假装已发布 |
 
-对话生成（D17）与双执行模式（D18）**不在本表发明 path**。T02 冻结会话草稿 DTO / `executionMode`（或等价字段）之前，矩阵只保留上面的 planned 页面行。实现时优先复用已列的 M7 workflow 写接口与现有 `GET /capabilities` / Run 启动命令，而不是另开未登记的 chat 或 `:direct` 资源。
+对话生成（D17）与双执行模式（D18）**不在本表发明 path**。T02 冻结会话草稿 DTO / `orchestrationMode` 之前，矩阵只保留上面的 planned 页面行。实现时优先复用已列的 M7 workflow 写接口与现有 `GET /capabilities` / Run 启动命令，而不是另开未登记的 chat 或 `:direct` 资源。`transport`、`placement`、`orchestrationMode` 三轴分开表达；旧 `executionMode` 不作为公共字段。
 
 ## 3. 错误与并发（T02 生成）
 
@@ -223,10 +239,10 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
 | 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话协议待 T02 | M7 planned（D17）。**未实现**。无冻结 chat path |
-| 发布工作流版本 | `/workflows/{id}/versions/{versionId}:publish` | M7；有限 DAG 校验通过 |
-| 选择绑定工作流或直接执行 | 待 T02 的启动字段 + `GET /capabilities` | M8 planned（D18）。**未实现**。无能力则禁用 |
+| 发布工作流版本 | `/workflows/{id}/drafts/{draftId}:publish` | M7；有限 DAG 校验通过 |
+| 选择绑定工作流或直接执行 | 待 T02 的启动字段（`orchestrationMode`） + `GET /capabilities` | M8 planned（D18）。**未实现**。无能力则禁用；两种模式最终都创建 Task/Run |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
-| 发布 Team 版本 | `/teams/{id}/versions/{versionId}:publish` | M7 |
+| 发布 Team 版本 | `/teams/{id}/drafts/{draftId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
 | 确认计划 | `:confirm-plan` 或 `approvals/:approve` gate=plan | Plan Artifact available |
 | 开始开发 | `:start` | ready |

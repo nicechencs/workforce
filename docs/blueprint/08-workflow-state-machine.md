@@ -1,9 +1,17 @@
+---
+title: Workforce Workflow State Machine
+type: architecture
+status: current
+owner: maintainers
+updated: 2026-09-11
+---
+
 # Workforce — Workflow State Machine
 
 **协议名：** Workforce Workflow State Machine  
 **版本：** `0.1`  
 **状态：** Draft  
-**日期：** 2026-09-10
+**日期：** 2026-09-11
 
 ## 1. 目的
 
@@ -11,7 +19,7 @@
 
 设计目标：
 
-- 同一 WorkflowDefinition 可在多个 Project 中复用
+- 同一 `WorkflowGraphDefinition` 可在多个 Project 中复用
 - 执行使用不可变版本快照，后续编辑不改变历史
 - 用有限 DAG 表达确定性编排，V0.1 不实现任意循环
 - 所有状态变化可审计、可重放、可协调
@@ -20,43 +28,135 @@
 
 ## 2. 核心对象
 
-### 2.1 WorkflowDefinition 与 WorkflowVersion
+### 2.1 WorkflowDraft、WorkflowVersion 与执行快照
 
-`WorkflowDefinition` 是逻辑身份；每次发布产生不可变 `WorkflowVersion`。
+Workflow 模型统一为五类对象：`Workflow`（identity）、`WorkflowGraphDefinition`（节点/边图）、`WorkflowDraft`（唯一可编辑作者态）、published `WorkflowVersion`（不可变版本）和 `AuthoringChangeSet`（proposal 应用过程）。`ProjectExecutionSnapshot` 是独立的执行冻结物，`WorkflowInstance` 是 Project 的执行实例。发布草稿会**产生**不可变 `WorkflowVersion`，而不是把 Draft 原地变成 published 状态。项目确认计划时引用现有 published version，或先发布 Planner 生成的 Draft，再复制为不可变 `ProjectExecutionSnapshot`；此时 Project 进入 `ready`，直到后续 `workflow.start` 才创建引用该 snapshot 的 `WorkflowInstance`。只读目录 DTO 只是已发布版本的投影，不是另一套执行图，也不能承载草稿或 Runtime 状态。
 
 ```ts
-interface WorkflowDefinition {
+interface Workflow {
   id: WorkflowId;
   organizationId: OrganizationId;
   name: string;
   activeVersionId?: WorkflowVersionId;
 }
 
-interface WorkflowVersion {
-  id: WorkflowVersionId;
-  workflowId: WorkflowId;
-  version: number;
+interface WorkflowGraphDefinition {
   entryNodeIds: WorkflowNodeId[];
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   failurePolicy: WorkflowFailurePolicy;
   concurrencyPolicy: WorkflowConcurrencyPolicy;
+}
+
+interface WorkflowDraft {
+  id: WorkflowDraftId;
+  workflowId: WorkflowId;
+  revision: number;
+  status: "draft";
+  graph: WorkflowGraphDefinition;
+  contentHash: string;
+  updatedAt: Timestamp;
+}
+
+interface WorkflowVersion {
+  id: WorkflowVersionId;
+  workflowId: WorkflowId;
+  version: number;
+  graph: WorkflowGraphDefinition;
   immutable: true;
   publishedAt: Timestamp;
 }
+
+interface ProjectExecutionSnapshot {
+  id: SnapshotRef;
+  projectId: ProjectId;
+  workflowVersionId: WorkflowVersionId;
+  teamVersionId: TeamVersionId;
+  contentHash: string;
+  policySnapshotRef: SnapshotRef;
+  budgetSnapshotRef?: SnapshotRef;
+  immutable: true;
+}
+
+interface AuthoringChangeSet {
+  id: AuthoringChangeSetId;
+  projectId: ProjectId;
+  workflowId?: WorkflowId;
+  sourceRunId: RunId;
+  targets: Array<{
+    targetType: "team" | "task" | "workflow";
+    targetId: string;
+    expectedRevision: number;
+  }>;
+  proposalRef: ArtifactRef;
+  steps: AuthoringChangeSetStep[];
+  status: AuthoringChangeSetStatus;
+  createdAt: Timestamp;
+  expiresAt?: Timestamp;
+}
+
+interface AuthoringChangeSetStep {
+  id: AuthoringChangeSetStepId;
+  ordinal: number;
+  targetType: "team" | "task" | "workflow";
+  targetId: string;
+  expectedRevision: number;
+  status: "pending" | "applying" | "applied" | "failed" | "cancelled" | "expired";
+  patchRef: ArtifactRef;
+  resultRevision?: number;
+  failure?: FailureRecord;
+}
 ```
 
-草稿可编辑；发布时必须通过 Schema、引用、DAG 和策略校验。已发布版本不得原地修改。
+`WorkflowDraft` 始终保持 `status="draft"`；`validating`、`applying`、`partially_applied` 等作者操作状态只属于 `AuthoringChangeSet` 及其 steps。每个目标都有独立 `expectedRevision`；同一数据库内可在一个 CAS 事务中全部应用，跨聚合则建立有序、可恢复的持久化 staged steps。每个 step 的状态、result revision、failure/cancel/expiry 原因都必须落库并发出 Event，崩溃恢复从最后一个持久化 step 继续，不把部分结果声称为完整成功。发布时必须通过 Schema、引用、DAG 和策略校验；已发布版本不得原地修改。
+
+```mermaid
+flowchart LR
+  Draft["WorkflowDraft<br/>status=draft"] -->|canvas save / ChangeSet applied| Draft
+  Draft -->|publish request| Validate{publish validation}
+  Validate -->|fails| Draft
+  Validate -->|passes: insert new resource| Version[immutable WorkflowVersion]
+  Version --> Catalog[read-only catalog projection]
+  Draft -->|discard| End([discarded])
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> proposed
+  proposed --> validating: validate
+  validating --> applying: apply
+  validating --> failed: schema / policy failure
+  applying --> applied: all changes committed
+  applying --> partially_applied: staged step failed
+  partially_applied --> applying: retry remaining steps
+  partially_applied --> failed: unrecoverable step failure
+  partially_applied --> cancelled: cancel
+  partially_applied --> expired: retention deadline
+  proposed --> cancelled: cancel
+  validating --> cancelled: cancel
+  applying --> cancelled: cancel
+  proposed --> expired: retention deadline
+  validating --> expired: retention deadline
+  applying --> expired: retention deadline
+  failed --> applying: retry after correction
+  failed --> cancelled: cancel
+  applied --> [*]
+  failed --> [*]
+  cancelled --> [*]
+  expired --> [*]
+```
+
+跨 Team/Task/Workflow 的对话 proposal 采用 `AuthoringChangeSet`：每个目标携带自己的 `expectedRevision`，校验后按目标顺序原子 CAS 应用；无法跨聚合原子提交时使用持久化 staged steps，逐项记录 `pending/applying/applied/failed/cancelled/expired` 状态并发出 Event。validation failure 进入 `failed`；`partially_applied` 可 cancel、expire、fail 或 retry。取消/失败/重试/过期只影响 authoring Run/ChangeSet，不触发**生成出的 Workflow**执行；authoring Agent 本身通过受治理 Runtime SPI 执行。
 
 ### 2.2 WorkflowInstance
 
-`WorkflowInstance` 是某个 Project 对指定 WorkflowVersion 的一次执行实例。
+`WorkflowInstance` 是某个 Project 对 `ProjectExecutionSnapshot` 的一次执行实例；WorkflowVersion、TeamVersion、Policy 和 Budget 版本均从该 snapshot 派生，不在实例上重复保存。
 
 ```ts
 interface WorkflowInstance {
   id: WorkflowInstanceId;
   projectId: ProjectId;
-  workflowVersionId: WorkflowVersionId;
+  executionSnapshotId: SnapshotRef;
   status: WorkflowInstanceStatus;
   revision: number;
   inputBindings: Record<string, InputRef>;
@@ -71,7 +171,9 @@ interface WorkflowInstance {
 }
 ```
 
-一个 Project 在 V0.1 最多有一个活动 WorkflowInstance；未来可支持多个独立实例。实例启动时冻结 WorkflowVersion、Team/Worker、Policy 和关键配置引用。
+一个 Project 在 V0.1 最多有一个活动 WorkflowInstance；未来可支持多个独立实例。实例创建事务必须校验 Project/租户与 `ProjectExecutionSnapshot` 一致，且只从该 snapshot 读取 WorkflowVersion、TeamVersion、Policy 和关键配置引用。
+
+`workflow_bound` Run 只能由 WorkflowInstance 的已发布图调度；`direct` Run 不创建 NodeInstance，永不推进 WorkflowInstance 或 Project，只在同一 Project 下创建 ad-hoc Task/Run，并使用相同的 Policy、Workspace、Budget、Approval、Capability、Artifact/Evaluation 和 Event 治理。若吸收 direct 产物，必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收；原 direct Run 不推进父聚合。
 
 ### 2.3 Node 与 Edge
 
@@ -88,14 +190,16 @@ interface WorkflowEdge {
   to: WorkflowNodeId;
   condition?: EdgeCondition;
   inputBindings?: InputBinding[];
-  onUpstream?: "completed" | "failed" | "cancelled" | "any_terminal";
+  onUpstream?: "outputs_ready" | "completed" | "failed" | "cancelled" | "any_terminal";
 }
 ```
 
-- `TaskNode`：实例化一个 Task，并等待 Task 达到终态。
+- `TaskNode`：实例化一个 Task，并按边的 `onUpstream` 条件等待输出就绪或业务终态。
 - `ApprovalNode`：创建 ApprovalRequest，等待人类或授权 Principal 决策。
 - `ConditionNode`：基于结构化输入选择分支；表达式必须可确定性求值。
 - `ParallelNode`：显式标记并行扇出/汇合语义；底层仍展开为 DAG 依赖。
+
+默认 `onUpstream` 为 `outputs_ready`：上游 required outputs 已注册精确 ArtifactVersion 即可放行；只有业务语义确实要求上游 Task 终态时才使用 `completed`。公开 `TaskDto.dependsOn[].waitFor` 只投影普通 prerequisite 边（`outputs_ready` 或 `completed`）；`failed`、`cancelled`、`any_terminal` 等 failure/cancel/routing 边留在 Workflow graph/Event 中，不进入该字段，不声称五种值可同值映射。未来必须为 projection contract 与 UI 分别补 contract test 和展示测试。
 
 V0.1 的边只能引用上游结构化结果、Evaluation、Approval 决策和 Artifact 元数据，不能执行任意脚本。
 
@@ -130,8 +234,8 @@ V0.1 的边只能引用上游结构化结果、Evaluation、Approval 决策和 A
 
 ```ts
 type ProjectStatus =
-  | "draft" | "ready" | "running" | "paused"
-  | "completed" | "failed" | "cancelled";
+  | "draft" | "planning" | "ready" | "running" | "paused"
+  | "completed" | "failed" | "cancelled" | "archived";
 ```
 
 ```mermaid
@@ -407,6 +511,20 @@ Checkpoint 必须带 schema version、创建时间和 checksum。无法恢复 Ru
 典型事件：
 
 ```text
+workflow.draft.created
+workflow.draft.revised
+workflow.authoring.proposed
+workflow.authoring.partially_applied
+workflow.authoring.applied
+workflow.authoring.failed
+workflow.authoring.cancelled
+workflow.authoring.retried
+workflow.authoring.expired
+workflow.authoring.step.started
+workflow.authoring.step.applied
+workflow.authoring.step.failed
+workflow.authoring.step.cancelled
+workflow.authoring.step.expired
 workflow.instance.created
 workflow.instance.started
 workflow.node.ready
@@ -440,6 +558,8 @@ Event 至少一次投递；消费者必须幂等。Event Store 是审计事实�
 12. Credential 明文不得进入 Workflow definition、Checkpoint、Event 或错误记录。
 13. 子级状态只通过规则汇总到父级，禁止直接手工伪造父级完成。
 14. Budget 预留和消耗不得超过上级硬限制，除非存在显式审批的新预算版本。
+15. Workflow-bound 与 direct 共享 Task/Run/Policy 治理；direct 不得绕过控制面或由 Renderer 直接启动 Runtime。
+16. Project 只绑定精确 `TeamVersion` 与 `ProjectExecutionSnapshot`；未发布草稿不可开始规划或执行。
 
 ## 17. 示例：软件开发 Workflow
 
