@@ -16,6 +16,7 @@ import {
 } from "./daemon-supervisor/state.js";
 import type { SupervisorDeps } from "./daemon-supervisor/types.js";
 import { resolveDaemonLaunchArgs } from "./smoke-env.js";
+import { resolveWorkspaceTsEsmRegisterUrl } from "./ts-esm-loader.js";
 
 export function resolveDaemonEntry(
   appRoot: string,
@@ -56,7 +57,9 @@ export function createSupervisorDeps(input: {
     stateDir: input.stateDir,
     launch: {
       execPath: process.execPath,
-      args: resolveDaemonLaunchArgs(entry, input.stateDir),
+      args: resolveDaemonLaunchArgs(entry, input.stateDir, {
+        importModule: resolveWorkspaceTsEsmRegisterUrl(input.appRoot),
+      }),
     },
     now: () => new Date(),
     readState: () => readDaemonState(input.stateDir),

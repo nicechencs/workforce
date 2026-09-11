@@ -27,6 +27,7 @@ describe("app lifecycle", () => {
     expect(options.detached).toBe(true);
     expect(options.stdio).toBe("ignore");
     expect(options.windowsHide).toBe(true);
+    expect(options.env?.ELECTRON_RUN_AS_NODE).toBe("1");
   });
 
   it("treats the Electron UI lock as separate from the daemon mutex", () => {

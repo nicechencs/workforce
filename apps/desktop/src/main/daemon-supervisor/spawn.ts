@@ -7,6 +7,10 @@ export function detachedDaemonSpawnOptions(): SpawnOptions {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+    },
   };
 }
 

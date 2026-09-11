@@ -59,6 +59,18 @@ describe("desktop smoke env", () => {
     );
   });
 
+  it("prefixes --import so workspace TypeScript packages resolve .js to .ts", () => {
+    const args = resolveDaemonLaunchArgs("/app/daemon/src/index.ts", "/tmp/state", {
+      importModule: "file:///loader.mjs",
+    });
+    expect(args.slice(0, 4)).toEqual([
+      "--import",
+      "file:///loader.mjs",
+      "--experimental-strip-types",
+      "/app/daemon/src/index.ts",
+    ]);
+  });
+
   it("hides the BrowserWindow during the default headless smoke", () => {
     expect(createMainWindowSpec("preload.js", { show: false }).show).toBe(false);
     expect(createMainWindowSpec("preload.js").show).toBe(true);

@@ -49,10 +49,17 @@ export function resolveSmokeResultPath(env: Record<string, string | undefined>):
   return path.resolve(value);
 }
 
-export function resolveDaemonLaunchArgs(entry: string, stateDir: string): string[] {
-  const args = [entry, "--state-dir", stateDir];
-  if (entry.endsWith(".ts") || entry.endsWith(".mts") || entry.endsWith(".cts")) {
-    return ["--experimental-strip-types", ...args];
+export function resolveDaemonLaunchArgs(
+  entry: string,
+  stateDir: string,
+  options: { importModule?: string } = {},
+): string[] {
+  const flags: string[] = [];
+  if (options.importModule) {
+    flags.push("--import", options.importModule);
   }
-  return args;
+  if (entry.endsWith(".ts") || entry.endsWith(".mts") || entry.endsWith(".cts")) {
+    flags.push("--experimental-strip-types");
+  }
+  return [...flags, entry, "--state-dir", stateDir];
 }
