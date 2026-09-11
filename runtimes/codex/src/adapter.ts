@@ -51,16 +51,27 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
           name: "lifecycle.start",
           version: "0.1",
           available: false,
-          constraints: { reason: "live exec not enabled; T03 measured help only" },
+          constraints: {
+            reason:
+              "StartRunRequest does not carry a resolved WorkspaceGrant/context and the Process port has no captured spawn API",
+          },
         },
         { name: "lifecycle.pause", version: "0.1", available: false },
         { name: "event.resume", version: "0.1", available: false },
-        { name: "lifecycle.cancel", version: "0.1", available: true, features: ["process-tree"] },
         {
-          name: "usage",
+          name: "lifecycle.cancel",
           version: "0.1",
           available: false,
-          constraints: { unknownCost: true },
+          constraints: { reason: "no owned process handle can be created by this adapter slice" },
+        },
+        {
+          name: "usage.reporting",
+          version: "0.1",
+          available: false,
+          constraints: {
+            tokenCounts: "host_probe_verified_adapter_not_wired",
+            monetaryCost: "unknown",
+          },
         },
       ],
     };
@@ -87,13 +98,14 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
           : "codex executable not detected",
       },
       {
-        name: "live_exec",
+        name: "runtime_operations",
         ok: false,
-        detail: "V0.1 has not run a live Codex exec on this host; start is refused",
+        detail:
+          "start/stream/cancel require resolved Workspace/Policy inputs and a captured Process port",
       },
     ];
     return {
-      valid: adapterOk && found,
+      valid: adapterOk && found && checks.every((check) => check.ok),
       ...(detection.version ? { runtimeVersion: detection.version } : {}),
       checks,
     };
@@ -103,7 +115,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     void _request;
     throw new RuntimeSdkError(
       "unsupported_capability",
-      "Codex live exec is not enabled. Mock the M3 loop; T15 live start waits for an authorized exec fixture.",
+      "Codex start requires resolved Workspace/Policy inputs and a captured Process port",
       { details: { capability: "lifecycle.start", runtime: CODEX_ADAPTER_ID } },
     );
   }
@@ -131,7 +143,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
   async cancel(): Promise<OperationReceipt> {
     throw new RuntimeSdkError(
       "unsupported_capability",
-      "Codex CLI has no cancel RPC; Host process-tree kill is not wired in this slice",
+      "Codex cancel requires a process handle created through the missing captured Process port",
       { details: { capability: "lifecycle.cancel" } },
     );
   }
@@ -146,7 +158,13 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     return {
       [Symbol.asyncIterator]() {
         return {
-          next: async () => ({ done: true as const, value: undefined }),
+          next: async () => {
+            throw new RuntimeSdkError(
+              "unsupported_capability",
+              "Codex event streaming requires the missing captured Process port",
+              { details: { capability: "event.stream" } },
+            );
+          },
         };
       },
     };

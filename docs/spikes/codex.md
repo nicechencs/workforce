@@ -4,7 +4,7 @@
 - Platform: Windows 10.0.19045 (AMD64)
 - Environment versions: Node v24.19.0, npm 12.0.2, git 2.55.0.windows.3, PowerShell 7.6.6, OS Microsoft Windows NT 10.0.19045.0 (Windows 10 Pro for Workstations)
 - macOS: 未测
-- Linux: 未测
+- Linux: 见文末 2026-09-11 follow-up；Developer sandbox 启动受阻，coordinator host probe exit 0
 
 ## Commands
 
@@ -141,21 +141,24 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 |---|---|---|---|
 | detect executable | enforceable | Probe found LocalAppData hashed CLI + MSIX `resources\codex.exe`; PATH/`where.exe` miss | Detection must search beyond PATH. Prefer configured `executable`, then PATH, then `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`, then WindowsApps `OpenAI.Codex_*\app\resources\codex.exe`. Ignore third-party bundles unless configured. |
 | version | enforceable | `--version` → `codex-cli 0.153.4` (exit 0, &lt;15s) | Parse `^codex-cli\s+(\S+)`. FileVersionInfo on the exe is empty. Do not trust stale `~/.codex/version.json`. |
-| start | observable | Help: `codex exec` non-interactive; default is interactive TUI | Live `exec` **not run** (would call ChatGPT backend). TUI refuses non-TTY (`TERM=dumb`). No dummy session without remote/TTY. |
-| events/stream | observable | `codex exec --json`: “Print events to stdout as JSONL”; `exec resume` also has `--json` | JSONL schema, backpressure, and Host event mapping **untested**. Do not assume a `proto` JSON-RPC subcommand — it is not in 0.153.4 help. `app-server` exists but is experimental and was not started. |
+| start | observable | Help: `codex exec` non-interactive; default is interactive TUI | Windows live `exec` was not run. The Linux coordinator host probe completed once; the Adapter start path remains unavailable. |
+| events/stream | observable | `codex exec --json`: “Print events to stdout as JSONL”; Linux host probe produced JSONL | One successful Linux event shape is verified. Backpressure, event resume, failure shapes, and Adapter/Host streaming remain untested. Do not assume a `proto` command. |
 | input | observable | `codex queue --thread --message`; `exec` prompt from argv/stdin | Live mid-run input **untested**. Queue targets an existing session UUID/name. |
 | approval | observable | `-a on-request\|never`; `--approve-for-me`; doctor: approval OnRequest | Live approval round-trip **untested**. Host still owns policy; CLI flags are adapter-internal. |
 | cancel | untested | No `cancel` subcommand in `--help` | Interactive/exec cancel would be Host process-tree kill (T06), not a proven Codex RPC. Do not advertise a CLI cancel API. |
 | event resume/cursor | unsupported | Help `resume` / `exec resume` restore a **session by UUID/`--last`**, not an event cursor | No cursor/sequence flag observed. Map Host `event.resume` as adapter-unsupported unless a later live test proves JSONL replay. |
-| usage reporting | observable (at rest) / untested (live exec JSONL) | No usage/cost subcommand in `--help`. Existing `~/.codex/sessions/**/*.jsonl` rollout records (type names and payload **keys only**, no prompt/secret content) include `token_usage_record` and `event_msg.payload.type=token_count`. Sample payload keys: `thread_id`, `turn_id`, `session_id`, `usage`, `turn_token_usage`, `thread_token_usage`. | Live `exec --json` mapping **untested**. Do not report 0 cost. Host budget must treat unknown monetary cost as unknown (D14). |
+| usage reporting | observable | Linux host JSONL reported input, cached-input, cache-write-input, output, and reasoning-output token counts | No monetary cost was reported; cost remains unknown, never 0. Budget enforcement still cannot assume reliable monetary metering. |
 | auth boundary | observable | `login status` → `Logged in using ChatGPT`; `login`/`logout` help; `auth.json` present with `auth_mode=chatgpt` | Adapter must call `login status` (or equivalent) and treat missing login as invalid. Never persist/print tokens from `auth.json`. `--with-api-key` reads stdin. Do not run `logout` from Host unless the user asked. |
 | pause | unsupported | No pause command; `codex pause --help` falls through; “pause” absent from help texts | Return standard unsupported error. Matches protocol: enable `lifecycle.pause` only if a future probe proves it. |
 | sandbox | observable | `-s read-only\|workspace-write\|danger-full-access`; `codex sandbox` restricted-token helper; doctor: unrestricted fs + network enabled; config `danger-full-access` / windows `unelevated` | Not a strong OS sandbox. Host Policy must still deny high-risk paths/network. `--dangerously-bypass-approvals-and-sandbox` exists and must never be the default. |
 
 ## Limits
 
-- macOS and Linux were not tested.
-- No live `codex exec` / model turn: event JSONL schema, live usage fields, approval prompts, cancel of a running exec tree, and resume-after-kill are unverified. Persisted rollout files on this host do contain `token_usage_record` / `token_count` (keys only sampled); that is not a live exec fixture.
+- macOS was not tested. Linux follow-up evidence is recorded below.
+- Windows did not run `codex exec`. In Linux, the Developer Agent's outer sandbox attempts stopped
+  before JSONL, while the coordinator repeated the corrected command in a normal host shell and
+  completed one safe read-only turn. That establishes one success event shape and token fields,
+  but not approval, cancellation, failure, backpressure, or resume-after-kill behavior.
 - `app-server` / `exec-server` transports were help-only; no stdio session was opened.
 - `Get-AppxPackage` from PowerShell 7 fails (`Operation is not supported on this platform`); Windows PowerShell 5.1 via `powershell.exe` works. Probe uses `powershell.exe` and directory listing of `WindowsApps`.
 - Registered MSIX is `26.903.8094.0`; a `26.903.9818.0` folder also exists (likely staged). Both CLIs reported `0.153.4`.
@@ -171,7 +174,7 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 2. **Version**: run `--version`, parse `codex-cli X.Y.Z`. Record adapter + CLI + desktop package versions on the Run snapshot.
 3. **Auth**: `codex login status` (expect a logged-in line on stderr here). If not logged in, `validate` fails with an auth error; do not start. Credential Broker injects API key only when using `--with-api-key` stdin; ChatGPT-subscription auth stays in Codex’s own store. Never copy `auth.json` into Host events.
 4. **Capability probe**: parse `--help` / `exec --help` at validate time. Do not hardcode `proto`, `pause`, or guessed flags. If a subcommand is missing, mark the Host capability unsupported.
-5. **Start mapping (proposed, unproven live)**: `codex exec --json -C <workspace> --skip-git-repo-check` plus Host-chosen `-s`/`-a`. Translate JSONL into standard events under `raw.openai.codex`. Until a live fixture exists, keep Mock as the default executable path in tests.
+5. **Start mapping (Adapter still unproven)**: the Linux host probe verified a corrected global-flag argv and one JSONL success shape, but not the Process/Policy integration. Keep start unavailable until the blocking ports below exist.
 6. **Declare unsupported**: `lifecycle.pause`, `event.resume` (cursor). Cancel = Host process-tree kill via T06, then map process exit to `runtime.cancelled`/`orphaned` after identity checks.
 7. **Windows spawn**: read stdout/stderr asynchronously; 15s timeouts on detect; do not deadlock on help.
 
@@ -190,6 +193,92 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 
 ### 契约变更请求
 
-无必须立刻改协议的项。`RuntimeConfig.executable` 已足够作为显式路径；Windows MSIX / LocalAppData 发现属于 T15 内部实现。
+The executable path itself needs no common-contract change: `RuntimeConfig.executable` already
+covers it, and Windows discovery stays internal to T15. Production execution does have two
+blocking contract requests:
 
-可选（非阻塞）说明给 T00/T02：不要在示例或 SPI 注释里把 `codex proto` 写成 V0.1 必选传输；本机 0.153.4 没有该子命令。`resume` 语义是会话恢复，不能映射为 `event.resume` cursor。`lifecycle.pause` 保持可选且默认关闭。
+1. **T02 / Runtime SPI:** provide an SPI-only resolved start context rather than making the
+   Adapter interpret opaque `snapshotRef` or `workspaceInstanceId` values. A compatible shape is
+   `ResolvedStartRunRequest = { command: StartRunRequest; workspace: WorkspaceGrant; context:
+   { prompt: string }; permission: { sandbox: "read-only" | "workspace-write"; approval:
+   "never" | "on-request" }; environment: Record<string, string>; deadline?: string }`. Existing
+   protocol fields remain unchanged; the Host constructs this internal value after Workspace and
+   Policy checks. Without it, T15 cannot select `cwd`, obtain the prompt, or enforce sandbox and
+   approval settings.
+2. **T06 / Process port:** add a captured-process operation, for example
+   `spawnCaptured({ argv, cwd, env, stdin }): Promise<{ handle: ProcessHandle; stdout:
+   AsyncIterable<Uint8Array>; stderr: AsyncIterable<Uint8Array>; wait(): Promise<{ exitCode:
+   number | null; signal?: string }> }>` plus a documented durable-output/re-attach behavior for
+   Daemon restart. The current `spawn` discards stdout/stderr, exposes no stdin write or exit
+   result, and `inspect` only reports `alive`; T15 therefore cannot stream JSONL, distinguish
+   success/failure, or reconcile remaining events without opening a second process-control path.
+
+Compatibility impact: both can be additive at the TypeScript port level, but changing
+`RuntimeAdapter.start` requires coordinated T02/T05/T15 consumer updates and contract tests. The
+captured-process API can be additive to `ProcessController`; T06 remains the only implementation
+owner.
+
+Non-blocking note for T00/T02: do not make `codex proto` a V0.1 requirement. The measured CLI has
+no such command. Session `resume` is not an `event.resume` cursor, and `lifecycle.pause` must stay
+optional and disabled.
+
+## Linux follow-up: authorized live probe (2026-09-11)
+
+Environment: Linux `6.12.94+` x86_64, Node `v22.23.2`, git `2.47.3`, pnpm `9.15.9`.
+The installed executable was `/home/box/.local/bin/codex`; `codex --version` reported
+`codex-cli 0.154.0` (exit 0). Both `codex --help` and `codex exec --help` exited 0.
+
+The fixture was a new Git repository at `/tmp/workforce-codex-probe.9Sgo0w` containing only
+`PROBE.txt` with the public text `SAFE_PROBE_INPUT`. The probe did not proactively inspect or print
+auth files, tokens, environment values, or user data. This does not claim that CLI initialization
+made no underlying auth-related system calls.
+
+The Developer Agent's first command used exec-local placement for `-a`/`-s`:
+
+```text
+codex exec --json --ephemeral --ignore-user-config --ignore-rules --color never -s read-only -a never -C /tmp/workforce-codex-probe.9Sgo0w "Read only PROBE.txt in this fixture. Do not inspect any other paths, credentials, environment variables, or user data. Do not modify files. Reply exactly SAFE_PROBE_OK."
+```
+
+It exited 2 before any model request or JSON event. Despite `codex exec --help` listing these
+options, the parser rejected `-a` after `exec` (`unexpected argument '-a'`). The coordinator
+explicitly classified this as a preflight failure and authorized one corrected live retry.
+
+The Developer Agent's only corrected retry used global placement:
+
+```text
+codex -a never -s read-only -C /tmp/workforce-codex-probe.9Sgo0w exec --ephemeral --ignore-user-config --ignore-rules --color never --json "Read only PROBE.txt in this fixture. Do not inspect any other paths, credentials, environment variables, or user data. Do not modify files. Reply exactly SAFE_PROBE_OK."
+```
+
+It exited 1 before a model response:
+
+```text
+Reading additional input from stdin...
+Error: failed to initialize in-process app-server client: Read-only file system (os error 30)
+```
+
+The warning preceding both Developer Agent attempts said PATH aliases could not be created on its
+outer read-only filesystem. The corrected Developer retry emitted zero stdout JSONL events; it did
+not establish a live schema.
+
+The coordinator then ran the same corrected command in a normal Herdr host shell pane against the
+same fixture. It returned to the shell with exit 0. The recorded, redacted event shape was:
+
+1. `thread.started` with a `thread_id` field (value deliberately not recorded)
+2. `turn.started`
+3. `item.started` with `command_execution` fields `id`, `type`, `command`, empty
+   `aggregated_output`, null `exit_code`, and `status=in_progress`
+4. `item.completed` for that command with `aggregated_output=SAFE_PROBE_INPUT\n`, `exit_code=0`,
+   and `status=completed`
+5. `item.completed` with `agent_message` text `SAFE_PROBE_OK`
+6. `turn.completed` with input, cached-input, cache-write-input, output, and reasoning-output token
+   counts
+
+The probe did not proactively inspect or print auth files, tokens, environment values, or user
+data. This does not claim that Codex initialization made no underlying auth-related system calls.
+
+The parser fixture in `runtimes/codex` now follows this live redacted success shape plus the
+officially documented `turn.failed` and `error` types. Until a streaming redactor can protect
+across complete events, the decoder replaces all arbitrary text and raw payloads with fixed,
+bounded metadata. Production `start/stream/cancel/reconcile` remains blocked until the Process
+port captures stdout/stderr, stdin and exit, and the start contract supplies resolved
+Workspace/Policy/context inputs.
