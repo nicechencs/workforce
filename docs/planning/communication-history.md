@@ -111,3 +111,11 @@ updated: 2026-09-12
 - **决定：** #20（D19 Placement：本机默认 / 远程 / 容器）已 squash 合入 `main` `c1c86ef`。T18 叠在该 tip 上，保留 D19 产品模型与「远程 enrollment / 容器 runner 未实现」；保留画布 UI + 草稿保存接线。不发明 enrollment / Docker / 编排 endpoint，不宣称 M7 完成。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) 同时保留 D19 实现深度与 T18 已接线（headed 未宣称 PASS）。
 - **状态：** T18 **implemented**（headless / proxy）。headed **planned**。D19 远程/容器 **planned**。M7 **未完成**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T18 headed 真窗 create/edit/save/publish PASS
+
+- **决定：** Review 有条件通过 #22。Test 报告 `WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md` 将 headed Electron 真窗 create/edit/save/publish 记为 **PASS**。验证 head 为 `fbe13dea`；之后 rebase 到 `c1c86ef` 的 tip（`3d0bd971`）只是文档/小清理，行为未回退。不因此宣称 M7 完成，也不宣称 T19 / T20 / T21、远程 enrollment 或容器 runner 已完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 将 T18 headed 从「未复验 / 待复测」改为 **PASS**，并写清验证 head 与 tip 关系。
+- **状态：** T18 画布 UI + 草稿保存 + headed 真窗 create/edit/save/publish **implemented**。M7 / T19 / T20 / T21 / D19 远程与容器仍 **planned**。

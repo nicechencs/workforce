@@ -2,11 +2,11 @@
 
 日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-12 — T18 画布 UI **已接线**且草稿保存走 #23 写 API（`createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion` + If-Match）。发布走 `publishWorkflowVersion`；非法/空图诚实失败。**不**宣称 headed 真窗已复验，也不宣称 M7 / T19 / T20 / T21 完成。D19 Placement（本机默认；远程与容器为一等能力）规划已冻结；**实现深度不变**：已验证 Local Node + 独立 worktree；远程 enrollment 与容器 runner **未实现**。#16–#20 与 #23 写 API 结论仍有效。
+修订：2026-09-12 — T18 画布 UI **已接线**且草稿保存走 #23 写 API。headed 真窗 create/edit/save/publish **PASS**（Test 报告 `WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，验证 head `fbe13dea`）。本 tip `3d0bd971` 只是叠到 `c1c86ef` 后的文档/小清理，行为未回退。**不**宣称 M7 / T19 / T20 / T21 完成。D19 Placement 规划已冻结；实现深度仍是 Local Node + worktree；远程 enrollment 与容器 runner **未实现**。#16–#20 与 #23 写 API 结论仍有效。
 
 ## 1. 本轮目标与结果
 
-目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。M7 **写 API + 协议**已接通（#23）；T18 画布 UI 已接线且草稿保存走同一套写 API。可写 Team UI、对话生成仍未实现；按 Agent 双执行模式是 **M8 已规划、未实现**。不得把画布接线写成 M7 完成，也不得把 happy-dom / proxy 测试写成 headed 真窗已过。
+目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。M7 **写 API + 协议**已接通（#23）；T18 画布 UI 已接线且草稿保存走同一套写 API；headed 真窗 create/edit/save/publish 已 **PASS**（`fbe13dea`）。可写 Team UI、对话生成仍未实现；按 Agent 双执行模式是 **M8 已规划、未实现**。不得把画布接线写成 M7 完成。happy-dom / proxy 仍不能代替其余真窗路径（目录对话框、SSE、Run 控制台）。
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
@@ -14,7 +14,7 @@
 
 | ID | 状态 | 证据 |
 |---|---|---|
-| T00 | 完成（项目制 + M7/M8 + D19 Placement 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned）；D18 双执行模式（M8 planned）；D19 本机默认、远程与容器为一等 Placement。M7 **写 API + 协议**已接通。T18 画布 UI **已接线**（headed 未复验）。**未实现**可写 Team UI（T19）、对话（T20）、双执行（T21）、远程 enrollment 与容器 runner。M7 未完成 |
+| T00 | 完成（项目制 + M7/M8 + D19 Placement 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned）；D18 双执行模式（M8 planned）；D19 本机默认、远程与容器为一等 Placement。M7 **写 API + 协议**已接通。T18 画布 UI **已接线**，headed 真窗 create/edit/save/publish **PASS**（`fbe13dea`）。**未实现**可写 Team UI（T19）、对话（T20）、双执行（T21）、远程 enrollment 与容器 runner。M7 未完成 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段）+ M7 写契约扩展 | `packages/protocol` 公开 `TaskDto` / `dependsOn`；M7 扩展 draft/published `WorkflowDto`（nodes/edges 与现有 steps 同一协议）与 `TeamDto` / `TeamVersionDto` 写 payload。无 chat / `executionMode` 字段 |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
@@ -32,7 +32,7 @@
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
 | T16 | **本轮起步** | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口） |
 | T17 | 未开始 | 打包/签名 |
-| T18 | 画布 UI 已接线；草稿保存走写 API（#23 已在 main） | renderer 画布可新建/编辑/连线；保存调用 typed client `createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion`（协议 `entry`+`nodes`+`edges`，If-Match=`stateRevision`）。发布走 `publishWorkflowVersion`；空图/非法图诚实失败。未发布草稿不进 `GET /workflows` 列表，reload 走 `GET /workflows/{id}`。**headed 真窗尚未复验通过**（待 Test-bot 复测）。不宣称 Mock/Codex 可执行未发布图，也不宣称 M7 / T19 / T20 / T21 完成 |
+| T18 | 画布 UI 已接线；草稿保存走写 API；headed 真窗 **PASS** | renderer 画布可新建/编辑/连线；保存调用 typed client `createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion`（协议 `entry`+`nodes`+`edges`，If-Match=`stateRevision`）。发布走 `publishWorkflowVersion`；空图/非法图诚实失败。未发布草稿不进 `GET /workflows` 列表，reload 走 `GET /workflows/{id}`。headed 真窗 create/edit/save/publish **PASS**（`WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，验证 head `fbe13dea`；本 tip `3d0bd971` 为叠 `c1c86ef` 后的文档/小清理，行为未回退）。不宣称 Mock/Codex 可执行未发布图，也不宣称 M7 / T19 / T20 / T21 完成 |
 | T19 | 已规划，未实现（写 API 已就绪） | 自定义 Team 编排 UI（D16）**未实现**。写接口与 `GET .../versions/{versionId}` 已接通；teams 页仍是只读预设 |
 | T20 | 已规划，未实现 | 对话式工作流编排（D17）。无对话入口、无生成用例、无会话协议 |
 | T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `executionMode` 字段 |
@@ -94,7 +94,7 @@ pnpm exec vitest run apps/desktop/src/renderer/features/workflows \
                       # 4 files / 26 tests 通过（含 create+save+reload 与空图发布诚实失败）
 ```
 
-headed 真窗 create→edit→save→reload **尚未**在本环境复验；上一次真窗报告 `WORKFORCE-PR22-62b1e620-CANVAS-TRUEWINDOW` 因写 path 未挂载而 FAIL，本切片已接线，待 Test-bot 复测。
+headed 真窗 create/edit/save/publish **PASS**（`WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，验证 head `fbe13dea`）。此前 `WORKFORCE-PR22-62b1e620-CANVAS-TRUEWINDOW` 因写 path 未挂载 FAIL；接线后已复测通过。本 tip `3d0bd971` 只做 rebase/文档清理，行为未回退。
 
 关键场景：
 
@@ -123,7 +123,7 @@ headed 真窗 create→edit→save→reload **尚未**在本环境复验；上�
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist + `apps/desktop/tests/workflows-catalog-proxy.test.ts`）  
-   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET，以及矩阵上的 Workflow/Team 写 path（`POST/PATCH`、version、`:publish`）和 `GET /teams/{id}/versions/{versionId}`。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
+   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET，以及矩阵上的 Workflow/Team 写 path（`POST/PATCH`、version、`:publish`）和 `GET /teams/{id}/versions/{versionId}`。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。该只读目录切片当时不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。T18 画布 headed 真窗见上（`fbe13dea` create/edit/save/publish **PASS**）。
 
 6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
@@ -153,14 +153,14 @@ Approval(gate=artifact)                     ✅
 Mock 产物权威                                ✅ LocalArtifactStore；可删 world.json，content 仍可读
 ```
 
-壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」；**当前代码**是只读已发布目录 + 画布作者面（草稿保存/发布走 #23 写 API）。Desktop IPC 已放行 GET 与矩阵写 path。未发布草稿不会出现在目录列表。不得宣称 Mock/Codex Runtime 可执行未发布图，也不得宣称 headed 真窗已过。自定义 Team **写 UI**、对话编排、按 Agent 直接执行同样未实现。
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」；**当前代码**是只读已发布目录 + 画布作者面（草稿保存/发布走 #23 写 API）。Desktop IPC 已放行 GET 与矩阵写 path。未发布草稿不会出现在目录列表。T18 画布 headed 真窗 create/edit/save/publish 已 **PASS**（`fbe13dea`）。不得宣称 Mock/Codex Runtime 可执行未发布图，也不得宣称 M7 / T19 / T20 / T21 完成。自定义 Team **写 UI**、对话编排、按 Agent 直接执行同样未实现。
 
 ## 5. 剩余工作
 
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
-4. **M7 可视化画布（T18）UI 已接线，headed 真窗待复测**：草稿保存走已合入 main 的 #23 写 API。happy-dom / Electron proxy 证明 create+save+reload 与诚实 publish；**headed 真窗尚未复验通过**。不宣称 M7 完成，也不宣称 Mock/Codex Runtime 可执行未发布图。  
+4. **M7 可视化画布（T18）UI 已接线，headed 真窗 PASS**：草稿保存走已合入 main 的 #23 写 API。Test-bot 真窗 create/edit/save/publish **PASS**（`WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，head `fbe13dea`）。不宣称 M7 完成，也不宣称 Mock/Codex Runtime 可执行未发布图。  
 5. **M7 自定义 Team 编排 UI（T19）未实现**：写接口已接通；AI 团队页仍只读预设。未发布 TeamVersion 不能 `:start-planning` bind。  
 6. **M7 对话生成工作流（T20）未实现**：无对话入口，无生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。  
 7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode。  
