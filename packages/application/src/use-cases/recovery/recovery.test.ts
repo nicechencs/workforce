@@ -21,6 +21,7 @@ import {
 import type { EnginePort } from "../projects/engine-port.js";
 import { createWorkforceApp } from "../projects/service.js";
 import type { RuntimeHostPort, StartRunHostRequest } from "../runs/host.js";
+import { recordRunTimedOut, settleRunCancel } from "../runs/runs.js";
 
 function engine(): EnginePort {
   return {
@@ -150,32 +151,36 @@ describe("recovery", () => {
     expect(host.inspectCalls).toEqual([run.handleId]);
   });
 
-  it("keeps a running cancellation pending and prevents a duplicate Run", async () => {
-    const host = new InspectingRuntimeHost(["running"]);
-    const { app, project, task, run } = await startRunningRun(host);
-    const cancellation = await app.cancelRun({
-      operationId: "op_cancel_running",
-      idempotencyKey: "cancel_running",
-      runId: run.id,
-    });
-    const revision = run.stateRevision;
+  it.each(["running", "starting", "waiting_input", "paused"])(
+    "keeps cancellation pending without marking known Host status %s unknown",
+    async (inspection) => {
+      const host = new InspectingRuntimeHost([inspection]);
+      const { app, project, task, run } = await startRunningRun(host);
+      const cancellation = await app.cancelRun({
+        operationId: `op_cancel_${inspection}`,
+        idempotencyKey: `cancel_${inspection}`,
+        runId: run.id,
+      });
+      const revision = run.stateRevision;
+      app.markRunUnknown(run.id);
 
-    const result = await app.reconcile(project.id);
+      const result = await app.reconcile(project.id);
 
-    expect(result).toMatchObject({ attached: false, unknown: [run.id], cancelled: [] });
-    expect(run).toMatchObject({
-      status: "running",
-      cancelRequestedAt: cancellation.cancelRequestedAt,
-      stateRevision: revision,
-    });
-    expect(app.world.unknownStatuses.has(run.id)).toBe(true);
+      expect(result).toMatchObject({ attached: true, unknown: [], cancelled: [] });
+      expect(run).toMatchObject({
+        status: "running",
+        cancelRequestedAt: cancellation.cancelRequestedAt,
+        stateRevision: revision,
+      });
+      expect(app.world.unknownStatuses.has(run.id)).toBe(false);
 
-    const repeatedStart = await app.startRun({ operationId: "op_duplicate", taskId: task.id });
-    expect(repeatedStart.run.id).toBe(run.id);
-    expect(app.world.runs.size).toBe(1);
-  });
+      const repeatedStart = await app.startRun({ operationId: "op_duplicate", taskId: task.id });
+      expect(repeatedStart.run.id).toBe(run.id);
+      expect(app.world.runs.size).toBe(1);
+    },
+  );
 
-  it.each(["unknown", "orphaned", "succeeded"])(
+  it.each(["unknown", "orphaned"])(
     "keeps cancellation pending when Host inspection returns %s",
     async (inspection) => {
       const host = new InspectingRuntimeHost([inspection]);
@@ -196,6 +201,31 @@ describe("recovery", () => {
         stateRevision: revision,
       });
       expect(app.world.unknownStatuses.has(run.id)).toBe(true);
+    },
+  );
+
+  it.each(["succeeded", "failed"])(
+    "does not expand recovery mapping for Host terminal status %s",
+    async (inspection) => {
+      const host = new InspectingRuntimeHost([inspection]);
+      const { app, project, run } = await startRunningRun(host);
+      const cancellation = await app.cancelRun({
+        operationId: `op_cancel_runtime_${inspection}`,
+        idempotencyKey: `cancel_runtime_${inspection}`,
+        runId: run.id,
+      });
+      const revision = run.stateRevision;
+      app.markRunUnknown(run.id);
+
+      const result = await app.reconcile(project.id);
+
+      expect(result).toMatchObject({ attached: true, unknown: [], cancelled: [] });
+      expect(run).toMatchObject({
+        status: "running",
+        cancelRequestedAt: cancellation.cancelRequestedAt,
+        stateRevision: revision,
+      });
+      expect(app.world.unknownStatuses.has(run.id)).toBe(false);
     },
   );
 
@@ -239,6 +269,58 @@ describe("recovery", () => {
     expect(app.world.unknownStatuses.has(run.id)).toBe(false);
     expect(host.inspectCalls).toEqual([run.handleId, run.handleId]);
   });
+
+  it("recovers a confirmed cancellation when the request timestamp was not persisted", async () => {
+    const host = new InspectingRuntimeHost(["cancelled"]);
+    const { app, project, run } = await startRunningRun(host);
+    const revision = run.stateRevision;
+    app.world.clock.advance(1_000);
+    const recoveredAt = app.world.nowIso();
+
+    const result = await app.reconcile(project.id);
+
+    expect(result).toMatchObject({ attached: true, unknown: [], cancelled: [run.id] });
+    expect(run).toMatchObject({
+      status: "cancelled",
+      cancelRequestedAt: recoveredAt,
+      updatedAt: recoveredAt,
+      stateRevision: revision + 1,
+    });
+    expect(app.world.unknownStatuses.has(run.id)).toBe(false);
+    expect(host.inspectCalls).toEqual([run.handleId]);
+  });
+
+  it.each(["succeeded", "failed", "timed_out", "cancelled"] as const)(
+    "skips terminal lost-race Run %s and clears stale unknown state",
+    async (terminalStatus) => {
+      const host = new InspectingRuntimeHost(["cancelled"]);
+      const { app, project, run } = await startRunningRun(host);
+      await app.cancelRun({
+        operationId: `op_cancel_before_${terminalStatus}`,
+        idempotencyKey: `cancel_before_${terminalStatus}`,
+        runId: run.id,
+      });
+      if (terminalStatus === "succeeded") {
+        app.recordRunSucceeded(run.id);
+      } else if (terminalStatus === "failed") {
+        app.recordRunFailed(run.id);
+      } else if (terminalStatus === "timed_out") {
+        recordRunTimedOut(app.ctx, run.id);
+      } else {
+        settleRunCancel(app.ctx, run.id);
+        delete run.cancelRequestedAt;
+      }
+      app.markRunUnknown(run.id);
+      const before = { ...run };
+
+      const result = await app.reconcile(project.id);
+
+      expect(result).toMatchObject({ attached: true, unknown: [], cancelled: [] });
+      expect(run).toEqual(before);
+      expect(app.world.unknownStatuses.has(run.id)).toBe(false);
+      expect(host.inspectCalls).toEqual([]);
+    },
+  );
 
   it("marks a no-handle cancellation unknown instead of settling it", async () => {
     const host = new InspectingRuntimeHost([]);
