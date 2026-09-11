@@ -245,10 +245,9 @@ describe("project detail tab models", () => {
     expect(taskDependencyLabel()).toBe("依赖：未返回");
     expect(taskDependencyLabel({ dependsOn: [] })).toBe("依赖：无");
     expect(
-      taskDependencyLabel(
-        { dependsOn: [{ taskId: "tsk_a", waitFor: "outputs_ready" }] },
-        [{ id: "tsk_a", title: "Alpha", workflowNodeId: "dev_alpha" }],
-      ),
+      taskDependencyLabel({ dependsOn: [{ taskId: "tsk_a", waitFor: "outputs_ready" }] }, [
+        { id: "tsk_a", title: "Alpha", workflowNodeId: "dev_alpha" },
+      ]),
     ).toBe("依赖：dev_alpha（outputs_ready）");
     expect(emptyTasksCopy("draft")).toContain("确认计划");
     expect(emptyTasksCopy("running")).toBe("暂无任务。");

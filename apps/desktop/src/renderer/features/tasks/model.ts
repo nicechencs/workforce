@@ -95,9 +95,7 @@ export function sortTasksForDag(tasks: TaskDto[]): TaskDto[] {
       incoming.set(task.id, (incoming.get(task.id) ?? 0) + 1);
     }
   }
-  const queue = tasks
-    .filter((task) => (incoming.get(task.id) ?? 0) === 0)
-    .sort(compareTaskStable);
+  const queue = tasks.filter((task) => (incoming.get(task.id) ?? 0) === 0).sort(compareTaskStable);
   const ordered: TaskDto[] = [];
   while (queue.length > 0) {
     const next = queue.shift();

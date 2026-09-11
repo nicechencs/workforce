@@ -334,13 +334,13 @@ describe("composed M3 mock loop", () => {
       const items = (
         listed.body as {
           items: Array<{
-          id: string;
-          title: string;
-          role?: string;
-          workflowNodeId?: string;
-          status: string;
-          dependsOn?: Array<{ taskId: string; waitFor: string }>;
-        }>;
+            id: string;
+            title: string;
+            role?: string;
+            workflowNodeId?: string;
+            status: string;
+            dependsOn?: Array<{ taskId: string; waitFor: string }>;
+          }>;
         }
       ).items;
       const ids = items.map((item) => item.workflowNodeId ?? item.title);
@@ -362,9 +362,7 @@ describe("composed M3 mock loop", () => {
           (task.workflowNodeId ?? task.title) === "review_integration",
       ),
     ).toBe(true);
-    const byNode = new Map(
-      tasks.map((task) => [task.workflowNodeId ?? task.title, task] as const),
-    );
+    const byNode = new Map(tasks.map((task) => [task.workflowNodeId ?? task.title, task] as const));
     const alpha = byNode.get("dev_alpha");
     const bravo = byNode.get("dev_bravo");
     const review = byNode.get("review_integration");
@@ -475,13 +473,13 @@ describe("composed M3 mock loop", () => {
     const reviewTasks = await json(port, `/api/v1/tasks?projectId=${project.id}`, {
       headers: auth,
     });
-    const review = (
+    const reviewTask = (
       reviewTasks.body as {
         items: Array<{ workflowNodeId?: string; title: string; status: string }>;
       }
     ).items.find((item) => (item.workflowNodeId ?? item.title) === "review_integration");
     if (finished.status === "running") {
-      expect(review?.status).toBe("waiting_review");
+      expect(reviewTask?.status).toBe("waiting_review");
     } else {
       expect(finished.status).toBe("completed");
     }
@@ -1246,9 +1244,9 @@ describe("composed M3 mock loop", () => {
     const world = JSON.parse(fs.readFileSync(path.join(stateDir, "world.json"), "utf8")) as {
       artifactContents?: Array<{ bodyBase64?: string }>;
     };
-    expect(
-      (world.artifactContents ?? []).every((record) => record.bodyBase64 === undefined),
-    ).toBe(true);
+    expect((world.artifactContents ?? []).every((record) => record.bodyBase64 === undefined)).toBe(
+      true,
+    );
     expect(fs.existsSync(path.join(stateDir, "artifacts", "versions"))).toBe(true);
 
     await first.daemon.close();

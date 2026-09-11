@@ -1459,13 +1459,18 @@ export class ComposedAppServices implements AppServices {
     for (const stored of await this.artifacts.listAvailable()) {
       const body = await collectBytes(this.artifacts.read(stored.artifactVersionId));
       const lineage = await this.artifacts.lineageOf(stored.artifactVersionId);
-      this.putContent(this.recordFromStored(stored, {
-        projectId: projectIdFromStored(stored, leftover, this.app.world.tasks),
-        logicalName: logicalNameFromStored(stored),
-        parents: lineage.map((source) => source.artifactVersionId),
-        aliasVersionId: aliasFromStored(stored),
-        body,
-      }));
+      this.putContent(
+        this.recordFromStored(
+          stored,
+          storedRecordExtras(
+            projectIdFromStored(stored, leftover, this.app.world.tasks),
+            logicalNameFromStored(stored),
+            lineage.map((source) => source.artifactVersionId),
+            body,
+            aliasFromStored(stored),
+          ),
+        ),
+      );
     }
     for (const record of leftover) {
       if (this.findContent(record.artifactId, record.versionId)) {
@@ -1535,13 +1540,16 @@ export class ComposedAppServices implements AppServices {
       ...(input.runId !== undefined ? { runId: input.runId } : {}),
       ...(sources.length > 0 ? { sources } : {}),
     });
-    const record = this.recordFromStored(stored, {
-      projectId: input.projectId,
-      logicalName: input.logicalName,
-      parents: input.parents ?? [],
-      aliasVersionId: input.aliasVersionId,
-      body: input.body,
-    });
+    const record = this.recordFromStored(
+      stored,
+      storedRecordExtras(
+        input.projectId,
+        input.logicalName,
+        input.parents ?? [],
+        input.body,
+        input.aliasVersionId,
+      ),
+    );
     this.putContent(record);
     return record;
   }
@@ -1812,6 +1820,32 @@ function publicAuthorizationRef(value: string): string {
   return value;
 }
 
+function storedRecordExtras(
+  projectId: string,
+  logicalName: string,
+  parents: string[],
+  body: Uint8Array,
+  aliasVersionId?: string,
+): {
+  projectId: string;
+  logicalName: string;
+  parents: string[];
+  body: Uint8Array;
+  aliasVersionId?: string;
+} {
+  const extras: {
+    projectId: string;
+    logicalName: string;
+    parents: string[];
+    body: Uint8Array;
+    aliasVersionId?: string;
+  } = { projectId, logicalName, parents, body };
+  if (aliasVersionId !== undefined) {
+    extras.aliasVersionId = aliasVersionId;
+  }
+  return extras;
+}
+
 function projectIdFromStored(
   stored: StoredArtifactVersion,
   leftover: ArtifactContentRecord[],
@@ -1847,19 +1881,19 @@ function aliasFromStored(stored: StoredArtifactVersion): string | undefined {
 }
 
 function asRegistrableKind(kind: string, slotId: string, mediaType: string): RegistrableKind {
-  if (
-    kind === "plan" ||
-    kind === "git_diff" ||
-    kind === "test_result" ||
-    kind === "evaluation"
-  ) {
+  if (kind === "plan" || kind === "git_diff" || kind === "test_result" || kind === "evaluation") {
     return kind;
   }
   const slot = slotId.toLowerCase();
   if (slot.includes("plan") || kind === "document") {
     return "plan";
   }
-  if (slot.includes("diff") || slot.includes("code") || slot.includes("patch") || slot.includes("change")) {
+  if (
+    slot.includes("diff") ||
+    slot.includes("code") ||
+    slot.includes("patch") ||
+    slot.includes("change")
+  ) {
     return "git_diff";
   }
   if (slot.includes("test") || mediaType.includes("test-result")) {

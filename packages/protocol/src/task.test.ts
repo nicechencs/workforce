@@ -12,7 +12,9 @@ const fixtures = resolve(
 
 describe("public TaskDto dependsOn", () => {
   it("requires dependsOn edges from the published DAG fixture", () => {
-    const raw: unknown = JSON.parse(readFileSync(resolve(fixtures, "task.depends-on.json"), "utf8"));
+    const raw: unknown = JSON.parse(
+      readFileSync(resolve(fixtures, "task.depends-on.json"), "utf8"),
+    );
     const parsed = parseTaskDto(raw);
     expect(parsed.dependsOn).toEqual([
       { taskId: "tsk_dev_alpha", waitFor: "outputs_ready" },
