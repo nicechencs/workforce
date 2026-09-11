@@ -81,7 +81,7 @@ pnpm test             # 本机 Node v22.14.0 全量 isolate 曾超时/环境失�
 GitHub Actions pull-request on 20931f0  # success（ubuntu-latest / Node 22）
 ```
 
-T18 画布保存接线（Linux，2026-09-12；依赖 #23 `efaadd42`；head `ce643bb`）：
+T18 画布保存接线（Linux，2026-09-12；依赖 #23 `efaadd42`）：
 
 ```text
 pnpm format:check     # 退出 0
