@@ -280,3 +280,11 @@ updated: 2026-09-12
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) T20 写明 `31d669be` FAIL 与 localStorage 修复、headed 未复测；本历史追加本条。
 - **状态：** reload 持久化 **implemented**（unit / happy-dom 模拟 renderer remount）。headed 复测 **planned**。编排 Agent / M7 / M8 **planned**。
 
+---
+
+## 2026-09-12（Asia/Taipei）#31 本机会话 headed：`31d669be` FAIL → `c66eebe8` PASS
+
+- **决定：** Test 真窗复测 tip `c66eebe8` **PASS**（`WORKFORCE-PR31-c66eebe8-AUTHORING-SESSION-RETEST.md`）：Electron Ctrl+R / renderer reload 后同一会话 id 与用户消息仍在。此前 `31d669be` **FAIL**（`WORKFORCE-PR31-31d669be-AUTHORING-SESSION-STORE.md`：SPA 导航 OK，reload 丢会话）。无假 Agent 回复。`CHAT_SESSION_PROTOCOL_FROZEN=true` 仍只表示本机用户 append + 本地存储。不宣称编排 Agent / 对话生成 / M7 / M8 完成。#30 仍 OPEN，未 rebase。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T20 改为 tip `c66eebe8` headed PASS，并保留 `31d669be` FAIL 记录。
+- **状态：** 本机会话 reload headed **implemented**（`c66eebe8`）。编排 Agent / 对话生成 / M7 / M8 **planned**。
+
