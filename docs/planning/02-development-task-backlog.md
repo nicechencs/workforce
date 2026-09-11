@@ -1,7 +1,7 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
-日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 仅有 Desktop UI shell + 写 API 落草稿；会话 / 草稿 DTO 已冻结；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）；发送仍禁用，不得写成对话编排完成。T21 项目启动面 UI 已探针，composed `:start` 已把 `orchestrationMode` 写入现有 start/Run 记录**（项目启动面 headed smoke PASS；Task 详情不挂未接线控件；M8 调度 / 完整 headed 套件 / 生产 Codex direct 未完成）。
+日期：2026-09-12  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS），不是 unread-only。T20 仅有 Desktop UI shell + 写 API 落草稿；会话 / 草稿 DTO 已冻结；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）；发送仍禁用，不得写成对话编排完成。T21 项目启动面 UI 已探针（不得再写「T21 UI 未实现」），composed `:start` 已把 `orchestrationMode` 写入现有 start/Run 记录**（项目启动面 headed smoke PASS；#28 仅 unit/composed；Task 详情不挂未接线控件；M8 调度 / 完整 headed 套件 / 生产 Codex direct 未完成）。
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -12,7 +12,7 @@
 - T03 的独立技术实验可以与前两项并行，不向产品目录复制未经整理的实验代码。
 - 其余任务在契约稳定后可用 fake port/fixture 并行编写；“可开工”不等于“可验收合并”。
 - 每个任务只能修改自己的目录。遇到公共类型缺口，提交契约变更请求，不自己复制类型或直接改邻接模块。
-- 任务路径是建议目标目录，目前仓库只有文档。T01/T02 创建基础结构后，应在各任务领取前确认准确文件所有权。
+- 任务路径是建议目标目录；源码与测试已存在。进度以实现进度页为准，不要把本卡旧句当成未开工。领取前仍须确认准确文件所有权。
 
 ## 2. 里程碑与总体依赖
 
@@ -344,6 +344,8 @@ flowchart TD
 
 **验收：** 使用 typed client；未实现写接口时按钮不可假成功。写接口就绪后：新建 → 保存草稿 → 发布 → 列表可见新版本；未发布图不能被 `:start` / Runtime 执行。有限 DAG 非法边/循环被拒绝。headed 未跑不得宣称画布可用。
 
+**现行（main）：** 画布 UI + 写 API 已接线；headed 真窗 create/edit/save/publish **PASS**（`fbe13dea` / `6eeea107`）。不宣称 M7 完成，也不宣称 Runtime 可执行未发布图。
+
 **集成依赖：** T02 图 DTO、T09 发布校验、T10 写 API、T11 路由（已有 workflows slot 则可复用）。可先用 fake client 画 UI，合并时接真实 endpoint。
 
 ### T19 — 自定义 Team 编排
@@ -360,6 +362,8 @@ flowchart TD
 - 空态与 412 保留输入；无写接口时不渲染可点击成功态。
 
 **验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
+
+**现行（main）：** 自定义 Team 写面 + 草稿持久化已接线；headed save→reload **PASS**（`406ee6d2` / `0e2a156`）。默认 `GET /teams` 仍只回 published。不得再写「T19 unread-only」或「写面未实现」。不宣称 M7 完成。
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
@@ -378,7 +382,7 @@ flowchart TD
 - 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成。
 - 对话回复不得写成 Task/Run 完成。
 
-**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；编排 Agent 仍 planned。未实现时无成功态按钮。不得把 Mock 聊天冒充已实现。headed 未跑不得宣称对话编排可用。desktop-client **只导出类型**，无 chat HTTP 方法。
+**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；编排 Agent 仍 planned。未实现时无成功态按钮。不得把 Mock 聊天冒充已实现。作者面壳 headed **PASS**（`66a9c284`）≠ 对话编排可用。desktop-client **只导出类型**，无 chat HTTP 方法。
 **完整卡验收（仍未到）：** Desktop 会话存储 + 仅用户 append 接线后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。Agent 回复与 M7 完成不在本切片。
 
 **集成依赖：** T02 会话/草稿契约 **已冻结**（`AuthoringSessionDto` / `AuthoringDraftDto`）。V0.1 传输 **已冻结**（Desktop-local / in-process）。仍需发送接线、T18 画布、T10 写 API、T19 若生成 Team 草稿。DTO / 传输冻结不是本卡发送验收，也不发明 chat path。

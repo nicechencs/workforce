@@ -1,6 +1,6 @@
 # V0.1 决策登记
 
-日期：2026-09-11  
+日期：2026-09-12  
 状态：**已冻结（M0–M3 开工基线；项目制主对象；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式；执行 Placement：本机默认，远程与容器为一等能力）**  
 范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行；产品支持在**本机（默认）**、经**远程连接**和在**容器**中工作。  
 协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。产品/规划文档变更必须追加 [communication-history.md](communication-history.md)。
@@ -352,9 +352,9 @@ RunStatus 仍为：`pending | starting | running | waiting_input | paused | succ
 
 ## 8. 项目制循环上的 Team 与 Workflow 编排（M7）
 
-用户决定（2026-09-11）：围着一个 Project，必须能编排 Team、编排 Tasks、编排 Workflow。画布与自定义 Team 是该循环的必达环节，不是调研项，也不是与项目并列的第二产品。M3 Mock 主路径仍可用预设 Team + 只读已发布工作流走完，不阻塞 M4–M6。**可写面实现仍未开始**；进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+用户决定（2026-09-11）：围着一个 Project，必须能编排 Team、编排 Tasks、编排 Workflow。画布与自定义 Team 是该循环的必达环节，不是调研项，也不是与项目并列的第二产品。M3 Mock 主路径仍可用预设 Team + 只读已发布工作流走完，不阻塞 M4–M6。**T18 画布与 T19 自定义 Team 写面已在 main**（各自 headed PASS）；写 API 已接通。对话发送 / 编排 Agent 仍 planned，M7 **未完成**。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。不得再写「可写面仍未开始」或「T19 仍只读」。
 
-M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）并行可排，但不并进 M3 闭环，也不并进 T17 发布任务。未领取 T18/T19 前，禁止在普通 PR 里顺便做画布或可写 Team。
+M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）并行可排，但不并进 M3 闭环，也不并进 T17 发布任务。T18/T19 已在 main；禁止在普通 PR 里顺便改画布或可写 Team 文件。
 
 ### D15 — 可视化工作流画布编辑器
 
@@ -417,13 +417,13 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**对话发送 / 编排 Agent 尚未实现**；本登记不发明 chat 或 execution-mode endpoint。V0.1 D17 传输已冻结为 Desktop-local / in-process（见下）。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
-D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
+D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。T20 作者面壳与 T21 项目启动面已在 main；禁止在普通 PR 里顺便做假对话成功或假 mode 按钮。
 
 ### D17 — 对话式 Agent 编排工作流
 
 对话是项目制循环里**生成**可定制工作流的一等作者路径，不是独立聊天产品，也不是替代画布的第二套 Runtime。
 
-**范围（M7 扩展，必达，尚未实现）：**
+**范围（M7 扩展，必达；会话 DTO 与 Desktop-local 传输已冻结，对话发送 / 编排 Agent 尚未实现）：**
 
 1. 用户用自然语言描述意图，例如：创建 bot1（角色）、bot2、bot3；跑流程 X；某个 bot 负责任务 Y。编排 Agent 理解后**生成**草稿：Team 角色、Tasks、有限 DAG 的 `WorkflowDefinition` / 未发布 `WorkflowVersion`。
 2. 生成结果必须可编辑：进入 D15 画布或结构化编辑面，改节点/边/角色/任务后再保存、发布。禁止「对话一次生成即锁定、不可改」。

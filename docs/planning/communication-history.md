@@ -264,3 +264,21 @@ updated: 2026-09-12
 - **文档影响：** 冲突页同时保留 #28 T21 现行透传表述与 D17 Desktop-local 传输冻结。
 - **状态：** T21 composed 透传 **implemented**（main，unit/composed）。V0.1 传输决策 **frozen**（Desktop-local）。T20 发送 / 编排 Agent / M7 / M8 **planned**。
 
+---
+
+## 2026-09-12（Asia/Taipei）隔夜 #20–#29 落地后的规划诚实同步（无行为变化）
+
+- **决定：** 隔夜 squash 合入 #20–#29 后，规划文档必须与 tip `ecfc047`（#29 Desktop-local 传输冻结）对齐，不得再写「T21 UI 未实现」「T19 unread-only / 仍只读」「DTO 未冻结」「传输未定」。诚实进度如下，**不**发明 chat / `:direct` / enrollment path，也**不**把 Mock 或未跑 headed 写成完成：
+  1. **#20** D19：本机为默认 Placement；远程 + 容器产品模型已冻结；enrollment / 容器 runner **未实现**。
+  2. **#23** M7 Workflow / Team 写 API + 协议已接通。
+  3. **#22 / #21** T18 画布与 T19 自定义 Team 写面已在 main（各自 headed PASS：`fbe13dea` create/edit/save/publish；`406ee6d2` 草稿 save→reload）。
+  4. **#24** T20 Desktop 作者面壳 + 写 API 落未发布草稿（作者面壳 headed PASS `66a9c284`）；发送仍禁用。
+  5. **#25** D18 `orchestrationMode` 冻结在 `StartRunRequest`。
+  6. **#26** T21 项目「开始执行」UI 探针（`f3b2045` headed smoke PASS：`WORKFORCE-TIP-f3b2045-ORCHESTRATION-START-SMOKE.md`）。Task 详情不挂未接线控件。
+  7. **#27** D17 `AuthoringSessionDto` / `AuthoringDraftDto` 已冻结。
+  8. **#28** composed `:start` 把 `orchestrationMode` 写入现有 start / Run / host 记录（仅 unit / composed）。仓库内无 `WORKFORCE-TIP-1653354*` / `WORKFORCE-TIP-16533548-ORCHESTRATION-START-SMOKE.md`，**不**发明 #28 headed PASS。
+  9. **#29** D17 V0.1 传输冻结为 Desktop-local / in-process；**无** Daemon chat path；`CHAT_SESSION_PROTOCOL_FROZEN` **仍为 false**，直至后续 T20 会话存储 PR。
+  剩余缺口：T20 发送 / 编排 Agent；M7 整体未完成；M8 无 direct scheduler、无生产 Codex direct；D19 远程 enrollment 与容器 runner 未实现。
+- **文档影响：** [decision-register.md](decision-register.md) §8 去掉「可写面仍未开始」，D17 范围改为「DTO / 传输已冻结、发送未接线」；[03-implementation-status.md](03-implementation-status.md) 修订段对齐 tip `ecfc047` 并写明 #28 无 in-tree headed 报告；[api-capability-matrix.md](api-capability-matrix.md) 不再把已冻结会话协议写成未完成；[02-development-task-backlog.md](02-development-task-backlog.md) T18/T19 补现行状态，去掉「仓库只有文档」；[04-collab-and-review.md](04-collab-and-review.md) 日期对齐。本条只追加汇总，不改写先写条目。本 PR **docs-only**，无功能 / endpoint / UI 行为变化。
+- **状态：** 规划文档诚实同步 **implemented**。T20 发送 / 编排 Agent / M7 整体 / M8 调度 / D19 runner **planned**。
+

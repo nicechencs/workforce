@@ -1,6 +1,6 @@
 # V0.1 页面与 API 能力矩阵
 
-日期：2026-09-11  
+日期：2026-09-12  
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
@@ -43,7 +43,7 @@ P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-
 | 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
 | 工作流目录 / 画布 / 对话生成 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口 + 对话生成草稿（D15/D17）。目录不是可执行 Runtime |
 
-M7 必达——补齐项目制循环（写 API + T18 画布 + T19 Team 写面已接线；对话会话协议与整体 M7 **未完成**；不要在普通 PR 里顺便发明 chat / enrollment / `executionMode`）：
+M7 必达——补齐项目制循环（写 API + T18 画布 + T19 Team 写面已接线；会话 / 草稿 DTO 与 Desktop-local 传输**已冻结**；发送 / 编排 Agent 与整体 M7 **未完成**；不要在普通 PR 里顺便发明 chat / enrollment / `executionMode`）：
 
 | 页面/动作 | 处理 |
 |---|---|
