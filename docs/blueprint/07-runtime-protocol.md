@@ -222,7 +222,7 @@ interface StartRunRequest {
 }
 ```
 
-`StartRunRequest` 是已经由 Application 解析后的内部 Runtime Ports 请求，不是 `workforce.task/0.1` wire DTO。`transport` 只描述 Adapter 接入方式；`placement` 是唯一的 resolved binding，包含 Node session、Runtime installation、Workspace instance、Lease/fencing；`orchestrationMode` 描述是否进入本次 Workflow 调度。三者是正交轴，禁止用 `executionMode` 或 `remote` 代替。`workflow_bound` 必须带已确认的 ProjectExecutionSnapshot，并从中读取 WorkflowVersion/TeamVersion；`direct` 仍由 Application 先创建 ad-hoc Task，完成同一治理链后再创建 Run，不绕过 Policy、Budget、Approval、Workspace 或 capability probe，且永不推进 WorkflowInstance/Project。Application 必须先解析三轴、授权并原子写入不可变 Run snapshot 与 Outbox，再调用 Ports/Runtime；不得启动后才补冻结字段。retry 新建 Run 并沿用模式。
+`StartRunRequest` 在本节是 Application 解析后的**内部** Runtime Ports 请求，不是 `packages/protocol` 的 Adapter SPI `StartRunRequest`（后者仍是必填三 ID `placement`，axes 不进入该对象）。也不是 `workforce.task/0.1` wire DTO。`transport` 只描述 Adapter 接入方式；`placement` 是唯一的 resolved binding，包含 Node session、Runtime installation、Workspace instance、Lease/fencing；`orchestrationMode` 描述是否进入本次 Workflow 调度。三者是正交轴，禁止用 `executionMode` 或 `remote` 代替。`workflow_bound` 必须带已确认的 ProjectExecutionSnapshot，并从中读取 WorkflowVersion/TeamVersion；`direct` 仍由 Application 先创建 ad-hoc Task，完成同一治理链后再创建 Run，不绕过 Policy、Budget、Approval、Workspace 或 capability probe，且永不推进 WorkflowInstance/Project。Application 必须先解析三轴、授权并原子写入不可变 Run snapshot 与 Outbox，再调用 Ports/Runtime；不得启动后才补冻结字段。retry 新建 Run 并沿用模式。
 
 启动规则：
 
@@ -634,17 +634,17 @@ Runtime Protocol V0.1 在以下条件满足时可冻结：
 
 Runtime transport 与执行位置是两个正交概念：`process | sdk | http` 描述 Adapter 如何调用 Runtime；`local | remote` 由 ExecutionNode 与 Placement 表达。
 
-`PlacementSnapshot` 是唯一的 resolved Node/Workspace binding；`StartRunRequest.execution.placement` 与 Run snapshot 必须引用同一对象，不再另设 `NodeExecutionBinding` 平行模型：
+`PlacementSnapshot` 是唯一的 resolved Node/Workspace binding；`mode` 只属于 placement intent，不在 snapshot 上。权威形状以 `packages/protocol` `placementSnapshotSchema` 为准：
 
 ```ts
 interface PlacementSnapshot {
-  mode: "automatic" | "local_only" | "remote_only" | "specific_node";
   nodeId: string;
   nodeSessionId: string;
   runtimeInstallationId: string;
   workspaceInstanceId: string;
   executionLeaseId: string;
   fencingToken: number;
+  legacySchemaVersion?: string;
 }
 ```
 

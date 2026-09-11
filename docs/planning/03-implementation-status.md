@@ -16,6 +16,8 @@ updated: 2026-09-11
 
 修订：2026-09-11（UI 设计系统对齐）— renderer 视觉层改为对齐 AgentHub 的设计基线：`packages/ui/src/tokens.ts` 重建为语义 token（四档字号、8/12/16 圆角、浅/深主题、5 主题色、8 浅色画布、Agent 色槽）并生成 CSS 变量，新增 `packages/ui/src/theme.ts` 与 `apps/desktop/src/renderer/app/theme.tsx` 承载主题偏好的读取、持久化与首屏落地；`renderer/styles.css` 与 `renderer/components/` 提供语义 class 层与基础组件，T12/T13 页面改为只组合这些组件，`features/projects/ui.ts` 与 `_t13_client.ts` 中的 inline 样式层已删除。未新增运行依赖（无 Tailwind / Radix / CVA / lucide-react），根 lockfile 与构建链未变。权威文档见 [UI 设计系统](../product-ui/04-design-system.md)。本修订**不**改变任何页面能力、状态机或公共 DTO，也不声称 M7/M8 已实现。
 
+修订：2026-09-11（桌面 Daemon 源码启动修复）— 修掉「用脚本启动程序后提示无法安全连接 / `Daemon state file was not replaced after spawn.`」的根因：`apps/desktop/src/main/smoke-env.ts` 给 TypeScript Daemon 入口加的是 `--experimental-strip-types`，而 strip-only 模式不支持参数属性，Daemon 在 import 阶段就崩溃、从不写 `daemon.json`。现改为 `--experimental-transform-types`（Node ≥ 22.7），新增真实启动回归测试 `apps/desktop/tests/daemon-source-launch.test.ts`，并修正 §6 中「Daemon 单独」命令（原命令同时缺 `--import` 与正确的类型 flag，实测无法启动）。未改协议、状态机、公共 DTO 或 `supervisor` 的 `stdio: "ignore"`。
+
 ## 1. 本轮目标与结果
 
 目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布、自定义 Team 与对话生成是该循环上 **M7 已规划、未实现** 的编排面；按 Agent 双执行模式是 **M8 已规划、未实现**。都不是外挂功能，也**都还没有代码**。
@@ -139,6 +141,9 @@ pnpm lint                                     # 退出 0
 7. **UI 设计系统（T11 共享层）**
    `packages/ui/src/tokens.ts` 以 AgentHub 的语义角色重建 token 真源（四档字号 display/title/body/meta、8/12/16 圆角 + 22% 标记、4/8/12/16/24/32 间距、浅/深主题、5 主题色、8 浅色画布、Agent 色槽），由 `tokensAsCssVariables()` 生成 CSS 变量；`packages/ui/src/theme.ts` 提供 `light`/`dark`/`system`、accent、canvas 的读取/写入/落地并拒绝未知取值。`apps/desktop/src/renderer/styles.css` 提供语义 class 层，`renderer/components/` 提供 `Page`/`Card`/`Button`/`Badge`/`Input`/`Tabs`/`List`/`Notice`/`EmptyState` 等基础组件与内联 SVG 图标，`renderer/app/theme.tsx` 在 React 挂载前同步落地主题避免闪色，设置页新增「外观」卡片（主题三档 + 主题色 + 浅色画布，深色下画布控件禁用并说明原因）。T12/T13 页面改为只组合这些组件，不再写 inline style 或第二套色值（`features/projects/ui.ts` 已删除）。**不新增运行依赖**：未引入 Tailwind / Radix / CVA / lucide-react / class-variance-authority，根 lockfile 与构建链未变。**未实现：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 等复合组件，以及焦点陷阱与减动效的自动化测试。详见 [UI 设计系统](../product-ui/04-design-system.md)。
 
+8. **桌面 Daemon 源码启动（T11 启动链）**  
+   `start.cmd` / `pnpm --filter @workforce/desktop dev` 此前连不上 Daemon：`apps/daemon/dist/index.js` 不存在时 supervisor 会回退到源码入口，而 `apps/desktop/src/main/smoke-env.ts` 给 `.ts` 入口加的是 `--experimental-strip-types`（只删类型）。Daemon 依赖图用了参数属性（`apps/daemon/src/modules/errors.ts`、`apps/daemon/src/composition/{persist,policy}.ts`、`packages/database/*` 等），strip-only 模式直接抛 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`，Daemon 在 `startDaemon()` 之前就退出，从不写 `daemon.json`；supervisor 等满 8s 后返回 `Daemon state file was not replaced after spawn.`，UI 按 `packages/ui/src/banners.ts` 渲染成「无法安全连接」。现改为 `--experimental-transform-types`（完整类型转换，需 Node ≥ 22.7），并新增真实启动回归测试 `apps/desktop/tests/daemon-source-launch.test.ts`。证据（2026-09-11，Windows，Node v24.19.0，pnpm 9.4.0）：`pnpm exec vitest run apps/desktop/tests/daemon-source-launch.test.ts apps/desktop/tests/smoke-env.test.ts` → 2 files / 7 tests 通过；把 flag 改回 `--experimental-strip-types` 重跑同一测试 → 失败并在断言消息里给出真实 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` 日志（证明该测试确实是回归闸门）；用真实 `createSupervisorDeps`（已编译 `dist/main`）跑守卫级 E2E：`ensureDaemon` 返回 `{"ok":true,"mode":"spawn","snapshot":{"status":"online",...}}`、`GET /health` 200（该脚本的 `process.execPath` 是 node；electron `ELECTRON_RUN_AS_NODE=1` 变体已单独手工验证可写出 `daemon.json`）；`pnpm --filter @workforce/desktop typecheck` 与 `pnpm check:docs`（52 个 Markdown 文件）均退出 0。**未跑真窗口点击**（本机存在一个 22:33 启动、仍在运行且持有 Electron 单实例锁的**修复前**旧实例；需人工关窗后重跑脚本）；`pnpm --filter @workforce/desktop smoke` 在 Windows 上因 `apps/desktop/scripts/smoke.mjs` 直接 spawn `node_modules/.bin/tsc`（缺 `.cmd`）而 ENOENT，属**既有**缺陷，本轮未修。本切片**不**改变协议、状态机或公共 DTO，也**未**改 supervisor spawn 的 `stdio: "ignore"`；Daemon 崩溃时的 stderr 仍不会出现在桌面侧日志里，该可观测性问题仍待跟进。
+
 ## 4. M3 主路径对照
 
 ```text
@@ -181,8 +186,8 @@ pnpm test                                          # 含 happy-dom 页 driver；
 pnpm --filter @workforce/desktop smoke             # opt-in Electron helper；不能代替人工真窗口
 WORKFORCE_DESKTOP_SMOKE_HEADED=1 pnpm --filter @workforce/desktop smoke
 pnpm --filter @workforce/desktop dev               # Vite + Electron；目录对话框仍是原生的
-# Daemon 单独：
-node --experimental-strip-types apps/daemon/src/index.ts --state-dir /tmp/wf-state
+# Daemon 单独（源码入口；--import 解析 .js→.ts，需 Node >= 22.7 的完整类型转换）：
+node --import ./tooling/scripts/register-ts-esm.mjs --experimental-transform-types apps/daemon/src/index.ts --state-dir /tmp/wf-state
 ```
 
 桌面 smoke 环境变量：

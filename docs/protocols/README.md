@@ -17,7 +17,7 @@
 
 ## V0.1 标识前缀（仅可读，不参与判断）
 
-`org_` `prj_` `tsk_` `run_` `wfi_` `wfn_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `usr_` `cli_`
+`org_` `prj_` `tsk_` `run_` `wfi_` `wfn_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `snp_` `usr_` `cli_`
 
 ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须拒绝。
 
@@ -28,6 +28,8 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
 - `v0.1/workflow-catalog.schema.json` — P1 只读已发布工作流目录（模板 / 版本 / 结构化步骤）
 - `v0.1/task.schema.json` — 公开 `TaskDto`，含已发布 DAG 的 `dependsOn`
+- `v0.1/run.schema.json` — 公开 `RunDto`；三轴字段可选，直至 Application 写入已解析快照
+- `v0.1/project-execution-snapshot.schema.json` — 公开 `ProjectExecutionSnapshotDto`；不含 policy/budget 载荷
 - `v0.1/fixtures/` — 可校验完整示例；概念节选不得放这里
 - `v0.1/ports.md` — M3 公共 ports 签名（T02 编码进 TypeScript）；ArtifactStore 权威与 Task `dependsOn` 映射
 

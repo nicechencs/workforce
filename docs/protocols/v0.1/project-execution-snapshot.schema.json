@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workforce.local/protocols/v0.1/project-execution-snapshot.schema.json",
+  "title": "ProjectExecutionSnapshotDto",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "workflowVersionId",
+    "teamVersionId",
+    "contentHash",
+    "immutable",
+    "createdAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "workflowVersionId": { "type": "string", "minLength": 1 },
+    "teamVersionId": { "type": "string", "minLength": 1 },
+    "contentHash": { "type": "string", "minLength": 1 },
+    "immutable": { "const": true },
+    "createdAt": { "type": "string" }
+  }
+}

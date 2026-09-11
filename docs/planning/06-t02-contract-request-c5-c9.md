@@ -1,22 +1,32 @@
 ---
 title: T02 契约变更请求（C5–C9）
 type: proposal
-status: proposed
+status: current
 owner: maintainers
 updated: 2026-09-11
 ---
 
 # T02 契约变更请求：C5–C9
 
-本页把 [D15–D18 落地方案](05-d17-d18-landing-plan.md) §4 的 **C5–C9** 翻译成可直接裁决的契约变更请求：每项给出**建议形态（字段与签名）**、理由与**兼容性影响**，标出只有 T02 能定的问题。本页是 `proposed`，**不发明已定事实**，也不改任何冻结规则；裁决后由 T02 落入 `packages/protocol` 并回写本页与 [能力矩阵](api-capability-matrix.md)。
+本页把 [D15–D18 落地方案](05-d17-d18-landing-plan.md) §4 的 **C5–C9** 翻译成可直接裁决的契约变更请求：每项给出**建议形态（字段与签名）**、理由与**兼容性影响**，标出只有 T02 能定的问题。2026-09-11 已按下列默认全批并开始落入 `packages/protocol`。未实现 HTTP `POST /tasks/{id}/runs`、未改 `confirmPlan`、未加 `runtime_profile_versions.transport` 列。
 
-基线：`dev` @ `15e76bf`。权威顺序按 [决策登记](decision-register.md) D01：决策登记 / 状态矩阵 / 能力矩阵 → 已接受 ADR → `packages/protocol` → 蓝图正文 → Product UI。
+基线：`dev` @ `f7d4925`。权威顺序按 [决策登记](decision-register.md) D01：决策登记 / 状态矩阵 / 能力矩阵 → 已接受 ADR → `packages/protocol` → 蓝图正文 → Product UI。
 
 ## 0. 结论摘要
 
 1. **C 表现状需更正。** `3c46807` 已把 C6/C7/C8 与 C9 的 **Adapter SPI 侧**冻结进 `packages/protocol/src/execution.ts` 与 [ports.md](../protocols/v0.1/ports.md)；落地方案 §5 S0 也已记录 **C9 方案 A 已废弃**。§4 表中 C6/C7 两行仍写「无」，C8/C9 两行仍写冻结前的旧现状，均属文档滞后，不是待办。
 2. **真正待裁决的是六项**：CR-1（C5 快照 DTO/ID）、CR-2（C9 HTTP 入口）、CR-3（C6/C7 Run 响应面）、CR-4（C13 归属，CR-3 的前置）、CR-5（C8 单一形状的三个矛盾）、CR-6（`snp_` 前缀）。
 3. **有八处文档与代码互相矛盾**（§3），必须在同一批裁决里一并了断，否则新字段会落在互相矛盾的权威上。
+
+### 已裁决（2026-09-11）
+
+- CR-2：HTTP 落点为已登记的 `POST /tasks/{id}/runs`，可选 `orchestrationMode?` + `placementIntent?`；`StartRunRequest` 不动；`GET /capabilities` 后续加 mode 维度。**本切片不实现该路由。**
+- CR-3：目标语义是响应必填三轴；**当前无写入方，HTTP `RunDto` 先可选**，禁止填假 `workflow_bound`。`transport` 只读、不接受请求。
+- CR-4：`ProjectDto` / `RunDto` / `TeamDto` / `TeamRoleDto` 迁入 `packages/protocol`；其余 DTO 另卡；schema 继续手写。
+- CR-1：公共快照 DTO 不含 policy/budget；域品牌 `ExecutionSnapshotId`，`SnapshotRef` 为其别名；`contentHash` 覆盖 workflowVersionId + teamVersionId + policy + budget。
+- CR-5：snapshot 无 `mode`；Host 使用 protocol `PlacementSnapshot`；`RuntimeHandle` 补可选 node 字段；`runs.placement_snapshot_json` 为 C8 权威。
+- CR-6：`ID_PREFIX.snapshot = "snp_"`。
+- `transport` 权威列为 `runtime_profile_versions.transport`（T04 再 expand）；`runtime-spi` 的 `RuntimeTransport` 改为从 protocol 再导出。
 
 ### C 表现状更正
 

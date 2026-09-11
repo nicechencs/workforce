@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workforce.local/protocols/v0.1/run.schema.json",
+  "title": "RunDto",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "taskId",
+    "projectId",
+    "status",
+    "stateRevision",
+    "definitionRevision",
+    "generation",
+    "attempt",
+    "protocolVersion",
+    "cancelRequested",
+    "usage",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string" },
+    "stateRevision": { "type": "integer" },
+    "definitionRevision": { "type": "integer" },
+    "generation": { "type": "integer" },
+    "attempt": { "type": "integer" },
+    "protocolVersion": { "const": "0.1" },
+    "cancelRequested": { "type": "boolean" },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["costMinor", "currency", "kind"],
+      "properties": {
+        "costMinor": { "type": "integer" },
+        "currency": { "type": "string" },
+        "kind": { "enum": ["unknown", "estimated", "settled"] }
+      }
+    },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "orchestrationMode": { "enum": ["workflow_bound", "direct"] },
+    "transport": { "enum": ["process", "sdk", "http"] },
+    "executionSnapshotId": { "type": "string", "minLength": 1 }
+  }
+}
