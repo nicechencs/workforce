@@ -44,6 +44,19 @@ describe("desktop-client", () => {
     });
   });
 
+  it("lists and reads published workflow catalog paths", async () => {
+    const { transport, calls } = memoryTransport();
+    const client = createDesktopClient({ transport });
+    await client.listWorkflows();
+    await client.getWorkflow("software-development-team.feature-delivery");
+    await client.getWorkflowVersion("software-development-team.feature-delivery", "0.1.0");
+    expect(calls.map((item) => item.path)).toEqual([
+      "/api/v1/workflows",
+      "/api/v1/workflows/software-development-team.feature-delivery",
+      "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
+    ]);
+  });
+
   it("throws ProblemError for problem+json responses", async () => {
     const { transport } = memoryTransport();
     const client = createDesktopClient({ transport });

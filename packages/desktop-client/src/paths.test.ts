@@ -19,6 +19,13 @@ describe("desktop-client paths", () => {
     expect(paths.runCancel("run_1")).toBe("/api/v1/runs/run_1:cancel");
     expect(paths.approvalRequestChanges("apr_1")).toBe("/api/v1/approvals/apr_1:request-changes");
     expect(paths.teams()).toBe("/api/v1/teams");
+    expect(paths.workflows()).toBe("/api/v1/workflows");
+    expect(paths.workflow("software-development-team.feature-delivery")).toBe(
+      "/api/v1/workflows/software-development-team.feature-delivery",
+    );
+    expect(paths.workflowVersion("software-development-team.feature-delivery", "0.1.0")).toBe(
+      "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
+    );
     expect(paths.runtimeCapabilities("mock")).toBe("/api/v1/runtimes/mock/capabilities");
     expect(paths.projectBudget("prj_1")).toBe("/api/v1/projects/prj_1/budget");
     expect(paths.projectWorkspaces("prj_1")).toBe("/api/v1/projects/prj_1/workspaces");

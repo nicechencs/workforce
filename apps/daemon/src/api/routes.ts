@@ -136,6 +136,16 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/v1/teams/:id", async (request) =>
     requireFound(deps.services.getTeam(param(request, "id")), "Team not found"),
   );
+  app.get("/api/v1/workflows", async (request) => deps.services.listWorkflows(listQuery(request)));
+  app.get("/api/v1/workflows/:id/versions/:versionId", async (request) =>
+    requireFound(
+      deps.services.getWorkflowVersion(param(request, "id"), param(request, "versionId")),
+      "Workflow version not found",
+    ),
+  );
+  app.get("/api/v1/workflows/:id", async (request) =>
+    requireFound(deps.services.getWorkflow(param(request, "id")), "Workflow not found"),
+  );
   app.get("/api/v1/nodes", async (request) => deps.services.listNodes(listQuery(request)));
   app.get("/api/v1/nodes/:id", async (request) =>
     requireFound(deps.services.getNode(param(request, "id")), "Node not found"),

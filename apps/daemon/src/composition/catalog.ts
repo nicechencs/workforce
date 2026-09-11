@@ -4,6 +4,7 @@ import {
   type WorkflowGraph,
   type WorkflowNodeDefinition,
 } from "@workforce/application";
+import type { WorkflowDto, WorkflowVersionDto } from "@workforce/protocol";
 
 import type {
   NodeDto,
@@ -25,6 +26,87 @@ export const MOCK_RUNTIME_INSTALLATION_ID = "rtm_mock_local";
 export const MOCK_RUNTIME_VERSION = "0.1.0";
 export const DEFAULT_BUDGET_ID = "bdg_local";
 export const MOCK_WORKFLOW_GRAPH_ID = "wfv_mock_feature";
+export const FEATURE_DELIVERY_WORKFLOW_ID = "software-development-team.feature-delivery";
+export const FEATURE_DELIVERY_VERSION = "0.1.0";
+
+/** Published software-dev feature-delivery template. Catalog only — not a Runtime execution graph. */
+export const FEATURE_DELIVERY_WORKFLOW: WorkflowDto = {
+  id: FEATURE_DELIVERY_WORKFLOW_ID,
+  name: "Feature delivery",
+  description:
+    "Confirm a Plan Artifact, run two isolated Developer Tasks, integrate patches by stable Node ID, then Review and human artifact approval on one digest.",
+  protocolVersion: PROTOCOL_VERSION,
+  status: "published",
+  activeVersionId: FEATURE_DELIVERY_VERSION,
+  versions: [
+    {
+      id: FEATURE_DELIVERY_VERSION,
+      workflowId: FEATURE_DELIVERY_WORKFLOW_ID,
+      version: FEATURE_DELIVERY_VERSION,
+      status: "published",
+      immutable: true,
+      entry: "planning",
+      steps: [
+        {
+          id: "planning",
+          kind: "task",
+          title: "规划",
+          worker: "planner",
+          gate: "plan",
+          notes: ["产出 Plan Artifact", "发布 workflowVersion"],
+        },
+        {
+          id: "implementation",
+          kind: "task",
+          title: "实现",
+          worker: "developer",
+          notes: ["并行", "节点模式 dev_*", "上游 outputs_ready", "不等待 reviewer 即可完成"],
+        },
+        {
+          id: "integration",
+          kind: "delivery",
+          title: "整合",
+          notes: ["按 stable Node ID 顺序", "独立 integration worktree", "冲突转人工"],
+        },
+        {
+          id: "review",
+          kind: "task",
+          title: "审查",
+          worker: "reviewer",
+          notes: ["上游 outputs_ready", "绑定 integration digest"],
+        },
+        {
+          id: "acceptance",
+          kind: "approval",
+          title: "验收",
+          gate: "artifact",
+          notes: ["绑定 integration digest"],
+        },
+      ],
+    },
+  ],
+};
+
+export function publishedWorkflows(): WorkflowDto[] {
+  return [FEATURE_DELIVERY_WORKFLOW];
+}
+
+export function findPublishedWorkflow(id: string): WorkflowDto | null {
+  return FEATURE_DELIVERY_WORKFLOW.id === id ? FEATURE_DELIVERY_WORKFLOW : null;
+}
+
+export function findPublishedWorkflowVersion(
+  workflowId: string,
+  versionId: string,
+): WorkflowVersionDto | null {
+  const workflow = findPublishedWorkflow(workflowId);
+  if (!workflow) {
+    return null;
+  }
+  return (
+    workflow.versions.find((item) => item.id === versionId || item.version === versionId) ?? null
+  );
+}
 
 export const SOFTWARE_TEAM: TeamDto = {
   id: TEAM_ID,

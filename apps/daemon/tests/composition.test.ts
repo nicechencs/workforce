@@ -212,6 +212,28 @@ describe("composed M3 mock loop", () => {
     expect(teams.body).toMatchObject({
       items: [{ id: "tm_software_development", name: "Software Development Team" }],
     });
+    const workflows = await json(port, "/api/v1/workflows", { headers: auth });
+    expect(workflows.status).toBe(200);
+    expect(workflows.body).toMatchObject({
+      items: [
+        {
+          id: "software-development-team.feature-delivery",
+          name: "Feature delivery",
+          status: "published",
+        },
+      ],
+    });
+    const workflowVersion = await json(
+      port,
+      "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
+      { headers: auth },
+    );
+    expect(workflowVersion.status).toBe(200);
+    expect(workflowVersion.body).toMatchObject({
+      id: "0.1.0",
+      immutable: true,
+      entry: "planning",
+    });
     const nodes = await json(port, "/api/v1/nodes", { headers: auth });
     expect(nodes.status).toBe(200);
     expect(nodes.body).toMatchObject({ items: [{ id: "ndl_local", status: "online" }] });

@@ -5,6 +5,8 @@ export {
   type ComposedAppServicesOptions,
 } from "./app-services.js";
 export {
+  FEATURE_DELIVERY_WORKFLOW,
+  FEATURE_DELIVERY_WORKFLOW_ID,
   LOCAL_NODE_ID,
   MOCK_RUNTIME_ID,
   SOFTWARE_TEAM,

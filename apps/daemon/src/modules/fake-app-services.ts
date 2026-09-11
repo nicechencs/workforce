@@ -17,7 +17,10 @@ import {
   MOCK_RUNTIME_ID,
   SOFTWARE_TEAM,
   TEAM_ID,
+  findPublishedWorkflow,
+  findPublishedWorkflowVersion,
   pageOf,
+  publishedWorkflows,
   unknownProjectBudget,
 } from "../composition/catalog.js";
 import type {
@@ -49,6 +52,8 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  WorkflowDto,
+  WorkflowVersionDto,
   WorkspaceDto,
 } from "./dto.js";
 import { AppError } from "./errors.js";
@@ -167,6 +172,19 @@ export class FakeAppServices implements AppServices {
 
   getTeam(id: string): TeamDto | null {
     return id === TEAM_ID ? SOFTWARE_TEAM : null;
+  }
+
+  listWorkflows(_query: ListQuery): PageDto<WorkflowDto> {
+    void _query;
+    return pageOf(publishedWorkflows());
+  }
+
+  getWorkflow(id: string): WorkflowDto | null {
+    return findPublishedWorkflow(id);
+  }
+
+  getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null {
+    return findPublishedWorkflowVersion(id, versionId);
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {

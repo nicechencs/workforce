@@ -52,6 +52,8 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  WorkflowDto,
+  WorkflowVersionDto,
   WorkspaceDto,
 } from "../modules/dto.js";
 import { AppError } from "../modules/errors.js";
@@ -71,8 +73,11 @@ import {
   SOFTWARE_TEAM,
   TEAM_ID,
   TEAM_VERSION_ID,
+  findPublishedWorkflow,
+  findPublishedWorkflowVersion,
   mockPlanGraph,
   pageOf,
+  publishedWorkflows,
   unknownProjectBudget,
 } from "./catalog.js";
 import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
@@ -300,6 +305,19 @@ export class ComposedAppServices implements AppServices {
 
   getTeam(id: string): TeamDto | null {
     return id === TEAM_ID ? SOFTWARE_TEAM : null;
+  }
+
+  listWorkflows(_query: ListQuery): PageDto<WorkflowDto> {
+    void _query;
+    return pageOf(publishedWorkflows());
+  }
+
+  getWorkflow(id: string): WorkflowDto | null {
+    return findPublishedWorkflow(id);
+  }
+
+  getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null {
+    return findPublishedWorkflowVersion(id, versionId);
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {

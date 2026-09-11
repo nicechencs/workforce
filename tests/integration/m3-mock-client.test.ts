@@ -30,6 +30,18 @@ describe("M3 mock loop via typed desktop client", () => {
 
       const teams = await client.listTeams();
       expect(teams.items.some((team) => team.id === "tm_software_development")).toBe(true);
+      const workflows = await client.listWorkflows();
+      expect(
+        workflows.items.some((item) => item.id === "software-development-team.feature-delivery"),
+      ).toBe(true);
+      const workflow = await client.getWorkflow("software-development-team.feature-delivery");
+      expect(workflow.status).toBe("published");
+      const version = await client.getWorkflowVersion(
+        "software-development-team.feature-delivery",
+        "0.1.0",
+      );
+      expect(version.immutable).toBe(true);
+      expect(version.steps.map((step) => step.id)).toContain("planning");
       const nodes = await client.listNodes();
       expect(nodes.items.some((node) => node.id === "ndl_local" && node.status === "online")).toBe(
         true,

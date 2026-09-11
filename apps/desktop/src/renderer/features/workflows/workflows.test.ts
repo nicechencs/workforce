@@ -3,37 +3,35 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  asWorkflowView,
+  EMPTY_CATALOG_NOTE,
   FEATURE_DELIVERY_STEPS,
   FEATURE_DELIVERY_WORKFLOW,
   FEATURE_DELIVERY_WORKFLOW_ID,
+  LIVE_CATALOG_NOTE,
   rejectWorkflowCanvas,
+  UNAVAILABLE_CATALOG_NOTE,
   versionById,
   workflowPageModel,
 } from "./model.js";
 import { StructuredSteps, WorkflowsPage } from "./page.js";
 
 describe("workflow pages", () => {
-  it("is read-only template/version/steps and does not expose a canvas editor", () => {
+  it("is read-only template/version/steps and does not invent a fixture catalog", () => {
     const model = workflowPageModel();
     expect(model.readonly).toBe(true);
     expect(model.canCreate).toBe(false);
     expect(model.canEdit).toBe(false);
     expect(model.hasCanvasEditor).toBe(false);
     expect(model.actions).toEqual([]);
-    expect(model.source).toBe("preset");
-    expect(model.note).toContain("不得发明 endpoint");
-    expect(model.note).toContain("IA §6.2");
-    expect(model.note).toContain("不是可视化编辑器");
-    expect(model.workflows).toEqual([FEATURE_DELIVERY_WORKFLOW]);
-    expect(FEATURE_DELIVERY_WORKFLOW.id).toBe(FEATURE_DELIVERY_WORKFLOW_ID);
-    expect(versionById(FEATURE_DELIVERY_WORKFLOW, "0.1.0")?.steps.map((step) => step.id)).toEqual(
-      FEATURE_DELIVERY_STEPS.map((step) => step.id),
-    );
+    expect(model.source).toBe("loading");
+    expect(model.workflows).toEqual([]);
+    expect(model.note).not.toContain("不得发明 endpoint");
     expect(rejectWorkflowCanvas().ok).toBe(false);
     expect(rejectWorkflowCanvas().reason).toContain("结构化步骤");
   });
 
-  it("keeps live catalog rows read-only if a future typed catalog appears", () => {
+  it("keeps live catalog rows read-only and drops the fixture-only banner", () => {
     const model = workflowPageModel({
       liveWorkflows: [{ ...FEATURE_DELIVERY_WORKFLOW, name: "Live delivery" }],
     });
@@ -42,9 +40,47 @@ describe("workflow pages", () => {
     expect(model.hasCanvasEditor).toBe(false);
     expect(model.workflows[0]?.readonly).toBe(true);
     expect(model.workflows[0]?.name).toBe("Live delivery");
+    expect(model.note).toBe(LIVE_CATALOG_NOTE);
+    expect(model.note).not.toContain("不得发明 endpoint");
+    expect(model.note).toContain("不是画布编辑器");
+    expect(versionById(FEATURE_DELIVERY_WORKFLOW, "0.1.0")?.steps.map((step) => step.id)).toEqual(
+      FEATURE_DELIVERY_STEPS.map((step) => step.id),
+    );
   });
 
-  it("renders the fixture list without claiming a complete Runtime", () => {
+  it("uses honest empty and unavailable copy instead of fixture fallback", () => {
+    const empty = workflowPageModel({ liveWorkflows: [], status: "ok" });
+    expect(empty.source).toBe("empty");
+    expect(empty.workflows).toEqual([]);
+    expect(empty.note).toBe(EMPTY_CATALOG_NOTE);
+    const unavailable = workflowPageModel({ status: "error" });
+    expect(unavailable.source).toBe("unavailable");
+    expect(unavailable.workflows).toEqual([]);
+    expect(unavailable.note).toBe(UNAVAILABLE_CATALOG_NOTE);
+  });
+
+  it("maps catalog DTOs without inventing fixture steps", () => {
+    const view = asWorkflowView({
+      id: FEATURE_DELIVERY_WORKFLOW_ID,
+      name: "Feature delivery",
+      description: "published template",
+      activeVersionId: "0.1.0",
+      versions: [
+        {
+          id: "0.1.0",
+          version: "0.1.0",
+          status: "published",
+          entry: "planning",
+          steps: FEATURE_DELIVERY_STEPS,
+        },
+      ],
+    });
+    expect(view?.readonly).toBe(true);
+    expect(view?.versions[0]?.steps).toHaveLength(5);
+    expect(asWorkflowView({ id: "wf_empty", versions: [] })?.versions).toEqual([]);
+  });
+
+  it("renders the list without a fixture-only banner or canvas claim", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowsPage, {
         params: {},
@@ -53,40 +89,25 @@ describe("workflow pages", () => {
       }),
     );
     expect(html).toContain("工作流");
-    expect(html).toContain("Feature delivery");
-    expect(html).toContain(FEATURE_DELIVERY_WORKFLOW_ID);
     expect(html).toContain("没有画布编辑器");
+    expect(html).not.toContain("不得发明 endpoint");
     expect(html).not.toContain("可视化编辑器已可用");
     expect(html.toLowerCase()).not.toContain("canvas");
   });
 
   it("renders version detail as structured steps, not a graph editor", () => {
     const html = renderToStaticMarkup(
-      createElement(WorkflowsPage, {
-        params: {
-          workflowId: FEATURE_DELIVERY_WORKFLOW_ID,
-          versionId: "0.1.0",
-        },
-        path: `/workflows/${FEATURE_DELIVERY_WORKFLOW_ID}/versions/0.1.0`,
-        navigate: () => undefined,
+      createElement(StructuredSteps, {
+        version: FEATURE_DELIVERY_WORKFLOW.versions[0]!,
       }),
     );
-    expect(html).toContain("Feature delivery");
     expect(html).toContain("结构化步骤");
     expect(html).toContain("规划");
     expect(html).toContain("整合");
     expect(html).toContain("验收");
     expect(html).toContain("gate plan");
-    expect(html).toContain("不可变");
-    expect(html).toContain("不提供可视化 Workflow 编辑器");
+    expect(html).toContain("workflow-step-planning");
+    expect(html).toContain("Worker planner");
     expect(html).not.toContain("拖拽节点");
-
-    const steps = renderToStaticMarkup(
-      createElement(StructuredSteps, {
-        version: FEATURE_DELIVERY_WORKFLOW.versions[0]!,
-      }),
-    );
-    expect(steps).toContain("workflow-step-planning");
-    expect(steps).toContain("Worker planner");
   });
 });

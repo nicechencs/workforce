@@ -72,7 +72,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 
 - [页面信息架构](product-ui/01-information-architecture.md)（§2 一级导航；`P0`/`P1` 是切片深度不是侧栏可见性；项目详情六标签以 §4.3 为准）
 - [核心用户流程](product-ui/02-core-user-flows.md)
-- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 P1 只读工作流页）
+- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 P1 只读工作流目录页）
 
 ## 设计评审、冻结决策与开发任务
 

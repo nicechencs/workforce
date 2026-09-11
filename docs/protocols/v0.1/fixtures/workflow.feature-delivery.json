@@ -1,0 +1,55 @@
+{
+  "id": "software-development-team.feature-delivery",
+  "name": "Feature delivery",
+  "description": "Confirm a Plan Artifact, run two isolated Developer Tasks, integrate patches by stable Node ID, then Review and human artifact approval on one digest.",
+  "protocolVersion": "0.1",
+  "status": "published",
+  "activeVersionId": "0.1.0",
+  "versions": [
+    {
+      "id": "0.1.0",
+      "workflowId": "software-development-team.feature-delivery",
+      "version": "0.1.0",
+      "status": "published",
+      "immutable": true,
+      "entry": "planning",
+      "steps": [
+        {
+          "id": "planning",
+          "kind": "task",
+          "title": "规划",
+          "worker": "planner",
+          "gate": "plan",
+          "notes": ["产出 Plan Artifact", "发布 workflowVersion"]
+        },
+        {
+          "id": "implementation",
+          "kind": "task",
+          "title": "实现",
+          "worker": "developer",
+          "notes": ["并行", "节点模式 dev_*", "上游 outputs_ready", "不等待 reviewer 即可完成"]
+        },
+        {
+          "id": "integration",
+          "kind": "delivery",
+          "title": "整合",
+          "notes": ["按 stable Node ID 顺序", "独立 integration worktree", "冲突转人工"]
+        },
+        {
+          "id": "review",
+          "kind": "task",
+          "title": "审查",
+          "worker": "reviewer",
+          "notes": ["上游 outputs_ready", "绑定 integration digest"]
+        },
+        {
+          "id": "acceptance",
+          "kind": "approval",
+          "title": "验收",
+          "gate": "artifact",
+          "notes": ["绑定 integration digest"]
+        }
+      ]
+    }
+  ]
+}

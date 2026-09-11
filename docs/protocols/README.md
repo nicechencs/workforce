@@ -26,6 +26,7 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/event-envelope.schema.json` — Event 权威 envelope
 - `v0.1/money.schema.json` — `costMinor` + `currency`
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
+- `v0.1/workflow-catalog.schema.json` — P1 只读已发布工作流目录（模板 / 版本 / 结构化步骤）
 - `v0.1/fixtures/` — 可校验完整示例；概念节选不得放这里
 - `v0.1/ports.md` — M3 公共 ports 签名（T02 编码进 TypeScript）
 

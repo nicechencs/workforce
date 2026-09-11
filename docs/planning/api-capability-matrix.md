@@ -1,10 +1,10 @@
 # V0.1 页面与 API 能力矩阵
 
-日期：2026-09-10  
+日期：2026-09-11  
 状态：**已冻结（首版按钮与 endpoint）**  
 权威：[decision-register.md](decision-register.md) D08。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-页面范围补了一行 P1 壳导航说明，与 [IA §2](../product-ui/01-information-architecture.md) 对齐；**未新增 endpoint**。
+修订：2026-09-11 — 增补 P1 **只读**工作流目录 `GET /workflows`（及模板/版本详情）。无画布编辑器，不是可执行 Runtime。与 [IA §6.2](../product-ui/01-information-architecture.md) 对齐。
 
 图例：
 
@@ -37,7 +37,7 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | 页面 | M3 | 说明 |
 |---|---|---|
 | 运行记录列表 | 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
-| 工作流模板 / 版本 | readonly | IA P1；模板、版本、结构化步骤。无画布编辑器。矩阵未列目录 API，禁止前端发明 `GET /workflows` 并宣称已接通 |
+| 工作流模板 / 版本 | readonly | IA P1；只读目录：已发布模板、不可变版本、结构化步骤。查询 `GET /workflows`（及模板/版本详情）。无画布编辑器；目录不是可执行 Runtime，不得宣称 Mock/Codex 已执行这些定义 |
 
 明确后置或示意：
 
@@ -144,6 +144,10 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | GET | `/teams` | 必须 | 预设列表 |
 | GET | `/teams/{id}` | 必须 | 只读 Worker 版本 |
 | POST/PATCH `/teams` | — | later | 无写接口 |
+| GET | `/workflows` | readonly | P1 只读目录：已发布模板列表（含版本与结构化步骤）。数据来自已发布模板（如 software-dev feature-delivery），不是 Runtime 执行图 |
+| GET | `/workflows/{id}` | readonly | 单个已发布模板 |
+| GET | `/workflows/{id}/versions/{versionId}` | readonly | 不可变版本 + 结构化步骤 |
+| POST/PATCH `/workflows` | — | later | 无写接口；可视化编辑器仍为 later |
 | GET | `/projects/{id}/budget` | 必须 | 页头只读 + Settings；unknown/estimated/settled |
 | POST | `/projects/{id}/budget:raise` | M5 | 需 budget gate |
 

@@ -35,6 +35,8 @@ import type {
   TaskDto,
   TeamDto,
   VersionDto,
+  WorkflowDto,
+  WorkflowVersionDto,
   WorkspaceDto,
 } from "./types.js";
 
@@ -135,6 +137,18 @@ export class DesktopClient {
 
   getTeam(id: string): Promise<TeamDto> {
     return this.get(paths.team(id));
+  }
+
+  listWorkflows(query?: ListQuery): Promise<PageDto<WorkflowDto>> {
+    return this.get(paths.workflows(query));
+  }
+
+  getWorkflow(id: string): Promise<WorkflowDto> {
+    return this.get(paths.workflow(id));
+  }
+
+  getWorkflowVersion(id: string, versionId: string): Promise<WorkflowVersionDto> {
+    return this.get(paths.workflowVersion(id, versionId));
   }
 
   listNodes(query?: ListQuery): Promise<PageDto<NodeDto>> {

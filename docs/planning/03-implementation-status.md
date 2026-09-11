@@ -25,7 +25,7 @@
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob |
-| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流（模板·版本·结构化步骤，夹具；无画布编辑器）；项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
+| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流目录（`GET /workflows` 已发布模板·版本·结构化步骤；无画布编辑器，空目录诚实空态）；项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
@@ -105,14 +105,14 @@ Approval(gate=artifact)                     ✅
 重启保留 Policy grant                        ✅ SQLite `policy_grants`（与 `approvals` 分表；不写 world.json）
 ```
 
-壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的为「查看模板、版本和结构化步骤」，不用「管理」暗示画布。线框 §1 侧栏与 §7 只读页含「工作流」。实现仍是夹具只读；不发明 `GET /workflows`，不宣称真实 Runtime 可执行。
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的为「查看模板、版本和结构化步骤」，不用「管理」暗示画布。线框 §1 侧栏与 §7 只读页含「工作流」。只读目录已接通 `GET /workflows`（及模板/版本详情），数据来自已发布 software-dev feature-delivery 模板；不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。
 
 ## 5. 剩余工作
 
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
-4. 工作流目录 API（`GET /workflows`）仍薄；页面夹具不等于已发布 Runtime 或可编辑定义。  
+4. 工作流目录已提供只读 `GET /workflows`（及模板/版本详情）；仍无画布编辑器或写接口，目录接通不等于 Mock/Codex Runtime 可执行这些定义。  
 5. 项目详情 Tasks 依赖边、可写项目策略与远程节点范围仍缺公开 DTO/API，UI 只展示诚实空态或只读说明，未伪造已接入。  
 6. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。
 
