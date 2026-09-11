@@ -5,6 +5,7 @@ import { ID_PREFIX } from "@workforce/domain";
 import type { ApprovalGrant, GrantKey, GrantStore } from "@workforce/policy";
 
 import { cell, ifPresent, optionalText, requiredText } from "./sql.js";
+import type { SqliteUnitOfWork } from "./uow.js";
 
 const GRANT_COLUMNS = `
   id, action_type, digest, resource, version, principal_id, policy_version,
@@ -20,13 +21,45 @@ const GRANT_IDENTITY = `
  * Consumed rows are never cleared by put — fail-closed across restart.
  */
 export class SqliteGrantStore implements GrantStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly uow: SqliteUnitOfWork,
+  ) {}
 
   nextId(): string {
     return `${ID_PREFIX.approval}${randomBytes(10).toString("hex")}`;
   }
 
   async put(grant: ApprovalGrant): Promise<void> {
+    await this.uow.withTransaction(async () => {
+      this.insertGrant(grant);
+    });
+  }
+
+  async find(key: GrantKey): Promise<ApprovalGrant | undefined> {
+    const row = this.db
+      .prepare(`SELECT ${GRANT_COLUMNS} FROM policy_grants WHERE ${GRANT_IDENTITY}`)
+      .get(
+        key.actionType,
+        key.digest,
+        key.resource,
+        key.version ?? "",
+        key.principalId,
+        key.policyVersion,
+      );
+    return row ? rowToGrant(row) : undefined;
+  }
+
+  async consume(id: string, consumedAt: string): Promise<boolean> {
+    return this.uow.withTransaction(async () => {
+      const result = this.db
+        .prepare(`UPDATE policy_grants SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL`)
+        .run(consumedAt, id);
+      return Number(result.changes) === 1;
+    });
+  }
+
+  private insertGrant(grant: ApprovalGrant): void {
     const version = grant.version ?? "";
     this.db
       .prepare(
@@ -52,27 +85,6 @@ export class SqliteGrantStore implements GrantStore {
         grant.consumedAt ?? null,
         new Date().toISOString(),
       );
-  }
-
-  async find(key: GrantKey): Promise<ApprovalGrant | undefined> {
-    const row = this.db
-      .prepare(`SELECT ${GRANT_COLUMNS} FROM policy_grants WHERE ${GRANT_IDENTITY}`)
-      .get(
-        key.actionType,
-        key.digest,
-        key.resource,
-        key.version ?? "",
-        key.principalId,
-        key.policyVersion,
-      );
-    return row ? rowToGrant(row) : undefined;
-  }
-
-  async consume(id: string, consumedAt: string): Promise<boolean> {
-    const result = this.db
-      .prepare(`UPDATE policy_grants SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL`)
-      .run(consumedAt, id);
-    return Number(result.changes) === 1;
   }
 }
 

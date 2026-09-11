@@ -72,7 +72,7 @@ export class WorkforceSqlite {
     this.reservations = new SqliteReservationRepository(connection);
     this.resources = new SqliteResourceRepository(connection);
     this.inbox = new SqliteInbox(connection);
-    this.grants = new SqliteGrantStore(connection);
+    this.grants = new SqliteGrantStore(connection, this.uow);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {
