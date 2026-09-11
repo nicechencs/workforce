@@ -20,6 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@workforce/process": "workspace:*",
+    "@workforce/protocol": "workspace:*",
     "@workforce/runtime-sdk": "workspace:*",
     "@workforce/runtime-spi": "workspace:*"
   },

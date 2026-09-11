@@ -87,7 +87,7 @@ updated: 2026-09-11
 
 ### B · Codex live 三条风险
 
-对照 `runtimes/codex`。当前进度是探测 / describe / validate 已有，**`start` 仍拒绝**；Linux CI 机器没有 Codex CLI，也没有 live `exec` 证据。Mock HTTP 与 happy-dom 页 driver **不是** headed 真窗口，更不是 live Runtime。见 [测试证据边界](../guides/testing-and-validation.md#证据边界) 与进度 [§5](../planning/03-implementation-status.md#5-剩余工作)。
+对照 `runtimes/codex`。当前进度是探测 / describe / validate 已有，`start/stream/cancel` 可经注入的 captured Process 走通（fake / fixture，**不是** live CLI）；Linux CI 机器没有 Codex CLI，也没有 live `exec` 证据。Mock HTTP 与 happy-dom 页 driver **不是** headed 真窗口，更不是 live Runtime。见 [测试证据边界](../guides/testing-and-validation.md#证据边界) 与进度 [§5](../planning/03-implementation-status.md#5-剩余工作)。
 
 1. **Sandbox：** 对方 Workspace / sandbox hands 是隔离故事。本仓库 T03 记录的本机 Codex 默认 unrestricted；[D12](../planning/decision-register.md#d12-r12-policy-执行点) 要求无法实施的硬限制必须启动前拒绝。live 前要写清「我们能强制什么 / 必须拒什么」，不要假设已有同等沙箱。
 2. **Events：** Agent Server 事件流如何映射到 Runtime SPI 的 `stream` / cursor / `reconcile`（[07 §4](../blueprint/07-runtime-protocol.md#4-adapter-spi)、[D06](../planning/decision-register.md#d06-r06-事件序号与-sse-cursor)）。映射错了会把会话恢复当成 event cursor，或把对方 completed 写成 Task 验收。

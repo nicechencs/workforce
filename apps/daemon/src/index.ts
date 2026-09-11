@@ -6,7 +6,7 @@ export { startDaemon, parseDaemonArgs, isEntrypoint } from "./bootstrap/index.js
 export type { DaemonOptions, StartedDaemon } from "./bootstrap/index.js";
 export { FakeAppServices } from "./modules/fake-app-services.js";
 export type { AppServices } from "./modules/index.js";
-export { createComposedAppServices } from "./composition/index.js";
+export { createComposedAppServices, createComposedCodexRuntime } from "./composition/index.js";
 export type { ComposedAppServicesOptions } from "./composition/index.js";
 
 async function main(): Promise<void> {

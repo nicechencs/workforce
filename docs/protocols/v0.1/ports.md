@@ -86,8 +86,20 @@ interface WorkspaceService {
 
 interface ProcessController {
   spawn(req: SpawnRequest): Promise<ProcessHandle>;
+  spawnCaptured(req: CapturedSpawnRequest): Promise<CapturedProcess>;
   cancel(handle: ProcessHandle, mode: "graceful" | "force"): Promise<void>;
   inspect(handle: ProcessHandle): Promise<ProcessStatus>;
+}
+
+interface CapturedSpawnRequest extends SpawnRequest {
+  stdin?: Uint8Array;
+}
+
+interface CapturedProcess {
+  handle: ProcessHandle;
+  /** Single-consumer multiplexed stdout/stderr. Early return force-cancels. */
+  output: AsyncIterable<ProcessOutput>;
+  wait(): Promise<ProcessExitResult>;
 }
 
 interface PolicyEngine {

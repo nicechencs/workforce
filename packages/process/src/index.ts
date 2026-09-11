@@ -5,6 +5,7 @@ export type {
   CapturedProcess,
   CapturedSpawnRequest,
   ProcessCancelMode,
+  ProcessController,
   ProcessExitResult,
   ProcessHandle,
   ProcessOutput,

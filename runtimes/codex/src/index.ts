@@ -13,3 +13,5 @@ export { detectCodex, parseCodexVersion } from "./detect.js";
 export type { CodexDetection, DetectCodexOptions } from "./detect.js";
 export { CODEX_RAW_METADATA_MAX_BYTES, CodexJsonlDecoder } from "./jsonl.js";
 export type { CodexJsonlDecoderOptions } from "./jsonl.js";
+export { parseCodexResolvedStartContext } from "./start-context.js";
+export type { CodexResolvedStartContext, ResolveCodexStartContext } from "./start-context.js";
