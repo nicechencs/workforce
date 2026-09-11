@@ -27,5 +27,6 @@ describe("RunStatus", () => {
     const command = parseStartRunRequest(raw);
     expect(command.placement.executionNodeId).toMatch(/^ndl_/);
     expect(command.attempt).toBe(1);
+    expect(command.orchestrationMode).toBe("workflow_bound");
   });
 });

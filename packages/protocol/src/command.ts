@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { DEFAULT_ORCHESTRATION_MODE, orchestrationModeSchema } from "./orchestration.js";
+
 export const commandReceiptStatusSchema = z.enum(["pending", "committed", "failed"]);
 
 export const receiptScopeSchema = z
@@ -51,6 +53,7 @@ export const startRunRequestSchema = z
       })
       .strict(),
     snapshotRef: z.string().min(1),
+    orchestrationMode: orchestrationModeSchema.default(DEFAULT_ORCHESTRATION_MODE),
   })
   .strict();
 

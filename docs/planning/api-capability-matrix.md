@@ -4,7 +4,7 @@
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — T20 作者面壳 + 写 API 落草稿写入本矩阵对话行，仍**不发明** chat path。同日补 D19：Placement kind = `local`（默认）/ `remote` / `container`。本矩阵**不增加** enrollment、远程 lease 或 Docker/K8s path；`GET /nodes` 仍仅 Local Node。同日主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
+修订：2026-09-12 — T20 作者面壳 + 写 API 落草稿已在 main（#24 `edce1a4`）；会话协议仍 planned，**不发明** chat path。同日 D18 启动字段已由 T02 冻结为 `orchestrationMode`（`workflow_bound | direct`），位于现有 `StartRunRequest`；省略默认 `workflow_bound`。本矩阵**仍不增加** `/runs/{id}:direct`、chat 或其它新 Run path。M8 / T21 UI **未实现**。2026-09-11 — 补 D19：Placement kind = `local`（默认）/ `remote` / `container`。本矩阵**不增加** enrollment、远程 lease 或 Docker/K8s path；`GET /nodes` 仍仅 Local Node。同日主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）。
 
 **项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布或对话生成并编辑 Workflow」。M8 补齐「Agent 跟随已发布工作流或直接执行」。对话会话协议与双执行 **仍未实现**；T20 仅有作者面壳。
 
@@ -14,7 +14,7 @@
 - **M4**：真实 Codex 接入后
 - **M5**：治理全链路
 - **M7**：补齐项目制循环上的画布、自定义 Team 与对话生成草稿（产品必达；M3 之后领取，见 D15/D16/D17）
-- **M8**：按 Agent 双执行模式（workflow-bound / direct；产品必达；见 D18）。**未实现**，不发明 path
+- **M8**：按 Agent 双执行模式（`orchestrationMode`: `workflow_bound | direct`；产品必达；见 D18）。字段已冻结在 protocol；**UI / 调度未实现**，不发明 path
 - **later**：V0.1 后或不做（**不含**画布、自定义 Team、对话生成、双执行模式）
 - **readonly**：可展示，不可改（M3 过渡深度）
 - **unsupported**：探测后禁用
@@ -55,7 +55,7 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 
 | 页面/动作 | 处理 |
 |---|---|
-| 按 Agent 选择执行模式 | M8 planned（D18）。workflow-bound（跟随已发布 WorkflowVersion）或 direct（绕过该次图、即席执行）。靠 capability probe；无能力则禁用。不发明 `/runs/{id}:direct` |
+| 按 Agent 选择执行模式 | M8 planned（D18）。字段已冻结：`orchestrationMode` = `workflow_bound`（跟随已发布 WorkflowVersion）或 `direct`（绕过该次图、即席执行），位于现有 `StartRunRequest` / Run 启动命令。靠 capability probe；无能力则禁用。**不发明** `/runs/{id}:direct`。T21 UI **未实现** |
 
 仍后置或示意（与 D15/D16 无关）：
 
@@ -186,7 +186,7 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | PATCH | `/workflows/{id}/versions/{versionId}` | M7 | 画布保存未发布图 |
 | POST | `/workflows/{id}/versions/{versionId}:publish` | M7 | 发布不可变 WorkflowVersion；失败不得假装已发布 |
 
-对话生成（D17）与双执行模式（D18）**不在本表发明 path**。T02 冻结会话草稿 DTO / `executionMode`（或等价字段）之前，矩阵只保留上面的 planned 页面行。实现时优先复用已列的 M7 workflow 写接口与现有 `GET /capabilities` / Run 启动命令，而不是另开未登记的 chat 或 `:direct` 资源。
+对话生成（D17）**不在本表发明 path**。D18 启动字段已冻结为 `orchestrationMode`（`packages/protocol` `StartRunRequest`）；矩阵仍只保留 planned 页面行，**不增加** Run path。实现时优先复用已列的 M7 workflow 写接口与现有 `GET /capabilities` / Run 启动命令，而不是另开未登记的 chat 或 `:direct` 资源。会话草稿 DTO 仍待 T02/T20。
 
 ## 3. 错误与并发（T02 生成）
 
@@ -225,7 +225,7 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
 | 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话协议待 T02 | M7 planned（D17）。Desktop **作者面壳 + 写 API 落草稿**已有；**无冻结 chat path**，不得假 Agent 成功 |
 | 发布工作流版本 | `/workflows/{id}/versions/{versionId}:publish` | M7；有限 DAG 校验通过 |
-| 选择绑定工作流或直接执行 | 待 T02 的启动字段 + `GET /capabilities` | M8 planned（D18）。**未实现**。无能力则禁用 |
+| 选择绑定工作流或直接执行 | 现有 Run 启动命令上的 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。字段已冻结；T21 UI **未实现**。无能力则禁用。无新 path |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
 | 发布 Team 版本 | `/teams/{id}/versions/{versionId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
@@ -248,4 +248,5 @@ M8 必达——双执行模式（当前**未实现**；未领取前不要塞进�
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
 - T18 画布与 T19 Team 写面已在 main 接线；只读目录或作者面壳不得宣称画布 / 自定义 Team / M7 完成
-- T20 作者面壳不得渲染假 Agent 成功；T02 未冻结会话 DTO 前不发明 chat path。T21 未领取且 T02 未冻结 mode 字段前，不实现 direct 按钮；不得假 mode
+- T20 作者面壳不得渲染假 Agent 成功；T02 未冻结会话 DTO 前不发明 chat path
+- T21 未领取前不实现 direct / mode 选择按钮；`orchestrationMode` 已冻结不等于 M8 完成；不得假 mode

@@ -183,3 +183,19 @@ updated: 2026-09-12
 - **决定：** #21（T19 自定义 Team 写面 + 草稿 persist）已 squash 合入 `main` `0e2a156`（父提交为 T18 `6eeea107`）。同一 PR #24 继续 rebase 到该 tip：T18+T19 视为已在 main 实现（含各自 headed PASS 报告）；T20 仍只是作者面 UI 壳 + 已有 M7 write API 落未发布草稿。会话发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）。不发明 chat / enrollment / Docker / `executionMode` endpoint。不宣称 M7 / T21 / 对话编排完成，也不宣称 D19 远程/容器已实现。Test-bot 作者面壳 headed PASS 仅引用 `7f85c503` / `WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md`，不代替完整 headed 套件。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md)、[02-development-task-backlog.md](02-development-task-backlog.md)、[api-capability-matrix.md](api-capability-matrix.md)、[04-collab-and-review.md](04-collab-and-review.md) 去掉「T19 未实现 / 未领取」的现行概括；T20 保持 UI shell + write-API 草稿。
 - **状态：** T18 **implemented**（main）。T19 **implemented**（main）。T20 UI shell + 写 API 落草稿 **implemented**（叠 T19 tip）。会话协议、编排 Agent、T21、M7、D19 远程/容器 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）冻结 D18 `orchestrationMode`（非 T21 UI）
+
+- **决定：** 把 D18 双执行模式的可审计字段冻结为 **`orchestrationMode`**：`workflow_bound | direct`。权威位置是 `packages/protocol` 的 `StartRunRequest`。省略则默认 `workflow_bound`，与现有 M3 Mock / 夹具行为一致。未知值拒绝。旧名 `executionMode` 不是本字段，也不得表示 D19 Placement。**不发明** `/runs/{id}:direct` 或其它新 Run path。本切片不实现 T21 UI、假 mode 按钮、Daemon 新路由，也不宣称生产 Codex 已支持 direct。`StartRunHostRequest` 无扩展点，故不改 composition/daemon。
+- **文档影响：** [decision-register.md](decision-register.md) D08/D18 写明字段已冻结；[api-capability-matrix.md](api-capability-matrix.md) M8 planned 行命名该字段且不增 path；[03-implementation-status.md](03-implementation-status.md) T02/T21 诚实记录（字段冻结；T21 UI 未实现；M8 未完成）；[02-development-task-backlog.md](02-development-task-backlog.md) T21 字段依赖已满足；[04-collab-and-review.md](04-collab-and-review.md) 仍禁止随机 PR 塞假 mode 按钮；[docs/protocols](../protocols/README.md) 增加 `orchestration-mode.schema.json`。
+- **状态：** protocol 字段 **implemented**。T21 UI / M8 调度与生产 Codex direct **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）#25 rebase 到 T20 tip `edce1a4`
+
+- **决定：** #24（T20 作者面壳）已 squash 合入 `main` `edce1a4`。#25 rebase 到该 tip：同时保留 T20 UI shell + M7 写 API 落未发布草稿（chat 禁用至 session DTO）与 D18 `orchestrationMode` 协议冻结。作者面壳 headed 复测 **PASS**（`66a9c284` / `WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md`）。不发明 `/runs/{id}:direct` 或 chat path。不宣称对话生成、T21 UI、M8 或生产 Codex direct。D19 远程 enrollment / 容器 runner 仍 **未实现**。
+- **文档影响：** 冲突页（实现进度、任务清单、能力矩阵、协作评审、本历史）同时保留 T20 现行状态与 `orchestrationMode` 冻结表述。
+- **状态：** T20 UI shell **implemented**（main）。`orchestrationMode` 字段 **implemented**。会话协议 / 对话生成 / T21 UI / M8 / D19 runner **planned**。

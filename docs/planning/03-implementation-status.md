@@ -2,21 +2,21 @@
 
 日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-12 — T20 Desktop **UI shell + 写 API 落草稿**叠在已合入的 T19 tip（#21 / `0e2a156`，其父为 T18 `6eeea107`）。作者面「对话生成」在会话协议未冻结时禁用发送（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；结构化名称才走 `POST /workflows` 写入未发布草稿，并可深链 T18 画布路由。Test-bot 作者面壳 headed **PASS**（`7f85c503`，`WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md`）；**不**宣称完整 headed 套件或对话编排完成。T18 headed create/edit/save/publish **PASS**（`fbe13dea`）与 T19 headed 草稿持久化 **PASS**（`406ee6d2`）保留。M7 **未完成**。T21 / `executionMode` **未实现**。D19 远程 enrollment 与容器 runner **未实现**。
+修订：2026-09-12 — #25 rebase 到 T20 tip（#24 `edce1a4`）。T02 冻结 D18 `orchestrationMode`（`workflow_bound | direct`）于 `packages/protocol` `StartRunRequest`；缺省 `workflow_bound`。**不**宣称 T21 UI、M8 完成或生产 Codex direct。T20 Desktop **UI shell + 写 API 落草稿**已在 main：会话协议未冻结时禁用发送（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；结构化名称才走 `POST /workflows` 写未发布草稿。作者面壳 headed **PASS**（`66a9c284`，`WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md`；先前 `7f85c503` / `WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md` 仍可引用）。T18 headed create/edit/save/publish **PASS**（`fbe13dea`）与 T19 headed 草稿持久化 **PASS**（`406ee6d2`）保留。M7 **未完成**。D19 远程 enrollment 与容器 runner **未实现**。
 
 ## 1. 本轮目标与结果
 
-目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。M7 **写 API + 协议**已接通（#23 `15c058f`）。T18 画布 UI 已接线且草稿保存走同一套写 API；headed 真窗 create/edit/save/publish 已 **PASS**（`fbe13dea`，main `6eeea107`）。自定义 Team（T19）**桌面写面 UI + 草稿持久化已接线**（main `0e2a156`）；headed 草稿 save→reload **PASS**（`406ee6d2`）。T20 只有 Desktop **作者面壳 + 写 API 落草稿**，对话会话协议仍 **planned**。按 Agent 双执行模式是 **M8 已规划、未实现**。D19 Placement（本机默认；远程与容器）**产品模型已冻结、实现未完成**。不得把 T18 / T19 / T20 壳写成 M7 或对话编排完成，也不得发明 chat / `executionMode` / enrollment endpoint。happy-dom / proxy 仍不能代替其余真窗路径（目录对话框、SSE、Run 控制台）。
+目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。M7 **写 API + 协议**已接通（#23 `15c058f`）。T18 画布 UI 已接线且草稿保存走同一套写 API；headed 真窗 create/edit/save/publish 已 **PASS**（`fbe13dea`，main `6eeea107`）。自定义 Team（T19）**桌面写面 UI + 草稿持久化已接线**（main `0e2a156`）；headed 草稿 save→reload **PASS**（`406ee6d2`）。T20 只有 Desktop **作者面壳 + 写 API 落草稿**，对话会话协议仍 **planned**（chat 禁用至 session DTO）。按 Agent 双执行模式是 **M8 已规划、未实现**：T02 已冻结 `orchestrationMode` 字段；T21 UI **未实现**。D19 Placement（本机默认；远程与容器）**产品模型已冻结、实现未完成**。不得把 T18 / T19 / T20 壳写成 M7 或对话编排完成，也不得发明 chat / `:direct` / enrollment endpoint，不得宣称生产 Codex 已支持 direct。happy-dom / proxy 仍不能代替其余真窗路径（目录对话框、SSE、Run 控制台）。
 
-**HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是完整真窗口。T18 画布 create/edit/save/publish 与 T19 草稿 save→reload 已有 headed **PASS**；目录对话框、SSE、Run 控制台与项目详情六标签的真窗验收仍需要。Codex **未**做 live `exec`。
+**HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是完整真窗口。T18 画布 create/edit/save/publish、T19 草稿 save→reload 与 T20 作者面壳已有 headed **PASS**（T20 复测 `66a9c284`）；目录对话框、SSE、Run 控制台与项目详情六标签的真窗验收仍需要。不得把 T20 headed 壳写成对话生成可用。Codex **未**做 live `exec`。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
 | ID | 状态 | 证据 |
 |---|---|---|
-| T00 | 完成（项目制 + M7/M8 + D19 Placement 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned，仅有 UI shell）；D18 双执行模式（M8 planned）；D19 本机默认、远程与容器为一等 Placement。M7 **写 API + 协议**已接通。T18 画布 UI **已接线**，headed 真窗 create/edit/save/publish **PASS**（`fbe13dea`）。T19 桌面写面 + 草稿持久化 **已接线**，headed save→reload **PASS**（`406ee6d2`）。**未实现**会话协议 / 编排 Agent（T20 剩余）、双执行（T21）、远程 enrollment 与容器 runner。M7 未完成 |
+| T00 | 完成（项目制 + M7/M8 + D19 Placement 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned，仅有 UI shell）；D18 双执行模式（M8 planned；`orchestrationMode` 字段已冻结）；D19 本机默认、远程与容器为一等 Placement。M7 **写 API + 协议**已接通。T18 画布 UI **已接线**，headed 真窗 create/edit/save/publish **PASS**（`fbe13dea`）。T19 桌面写面 + 草稿持久化 **已接线**，headed save→reload **PASS**（`406ee6d2`）。**未实现**会话协议 / 编排 Agent（T20 剩余）、双执行 UI（T21）、远程 enrollment 与容器 runner。M7 未完成 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
-| T02 | 完成（M3 字段）+ M7 写契约扩展 | `packages/protocol` 公开 `TaskDto` / `dependsOn`；M7 扩展 draft/published `WorkflowDto`（nodes/edges 与现有 steps 同一协议）与 `TeamDto` / `TeamVersionDto` 写 payload。**仍无** chat session / 对话草稿 DTO / `executionMode` 字段。T20 只把该缺口记给 T02，不发明 OpenAPI |
+| T02 | 完成（M3 字段）+ M7 写契约扩展 + D18 `orchestrationMode` 冻结 | `packages/protocol` 公开 `TaskDto` / `dependsOn`；M7 扩展 draft/published `WorkflowDto`（nodes/edges 与现有 steps 同一协议）与 `TeamDto` / `TeamVersionDto` 写 payload。D18 启动字段 `orchestrationMode`（`workflow_bound \| direct`）已冻结在 `StartRunRequest`；省略默认 `workflow_bound`，未知值拒绝。**仍无** chat session / 对话草稿 DTO。无新 HTTP path。字段冻结 ≠ T21 UI / M8 |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
 | T04 | 完成库并接入 composition | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
@@ -34,8 +34,8 @@
 | T17 | 未开始 | 打包/签名 |
 | T18 | 画布 UI 已接线；草稿保存走写 API；headed 真窗 **PASS** | renderer 画布可新建/编辑/连线；保存调用 typed client `createWorkflow` / `createWorkflowVersion` / `patchWorkflow` / `patchWorkflowVersion`（协议 `entry`+`nodes`+`edges`，If-Match=`stateRevision`）。发布走 `publishWorkflowVersion`；空图/非法图诚实失败。未发布草稿不进 `GET /workflows` 列表，reload 走 `GET /workflows/{id}`。headed 真窗 create/edit/save/publish **PASS**（`WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，验证 head `fbe13dea`；已 squash 进 main `6eeea107`）。不宣称 Mock/Codex 可执行未发布图，也不宣称 M7 / T21 完成 |
 | T19 | **自定义 Team 编排 UI 已接线**；草稿写 API 已接通；headed 草稿持久化 **PASS** | #21 已 squash 进 main `0e2a156` + #23 写契约：可创建/编辑草稿（role + RuntimeProfile + quantity），`createTeam` / `patchTeam` / `createTeamVersion` / `patchTeamVersion` 真实持久化。默认 `GET /teams` 仍只含 published；reload 后草稿经 `GET /teams?status=draft` + `GET /teams/{id}` 拉回。Test-bot headed **PASS**（验证 head `406ee6d2`，`WORKFORCE-PR21-406ee6d2-DRAFT-PERSIST-RETEST.md`：save→reload 草稿仍在）。Publish / 自定义绑定仅在写 API 与规则允许时启用，**无假 publish/bind**。预设 Software Development Team 卡仍只读。不宣称完整 headed 套件，也不宣称 M7 / T21 完成 |
-| T20 | UI shell + 写 API 落草稿（会话协议仍 planned） | `features/workflow-authoring/` 作者面与 happy-dom 测试。工作流目录有「对话生成」入口：发送对话禁用并说明 T02 须冻结 session DTO（`CHAT_SESSION_PROTOCOL_FROZEN=false`）。结构化名称可走 `POST /workflows` + version 写接口落**未发布**草稿，失败保留输入。无假 Agent 回复、不发布、不执行。落草稿后深链 T18 画布路由 `/workflows/:id/versions/:versionId`。Test-bot 作者面壳 headed **PASS**（`7f85c503`，`WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md`）。**未实现**会话协议、编排 Agent、完整 headed 套件 |
-| T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `executionMode` 字段 |
+| T20 | UI shell + 写 API 落草稿（会话协议仍 planned） | `features/workflow-authoring/` 作者面与 happy-dom 测试。工作流目录有「对话生成」入口：发送对话禁用并说明 T02 须冻结 session DTO（`CHAT_SESSION_PROTOCOL_FROZEN=false`）。结构化名称可走 `POST /workflows` + version 写接口落**未发布**草稿，失败保留输入。无假 Agent 回复、不发布、不执行。落草稿后深链 T18 画布路由 `/workflows/:id/versions/:versionId`。Test-bot 作者面壳 headed **PASS**（`66a9c284`，`WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md`；先前 `7f85c503` / `WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md`）。**未实现**会话协议、编排 Agent、对话生成、完整 headed 套件 |
+| T21 | 已规划，未实现（UI） | 双执行模式（D18）。`orchestrationMode` **已冻结**在 protocol `StartRunRequest`。无 workflow-bound / direct 选择面，无 mode 按钮，无调度/HTTP 接线。不得把字段冻结写成 M8 完成或生产 Codex direct |
 
 ## 3. 实际验证
 
@@ -113,8 +113,9 @@ pnpm exec vitest run apps/desktop/src/renderer/features/workflow-authoring \
   apps/desktop/tests/workflow-authoring-write.test.ts
 pnpm --filter @workforce/desktop typecheck
 pnpm check:docs
-# Test-bot 作者面壳 headed PASS：WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md（验证 head 7f85c503）
-# 本轮 rebase 后未重跑完整 headed 套件；不宣称真窗口对话编排可用
+# Test-bot 作者面壳 headed PASS：WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md（验证 head 66a9c284）
+# 先前：WORKFORCE-PR24-7f85c503-AUTHORING-SHELL.md（验证 head 7f85c503）
+# 不宣称真窗口对话编排可用；会话发送仍禁用
 ```
 
 关键场景：
@@ -185,8 +186,8 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 3. **T17** 打包。  
 4. **M7 可视化画布（T18）UI 已接线，headed 真窗 PASS**：草稿保存走已合入 main 的 #23 写 API。Test-bot 真窗 create/edit/save/publish **PASS**（`WORKFORCE-PR22-fbe13dea-CANVAS-RETEST.md`，head `fbe13dea`；main `6eeea107`）。不宣称 M7 完成，也不宣称 Mock/Codex Runtime 可执行未发布图。  
 5. **M7 自定义 Team 编排（T19）UI + 草稿写 API 已接线**：可创建/编辑草稿并经 `createTeam` / `createTeamVersion` / `patch*` 持久化。默认 `GET /teams` 只回 published；列表 reload 走 `GET /teams?status=draft`，详情走 `GET /teams/{id}`。Publish / 自定义绑定仅在写 API 与规则允许时启用，**无假 publish/bind**。未发布 TeamVersion 不能 `:start-planning`。headed 真窗草稿持久化 **PASS**（验证 head `406ee6d2`，`WORKFORCE-PR21-406ee6d2-DRAFT-PERSIST-RETEST.md`；#21 squash 进 main `0e2a156`）。这不是完整 headed 套件，也**不是** M7 完成。不得再写「自定义 Team 写面未实现」「写 API 未落地」或「AI 团队仍只读预设」来概括本切片。  
-6. **M7 对话生成工作流（T20）未完成**：Desktop 作者面壳与写 API 落草稿已接通；**会话协议 / 编排 Agent 仍 planned**。不得把结构化落草稿或只读目录写成「对话编排已完成」，也不得渲染假 Agent 成功回复。T02 仍须冻结 session / 草稿 DTO 后才能宣称对话路径接通。
-7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode。  
+6. **M7 对话生成工作流（T20）未完成**：Desktop 作者面壳与写 API 落草稿已接通（#24 `edce1a4`）；headed 作者面壳 **PASS**（`66a9c284`，`WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md`）。**会话协议 / 编排 Agent / 对话生成仍 planned**。不得把结构化落草稿或只读目录写成「对话编排已完成」，也不得渲染假 Agent 成功回复。T02 仍须冻结 session / 草稿 DTO 后才能宣称对话路径接通。
+7. **M8 双执行模式（T21）未实现**：`orchestrationMode` 已冻结在 protocol；T21 UI / 调度 / 启动接线仍未做。Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图（缺省 `workflow_bound`）。不得预置假 mode，也不得宣称生产 Codex 已验证 direct。
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；容器 runner 未实现。UI 只读说明，未伪造已接入远程节点或已可调度容器。产品模型见 D19，**不是**实现完成。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。

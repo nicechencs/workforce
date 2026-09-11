@@ -6,6 +6,7 @@ export * from "./errors.js";
 export * from "./event.js";
 export * from "./expected-output.js";
 export * from "./money.js";
+export * from "./orchestration.js";
 export * from "./run.js";
 export * from "./task.js";
 export * from "./team.js";
