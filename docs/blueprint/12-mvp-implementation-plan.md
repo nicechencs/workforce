@@ -384,7 +384,7 @@ V0.1 只有在真实用户能够在至少一台 Windows、一台 macOS 和一台
 
 V0.1 保持本地优先，不实现完整远程集群，但必须：
 
-- 将本机建模为默认 ExecutionNode。
+- 将本机建模为默认 ExecutionNode（产品 Placement 默认 `local`，见 D19）。远程与容器是产品能力；V0.1 不实现控制面或容器 runner。
 - 允许 Local Node 在资源与策略上限内并发执行多个隔离 Run。
 - 每个 Run 记录 nodeId、RuntimeInstallation 和 WorkspaceInstance。
 - Scheduler 通过 Node/Runtime ports 工作，不直接假设本机进程。

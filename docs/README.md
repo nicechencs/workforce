@@ -81,7 +81,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [开发任务清单与 agent 交接模板](planning/02-development-task-backlog.md)
 - [实现进度（已验证）](planning/03-implementation-status.md)
 - [协作与评审流程](planning/04-collab-and-review.md)
-- [决策登记（项目制主对象；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
+- [决策登记（项目制主对象；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式；D19 本机默认，远程与容器为一等 Placement）](planning/decision-register.md)
 - [产品沟通历史](planning/communication-history.md)
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)

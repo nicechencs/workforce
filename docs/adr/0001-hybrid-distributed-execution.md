@@ -22,3 +22,7 @@
 ## 影响
 
 V0.1 需要增加 Local Node、RuntimeInstallation、WorkspaceInstance 和 node-aware Run 快照；远程 enrollment、heartbeat 和分布式 lease 可以只有契约与 Mock 测试。
+
+## 后续澄清（2026-09-11）
+
+不改写上列 Accepted 条款。产品 Placement kind 现冻结为 `local`（**默认**）/ `remote` / `container`，见 [D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)。本机与远程仍是同一 ExecutionNode 抽象；容器不是第四种机器。V0.1 只实现 Local Node 的条款仍有效；远程与容器是产品能力，不是「V0.1 不做」，也不是控制面/runner 已完成。

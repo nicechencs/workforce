@@ -71,3 +71,19 @@ updated: 2026-09-11
 - **决定：** 按 D15/D16 与能力矩阵补齐 Workflow / Team 的写契约与 Daemon 写路由，让后续画布（T18）与可写 Team UI（T19）有同一套 protocol，而不是第二套图协议。不发明 chat 或 `executionMode` endpoint（D17/D18 仍 planned）。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) 只把写 API / protocol / SQLite catalog 记为已验证；T18/T19 UI 仍未实现。协议索引增加 `team.schema.json`，并扩展 `workflow-catalog.schema.json` 的 draft + nodes/edges。
 - **状态：** 写 API + 协议 **implemented**（本切片）。画布、可写 Team UI、对话生成、双执行模式 **planned**。M7 **未完成**。
+
+---
+
+## 2026-09-11（Asia/Taipei）本机为默认执行位置；远程连接为一等产品能力
+
+- **决定：** 产品支持在用户**本机**工作，也支持经**远程连接**工作。**默认是本机**（本机 Workspace / Local Node）。远程不是「以后再说的 nicety」，也不是把 UI 假设永远锁在客户端所在电脑；它与本机共用 ExecutionNode 抽象。V0.1 实现深度不变：只做单用户 Local Node；远程 enrollment / heartbeat / 服务器 lease 仍是版本化契约 + Mock，不建服务器控制面，不发明矩阵未列的 enrollment endpoint，UI 不得伪造在线远程节点。
+- **文档影响：** [decision-register.md](decision-register.md) 冻结表、D07（默认 `local_only`、与 transport / D18 正交）与 **D19**（Placement kind `local`）；[01-information-architecture.md](../product-ui/01-information-architecture.md)、[02-core-user-flows.md](../product-ui/02-core-user-flows.md)、[03-p0-wireframes.md](../product-ui/03-p0-wireframes.md) 写明缺省本机、远程诚实显隐；[api-capability-matrix.md](api-capability-matrix.md) 只改注释，不增加 path；[03-implementation-status.md](03-implementation-status.md) 保持「远程未实现」；PRD §14 / 领域模型 §10 / Runtime §18 与 ADR 0001 对齐，不以蓝图覆盖 D19。
+- **状态：** 产品模型 **planned 已冻结**。本机 Local Node **已实现**（只读诊断 + worktree）。远程执行 **未实现**（契约/Mock）。
+
+---
+
+## 2026-09-11（Asia/Taipei）容器为一等执行 Placement
+
+- **决定：** 产品必须支持在**容器**中工作。容器是与本机、远程并列的 Placement kind（`container`），不是 D10 worktree 隔离的别名，也不是 `transport`，也不是把 core-user-flows「独立 worktree/目录/容器」一语当成已落地 runner。容器 Run 仍绑定某个 ExecutionNode（本机或远程宿主机）上的 WorkspaceInstance；`container` 不是第四种机器类型。
+- **文档影响：** [decision-register.md](decision-register.md) **D19** 冻结 `container`；D07 / D10 写明与 isolation、enrollment、控制面的边界；IA §4.7、核心流程 §2/§3、能力矩阵 later 表与实现进度写明 runner **未实现**，不发明 Docker / K8s / 编排 endpoint。本条不领取画布 UI / 可写 Team UI，不改 Daemon。M7 写 API + 协议已由 #23 接通，本条不回退该结论，也不把写接口写成画布或 M7 完成。
+- **状态：** 产品模型 **planned 已冻结**。容器 runner / 编排 **未实现**。不得写成已完成。

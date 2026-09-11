@@ -2,7 +2,7 @@
 
 日期：2026-09-11  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-11 — M7 **写 API + 协议**切片：`POST/PATCH /workflows` 与 version/` :publish`、`POST/PATCH /teams` 与 version/` :publish`、`GET /teams/{id}/versions/{versionId}`；SQLite `catalog_*` 持久化；未发布图不可执行、未发布 TeamVersion 不可 `:start-planning` bind。**不**宣称画布 UI（T18）、可写 Team UI（T19）、对话生成（T20）或双执行模式（T21）已完成，也不宣称 M7 完成。#16–#19 已验证结论仍有效。
+修订：2026-09-11 — M7 **写 API + 协议**切片（#23）：`POST/PATCH /workflows` 与 version/` :publish`、`POST/PATCH /teams` 与 version/` :publish`、`GET /teams/{id}/versions/{versionId}`；SQLite `catalog_*` 持久化；未发布图不可执行、未发布 TeamVersion 不可 `:start-planning` bind。**不**宣称画布 UI（T18）、可写 Team UI（T19）、对话生成（T20）或双执行模式（T21）已完成，也不宣称 M7 完成。同日规划冻结 D19 执行 Placement（本机默认；远程与容器为一等能力）。**实现深度不变**：已验证的是 Local Node + 独立 worktree；远程 enrollment 与容器 runner **未实现**，不得把本文件写成远程/容器执行已完成。#16–#19 已验证结论仍有效。
 
 ## 1. 本轮目标与结果
 
@@ -14,7 +14,7 @@
 
 | ID | 状态 | 证据 |
 |---|---|---|
-| T00 | 完成（项目制 + M7/M8 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned）；D18 双执行模式（M8 planned）。**未实现**这些 UI/API |
+| T00 | 完成（项目制 + M7/M8 + D19 Placement 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned）；D18 双执行模式（M8 planned）；D19 本机默认、远程与容器为一等 Placement。M7 **写 API + 协议**已接通。**未实现**画布 UI（T18）、可写 Team UI（T19）、对话（T20）、双执行（T21）、远程执行与容器 runner。M7 未完成 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段）+ M7 写契约扩展 | `packages/protocol` 公开 `TaskDto` / `dependsOn`；M7 扩展 draft/published `WorkflowDto`（nodes/edges 与现有 steps 同一协议）与 `TeamDto` / `TeamVersionDto` 写 payload。无 chat / `executionMode` 字段 |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
@@ -149,7 +149,7 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 5. **M7 自定义 Team 编排 UI（T19）未实现**：写接口已接通；AI 团队页仍只读预设。未发布 TeamVersion 不能 `:start-planning` bind。  
 6. **M7 对话生成工作流（T20）未实现**：无对话入口，无生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。  
 7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode。  
-8. 可写项目策略与远程节点 enrollment 仍无公开 API；UI 只读说明，未伪造已接入。  
+8. 可写项目策略与远程节点 enrollment 仍无公开 API；容器 runner 未实现。UI 只读说明，未伪造已接入远程节点或已可调度容器。产品模型见 D19，**不是**实现完成。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。
 

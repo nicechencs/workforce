@@ -198,11 +198,12 @@ V0.1 成功不是功能数量，而是以下闭环可重复运行：
 
 ## 14. 混合与分布式执行补充
 
-Workforce 的长期产品形态是统一控制本机与远程服务器上的 Agent。客户端负责项目、团队、任务、审批和观测；实际执行由一个或多个 Execution Node 完成。
+Workforce 的产品形态是统一控制本机、远程连接与容器中的 Agent。客户端负责项目、团队、任务、审批和观测；实际执行由一个或多个 Execution Node 完成。产品默认在**本机**工作。
 
-- 本机与远程服务器使用相同的 Execution Node 抽象。
+- 本机与远程服务器使用相同的 Execution Node 抽象。容器是一等 Placement，仍绑定某个 Node 上的 WorkspaceInstance（[D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)）。
 - 一台 Execution Node 可以安装多个 Runtime，并并发执行多个相互隔离的 Run。
 - Worker 是角色配置，Runtime 是执行引擎，Execution Node 是实际机器，三者必须解耦。
 - Git/GitHub 用于代码和文档等 Artifact 的版本化协同；Task、Event 和结构化 Message 用于信息协同。
-- V0.1 仅实现 Local Node，但核心模型、协议和 UI 不得假设执行一定发生在客户端所在机器。
-- 多服务器调度、远程节点注册、故障转移和跨节点 Agent 通信属于后续阶段。
+- **默认本机。** 新项目 / Workspace / Placement 缺省绑定 Local Node。
+- V0.1 **实现**仅 Local Node + worktree。远程与容器是已冻结的产品能力（契约/Mock 或 planned），不是 later nicety；也不得写成 runner/控制面已完成。
+- 远程节点控制面、多服务器故障转移和容器编排实现属于后续实现阶段，不回退 D19 的产品模型。

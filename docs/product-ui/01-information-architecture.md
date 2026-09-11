@@ -3,7 +3,7 @@
 **版本：** V0.1 Draft  
 **状态：** Product UI baseline（§1 项目制主对象；§4.3 为项目详情现行规范；§4.6 / §6.2 服务项目循环；§6.2 / §4.6 含 D17/D18 planned）  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — 产品主对象定为**项目制**（决策登记 §0）：围着一个 Project 编排 Team、Tasks、Workflow（含自定义 Team 与画布）。D15/D16 是该循环的必达环节，不是外挂。只读 `GET /workflows` 是已接通的 M3 过渡切片。同日补 D17 对话生成工作流、D18 按 Agent 双执行模式（均 **planned / 未实现**）。§4.3.2：已发布执行图的公开 Task DTO 必须返回 `dependsOn`；UI 展示真实依赖边，字段缺失时才写“依赖：未返回”。2026-09-10 — §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性；一级导航全部出现在左侧栏。§4.3 从“建议标签”改为现行条款，并消解与线框 §3 的冲突。
+**修订：** 2026-09-11 — 补 D19：执行位置默认**本机**；远程与容器是一等 Placement，V0.1 不得伪造在线远程节点或可点成功的容器调度。同日产品主对象定为**项目制**（决策登记 §0）：围着一个 Project 编排 Team、Tasks、Workflow（含自定义 Team 与画布）。D15/D16 是该循环的必达环节，不是外挂。只读 `GET /workflows` 是已接通的 M3 过渡切片。同日补 D17 对话生成工作流、D18 按 Agent 双执行模式（均 **planned / 未实现**）。§4.3.2：已发布执行图的公开 Task DTO 必须返回 `dependsOn`；UI 展示真实依赖边，字段缺失时才写“依赖：未返回”。2026-09-10 — §2：`P0`/`P1` 是交付切片深度，不是侧栏可见性；一级导航全部出现在左侧栏。§4.3 从“建议标签”改为现行条款，并消解与线框 §3 的冲突。
 
 ## 1. 设计目标
 
@@ -25,7 +25,7 @@
 5. Agent 修改了什么，产生了哪些 Artifact？
 6. 失败后应该重试、换节点、重新分配还是接管？
 
-UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime 和 Execution Node 混为一个对象。
+默认执行位置是**本机**（Local Node / 本机 Workspace）。产品模型同时支持远程连接与容器（[D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)）；UI 不得假设执行永远只能发生在客户端所在电脑，也不得把未接通的远程/容器画成已在线。不把 Worker、Runtime 和 Execution Node 混为一个对象。
 
 ## 2. 一级导航
 
@@ -34,7 +34,7 @@ UI 不假设执行发生在客户端所在电脑，也不把 Worker、Runtime �
 | 工作台 | Project、Run、Approval、Node | 掌握全局状态与下一步行动 | P0 |
 | 项目 | Project、Team、Workflow、Task、Artifact | **主对象**：创建项目，并在其中编排团队、任务与工作流、推进验收 | P0 |
 | AI 团队 | Team、Worker、Role、RuntimeProfile | 为项目编排数字员工团队（M3 只读预设；M7 自定义）。服务项目循环，不是独立 HR 产品 | P0 |
-| 执行节点 | ExecutionNode、RuntimeInstallation、Capacity | 查看本机与服务器执行能力 | P0 |
+| 执行节点 | ExecutionNode、RuntimeInstallation、Capacity | 查看本机（默认）、远程与容器执行能力；V0.1 只诚实展示 Local Node | P0 |
 | 审批中心 | Approval、PolicyDecision | 集中处理人工决策 | P0 |
 | 运行记录 | Run、Event、Usage | 查询执行历史和诊断问题 | P1 |
 | 工作流 | WorkflowDefinition、WorkflowVersion | 为项目编排并发布可复用工作流（M3 只读目录；M7 对话生成 + 可视化画布）。服务项目循环，不是独立 IDE | P1 |
@@ -123,7 +123,7 @@ flowchart TD
 | `activity` | Activity | Project Event 时间线 | 空列表时伪造“最近动态” |
 | `settings` | Settings | WorkspaceBinding 写入、预算说明、策略说明 | 把开始规划/确认计划/开始执行藏进本标签 |
 
-V0.1 诚实空态：已发布执行图的公开 Task DTO **必须**返回 `dependsOn`（可为空数组；`waitFor` 为 `outputs_ready` 或 `completed`）。Tasks 标签展示真实依赖边，不编造未返回的 DAG。仅当字段缺失（旧客户端/夹具）时写“依赖：未返回”。公开 API 未提供可写项目策略时只读说明，不假装保存成功；节点范围在仅 Local Node 时标明本机，不伪造远程节点可选。不发明可写项目策略 API 或远程节点 enrollment。
+V0.1 诚实空态：已发布执行图的公开 Task DTO **必须**返回 `dependsOn`（可为空数组；`waitFor` 为 `outputs_ready` 或 `completed`）。Tasks 标签展示真实依赖边，不编造未返回的 DAG。仅当字段缺失（旧客户端/夹具）时写“依赖：未返回”。公开 API 未提供可写项目策略时只读说明，不假装保存成功；节点范围默认标明本机。远程与容器是产品能力，但 V0.1 未接通时不得做成可选项成功态，也不得伪造在线远程节点。不发明可写项目策略 API、远程节点 enrollment 或容器编排 endpoint。
 
 #### 4.3.3 深链
 
@@ -198,14 +198,14 @@ Task 页面展示“应该做什么”；Runtime 原始日志放在 Run 页面�
 
 ### 4.7 执行节点
 
-- Local/Remote/Enterprise 类型
+- Local / Remote / Enterprise 节点类型；产品 Placement 另有 `local`（默认）/ `remote` / `container`（D19）
 - online、draining、offline、revoked 状态
 - 平台、容量、资源使用和最大并发
 - RuntimeInstallation inventory
 - 当前 Run
 - 诊断、drain 和 revoke 操作
 
-V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续能力。
+V0.1 **实现深度**：默认 Local Node + 只读诊断。远程与容器是已冻结的产品能力，不是 later nicety；enrollment、drain/revoke、容器 runner **尚未实现**。未接通前只展示本机，或把远程/容器标成不可用，禁止假在线、假成功。
 
 ### 4.8 审批中心
 

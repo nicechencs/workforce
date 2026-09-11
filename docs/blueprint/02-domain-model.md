@@ -433,7 +433,7 @@ System Architecture 必须基于本模型划分以下组件：
 
 ## 10. Execution Node 与执行位置模型
 
-Execution Node 是能够承载 Runtime 和 Run 的机器级执行主体。本机与远程服务器使用同一模型。
+Execution Node 是能够承载 Runtime 和 Run 的机器级执行主体。本机与远程服务器使用同一模型。产品 Placement kind 为 `local`（默认）/ `remote` / `container`，权威见 [D19](../planning/decision-register.md#d19-执行-placement本机远程与容器)；下列 TypeScript 是概念节选，不是 T02 已冻结的 DTO。
 
 ```ts
 interface ExecutionNode {
@@ -485,4 +485,4 @@ interface ExecutionLease {
 
 Run 增加不可变的 `nodeId`、`runtimeInstallationId` 和 `placementSnapshot`。一个 Node 可承载多个 RuntimeInstallation 和并发 Run；每个 Run 必须拥有独立 WorkspaceInstance、进程树、PermissionGrant、日志流和资源配额。同一时刻一个 Run 只能由一个有效 ExecutionLease 执行。
 
-Workspace 拆分为逻辑 `WorkspaceBinding`、节点上的 `WorkspaceInstance` 和运行时不可变 `WorkspaceSnapshot`。RuntimeProfile 不再通过 executionMode 表达机器位置；进程、SDK、HTTP 是 Runtime transport，本地或远程是 Placement。
+Workspace 拆分为逻辑 `WorkspaceBinding`、节点上的 `WorkspaceInstance` 和运行时不可变 `WorkspaceSnapshot`。RuntimeProfile 不再通过 executionMode 表达机器位置。正交轴：`transport` 为 `process | sdk | http`；Placement **intent mode** 为 `automatic | local_only | remote_only | specific_node`（系统默认 `local_only`）；Placement **kind** 为 `local | remote | container`（产品默认 `local`）。`Workspace.kind` / `isolation` 里的 `"container"` 与 `RuntimeProfile.executionMode` 不得读成 D19 已实现的容器 runner。`container` kind 不是第四种 `ExecutionNode.kind`。

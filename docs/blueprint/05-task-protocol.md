@@ -730,4 +730,4 @@ interface TaskPlacement {
 }
 ```
 
-Task 只表达 placement intent；最终 `nodeId`、`runtimeInstallationId`、资源分配和 WorkspaceInstance 记录在 Run 快照。调度失败必须区分无匹配节点、容量不足、Runtime 不可用、Workspace 不可达和策略拒绝。
+Task 只表达 placement intent（mode 默认按 D07 解析为 `local_only`）；最终 `nodeId`、`runtimeInstallationId`、资源分配和 WorkspaceInstance 记录在 Run 快照。`isolation?: "container"` 不是 [D19](../planning/decision-register.md#d19-执行-placement本机远程与容器) 已实现的容器 Placement。调度失败必须区分无匹配节点、容量不足、Runtime 不可用、Workspace 不可达和策略拒绝。未接通的远程/容器必须拒绝，不得假成功。
