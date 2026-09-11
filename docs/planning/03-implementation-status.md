@@ -67,6 +67,20 @@ pnpm check:docs
 pnpm check:docs
 ```
 
+M7 写 API + 协议切片（Linux，2026-09-11；`20931f0`）：
+
+```text
+pnpm format:check     # 退出 0
+pnpm lint             # 退出 0（修了 routes.ts unused binding）
+pnpm typecheck        # 退出 0（M3 client 按 optional steps 读取）
+pnpm check:docs       # 退出 0
+pnpm build            # 退出 0
+pnpm test             # 本机 Node v22.14.0 全量 isolate 曾超时/环境失败；过滤重跑
+                      # workflow-team-writes / composition / m3-mock-client /
+                      # approval-command-governance / workflows-catalog-proxy 通过
+GitHub Actions pull-request on 20931f0  # success（ubuntu-latest / Node 22）
+```
+
 关键场景：
 
 1. **Daemon HTTP M3**（`apps/daemon/tests/composition.test.ts`）  
@@ -94,7 +108,7 @@ pnpm check:docs
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist + `apps/desktop/tests/workflows-catalog-proxy.test.ts`）  
-   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET（写接口仍拒）。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
+   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET，以及矩阵上的 Workflow/Team 写 path（`POST/PATCH`、version、`:publish`）和 `GET /teams/{id}/versions/{versionId}`。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
 
 6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
