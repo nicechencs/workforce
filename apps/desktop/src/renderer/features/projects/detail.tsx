@@ -29,6 +29,14 @@ import {
   type TeamView,
   type TeamWriteSupport,
 } from "../teams/model.js";
+import {
+  OrchestrationModeControl,
+  buildStartProjectInput,
+  DEFAULT_MODE,
+  probeOrchestrationSupport,
+  resolveSelectedMode,
+  type OrchestrationMode,
+} from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
@@ -103,6 +111,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [teamWrite, setTeamWrite] = useState<TeamWriteSupport>(unavailableTeamWriteSupport);
   const [bindBusy, setBindBusy] = useState(false);
   const [bindError, setBindError] = useState<string | null>(null);
+  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
 
   const reload = useCallback(
     async (keepInput: boolean) => {
@@ -218,7 +227,15 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         );
         setProject(next);
       } else if (id === "startProject") {
-        const next = await client.startProject(project.id, opts);
+        const start = buildStartProjectInput(
+          orchestrationMode,
+          probeOrchestrationSupport({ capabilities }),
+        );
+        if (!start.ok) {
+          setError(start.error);
+          return;
+        }
+        const next = await client.startProject(project.id, opts, start.input);
         setProject(next);
       } else if (id === "cancel") {
         const result = await client.cancelProject(project.id, opts);
@@ -395,6 +412,15 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         {project.objective} · 团队 {selectedTeam.name} · 工作区 {publicWorkspaceLabel(grant)} ·{" "}
         {budget}
       </p>
+      <OrchestrationModeControl
+        selected={resolveSelectedMode(
+          orchestrationMode,
+          probeOrchestrationSupport({ capabilities }),
+        )}
+        probe={probeOrchestrationSupport({ capabilities })}
+        disabled={busy !== null}
+        onChange={setOrchestrationMode}
+      />
 
       <nav style={tabListStyle} data-testid="project-detail-tabs" aria-label="项目详情">
         {PROJECT_DETAIL_TABS.map((id) => (

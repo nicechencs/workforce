@@ -11,6 +11,8 @@ import {
   parseWorkflowVersionWrite,
 } from "@workforce/protocol";
 
+import { parseStartOrchestrationMode } from "../modules/orchestration.js";
+
 import { AppError } from "../modules/errors.js";
 import type { AppServices, CommandContext, ListQuery } from "../modules/index.js";
 import type { IdFactory } from "../modules/ids.js";
@@ -238,10 +240,17 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
   });
   registerProjectCommand(app, cmd, "start", (ctx, id, body) => {
-    rejectUnknownFields(body, ["operationId", "budgetHardLimitMinor"]);
-    const input: { budgetHardLimitMinor?: number } = {};
+    rejectUnknownFields(body, ["operationId", "budgetHardLimitMinor", "orchestrationMode"]);
+    const input: {
+      budgetHardLimitMinor?: number;
+      orchestrationMode?: "workflow_bound" | "direct";
+    } = {};
     const budget = optionalInt(body, "budgetHardLimitMinor");
     if (budget !== undefined) input.budgetHardLimitMinor = budget;
+    const orchestrationMode = parseStartOrchestrationMode(
+      optionalString(body, "orchestrationMode"),
+    );
+    if (orchestrationMode !== undefined) input.orchestrationMode = orchestrationMode;
     return deps.services.startProject(ctx, id, input);
   });
   registerProjectCommand(app, cmd, "export", (ctx, id, body) => {

@@ -30,6 +30,11 @@ export interface CapabilitiesDto {
     resume: boolean;
     archive: boolean;
   };
+  /** D18 probe. Missing or `direct: false` means the UI must disable direct. */
+  orchestration?: {
+    workflowBound?: boolean;
+    direct?: boolean;
+  };
 }
 
 export type { TaskDependency, TaskDto } from "@workforce/protocol";
@@ -163,6 +168,8 @@ export interface ConfirmPlanInput {
 
 export interface StartProjectInput {
   budgetHardLimitMinor?: number;
+  /** Existing `:start` body. Omit → workflow_bound. Not a new Run path. */
+  orchestrationMode?: "workflow_bound" | "direct";
 }
 
 export interface CancelInput {

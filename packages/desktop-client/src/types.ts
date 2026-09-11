@@ -30,6 +30,11 @@ export interface CapabilitiesDto {
     resume: boolean;
     archive: boolean;
   };
+  /** D18 probe. Missing or `direct: false` disables the UI success path. */
+  orchestration?: {
+    workflowBound?: boolean;
+    direct?: boolean;
+  };
 }
 
 export type { TaskDependency, TaskDto } from "@workforce/protocol";
@@ -184,6 +189,8 @@ export interface ConfirmPlanInput {
 
 export interface StartProjectInput {
   budgetHardLimitMinor?: number;
+  /** Frozen D18 field on the existing `:start` command. Omit → workflow_bound. */
+  orchestrationMode?: "workflow_bound" | "direct";
 }
 
 export interface CancelInput {

@@ -1,7 +1,7 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 仅有 Desktop UI shell + 写 API 落草稿，会话协议仍 planned，不得写成对话编排完成。T21 UI 未实现**（T02 已冻结 `orchestrationMode`，字段依赖已满足）。
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 仅有 Desktop UI shell + 写 API 落草稿，会话协议仍 planned，不得写成对话编排完成。T21 Desktop UI 切片已接线**（字段依赖已满足；M8 / headed / 生产 Codex direct 未完成）。
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -84,7 +84,7 @@ flowchart TD
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
 | T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通。UI shell 已开工，会话协议仍是缺口 | 高 / 中 |
-| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 已冻结 `orchestrationMode`（字段依赖已满足）；领取 UI/调度时不与 T13/T19 同改同一文件 | 高 / 中 |
+| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 已冻结 `orchestrationMode`；Desktop UI 切片已接线。领取调度时不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
@@ -394,7 +394,7 @@ flowchart TD
 - workflow-bound：只执行已确认 `WorkflowVersion` 中轮到的节点。
 - direct：即席执行当前目标，仍走 Policy、Workspace、预算、Approval；不是 Renderer 直接 spawn。
 - 模式写入新 Run 的可审计字段；重试新 Run，不改旧 Run。
-- T02 已冻结 `orchestrationMode`；仍不发明 `/runs/{id}:direct`，不渲染假 mode。字段冻结不是本卡验收。
+- T02 已冻结 `orchestrationMode`；Desktop UI 切片已接线。仍不发明 `/runs/{id}:direct`，不渲染假 mode。M8 调度不是本切片验收。
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 

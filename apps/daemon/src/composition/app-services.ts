@@ -75,6 +75,7 @@ import type {
   PatchWorkflowVersionInput,
 } from "../modules/dto.js";
 import { AppError } from "../modules/errors.js";
+import { assertStartOrchestrationAllowed } from "../modules/orchestration.js";
 import type { AppServices, CommandResult } from "../modules/index.js";
 import { paginate } from "../modules/paginate.js";
 import {
@@ -317,6 +318,10 @@ export class ComposedAppServices implements AppServices {
         pause: false,
         resume: false,
         archive: false,
+      },
+      orchestration: {
+        workflowBound: true,
+        direct: false,
       },
     };
   }
@@ -755,6 +760,7 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
+      assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
       await this.policy.assertStartAllowed({
         runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
         resource: `project:${project.id}`,
