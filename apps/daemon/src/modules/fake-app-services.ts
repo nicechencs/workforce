@@ -886,6 +886,7 @@ export class FakeAppServices implements AppServices {
       cancelRequested: false,
       createdAt: ts,
       updatedAt: ts,
+      dependsOn: [],
     };
     this.tasks.set(task.id, { dto: task });
     this.insertRun(task, ctx, "waiting_input");

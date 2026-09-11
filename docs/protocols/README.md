@@ -27,7 +27,8 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/money.schema.json` — `costMinor` + `currency`
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
 - `v0.1/workflow-catalog.schema.json` — P1 只读已发布工作流目录（模板 / 版本 / 结构化步骤）
+- `v0.1/task.schema.json` — 公开 `TaskDto`，含已发布 DAG 的 `dependsOn`
 - `v0.1/fixtures/` — 可校验完整示例；概念节选不得放这里
-- `v0.1/ports.md` — M3 公共 ports 签名（T02 编码进 TypeScript）
+- `v0.1/ports.md` — M3 公共 ports 签名（T02 编码进 TypeScript）；ArtifactStore 权威与 Task `dependsOn` 映射
 
 生成器就绪后，schema 由代码生成覆盖手写副本；fixture 仍作为 contract 测试输入。

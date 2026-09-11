@@ -305,8 +305,22 @@ export function taskOwnerLabel(task: Pick<TaskDto, "role">): string {
   return task.role && task.role.length > 0 ? task.role : "未指定";
 }
 
-export function taskDependencyLabel(): string {
-  return "依赖：未返回";
+export function taskDependencyLabel(
+  task?: Pick<TaskDto, "dependsOn">,
+  tasks: Array<Pick<TaskDto, "id" | "title" | "workflowNodeId">> = [],
+): string {
+  if (!task || task.dependsOn === undefined) {
+    return "依赖：未返回";
+  }
+  if (task.dependsOn.length === 0) {
+    return "依赖：无";
+  }
+  const labels = task.dependsOn.map((edge) => {
+    const upstream = tasks.find((item) => item.id === edge.taskId);
+    const name = upstream?.workflowNodeId ?? upstream?.title ?? edge.taskId;
+    return `${name}（${edge.waitFor}）`;
+  });
+  return `依赖：${labels.join("、")}`;
 }
 
 export function emptyTasksCopy(status: string): string {

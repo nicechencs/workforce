@@ -333,7 +333,14 @@ describe("composed M3 mock loop", () => {
       const listed = await json(port, `/api/v1/tasks?projectId=${project.id}`, { headers: auth });
       const items = (
         listed.body as {
-          items: Array<{ title: string; role?: string; workflowNodeId?: string; status: string }>;
+          items: Array<{
+            id: string;
+            title: string;
+            role?: string;
+            workflowNodeId?: string;
+            status: string;
+            dependsOn?: Array<{ taskId: string; waitFor: string }>;
+          }>;
         }
       ).items;
       const ids = items.map((item) => item.workflowNodeId ?? item.title);
@@ -355,6 +362,16 @@ describe("composed M3 mock loop", () => {
           (task.workflowNodeId ?? task.title) === "review_integration",
       ),
     ).toBe(true);
+    const byNode = new Map(tasks.map((task) => [task.workflowNodeId ?? task.title, task] as const));
+    const alpha = byNode.get("dev_alpha");
+    const bravo = byNode.get("dev_bravo");
+    const review = byNode.get("review_integration");
+    expect(alpha?.dependsOn).toEqual([]);
+    expect(bravo?.dependsOn).toEqual([]);
+    expect(review?.dependsOn?.map((edge) => edge.taskId).sort()).toEqual(
+      [alpha?.id, bravo?.id].filter((id): id is string => typeof id === "string").sort(),
+    );
+    expect(review?.dependsOn?.every((edge) => edge.waitFor === "outputs_ready")).toBe(true);
 
     await poll(async () => {
       const listed = await json(port, `/api/v1/runs?projectId=${project.id}`, { headers: auth });
@@ -456,13 +473,13 @@ describe("composed M3 mock loop", () => {
     const reviewTasks = await json(port, `/api/v1/tasks?projectId=${project.id}`, {
       headers: auth,
     });
-    const review = (
+    const reviewTask = (
       reviewTasks.body as {
         items: Array<{ workflowNodeId?: string; title: string; status: string }>;
       }
     ).items.find((item) => (item.workflowNodeId ?? item.title) === "review_integration");
     if (finished.status === "running") {
-      expect(review?.status).toBe("waiting_review");
+      expect(reviewTask?.status).toBe("waiting_review");
     } else {
       expect(finished.status).toBe("completed");
     }
@@ -1136,6 +1153,133 @@ describe("composed M3 mock loop", () => {
     });
     expect(hardBudget.status).toBe(422);
     expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
+  }, 20_000);
+
+  it("keeps Task dependsOn and artifact bytes after world.json is deleted", async () => {
+    const first = await startComposed();
+    const { daemon, auth, stateDir } = first;
+    const port = daemon.port;
+    const created = await json(port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-art-auth"),
+      body: JSON.stringify({
+        name: "Artifact authority",
+        objective: "store bytes outside world.json",
+        operationId: "op_art_auth_create",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string; stateRevision: number };
+    const workspace = await json(port, `/api/v1/projects/${project.id}/workspaces`, {
+      method: "POST",
+      headers: commandHeaders(auth, "ws-art-auth", project.stateRevision),
+      body: JSON.stringify({ authorizationRef: "desktop-picker-ref", operationId: "op_art_ws" }),
+    });
+    expect(workspace.status).toBe(201);
+    const afterWs = await json(port, `/api/v1/projects/${project.id}`, { headers: auth });
+    const draft = afterWs.body as { stateRevision: number };
+    const planned = await json(port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-art-auth", draft.stateRevision),
+      body: JSON.stringify({ operationId: "op_art_plan" }),
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await json(port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-art-auth", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_art_confirm",
+      }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+    const started = await json(port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "start-art-auth", ready.stateRevision),
+      body: JSON.stringify({ operationId: "op_art_start" }),
+    });
+    expect(started.status).toBe(200);
+
+    const patchArtifacts = await poll(async () => {
+      const listed = await json(port, `/api/v1/artifacts?projectId=${project.id}`, {
+        headers: auth,
+      });
+      const items = (
+        listed.body as {
+          items: Array<{
+            id: string;
+            kind: string;
+            logicalName: string;
+            versions: Array<{ id: string; hash: string }>;
+          }>;
+        }
+      ).items.filter(
+        (item) =>
+          item.kind === "git_diff" ||
+          item.logicalName.includes("code") ||
+          item.logicalName.includes("change") ||
+          item.logicalName.includes("patch"),
+      );
+      return items.length >= 2 ? items : undefined;
+    });
+    const firstContent: Array<{ id: string; versionId: string; text: string; hash: string }> = [];
+    for (const artifact of patchArtifacts) {
+      const versionId = artifact.versions[0]?.id;
+      expect(versionId).toBeTruthy();
+      const content = await fetch(
+        `http://127.0.0.1:${port}/api/v1/artifacts/${artifact.id}/versions/${versionId}/content`,
+        { headers: auth },
+      );
+      expect(content.ok).toBe(true);
+      const text = await content.text();
+      expect(text).toMatch(/diff --git /);
+      firstContent.push({
+        id: artifact.id,
+        versionId: versionId!,
+        text,
+        hash: artifact.versions[0]!.hash,
+      });
+    }
+
+    const world = JSON.parse(fs.readFileSync(path.join(stateDir, "world.json"), "utf8")) as {
+      artifactContents?: Array<{ bodyBase64?: string }>;
+    };
+    expect((world.artifactContents ?? []).every((record) => record.bodyBase64 === undefined)).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(stateDir, "artifacts", "versions"))).toBe(true);
+
+    await first.daemon.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fs.unlinkSync(path.join(stateDir, "world.json"));
+
+    const second = await startComposed(stateDir);
+    const tasks = await json(second.daemon.port, `/api/v1/tasks?projectId=${project.id}`, {
+      headers: second.auth,
+    });
+    const items = (
+      tasks.body as {
+        items: Array<{
+          id: string;
+          workflowNodeId?: string;
+          title: string;
+          dependsOn: Array<{ taskId: string; waitFor: string }>;
+        }>;
+      }
+    ).items;
+    const byNode = new Map(items.map((task) => [task.workflowNodeId ?? task.title, task] as const));
+    const review = byNode.get("review_integration");
+    expect(review?.dependsOn.length).toBe(2);
+    expect(review?.dependsOn.every((edge) => edge.waitFor === "outputs_ready")).toBe(true);
+
+    for (const artifact of firstContent) {
+      const content = await fetch(
+        `http://127.0.0.1:${second.daemon.port}/api/v1/artifacts/${artifact.id}/versions/${artifact.versionId}/content`,
+        { headers: second.auth },
+      );
+      expect(content.ok).toBe(true);
+      expect(await content.text()).toBe(artifact.text);
+    }
   }, 20_000);
 
   it("reloads the project from sqlite after world.json is deleted", async () => {

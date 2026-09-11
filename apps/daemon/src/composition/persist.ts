@@ -39,12 +39,16 @@ export interface ArtifactContentRecord {
   hash: string;
   size: number;
   createdAt: string;
-  bodyBase64: string;
   projectId: string;
   taskId?: string;
   slotId?: string;
   parents: string[];
   children: string[];
+  aliasVersionId?: string;
+  /** Legacy sidecar only. Not written; not an authority for content. */
+  bodyBase64?: string;
+  /** In-memory cache loaded from LocalArtifactStore. Never persisted. */
+  body?: Uint8Array;
 }
 
 export interface PersistedWorld {
@@ -81,6 +85,27 @@ export interface PersistedHostStore {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+/** Persist metadata only. Bytes live in LocalArtifactStore. */
+function sidecarArtifact(record: ArtifactContentRecord): ArtifactContentRecord {
+  const sidecar: ArtifactContentRecord = {
+    artifactId: record.artifactId,
+    versionId: record.versionId,
+    logicalName: record.logicalName,
+    kind: record.kind,
+    mediaType: record.mediaType,
+    hash: record.hash,
+    size: record.size,
+    createdAt: record.createdAt,
+    projectId: record.projectId,
+    parents: [...record.parents],
+    children: [...record.children],
+  };
+  if (record.taskId !== undefined) sidecar.taskId = record.taskId;
+  if (record.slotId !== undefined) sidecar.slotId = record.slotId;
+  if (record.aliasVersionId !== undefined) sidecar.aliasVersionId = record.aliasVersionId;
+  return sidecar;
 }
 
 function scopeKey(scope: ReceiptScope): string {
@@ -280,7 +305,7 @@ export function dumpWorld(input: {
     events: input.world.events.events.map((event) => clone(event)),
     receipts: [...receiptsInner.byOperation.values()].map((receipt) => clone(receipt)),
     operations: input.operations.map((receipt) => clone(receipt)),
-    artifactContents: input.artifactContents.map((record) => clone(record)),
+    artifactContents: input.artifactContents.map((record) => clone(sidecarArtifact(record))),
     workspaces: input.workspaces.map((record) => clone(record)),
   };
 }

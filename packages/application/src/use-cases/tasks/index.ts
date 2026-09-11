@@ -1,3 +1,4 @@
+export { mapPublishedTaskDependsOn } from "./public-task.js";
 export {
   bindTaskOutput,
   cancelTask,

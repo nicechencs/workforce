@@ -8,13 +8,21 @@ import {
   WorkforceApp,
   createWorkforceApp,
   integratePatches,
+  mapPublishedTaskDependsOn,
   settleRunCancel,
   type ApprovalRecord,
   type ProjectRecord,
   type RunRecord,
   type TaskRecord,
 } from "@workforce/application";
-import { LocalArtifactStore, sha256Hex as artifactSha256 } from "@workforce/artifacts";
+import {
+  KIND_MEDIA_TYPES,
+  LocalArtifactStore,
+  collectBytes,
+  type LineageSource,
+  type RegistrableKind,
+  type StoredArtifactVersion,
+} from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
@@ -230,6 +238,7 @@ export class ComposedAppServices implements AppServices {
         await services.worktrees.bindProject(workspace.projectId);
       }
     }
+    await services.restoreArtifactAuthority();
 
     try {
       await host.recover();
@@ -475,20 +484,15 @@ export class ComposedAppServices implements AppServices {
       const live = this.requireProject(id);
       if (live.planArtifactVersionId) {
         const body = encoder.encode(`${JSON.stringify(MOCK_PLAN_DOCUMENT, null, 2)}\n`);
-        this.putContent({
+        await this.commitArtifact({
           artifactId: live.planArtifactVersionId,
-          versionId: live.planArtifactVersionId,
+          aliasVersionId: live.planArtifactVersionId,
+          slotId: "plan",
           logicalName: "plan",
           kind: "plan",
-          mediaType: "application/json",
-          hash: planDigest,
-          size: body.byteLength,
-          createdAt: live.updatedAt,
-          bodyBase64: Buffer.from(body).toString("base64"),
+          mediaType: KIND_MEDIA_TYPES.plan,
+          body,
           projectId: live.id,
-          slotId: "plan",
-          parents: [],
-          children: [],
         });
       }
       this.bindPlanApprovalDigest(id);
@@ -644,23 +648,18 @@ export class ComposedAppServices implements AppServices {
             ...(item.slotId ? { slotId: item.slotId } : {}),
           })),
       };
-      const body = encoder.encode(`${JSON.stringify({ digest, ...report }, null, 2)}\n`);
-      const record: ArtifactContentRecord = {
-        artifactId: this.app.world.ids.ulid("art_"),
-        versionId: this.app.world.ids.ulid("arv_"),
+      const body = encoder.encode(
+        `${JSON.stringify({ verdict: "exported", summary: digest, digest, ...report }, null, 2)}\n`,
+      );
+      const record = await this.commitArtifact({
+        slotId: "report",
         logicalName: "report",
         kind: "evaluation",
-        mediaType: "application/json",
-        hash: artifactSha256(body),
-        size: body.byteLength,
-        createdAt: this.app.world.nowIso(),
-        bodyBase64: Buffer.from(body).toString("base64"),
+        mediaType: KIND_MEDIA_TYPES.evaluation,
+        body,
         projectId: id,
-        slotId: "report",
         parents: approved.artifactVersionId ? [approved.artifactVersionId] : [],
-        children: [],
-      };
-      this.putContent(record);
+      });
       this.persist();
       return {
         status: 200,
@@ -903,38 +902,23 @@ export class ComposedAppServices implements AppServices {
   }
 
   getArtifactVersion(id: string, versionId: string): ArtifactVersionDto | null {
-    const record = this.artifactContents.get(versionId);
-    if (!record || record.artifactId !== id) {
-      const fallback = this.artifactContents.get(id);
-      if (!fallback || fallback.versionId !== versionId) {
-        return record && record.versionId === versionId ? toVersionDto(record) : null;
-      }
-      return toVersionDto(fallback);
-    }
-    return toVersionDto(record);
+    const record = this.findContent(id, versionId);
+    return record ? toVersionDto(record) : null;
   }
 
   readArtifactContent(id: string, versionId: string): ArtifactContentDto | null {
-    const record =
-      this.artifactContents.get(versionId) ??
-      [...this.artifactContents.values()].find(
-        (item) => item.artifactId === id && item.versionId === versionId,
-      );
-    if (!record) {
+    const record = this.findContent(id, versionId);
+    if (!record?.body) {
       return null;
     }
     return {
       mediaType: record.mediaType,
-      body: Buffer.from(record.bodyBase64, "base64"),
+      body: record.body,
     };
   }
 
   getArtifactLineage(id: string, versionId: string): ArtifactLineageDto | null {
-    const record =
-      this.artifactContents.get(versionId) ??
-      [...this.artifactContents.values()].find(
-        (item) => item.artifactId === id && item.versionId === versionId,
-      );
+    const record = this.findContent(id, versionId);
     if (!record) {
       return null;
     }
@@ -1082,46 +1066,17 @@ export class ComposedAppServices implements AppServices {
   ): Promise<ArtifactContentRecord> {
     const nodeId = task.workflowNodeId ?? task.title;
     const produced = await this.produceOutput(task, run, slotId, nodeId);
-    let versionId = this.app.world.ids.ulid("arv_");
-    let artifactId = this.app.world.ids.ulid("art_");
-    let hash = artifactSha256(produced.body);
-    if (produced.kind === "git_diff" || produced.kind === "test_result") {
-      try {
-        const stored = await this.artifacts.register({
-          slotId,
-          mediaType: produced.mediaType,
-          kind: produced.kind,
-          body: produced.body,
-          taskId: task.id,
-          runId: run.id,
-          name: slotId,
-          ...(produced.metadata ? { metadata: produced.metadata } : {}),
-        });
-        versionId = stored.artifactVersionId;
-        artifactId = stored.artifactId;
-        hash = stored.hash;
-      } catch {
-        // Bytes still land in the world snapshot when the kind store rejects.
-      }
-    }
-    const record: ArtifactContentRecord = {
-      artifactId,
-      versionId,
+    return this.commitArtifact({
+      slotId,
       logicalName: slotId,
       kind: produced.kind,
       mediaType: produced.mediaType,
-      hash,
-      size: produced.body.byteLength,
-      createdAt: this.app.world.nowIso(),
-      bodyBase64: Buffer.from(produced.body).toString("base64"),
+      body: produced.body,
       projectId: task.projectId,
       taskId: task.id,
-      slotId,
-      parents: [],
-      children: [],
-    };
-    this.putContent(record);
-    return record;
+      runId: run.id,
+      ...(produced.metadata ? { metadata: produced.metadata } : {}),
+    });
   }
 
   private async maybeIntegrate(projectId: string): Promise<void> {
@@ -1138,8 +1093,8 @@ export class ComposedAppServices implements AppServices {
     for (const task of developers) {
       const slot = task.expectedOutputs.find((output) => isGitDiffSlot(output.id));
       const versionId = slot ? task.outputBindings[slot.id] : undefined;
-      const content = versionId ? this.artifactContents.get(versionId) : undefined;
-      if (!slot || !versionId || !content) {
+      const content = versionId ? this.findContent(undefined, versionId) : undefined;
+      if (!slot || !versionId || !content?.body) {
         return;
       }
       contributions.push({
@@ -1147,7 +1102,7 @@ export class ComposedAppServices implements AppServices {
         runId:
           [...this.app.world.runs.values()].find((run) => run.taskId === task.id)?.id ?? task.id,
         artifactVersionId: versionId,
-        patch: Buffer.from(content.bodyBase64, "base64").toString("utf8"),
+        patch: new TextDecoder().decode(content.body),
         changedPaths: [],
         baseSha: this.worktrees.baseSha,
       });
@@ -1177,22 +1132,20 @@ export class ComposedAppServices implements AppServices {
     const patchBody = encoder.encode(
       result.outcome.patch.endsWith("\n") ? result.outcome.patch : `${result.outcome.patch}\n`,
     );
-    const record: ArtifactContentRecord = {
-      artifactId: this.app.world.ids.ulid("art_"),
-      versionId: this.app.world.ids.ulid("arv_"),
+    const record = await this.commitArtifact({
+      slotId: "integrated",
       logicalName: "integrated",
       kind: "git_diff",
-      mediaType: "text/x-diff",
-      hash: result.outcome.contentDigest,
-      size: patchBody.byteLength,
-      createdAt: this.app.world.nowIso(),
-      bodyBase64: Buffer.from(patchBody).toString("base64"),
+      mediaType: KIND_MEDIA_TYPES.git_diff,
+      body: patchBody,
       projectId,
-      slotId: "integrated",
       parents: contributions.map((item) => item.artifactVersionId),
-      children: [],
-    };
-    this.putContent(record);
+      metadata: {
+        type: "git_diff",
+        baseSha: this.worktrees.baseSha,
+        baseRef: "immutable-base",
+      },
+    });
     this.app.world.artifacts.set(record.versionId, {
       artifactVersionId: record.versionId,
       projectId,
@@ -1224,7 +1177,7 @@ export class ComposedAppServices implements AppServices {
       if (!versionId) {
         continue;
       }
-      const content = this.artifactContents.get(versionId);
+      const content = this.findContent(undefined, versionId);
       const action = this.policy.artifactPublishAction({
         resource: `artifactVersion:${versionId}`,
         version: versionId,
@@ -1298,7 +1251,7 @@ export class ComposedAppServices implements AppServices {
     nodeId: string,
   ): Promise<{
     mediaType: string;
-    kind: "git_diff" | "test_result" | "evaluation";
+    kind: RegistrableKind;
     body: Uint8Array;
     metadata?: Record<string, unknown>;
   }> {
@@ -1373,11 +1326,15 @@ export class ComposedAppServices implements AppServices {
 
   private planDocumentFor(approval: ApprovalRecord): unknown {
     const content = approval.artifactVersionId
-      ? this.artifactContents.get(approval.artifactVersionId)
+      ? this.findContent(undefined, approval.artifactVersionId)
       : undefined;
-    if (content) {
+    if (content?.body) {
       try {
-        return JSON.parse(Buffer.from(content.bodyBase64, "base64").toString("utf8"));
+        const parsed: unknown = JSON.parse(new TextDecoder().decode(content.body));
+        if (isCanonicalMockPlan(parsed)) {
+          return MOCK_PLAN_DOCUMENT;
+        }
+        return parsed;
       } catch {
         return { hash: content.hash };
       }
@@ -1391,7 +1348,7 @@ export class ComposedAppServices implements AppServices {
     }
     const versionId =
       approval.artifactVersionId ?? approval.resource.replace(/^artifactVersion:/u, "");
-    const content = this.artifactContents.get(versionId);
+    const content = this.findContent(undefined, versionId);
     return this.policy.artifactPublishAction({
       resource: approval.resource,
       version: versionId,
@@ -1461,6 +1418,168 @@ export class ComposedAppServices implements AppServices {
 
   private putContent(record: ArtifactContentRecord): void {
     this.artifactContents.set(record.versionId, record);
+    if (record.aliasVersionId !== undefined && record.aliasVersionId !== record.versionId) {
+      this.artifactContents.set(record.aliasVersionId, record);
+    }
+  }
+
+  private findContent(
+    artifactId: string | undefined,
+    versionId: string,
+  ): ArtifactContentRecord | undefined {
+    const direct = this.artifactContents.get(versionId);
+    if (
+      direct &&
+      (artifactId === undefined ||
+        direct.artifactId === artifactId ||
+        direct.versionId === artifactId)
+    ) {
+      return direct;
+    }
+    return [...this.artifactContents.values()].find((item) => {
+      const versionMatch = item.versionId === versionId || item.aliasVersionId === versionId;
+      if (versionMatch) {
+        return (
+          artifactId === undefined ||
+          item.artifactId === artifactId ||
+          item.versionId === artifactId
+        );
+      }
+      return (
+        artifactId !== undefined && item.artifactId === artifactId && item.versionId === versionId
+      );
+    });
+  }
+
+  private async restoreArtifactAuthority(): Promise<void> {
+    const leftover = [...this.artifactContents.values()];
+    this.artifactContents.clear();
+    for (const stored of await this.artifacts.listAvailable()) {
+      const body = await collectBytes(this.artifacts.read(stored.artifactVersionId));
+      const lineage = await this.artifacts.lineageOf(stored.artifactVersionId);
+      this.putContent(
+        this.recordFromStored(
+          stored,
+          storedRecordExtras(
+            projectIdFromStored(stored, leftover, this.app.world.tasks),
+            logicalNameFromStored(stored),
+            lineage.map((source) => source.artifactVersionId),
+            body,
+            aliasFromStored(stored),
+          ),
+        ),
+      );
+    }
+    for (const record of leftover) {
+      if (this.findContent(record.artifactId, record.versionId)) {
+        continue;
+      }
+      const body =
+        record.body ?? (record.bodyBase64 ? Buffer.from(record.bodyBase64, "base64") : undefined);
+      if (!body) {
+        continue;
+      }
+      const kind = asRegistrableKind(
+        record.kind,
+        record.slotId ?? record.logicalName,
+        record.mediaType,
+      );
+      try {
+        await this.commitArtifact({
+          artifactId: record.artifactId,
+          aliasVersionId: record.aliasVersionId ?? record.versionId,
+          slotId: record.slotId ?? record.logicalName,
+          logicalName: record.logicalName,
+          kind,
+          mediaType: mediaTypeForKind(kind, record.mediaType),
+          body,
+          projectId: record.projectId,
+          ...(record.taskId !== undefined ? { taskId: record.taskId } : {}),
+          parents: record.parents,
+        });
+      } catch {
+        // Sidecar leftovers that fail kind verify stay non-authoritative.
+      }
+    }
+  }
+
+  private async commitArtifact(input: {
+    slotId: string;
+    logicalName: string;
+    kind: RegistrableKind;
+    mediaType: string;
+    body: Uint8Array;
+    projectId: string;
+    taskId?: string;
+    runId?: string;
+    artifactId?: string;
+    aliasVersionId?: string;
+    parents?: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<ArtifactContentRecord> {
+    const sources: LineageSource[] = (input.parents ?? []).map((artifactVersionId) => ({
+      artifactVersionId,
+      relation: "combined_from",
+    }));
+    const stored = await this.artifacts.register({
+      slotId: input.slotId,
+      mediaType: input.mediaType,
+      kind: input.kind,
+      body: input.body,
+      name: input.logicalName,
+      metadata: {
+        ...input.metadata,
+        projectId: input.projectId,
+        logicalName: input.logicalName,
+        ...(input.aliasVersionId !== undefined ? { aliasVersionId: input.aliasVersionId } : {}),
+      },
+      ...(input.artifactId !== undefined ? { artifactId: input.artifactId } : {}),
+      ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+      ...(input.runId !== undefined ? { runId: input.runId } : {}),
+      ...(sources.length > 0 ? { sources } : {}),
+    });
+    const record = this.recordFromStored(
+      stored,
+      storedRecordExtras(
+        input.projectId,
+        input.logicalName,
+        input.parents ?? [],
+        input.body,
+        input.aliasVersionId,
+      ),
+    );
+    this.putContent(record);
+    return record;
+  }
+
+  private recordFromStored(
+    stored: StoredArtifactVersion,
+    extras: {
+      projectId: string;
+      logicalName: string;
+      parents: string[];
+      aliasVersionId?: string;
+      body: Uint8Array;
+    },
+  ): ArtifactContentRecord {
+    const record: ArtifactContentRecord = {
+      artifactId: stored.artifactId,
+      versionId: stored.artifactVersionId,
+      logicalName: extras.logicalName,
+      kind: stored.kind,
+      mediaType: stored.mediaType,
+      hash: stored.hash,
+      size: stored.size,
+      createdAt: stored.createdAt,
+      projectId: extras.projectId,
+      parents: [...extras.parents],
+      children: [],
+      body: extras.body,
+    };
+    if (stored.taskId !== undefined) record.taskId = stored.taskId;
+    if (stored.slotId !== undefined) record.slotId = stored.slotId;
+    if (extras.aliasVersionId !== undefined) record.aliasVersionId = extras.aliasVersionId;
+    return record;
   }
 
   private projectDto(project: ProjectRecord): ProjectDto {
@@ -1499,6 +1618,7 @@ export class ComposedAppServices implements AppServices {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       role: task.role,
+      dependsOn: mapPublishedTaskDependsOn(task),
     };
     if (task.workflowNodeId !== undefined) {
       dto.workflowNodeId = task.workflowNodeId;
@@ -1698,6 +1818,105 @@ function publicAuthorizationRef(value: string): string {
   return value;
 }
 
+function storedRecordExtras(
+  projectId: string,
+  logicalName: string,
+  parents: string[],
+  body: Uint8Array,
+  aliasVersionId?: string,
+): {
+  projectId: string;
+  logicalName: string;
+  parents: string[];
+  body: Uint8Array;
+  aliasVersionId?: string;
+} {
+  const extras: {
+    projectId: string;
+    logicalName: string;
+    parents: string[];
+    body: Uint8Array;
+    aliasVersionId?: string;
+  } = { projectId, logicalName, parents, body };
+  if (aliasVersionId !== undefined) {
+    extras.aliasVersionId = aliasVersionId;
+  }
+  return extras;
+}
+
+function projectIdFromStored(
+  stored: StoredArtifactVersion,
+  leftover: ArtifactContentRecord[],
+  tasks: Map<string, TaskRecord>,
+): string {
+  const meta = stored.metadata?.projectId;
+  if (typeof meta === "string" && meta.length > 0) {
+    return meta;
+  }
+  if (stored.taskId !== undefined) {
+    const task = tasks.get(stored.taskId);
+    if (task) {
+      return task.projectId;
+    }
+  }
+  const match = leftover.find(
+    (item) => item.versionId === stored.artifactVersionId || item.artifactId === stored.artifactId,
+  );
+  return match?.projectId ?? "";
+}
+
+function logicalNameFromStored(stored: StoredArtifactVersion): string {
+  const meta = stored.metadata?.logicalName;
+  if (typeof meta === "string" && meta.length > 0) {
+    return meta;
+  }
+  return stored.name ?? stored.slotId;
+}
+
+function aliasFromStored(stored: StoredArtifactVersion): string | undefined {
+  const alias = stored.metadata?.aliasVersionId;
+  return typeof alias === "string" && alias.length > 0 ? alias : undefined;
+}
+
+function asRegistrableKind(kind: string, slotId: string, mediaType: string): RegistrableKind {
+  if (kind === "plan" || kind === "git_diff" || kind === "test_result" || kind === "evaluation") {
+    return kind;
+  }
+  const slot = slotId.toLowerCase();
+  if (slot.includes("plan") || kind === "document") {
+    return "plan";
+  }
+  if (
+    slot.includes("diff") ||
+    slot.includes("code") ||
+    slot.includes("patch") ||
+    slot.includes("change")
+  ) {
+    return "git_diff";
+  }
+  if (slot.includes("test") || mediaType.includes("test-result")) {
+    return "test_result";
+  }
+  return "evaluation";
+}
+
+function mediaTypeForKind(kind: RegistrableKind, fallback: string): string {
+  return KIND_MEDIA_TYPES[kind] ?? fallback;
+}
+
+function isCanonicalMockPlan(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.protocol === MOCK_PLAN_DOCUMENT.protocol &&
+    record.protocolVersion === MOCK_PLAN_DOCUMENT.protocolVersion &&
+    record.workflowId === MOCK_PLAN_DOCUMENT.workflowId &&
+    record.templateId === MOCK_PLAN_DOCUMENT.templateId
+  );
+}
+
 function toVersionDto(record: ArtifactContentRecord): ArtifactVersionDto {
   return {
     id: record.versionId,
@@ -1745,7 +1964,7 @@ function syntheticOutput(
     };
   }
   return {
-    mediaType: "application/json",
+    mediaType: KIND_MEDIA_TYPES.evaluation,
     kind: "evaluation",
     body: encoder.encode(JSON.stringify({ verdict: "pass", summary: `mock ${nodeId} review` })),
   };

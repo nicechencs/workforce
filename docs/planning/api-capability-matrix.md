@@ -4,7 +4,7 @@
 状态：**已冻结（首版按钮与 endpoint）**  
 权威：[decision-register.md](decision-register.md) D08。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — 增补 P1 **只读**工作流目录 `GET /workflows`（及模板/版本详情）。无画布编辑器，不是可执行 Runtime。与 [IA §6.2](../product-ui/01-information-architecture.md) 对齐。
+修订：2026-09-11 — 增补 P1 **只读**工作流目录 `GET /workflows`（及模板/版本详情）。无画布编辑器，不是可执行 Runtime。与 [IA §6.2](../product-ui/01-information-architecture.md) 对齐。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则；未发明可写项目策略或远程 enrollment。
 
 图例：
 
@@ -85,8 +85,8 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 
 | Method | Path | M3 | 页面 |
 |---|---|---|---|
-| GET | `/tasks` | 必须 | DAG/列表 |
-| GET | `/tasks/{id}` | 必须 | Task 详情 |
+| GET | `/tasks` | 必须 | DAG/列表。公开 Task DTO **必须**含 `dependsOn`（来自已发布执行 DAG；无依赖则为 `[]`） |
+| GET | `/tasks/{id}` | 必须 | Task 详情；同上，返回该 Task 的 `dependsOn` |
 | PATCH | `/tasks/{id}` | M5 | 未冻结定义；M3 Planner/模板生成即可 |
 | POST | `/tasks/{id}:queue` | 必须 | 调度也可内部调用 |
 | POST | `/tasks/{id}:cancel` | 必须 | Task 详情 |
@@ -117,13 +117,15 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | GET | `/artifacts` | 必须 | — |
 | GET | `/artifacts/{id}` | 必须 | 元数据 |
 | GET | `/artifacts/{id}/versions/{versionId}` | 必须 | 精确版本 |
-| GET | `/artifacts/{id}/versions/{versionId}/content` | 必须 | 受控 stream；禁止无版本 content |
+| GET | `/artifacts/{id}/versions/{versionId}/content` | 必须 | 受控 stream；禁止无版本 content。M3 Mock 字节/元数据以 `LocalArtifactStore` 为权威；`world.json` 不得作为 content 权威 |
 | GET | `/artifacts/{id}/versions/{versionId}/lineage` | 必须 | — |
 | POST | `/artifacts/{id}/versions/{versionId}:verify` | 必须 | — |
 | GET | `/events` | 必须 | cursor 分页 |
 | GET | `/events/stream` | 必须 | SSE；Last-Event-ID=ingestion cursor |
 
 旧草案 `GET /artifacts/{artifactId}/content` 作废，除非重定向到默认浏览且标注 non-executing。
+
+**Artifact 权威（M3 Mock）：** `LocalArtifactStore`（`stateDir/artifacts`）是产物字节与登记元数据的权威。公开 list/get/content/lineage/verify 必须解析到精确 `artifactVersionId` 并从 store 读取。SQLite 实体表保存 Task/Run 绑定与 digest；`world.json` 只是 sidecar，删除后 content 仍须可恢复。禁止把仅存在于 world snapshot 的 `bodyBase64` 当作已持久化产物。
 
 ### Workspace / Runtime / Node / Team / Budget
 
@@ -197,6 +199,8 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 ## 6. T12/T13 约定
 
 - 只使用 `packages/desktop-client` 生成的 typed client
-- 不改 OpenAPI / protocol
+- 公开 Task DTO 的 `dependsOn` 由 `packages/protocol` 定义；页面只消费该字段，不另造 DAG API
+- Artifact 内容路由走已列 versioned path；不发明无版本 content
+- 不发明可写项目策略 endpoint 或远程节点 enrollment
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态

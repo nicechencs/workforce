@@ -80,12 +80,52 @@ export function sortRunsNewestFirst(runs: RunDto[]): RunDto[] {
 }
 
 export function sortTasksForDag(tasks: TaskDto[]): TaskDto[] {
-  return [...tasks].sort((a, b) => {
-    if (a.createdAt !== b.createdAt) {
-      return a.createdAt < b.createdAt ? -1 : 1;
+  const incoming = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  for (const task of tasks) {
+    incoming.set(task.id, 0);
+    outgoing.set(task.id, []);
+  }
+  for (const task of tasks) {
+    for (const edge of task.dependsOn ?? []) {
+      if (!incoming.has(edge.taskId) || !incoming.has(task.id)) {
+        continue;
+      }
+      outgoing.get(edge.taskId)?.push(task.id);
+      incoming.set(task.id, (incoming.get(task.id) ?? 0) + 1);
     }
-    return a.id < b.id ? -1 : 1;
-  });
+  }
+  const queue = tasks.filter((task) => (incoming.get(task.id) ?? 0) === 0).sort(compareTaskStable);
+  const ordered: TaskDto[] = [];
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (!next) {
+      break;
+    }
+    ordered.push(next);
+    for (const childId of outgoing.get(next.id) ?? []) {
+      const remaining = (incoming.get(childId) ?? 1) - 1;
+      incoming.set(childId, remaining);
+      if (remaining === 0) {
+        const child = tasks.find((task) => task.id === childId);
+        if (child) {
+          queue.push(child);
+          queue.sort(compareTaskStable);
+        }
+      }
+    }
+  }
+  if (ordered.length === tasks.length) {
+    return ordered;
+  }
+  return [...tasks].sort(compareTaskStable);
+}
+
+function compareTaskStable(a: TaskDto, b: TaskDto): number {
+  if (a.createdAt !== b.createdAt) {
+    return a.createdAt < b.createdAt ? -1 : 1;
+  }
+  return a.id < b.id ? -1 : 1;
 }
 
 export function taskKindNote(): string {

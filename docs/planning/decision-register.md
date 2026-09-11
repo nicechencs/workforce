@@ -180,6 +180,8 @@ SSE：
 - Team 首版只读预设模板；自定义编排后置
 - 项目归档可延后，列表不展示伪造的归档成功
 - Artifact content / read / verify / approval / input **必须**带 `artifactVersionId` 或精确 `version`；`latest` 只用于非执行性浏览
+- 公开 `TaskDto` **必须**包含 `dependsOn: { taskId, waitFor }[]`，映射已发布执行 DAG；无依赖返回 `[]`，不得省略后让 UI 编造边
+- M3 Mock 产物字节与登记元数据以 `LocalArtifactStore` 为权威；`world.json` 不得作为 content 权威；公开 content 路由从 store 读取精确版本
 - Run takeover 与 Approval decision 分离：takeover 是执行权转移流程，不是把任意 shell 接到 Renderer
 - 提供 operation receipt 查询
 

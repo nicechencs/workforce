@@ -92,6 +92,18 @@ describe("M3 mock loop via typed desktop client", () => {
         return undefined;
       });
       expect(tasks).toHaveLength(3);
+      const byNode = new Map(
+        tasks.map((task) => [task.workflowNodeId ?? task.title, task] as const),
+      );
+      const alpha = byNode.get("dev_alpha");
+      const bravo = byNode.get("dev_bravo");
+      const review = byNode.get("review_integration");
+      expect(alpha?.dependsOn).toEqual([]);
+      expect(bravo?.dependsOn).toEqual([]);
+      expect(review?.dependsOn.map((edge) => edge.taskId).sort()).toEqual(
+        [alpha?.id, bravo?.id].filter((id): id is string => typeof id === "string").sort(),
+      );
+      expect(review?.dependsOn.every((edge) => edge.waitFor === "outputs_ready")).toBe(true);
 
       await poll(async () => {
         const listed = await client.listRuns({ projectId: created.id, limit: 50 });

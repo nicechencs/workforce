@@ -32,6 +32,8 @@ export interface CapabilitiesDto {
   };
 }
 
+export type { TaskDependency, TaskDto } from "@workforce/protocol";
+
 export interface PageDto<T> {
   items: T[];
   page: { nextCursor: string | null; hasMore: boolean };
@@ -49,24 +51,6 @@ export interface ProjectDto {
   createdAt: string;
   updatedAt: string;
   planArtifactVersionId?: string;
-}
-
-export interface TaskDto {
-  id: string;
-  projectId: string;
-  title: string;
-  objective: string;
-  status: string;
-  stateRevision: number;
-  definitionRevision: number;
-  generation: number;
-  attempt: number;
-  protocolVersion: "0.1";
-  cancelRequested: boolean;
-  createdAt: string;
-  updatedAt: string;
-  role?: string;
-  workflowNodeId?: string;
 }
 
 export interface RunDto {

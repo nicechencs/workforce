@@ -114,7 +114,11 @@ interface ArtifactStore {
 }
 ```
 
+**权威：** M3 Mock 路径上，`LocalArtifactStore` 是产物字节与登记元数据的权威实现。Daemon composition 必须经 `stage/commit`（或等价 `register`）落盘；公开 `GET /artifacts/{id}/versions/{versionId}/content` 从 store 读取精确版本。`world.json` 只是 sidecar，不得作为 content 权威。崩溃窗口仍遵守决策登记 D04：内容可先于元数据落盘，reconcile 不得发明 `available` 版本。
+
 公开 DTO 不得包含宿主绝对路径；内部 grant 另存。
+
+公开 `TaskDto.dependsOn` 由 `packages/protocol` 的 Task 契约定义，Application 从已发布执行 DAG 的 `TaskRecord.dependsOn` 映射，HTTP 层不得丢弃该字段。
 
 ## 实现归属
 
