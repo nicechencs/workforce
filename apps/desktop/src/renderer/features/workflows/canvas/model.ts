@@ -273,8 +273,14 @@ export function reduceCanvasSession(session: CanvasSession, action: CanvasAction
           versionId: action.versionId,
           dirty: false,
           definitionStatus: session.draft.definitionStatus ?? "draft",
-          definitionRevision: action.definitionRevision ?? session.draft.definitionRevision,
-          versionRevision: action.versionRevision ?? session.draft.versionRevision,
+          ...optionalRevision(
+            "definitionRevision",
+            action.definitionRevision ?? session.draft.definitionRevision,
+          ),
+          ...optionalRevision(
+            "versionRevision",
+            action.versionRevision ?? session.draft.versionRevision,
+          ),
         },
       };
     case "publishStart": {
@@ -367,7 +373,7 @@ export function sessionFromFork(input: {
       graph,
       dirty: true,
       definitionStatus: input.workflow.status ?? "published",
-      definitionRevision: input.workflow.stateRevision,
+      ...optionalRevision("definitionRevision", input.workflow.stateRevision),
     },
     selectedNodeId: null,
     selectedEdgeId: null,
@@ -399,8 +405,8 @@ export function sessionFromDraftVersion(input: {
       graph,
       dirty: false,
       definitionStatus: input.workflow.status ?? (frozen ? "published" : "draft"),
-      definitionRevision: input.workflow.stateRevision,
-      versionRevision: input.version.stateRevision,
+      ...optionalRevision("definitionRevision", input.workflow.stateRevision),
+      ...optionalRevision("versionRevision", input.version.stateRevision),
     },
     selectedNodeId: null,
     selectedEdgeId: null,
@@ -474,6 +480,13 @@ export function publishButtonState(session: CanvasSession): {
     return { disabled: true, reason: "已发布版本不可再点发布。" };
   }
   return { disabled: false, reason: null };
+}
+
+function optionalRevision<K extends "definitionRevision" | "versionRevision">(
+  key: K,
+  value: number | undefined,
+): Partial<Record<K, number>> {
+  return value === undefined ? {} : ({ [key]: value } as Partial<Record<K, number>>);
 }
 
 export function persistStatusLabel(status: CanvasPersistStatus): string {

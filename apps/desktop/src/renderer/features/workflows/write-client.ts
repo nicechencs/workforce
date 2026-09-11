@@ -281,9 +281,9 @@ export async function persistWorkflowDraft(
     : { name };
   const versionBody = toVersionWriteInput(input.graph);
   let workflowId = input.workflowId && input.workflowId !== "new" ? input.workflowId : null;
-  let versionId = isLocalDraftVersion(input.versionId) ? null : input.versionId;
+  const versionId = isLocalDraftVersion(input.versionId) ? null : input.versionId;
   let definitionRevision = input.revisions?.definitionRevision;
-  let versionRevision = input.revisions?.versionRevision;
+  const versionRevision = input.revisions?.versionRevision;
 
   try {
     if (!workflowId) {

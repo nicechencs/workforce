@@ -76,19 +76,31 @@ export function WorkflowCanvasPage(props: {
       dispatch({ type: "saveFailed", error: started.persistError ?? "无法保存" });
       return;
     }
-    const result = await persistWorkflowDraft(client, {
+    const persistInput: Parameters<typeof persistWorkflowDraft>[1] = {
       workflowId: session.draft.workflowId,
       versionId: session.draft.versionId,
       name: session.draft.name.trim() || "未命名工作流",
       description: session.draft.description,
       graph: toGraphPayload(session.draft.graph),
       steps: canvasDraftSteps(session),
-      revisions: {
-        definitionRevision: session.draft.definitionRevision,
-        versionRevision: session.draft.versionRevision,
-      },
-      definitionStatus: session.draft.definitionStatus,
-    });
+    };
+    if (
+      session.draft.definitionRevision !== undefined ||
+      session.draft.versionRevision !== undefined
+    ) {
+      persistInput.revisions = {
+        ...(session.draft.definitionRevision === undefined
+          ? {}
+          : { definitionRevision: session.draft.definitionRevision }),
+        ...(session.draft.versionRevision === undefined
+          ? {}
+          : { versionRevision: session.draft.versionRevision }),
+      };
+    }
+    if (session.draft.definitionStatus !== undefined) {
+      persistInput.definitionStatus = session.draft.definitionStatus;
+    }
+    const result = await persistWorkflowDraft(client, persistInput);
     if (!result.ok) {
       dispatch({
         type: "saveFailed",
@@ -126,7 +138,9 @@ export function WorkflowCanvasPage(props: {
     const result = await publishWorkflowDraft(client, {
       workflowId,
       versionId,
-      versionRevision: session.draft.versionRevision,
+      ...(session.draft.versionRevision === undefined
+        ? {}
+        : { versionRevision: session.draft.versionRevision }),
     });
     if (!result.ok) {
       dispatch({ type: "publishFailed", error: result.error });
@@ -314,11 +328,12 @@ async function hydrateVersionGraph(
   if (!detailed) {
     return version;
   }
-  return {
-    ...version,
-    ...detailed,
-    graph: detailed.graph ?? version.graph,
-  };
+  const merged = { ...version, ...detailed };
+  const graph = detailed.graph ?? version.graph;
+  if (graph === undefined) {
+    return merged;
+  }
+  return { ...merged, graph };
 }
 
 export function shouldOpenCanvas(params: {

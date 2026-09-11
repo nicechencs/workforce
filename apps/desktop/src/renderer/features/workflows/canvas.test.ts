@@ -326,7 +326,6 @@ describe("canvas page render", () => {
 
 describe("canvas reload after save", () => {
   it("restores the same draft name and graph from getWorkflow", async () => {
-    const graph = addNode(emptyCanvasGraph(), "task", "plan");
     const workflow = {
       id: "wfd_saved",
       name: "Saved draft",
