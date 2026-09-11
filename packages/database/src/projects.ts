@@ -14,7 +14,7 @@ import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.
 
 const PROJECT_COLUMNS = `
   id, organization_id, name, objective, status, state_revision,
-  team_version_id, workflow_version_id, runtime_id, workspace_id, budget_id,
+  team_version_id, workflow_version_id, execution_snapshot_id, runtime_id, workspace_id, budget_id,
   execution_node_id, runtime_installation_id, workspace_instance_id,
   workflow_instance_id, plan_artifact_version_id, cancel_requested_at,
   created_at, updated_at
@@ -53,11 +53,11 @@ export class SqliteProjectRepository {
       db.prepare(
         `INSERT INTO projects (
            id, organization_id, name, objective, status, state_revision,
-           team_version_id, workflow_version_id, runtime_id, workspace_id, budget_id,
-           execution_node_id, runtime_installation_id, workspace_instance_id,
+           team_version_id, workflow_version_id, execution_snapshot_id, runtime_id, workspace_id,
+           budget_id, execution_node_id, runtime_installation_id, workspace_instance_id,
            workflow_instance_id, plan_artifact_version_id, cancel_requested_at,
            created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         record.id,
         record.organizationId,
@@ -67,6 +67,7 @@ export class SqliteProjectRepository {
         record.stateRevision,
         record.teamVersionId ?? null,
         record.workflowVersionId ?? null,
+        record.executionSnapshotId ?? null,
         record.runtimeId ?? null,
         record.workspaceId ?? null,
         record.budgetId ?? null,
@@ -99,6 +100,7 @@ export class SqliteProjectRepository {
                 state_revision = ?,
                 team_version_id = ?,
                 workflow_version_id = ?,
+                execution_snapshot_id = ?,
                 runtime_id = ?,
                 workspace_id = ?,
                 budget_id = ?,
@@ -118,6 +120,7 @@ export class SqliteProjectRepository {
         record.stateRevision,
         record.teamVersionId ?? null,
         record.workflowVersionId ?? null,
+        record.executionSnapshotId ?? null,
         record.runtimeId ?? null,
         record.workspaceId ?? null,
         record.budgetId ?? null,
@@ -157,6 +160,7 @@ function rowToProject(row: Record<string, unknown>): ProjectRecord {
     updatedAt: requiredText(cell(row, "updated_at"), "updated_at"),
     ...ifPresent("teamVersionId", optionalText(cell(row, "team_version_id"))),
     ...ifPresent("workflowVersionId", optionalText(cell(row, "workflow_version_id"))),
+    ...ifPresent("executionSnapshotId", optionalText(cell(row, "execution_snapshot_id"))),
     ...ifPresent("runtimeId", optionalText(cell(row, "runtime_id"))),
     ...ifPresent("workspaceId", optionalText(cell(row, "workspace_id"))),
     ...ifPresent("budgetId", optionalText(cell(row, "budget_id"))),

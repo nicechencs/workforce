@@ -255,13 +255,25 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 **本切片验证**（Node 24.19.0，真实执行）：6 条探针全部通过——空库 5 个迁移全绿、5 张表存在；001–004 升级后历史行四列均为 `NULL` 且列保持 `notnull=0`、`runs` 表 SQL 中不含互斥 CHECK、`projects`/`workflow_instances` 新列存在；checksum 守卫抛 `checksum mismatch`；迁移可重入；新 DDL 的 CHECK 与 `(change_set_id, target_type, target_id)` 唯一约束确实生效。`tsc -p packages/database/tsconfig.json --noEmit` 受 §8 的 store 缺口影响**未能独立运行**（`@workforce/domain`/`@workforce/policy` 未链接），`turbo run typecheck` 里该包报的正是同一个 `TS2307`，与基线一致。
 
 ### S2a — 快照与实例拆分（T09 用例、T10 API、T14 图来源、T16 场景）
-
 - `:confirm-plan` 改为：消费审批 → 校验 → **创建 `ProjectExecutionSnapshot`** → Project `ready` + 写回 `executionSnapshotId`；**不创建 `WorkflowInstance`**。
 - `:start` 改为：校验无活动实例 → 从 snapshot 取版本 → 创建 `WorkflowInstance`（引用 snapshot）→ 激活入口节点。
 - 执行图来源从「请求体 `input.graph`」改为「snapshot 引用的已发布 `WorkflowVersion`」；补齐 `task_dependencies` 落库（§3.5a）；同时收敛「目录 5 步 / fixture 4+1 节点 / 执行图」三者（§3.7d）。
 - **事务边界必须先定**（§3.7a）：snapshot 创建、审批消费（`policy.consumeGrant` 自带事务且不可嵌套）、Project 更新三者不可能都塞进一个 UoW 事务，需要明确哪一步在事务内、失败如何补偿。
 - **验收**：`ready` 但无实例的中间态可重试；`:start` 失败不留下半创建实例；同一 `operationId` 重放不重复创建实例；`dependsOn` 投影与落库一致（contract test 覆盖普通边与路由边分离）。
 - **风险**：高风险（状态机 + 持久化 + 幂等）。需要独立审查与 §6 的恢复测试。
+
+#### S2a 进度（2026-09-11）——数据面已完成，行为拆分待做
+
+已落地数据面：
+
+- `packages/application`：新增 `ProjectExecutionSnapshotRecord`（`id`/`projectId`/`workflowVersionId`/`teamVersionId`/`contentHash`/`policySnapshot`/`budgetSnapshot?`/`createdAt`）；`ProjectRecord` 与 `WorkflowInstanceRecord` 增加 `executionSnapshotId?`；`MemoryWorld` 增加 `executionSnapshots` map 与 `executionSnapshotForProject()`。
+- `packages/database`：新增 `execution-snapshots.ts` 的 `SqliteProjectExecutionSnapshotRepository`（`get`/`findByProject`/`listAll`/`insert`），**只有 insert、没有 update**：同 id 同 `contentHash` 是幂等 no-op，同 id 不同 hash 抛 `conflict`，这就是"只写一次"的强制点。该 repository **刻意不 import `@workforce/domain`/`@workforce/policy`**，因此在 §8 的 store 缺口下仍可独立执行。
+- `SqliteWorldSnapshot` 增加 `executionSnapshots` 成员与 `WorldEntitySnapshot.executionSnapshots` 字段，`save` 在 projects/workflows 之前先写快照（避免 FK 顺序问题），`load` 一并读回。
+- `SqliteProjectRepository` 与 `SqliteWorkflowInstanceRepository` 补 `execution_snapshot_id` 列的读写（两个 repository 本来就 import `@workforce/application`，在该包内已可运行）。
+
+**仍未做（下一步）**：`confirmPlan` 改为创建 snapshot 并进入 `ready`（不建实例）、`startExecution` 改为创建引用 snapshot 的实例、执行图来源改为 snapshot 引用的已发布 `WorkflowVersion`、`task_dependencies` 落库、以及 `:confirm-plan` 的事务边界决策（§3.7a）。
+
+**本切片验证**（Node 24.19.0，真实执行）：12 条探针全部通过——快照 insert/读回、同内容幂等、不同 hash 冲突、budget 快照 JSON 往返、缺失 budget 不产生 `null` 字段、`findByProject`、FK 约束、畸形 JSON 读取守卫；`ProjectRecord.executionSnapshotId` 的 insert/update 往返；`WorkflowInstanceRecord.executionSnapshotId` 往返且不影响 M3 无快照实例；4 张表的 SQL 占位符与实参数量一致（20/19/12/11）。`tsc -p packages/database` 仍受 §8 store 缺口阻塞。
 
 ### S2b — 三轴解析与统一准入（T09）
 

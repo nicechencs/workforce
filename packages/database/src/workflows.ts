@@ -16,7 +16,7 @@ import {
 } from "./sql.js";
 
 const WORKFLOW_COLUMNS = `
-  id, project_id, workflow_version_id, status, state_revision, graph_json,
+  id, project_id, workflow_version_id, execution_snapshot_id, status, state_revision, graph_json,
   cancel_requested_at, created_at, updated_at
 `;
 
@@ -55,14 +55,15 @@ export class SqliteWorkflowInstanceRepository {
     try {
       db.prepare(
         `INSERT INTO workflow_instances (
-           id, organization_id, project_id, workflow_version_id, status, state_revision,
-           started_at, created_at, updated_at, graph_json, cancel_requested_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           id, organization_id, project_id, workflow_version_id, execution_snapshot_id, status,
+           state_revision, started_at, created_at, updated_at, graph_json, cancel_requested_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         record.id,
         organizationId,
         record.projectId,
         record.workflowVersionId,
+        record.executionSnapshotId ?? null,
         record.status,
         record.stateRevision,
         record.status === "created" ? null : at,
@@ -86,6 +87,7 @@ export class SqliteWorkflowInstanceRepository {
       .prepare(
         `UPDATE workflow_instances
             SET workflow_version_id = ?,
+                execution_snapshot_id = ?,
                 status = ?,
                 state_revision = ?,
                 graph_json = ?,
@@ -99,6 +101,7 @@ export class SqliteWorkflowInstanceRepository {
       )
       .run(
         record.workflowVersionId,
+        record.executionSnapshotId ?? null,
         record.status,
         record.stateRevision,
         asJsonText(record.graph),
@@ -121,6 +124,7 @@ function rowToWorkflow(row: Record<string, unknown>): WorkflowInstanceRecord {
     graph: parseGraph(parseJson(cell(row, "graph_json"), "graph_json")),
     status: requiredText(cell(row, "status"), "status") as WorkflowInstanceRecord["status"],
     stateRevision: requiredInt(cell(row, "state_revision"), "state_revision"),
+    ...ifPresent("executionSnapshotId", optionalText(cell(row, "execution_snapshot_id"))),
     ...ifPresent("cancelRequestedAt", optionalText(cell(row, "cancel_requested_at"))),
   };
 }

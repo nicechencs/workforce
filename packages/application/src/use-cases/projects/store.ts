@@ -41,9 +41,28 @@ export interface ProjectRecord {
   workflowInstanceId?: string;
   workflowVersionId?: string;
   planArtifactVersionId?: string;
+  /** D02: the confirmed execution snapshot. Written once when the plan is confirmed. */
+  executionSnapshotId?: string;
   cancelRequestedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * D02/D18: the immutable execution freeze for one Project.
+ *
+ * workflow-bound Runs and WorkflowInstances read WorkflowVersion/TeamVersion
+ * from here instead of carrying their own version columns.
+ */
+export interface ProjectExecutionSnapshotRecord {
+  id: string;
+  projectId: string;
+  workflowVersionId: string;
+  teamVersionId: string;
+  contentHash: string;
+  policySnapshot: Record<string, unknown>;
+  budgetSnapshot?: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface TaskRecord {
@@ -114,6 +133,8 @@ export interface WorkflowInstanceRecord {
   id: string;
   projectId: string;
   workflowVersionId: string;
+  /** D02: the execution snapshot this instance derives its versions from. */
+  executionSnapshotId?: string;
   graph: WorkflowGraph;
   status: WorkflowInstanceStatus;
   stateRevision: number;
@@ -273,6 +294,7 @@ export class MemoryWorld {
   readonly workflows = new Map<string, WorkflowInstanceRecord>();
   readonly nodes = new Map<string, NodeInstanceRecord>();
   readonly budgets = new Map<string, BudgetRecord>();
+  readonly executionSnapshots = new Map<string, ProjectExecutionSnapshotRecord>();
   readonly usageKeys = new Set<string>();
   readonly reservations = new Map<string, ReservationRecord>();
   readonly unknownStatuses = new Set<string>();
@@ -307,6 +329,12 @@ export class MemoryWorld {
           run.status === "running" ||
           run.status === "waiting_input" ||
           run.status === "paused"),
+    );
+  }
+
+  executionSnapshotForProject(projectId: string): ProjectExecutionSnapshotRecord | undefined {
+    return [...this.executionSnapshots.values()].find(
+      (snapshot) => snapshot.projectId === projectId,
     );
   }
 

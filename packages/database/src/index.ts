@@ -38,6 +38,10 @@ export {
   type StartRunInput,
 } from "./runs.js";
 export {
+  SqliteProjectExecutionSnapshotRepository,
+  type ProjectExecutionSnapshotRecord,
+} from "./execution-snapshots.js";
+export {
   MIGRATIONS,
   MIGRATION_001_SQL,
   MIGRATION_002_SQL,

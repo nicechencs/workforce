@@ -22,6 +22,7 @@ export {
   type BudgetRecord,
   type ReservationRecord,
   type NodeInstanceRecord,
+  type ProjectExecutionSnapshotRecord,
   type ProjectRecord,
   type RunRecord,
   type TaskRecord,

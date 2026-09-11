@@ -256,6 +256,7 @@ describe("SqliteWorldSnapshot", () => {
       id: "wfi_snap",
       projectId: ids.projectId,
       workflowVersionId: "wfv_snap",
+      executionSnapshotId: "snp_snap",
       graph: {
         id: "wfv_snap",
         workflowId: "wf_snap",
@@ -361,6 +362,7 @@ describe("SqliteWorldSnapshot", () => {
       budgets: [budget],
       reservations,
       usageKeys: [],
+      executionSnapshots: [],
     };
   }
 });

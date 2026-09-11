@@ -5,6 +5,7 @@ import type {
   ArtifactRecord,
   BudgetRecord,
   NodeInstanceRecord,
+  ProjectExecutionSnapshotRecord,
   ProjectRecord,
   ReservationRecord,
   RunRecord as AppRunRecord,
@@ -16,6 +17,7 @@ import type {
 import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
 import { organizationIdOfProject } from "./ensure.js";
 import { PersistenceError } from "./errors.js";
+import { SqliteProjectExecutionSnapshotRepository } from "./execution-snapshots.js";
 import { SqliteProjectRepository } from "./projects.js";
 import {
   SqliteApprovalRepository,
@@ -44,6 +46,7 @@ export interface WorldEntitySnapshot {
   budgets: BudgetRecord[];
   reservations: ReservationRecord[];
   usageKeys: string[];
+  executionSnapshots: ProjectExecutionSnapshotRecord[];
 }
 
 export class SqliteWorldSnapshot {
@@ -57,6 +60,7 @@ export class SqliteWorldSnapshot {
   readonly budgets: SqliteBudgetRepository;
   readonly reservations: SqliteReservationRepository;
   readonly usage: SqliteUsageRepository;
+  readonly executionSnapshots: SqliteProjectExecutionSnapshotRepository;
 
   constructor(private readonly db: DatabaseSync) {
     this.projects = new SqliteProjectRepository(db);
@@ -69,6 +73,7 @@ export class SqliteWorldSnapshot {
     this.budgets = new SqliteBudgetRepository(db);
     this.reservations = new SqliteReservationRepository(db);
     this.usage = new SqliteUsageRepository(db);
+    this.executionSnapshots = new SqliteProjectExecutionSnapshotRepository(db);
   }
 
   load(): WorldEntitySnapshot {
@@ -83,6 +88,7 @@ export class SqliteWorldSnapshot {
       budgets: this.budgets.listAll(),
       reservations: this.reservations.listActive(),
       usageKeys: this.usage.listIdempotencyKeys(),
+      executionSnapshots: this.executionSnapshots.listAll(),
     };
   }
 
@@ -91,6 +97,10 @@ export class SqliteWorldSnapshot {
    * in the same transaction when mutating live state.
    */
   save(tx: Tx, snapshot: WorldEntitySnapshot, at: string): void {
+    for (const executionSnapshot of snapshot.executionSnapshots) {
+      // Insert-once: an existing snapshot with the same content is a no-op.
+      this.executionSnapshots.insert(tx, executionSnapshot);
+    }
     for (const project of snapshot.projects) {
       putWithCas(this.projects.get(project.id), project, (expected) => {
         if (expected === undefined) {
