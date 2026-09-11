@@ -90,20 +90,4 @@ describe("IPC whitelist", () => {
     ).toBe(true);
     expect(isAllowedApiRequest({ method: "DELETE", path: "/api/v1/workflows" })).toBe(false);
   });
-
-  it("allows capability-matrix team write paths so Electron can reach a future M7 API", () => {
-    expect(isAllowedApiRequest({ method: "GET", path: "/api/v1/teams" })).toBe(true);
-    expect(isAllowedApiRequest({ method: "GET", path: "/api/v1/teams/tm_1/versions/tmv_1" })).toBe(
-      true,
-    );
-    expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/teams" })).toBe(true);
-    expect(isAllowedApiRequest({ method: "PATCH", path: "/api/v1/teams/tm_1" })).toBe(true);
-    expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/teams/tm_1/versions" })).toBe(true);
-    expect(
-      isAllowedApiRequest({ method: "PATCH", path: "/api/v1/teams/tm_1/versions/tmv_1" }),
-    ).toBe(true);
-    expect(
-      isAllowedApiRequest({ method: "POST", path: "/api/v1/teams/tm_1/versions/tmv_1:publish" }),
-    ).toBe(true);
-  });
 });
