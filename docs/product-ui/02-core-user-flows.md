@@ -2,19 +2,21 @@
 
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
-**日期：** 2026-09-10  
-**修订：** 2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**日期：** 2026-09-11  
+**修订：** 2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
-桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。
+产品主对象是 Project。围着该项目：编排 Team（M3 选预设；M7 可自定义）、编排 Tasks、编排 Workflow（M3 只读目录；M7 画布），再执行与验收。桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。
 
 ```mermaid
 flowchart TD
   Start[新建项目] --> Goal[输入目标与验收条件]
   Goal --> Workspace[绑定 Workspace]
-  Workspace --> Team[选择 AI 团队]
-  Team --> Plan[Planner 生成 Task 计划]
+  Workspace --> Team[编排 Team]
+  Team --> Tasks[编排 Tasks]
+  Tasks --> Flow[编排 Workflow]
+  Flow --> Plan[Planner 生成或确认计划]
   Plan --> Confirm{人工确认}
   Confirm -->|修改| Plan
   Confirm -->|通过| Schedule[Scheduler 分配 Worker Runtime 和 Node]
@@ -24,6 +26,8 @@ flowchart TD
   Approval -->|返工| Schedule
   Approval -->|通过| Complete[项目完成]
 ```
+
+M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team 与画布。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。
 
 ## 2. 单节点多 Agent 调度
 
@@ -111,3 +115,30 @@ flowchart TD
 - Task、Event 与 CoordinationMessage 传递状态、请求、反馈和 handoff。
 - 消息只传 ArtifactRef，不内嵌大文件。
 - 默认禁止 Agent 直接写主分支。
+
+## 7. 编辑并发布工作流（M7 画布）
+
+```mermaid
+flowchart TD
+  List[工作流目录] --> Edit[画布编辑草稿]
+  Edit --> Save[保存未发布版本]
+  Save --> Publish{发布}
+  Publish -->|校验失败| Edit
+  Publish -->|通过| Frozen[不可变 WorkflowVersion]
+  Frozen --> Bind[确认计划后绑定执行图]
+```
+
+未发布图不能被 Runtime 执行。活动执行图仍按 D02 冻结，不在画布上原地改。
+
+## 8. 自定义 Team 编排（M7）
+
+```mermaid
+flowchart TD
+  Preset[预设 Software Dev Team] --> Use[项目绑定已发布版本]
+  New[新建自定义 Team] --> Draft[编辑成员与 RuntimeProfile]
+  Draft --> Pub{发布 TeamVersion}
+  Pub -->|通过| Use
+  Pub -->|失败| Draft
+```
+
+未发布草稿不能 `:start-planning`。预设模板始终可选。

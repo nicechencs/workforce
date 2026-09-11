@@ -142,7 +142,7 @@ Lease 到期不证明旧进程已停止。fencing 只能阻止旧结果被平台
 
 ## 5. B2 范围与文档整理
 
-1. **P0 页面过宽。** 最小切片需要项目创建/详情、Run 控制台、Artifact/审批及本机诊断。AI 团队首版可展示预设版本；自定义编排、完整节点管理、复杂仪表盘在闭环之后。UI 已写明 Local Node 只读，但远程 drain/revoke、多节点示意及 push 审批图应标成未来示意，避免按全部 P0 实施。
+1. **P0 页面过宽。** 最小切片需要项目创建/详情、Run 控制台、Artifact/审批及本机诊断。AI 团队首版可展示预设版本。**后续冻结（2026-09-11）：** 自定义 Team 编排与可视化画布已升为 M7 必达（[D15](decision-register.md#d15-可视化工作流画布编辑器) / [D16](decision-register.md#d16-自定义-team-编排)），不再是「闭环之后再看要不要做」。完整节点管理、复杂仪表盘仍在闭环之后。UI 已写明 Local Node 只读，但远程 drain/revoke、多节点示意及 push 审批图应标成未来示意，避免按全部 P0 实施。
 2. **旧待定项需关闭。** PRD §12 仍把是否包含云端、是否实现 Claude 作为待定；MVP/ADR 已给出本地优先与首版范围。架构仍列 HTTP/SSE 待冻结，而 API 已选 REST+SSE。把已决定事项移出 unresolved 列表。
 3. **文档追加导致重号。** 05、06、07、08、10 的末尾补充有重复或跳跃章节编号；02/03 的主体模型没有吸收新 Node 字段。把补充整合进正文，保留 ADR 历史依据。
 4. **目录入口过时。** docs/README 声称 adr 尚未有实际文件，但已存在两份 ADR；README 中 protocols/operations 应标明计划目录。apps/api 与 apps/control-plane 应统一长期名称。

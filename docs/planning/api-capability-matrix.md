@@ -1,18 +1,21 @@
 # V0.1 页面与 API 能力矩阵
 
 日期：2026-09-11  
-状态：**已冻结（首版按钮与 endpoint）**  
-权威：[decision-register.md](decision-register.md) D08。  
+状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排）**  
+权威：[decision-register.md](decision-register.md) §0、D08、D15、D16。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
-修订：2026-09-11 — 增补 P1 **只读**工作流目录 `GET /workflows`（及模板/版本详情）。无画布编辑器，不是可执行 Runtime。与 [IA §6.2](../product-ui/01-information-architecture.md) 对齐。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则；未发明可写项目策略或远程 enrollment。
+修订：2026-09-11 — 主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。
+
+**项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布编排 Workflow」。
 
 图例：
 
 - **M3**：Mock 闭环必须可用
 - **M4**：真实 Codex 接入后
 - **M5**：治理全链路
-- **later**：V0.1 后或不做
-- **readonly**：可展示，不可改
+- **M7**：补齐项目制循环上的画布与自定义 Team（产品必达；M3 之后领取，见 D15/D16）
+- **later**：V0.1 后或不做（**不含**画布与自定义 Team）
+- **readonly**：可展示，不可改（M3 过渡深度）
 - **unsupported**：探测后禁用
 
 ## 1. 页面范围
@@ -23,30 +26,35 @@ P0 最小切片（M3 必须能走完主路径）：
 |---|---|---|
 | 应用壳 / 连接状态 | 必须 | Daemon 健康、重连、版本不兼容错误 |
 | 工作台 | 部分 | 待审批、运行中 Run、活跃项目；不做复杂统计 |
-| 项目列表 / 创建 / 详情 | 必须 | 创建、配置、规划确认、Task DAG。详情分区见 IA §4.3：配置写入在 Settings，DAG 在 Tasks，项目命令在页头 |
+| 项目列表 / 创建 / 详情 | 必须 | **主对象**。创建、配置（Workspace / Team / 预算）、规划确认、Task DAG。详情分区见 IA §4.3：配置写入在 Settings，DAG 在 Tasks，项目命令在页头 |
 | Task 详情 | 必须 | 依赖、验收、Run 历史 |
 | Run 控制台 | 必须 | 时间线、日志、取消、用量（未知成本展示） |
 | Artifact 查看 | 必须 | 固定版本 diff/内容/Evaluation |
 | 审批卡 | 必须 | plan + artifact；digest/版本/到期 |
 | 本机诊断 / Local Node | 必须 | 只读本机节点与 Mock/Codex 探测 |
-| AI 团队 | readonly | 预设 Software Development Team |
+| AI 团队 | readonly → M7 | 项目循环第一环。M3：只读预设 Software Development Team。M7：为项目自定义编排（创建/版本/发布）。见 D16 |
 | 设置 | 部分 | 本机 Runtime 探测、预算展示 |
 
-P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/01-information-architecture.md)）：
+P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-architecture.md)）：
 
-| 页面 | M3 | 说明 |
+| 页面 | 阶段 | 说明 |
 |---|---|---|
-| 运行记录列表 | 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
-| 工作流模板 / 版本 | readonly | IA P1；只读目录：已发布模板、不可变版本、结构化步骤。查询 `GET /workflows`（及模板/版本详情）。无画布编辑器；目录不是可执行 Runtime，不得宣称 Mock/Codex 已执行这些定义 |
+| 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
+| 工作流目录 / 画布 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口，发布后绑定到 Project（D15）。目录不是可执行 Runtime |
 
-明确后置或示意：
+M7 必达——补齐项目制循环（当前**未实现**；未领取前不要塞进随机 PR）：
 
 | 页面/动作 | 处理 |
 |---|---|
-| 自定义 Team 编排 | later；只读预设 |
+| 可视化工作流画布编辑器 | 为项目编排 Workflow；与只读目录共用「工作流」入口 |
+| 自定义 Team 编排 | 为项目配团队；M3 只读预设仍必须可用 |
+
+仍后置或示意（与 D15/D16 无关）：
+
+| 页面/动作 | 处理 |
+|---|---|
 | 项目归档 | later；无按钮 |
 | 远程节点 drain/revoke | later；不得显示在线远程节点 |
-| 可视化 Workflow 编辑器 | later |
 | 完整仪表盘图表 | later |
 | GitHub PR / push | unsupported |
 | 通用交互终端接到 Renderer | unsupported |
@@ -143,15 +151,31 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | POST | `/runtimes/{id}:diagnose` | 必须 | 本机诊断 |
 | GET | `/nodes` | 必须 | 仅 Local Node |
 | GET | `/nodes/{id}` | 必须 | 容量只读 |
-| GET | `/teams` | 必须 | 预设列表 |
-| GET | `/teams/{id}` | 必须 | 只读 Worker 版本 |
-| POST/PATCH `/teams` | — | later | 无写接口 |
-| GET | `/workflows` | readonly | P1 只读目录：已发布模板列表（含版本与结构化步骤）。数据来自已发布模板（如 software-dev feature-delivery），不是 Runtime 执行图 |
-| GET | `/workflows/{id}` | readonly | 单个已发布模板 |
-| GET | `/workflows/{id}/versions/{versionId}` | readonly | 不可变版本 + 结构化步骤 |
-| POST/PATCH `/workflows` | — | later | 无写接口；可视化编辑器仍为 later |
+| GET | `/teams` | 必须 | M3 预设列表；M7 含已发布自定义 Team |
+| GET | `/teams/{id}` | 必须 | M3 只读 Worker 版本 |
+| GET | `/teams/{id}/versions/{versionId}` | M7 | 精确 TeamVersion；Project 绑定快照用此，不用 `latest` 执行 |
+| POST | `/teams` | M7 | 创建自定义 Team 草稿 |
+| PATCH | `/teams/{id}` | M7 | 编辑未发布 Team 元数据 |
+| POST | `/teams/{id}/versions` | M7 | 创建 TeamVersion 草稿（成员/角色/RuntimeProfile 嵌在 payload） |
+| PATCH | `/teams/{id}/versions/{versionId}` | M7 | 编辑未发布编排 |
+| POST | `/teams/{id}/versions/{versionId}:publish` | M7 | 发布不可变 TeamVersion |
 | GET | `/projects/{id}/budget` | 必须 | 页头只读 + Settings；unknown/estimated/settled |
 | POST | `/projects/{id}/budget:raise` | M5 | 需 budget gate |
+
+### Workflows
+
+只读目录是 M3/P1 **过渡切片**（`GET /workflows` 已接通）。写接口与画布同属 M7。未发布图不是 Runtime 执行对象。
+
+| Method | Path | 阶段 | 说明 |
+|---|---|---|---|
+| GET | `/workflows` | readonly | 已发布模板列表（已接通）。不是 M3 Mock 闭环硬依赖。数据来自已发布模板（如 software-dev feature-delivery），不是项目内执行图 |
+| GET | `/workflows/{id}` | readonly | 单个已发布模板 |
+| GET | `/workflows/{id}/versions/{versionId}` | readonly / M7 | M3：不可变版本 + 结构化步骤（已接通）。M7：同一路径返回已发布图（nodes/edges）；已发布不可改 |
+| POST | `/workflows` | M7 | 创建草稿 WorkflowDefinition |
+| PATCH | `/workflows/{id}` | M7 | 编辑未发布定义元数据 |
+| POST | `/workflows/{id}/versions` | M7 | 创建草稿图版本 |
+| PATCH | `/workflows/{id}/versions/{versionId}` | M7 | 画布保存未发布图 |
+| POST | `/workflows/{id}/versions/{versionId}:publish` | M7 | 发布不可变 WorkflowVersion；失败不得假装已发布 |
 
 ## 3. 错误与并发（T02 生成）
 
@@ -187,6 +211,10 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | 新建项目 | `POST /projects` | — |
 | 选择仓库 | 项目详情 Settings → 原生 dialog → `POST .../workspaces` | draft |
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
+| 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
+| 发布工作流版本 | `/workflows/{id}/versions/{versionId}:publish` | M7；有限 DAG 校验通过 |
+| 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
+| 发布 Team 版本 | `/teams/{id}/versions/{versionId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
 | 确认计划 | `:confirm-plan` 或 `approvals/:approve` gate=plan | Plan Artifact available |
 | 开始开发 | `:start` | ready |
@@ -196,11 +224,13 @@ P1 一级导航（壳上可见；深度更薄。权威：[IA §2](../product-ui/
 | 要求修改 | `:request-changes` | waiting_review |
 | 导出 | T14 query/command（T02 列入 protocol） | 最终 digest 已批准 |
 
-## 6. T12/T13 约定
+## 6. T12/T13/T18/T19 约定
 
 - 只使用 `packages/desktop-client` 生成的 typed client
 - 公开 Task DTO 的 `dependsOn` 由 `packages/protocol` 定义；页面只消费该字段，不另造 DAG API
 - Artifact 内容路由走已列 versioned path；不发明无版本 content
 - 不发明可写项目策略 endpoint 或远程节点 enrollment
+- 不改 OpenAPI / protocol（缺口交 T02）
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
+- T18/T19 未领取前，不实现画布或 Team 写接口；只读目录实现不得宣称画布已完成

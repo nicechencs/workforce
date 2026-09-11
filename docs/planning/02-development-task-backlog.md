@@ -1,12 +1,12 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
-日期：2026-09-10  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。  
-前置阅读：[设计评审与待冻结决策](01-design-review.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
+日期：2026-09-11  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐项目循环上的画布与自定义 Team，**代码未实现**。  
+前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15 / D16](decision-register.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
 
-这是一份后续开发交接清单，不是当前已经分配给 agent 的工作。任务按依赖分批领取，不建议同时开 18 个 agent。
+这是一份后续开发交接清单，不是当前已经分配给 agent 的工作。任务按依赖分批领取，不建议同时开 18 个 agent。领取 T18/T19 时按**项目制**实现：画布与自定义 Team 是「围着一个项目编排 Team / Tasks / Workflow」，不是独立产品。
 
 - 先完成 T00 的共享决策与 T01 工程骨架，再用 T02 冻结可执行契约。
 - T03 的独立技术实验可以与前两项并行，不向产品目录复制未经整理的实验代码。
@@ -25,6 +25,7 @@
 | M4 真实编码 | 已探测能力的 Codex 在隔离仓库执行并输出固定版本 diff/报告 | T03、T06、T07、T15、T16 |
 | M5 完整受控 Alpha | 真实规划、返工、接管、整合验收、预算和恢复全部走通 | T08、T09、T12–T16 完整验收 |
 | M6 三平台 Alpha | Windows/macOS/Linux 安装与恢复 smoke 通过 | T17 |
+| M7 补齐项目制循环 | 围着 Project：自定义 Team 可编排并绑定；Tasks 可解释；画布可编排并发布 WorkflowVersion。未发布图/草稿 Team 不可执行、不可开始规划 | T02 扩展、T09 校验发布、T10 写 API、T18、T19、T16 |
 
 M1/M2 允许交错开发。M3 必须包含最小权限与审批 gate，不能先把真实 Runtime 无约束接进来，最后才补安全。
 
@@ -44,6 +45,11 @@ flowchart TD
   M3 --> Live[真实运行与治理验收 T16]
   T15 --> Live
   Live --> T17[三平台发布 T17]
+  T02 --> Orchestration[画布 T18 / 自定义 Team T19]
+  T10 --> Orchestration
+  T09 --> Orchestration
+  M3 --> Orchestration
+  Orchestration --> M7[M7 补齐项目制循环]
 ~~~
 
 图表示集成依赖；精确开工条件见任务卡。所有阶段均以实际可运行证据验收，不估算固定日历日期。
@@ -70,6 +76,8 @@ flowchart TD
 | T15 | Codex Adapter | runtimes/codex | T02 + T03 | 高 / 大 |
 | T16 | 联调、恢复与端到端验证 | 根 tests，受协调的 composition 接线 | 可从 T02 写场景；验收等待依赖 | 高 / 大 |
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
+| T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
+| T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
@@ -240,7 +248,7 @@ flowchart TD
 
 **所有权：** apps/desktop/src/renderer/features/projects/、tasks/、teams/ 及各自测试。不改 app shell、路由表、通用 UI 或 API schema。
 
-**工作：** 项目列表/创建/详情；配置 Workspace、预设 Team、Runtime、预算后启动规划；Plan 版本确认；Task DAG/列表、依赖/验收条件/历史 Run；只读预设 Team/Worker 版本。按能力矩阵接入编辑、暂停、取消、重试等实际支持动作。
+**工作：** 项目列表/创建/详情；配置 Workspace、预设 Team、Runtime、预算后启动规划；Plan 版本确认；Task DAG/列表、依赖/验收条件/历史 Run；M3 只读预设 Team/Worker 版本。按能力矩阵接入编辑、暂停、取消、重试等实际支持动作。自定义 Team 写面归 T19，不在本卡实现画布。
 
 **验收：** 使用同一 typed client 与 fixture；创建失败不丢表单；412 保留用户输入并提示刷新；规划未批准不启动 Developer；Task 与 Run 状态不混用；只能点击合法状态动作，后端仍执行最终验证。
 
@@ -313,6 +321,41 @@ flowchart TD
 
 **外部动作：** 创建 Release 草稿/上传/正式发布/推送代码仅在用户后续授权范围内进行。本清单不构成自动对外发布授权。
 
+### T18 — 可视化工作流画布
+
+**目标：** 兑现 D15：用户能在项目循环里用画布为该项目编排、发布有限 DAG（不是独立工作流 IDE）。
+
+**所有权：** `apps/desktop/src/renderer/features/workflows/` 及包内测试。不改 protocol、daemon composition、workflow-engine 或路由表。已接通的只读目录（`GET /workflows`）保留为列表/详情过渡面。
+
+**工作：**
+
+- 工作流列表与详情保留只读目录切片；增加「新建 / 在画布中编辑」。
+- 画布编辑未发布 `WorkflowVersion`（nodes/edges）；保存走矩阵写接口；发布产生不可变版本。
+- 空态、未发布「Runtime 不会执行此图」、发布失败保留画布内容。
+- 不得在画布上改活动执行图；确认计划后的执行 `WorkflowVersion` 仍按 D02 冻结。
+- 公共 DTO/endpoint 缺口提交 T02/T10/T09，不在 renderer 发明第二套图协议。
+
+**验收：** 使用 typed client；未实现写接口时按钮不可假成功。写接口就绪后：新建 → 保存草稿 → 发布 → 列表可见新版本；未发布图不能被 `:start` / Runtime 执行。有限 DAG 非法边/循环被拒绝。headed 未跑不得宣称画布可用。
+
+**集成依赖：** T02 图 DTO、T09 发布校验、T10 写 API、T11 路由（已有 workflows slot 则可复用）。可先用 fake client 画 UI，合并时接真实 endpoint。
+
+### T19 — 自定义 Team 编排
+
+**目标：** 兑现 D16：用户能围着 Project 创建并发布自定义 TeamVersion 并绑定到该项目（不是独立员工目录）。
+
+**所有权：** `apps/desktop/src/renderer/features/teams/` 可写切片及测试。领取前确认 T12 不再改同一文件。不改 protocol / daemon composition。
+
+**工作：**
+
+- 保留预设 Software Development Team 只读卡。
+- 新建 Team 草稿、编辑成员（role + RuntimeProfile + quantity）、发布不可变 TeamVersion。
+- 项目 draft 可绑定已发布自定义 Team；未发布草稿不能 `:start-planning`。
+- 空态与 412 保留输入；无写接口时不渲染可点击成功态。
+
+**验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
+
+**集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
+
 ## 5. 实际并行领取建议
 
 ### 第 0 批：澄清与降低不确定性
@@ -337,7 +380,7 @@ T02 不必一次冻结所有远期协议；M3 必需字段和所有消费者使�
 
 ### 第 3 批：集成与发布
 
-T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。最终接线、迁移顺序和主分支验收由一个协调者控制。
+T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。最终接线、迁移顺序和主分支验收由一个协调者控制。
 
 ## 6. 避免冲突的硬规则
 
@@ -350,6 +393,8 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 | Electron preload、路由、共享 UI | T11 |
 | Workflow 与业务状态转换 | T09 |
 | planning/delivery 业务编排 | T14，调用 T09 公共用例 |
+| 工作流画布 UI | T18；图协议归 T02，发布校验归 T09，HTTP 归 T10 |
+| 自定义 Team 写 UI | T19；TeamVersion 契约归 T02，HTTP 归 T10 |
 | Release/打包配置 | T17，避免与 T11 同时编辑生命周期文件 |
 
 - 每个 agent 一个分支/独立 worktree；不要让多个 agent 共用同一可写 checkout。
