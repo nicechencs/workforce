@@ -14,6 +14,7 @@ import {
   DEFAULT_MODE,
   probeOrchestrationSupport,
   resolveSelectedMode,
+  type OrchestrationMode,
 } from "../orchestration/index.js";
 import { defaultCapabilities, taskDependencyLabel } from "../projects/model.js";
 import {
@@ -49,7 +50,7 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState<TaskActionId | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitiesDto>(defaultCapabilities());
-  const [orchestrationMode, setOrchestrationMode] = useState(DEFAULT_MODE);
+  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
 
   const reload = useCallback(async () => {
     const loaded = await client.getTask(taskId);

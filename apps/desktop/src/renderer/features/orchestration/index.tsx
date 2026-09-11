@@ -13,3 +13,4 @@ export {
   probeOrchestrationSupport,
   resolveSelectedMode,
 } from "./model.js";
+export type { OrchestrationMode } from "./model.js";

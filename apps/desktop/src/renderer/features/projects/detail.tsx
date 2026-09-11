@@ -35,6 +35,7 @@ import {
   DEFAULT_MODE,
   probeOrchestrationSupport,
   resolveSelectedMode,
+  type OrchestrationMode,
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
@@ -110,7 +111,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [teamWrite, setTeamWrite] = useState<TeamWriteSupport>(unavailableTeamWriteSupport);
   const [bindBusy, setBindBusy] = useState(false);
   const [bindError, setBindError] = useState<string | null>(null);
-  const [orchestrationMode, setOrchestrationMode] = useState(DEFAULT_MODE);
+  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
 
   const reload = useCallback(
     async (keepInput: boolean) => {
