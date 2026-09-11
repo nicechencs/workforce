@@ -180,6 +180,51 @@ describe("run cancellation", () => {
     expect(host.cancelCalls).toEqual([{ handleId: run.handleId, reason: "user_cancel" }]);
   });
 
+  it("records a real no-op acceptance for a legacy cancelled run without a timestamp", async () => {
+    const host = new RecordingRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    await app.cancelRun({
+      operationId: "op_cancel_legacy_setup",
+      idempotencyKey: "cancel_legacy_setup",
+      runId: run.id,
+    });
+    settleRunCancel(app.ctx, run.id);
+    delete run.cancelRequestedAt;
+    const revision = run.stateRevision;
+    app.world.clock.advance(1_000);
+    const acceptedAt = app.world.nowIso();
+
+    const accepted = await app.cancelRun({
+      operationId: "op_cancel_legacy",
+      idempotencyKey: "cancel_legacy",
+      runId: run.id,
+    });
+
+    expect(accepted).toEqual({
+      accepted: true,
+      status: "cancelled",
+      cancelRequestedAt: acceptedAt,
+    });
+    expect(run).toMatchObject({
+      status: "cancelled",
+      cancelRequestedAt: acceptedAt,
+      updatedAt: acceptedAt,
+      stateRevision: revision + 1,
+    });
+    expect(host.cancelCalls).toHaveLength(1);
+
+    const beforeRepeat = { ...run };
+    app.world.clock.advance(1_000);
+    const repeated = await app.cancelRun({
+      operationId: "op_cancel_legacy_again",
+      idempotencyKey: "cancel_legacy_again",
+      runId: run.id,
+    });
+    expect(repeated).toEqual(accepted);
+    expect(run).toEqual(beforeRepeat);
+    expect(host.cancelCalls).toHaveLength(1);
+  });
+
   it("rejects a new cancel after a requested cancellation loses the terminal race", async () => {
     const host = new RecordingRuntimeHost();
     const { app, run } = await startRunningRun(host);

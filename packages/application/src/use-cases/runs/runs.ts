@@ -158,10 +158,15 @@ export async function cancelRun(
 ): Promise<{ accepted: true; status: RunRecord["status"]; cancelRequestedAt: string }> {
   const run = requireRun(ctx, input.runId);
   if (run.status === "cancelled") {
+    if (!run.cancelRequestedAt) {
+      const now = ctx.world.nowIso();
+      run.cancelRequestedAt = now;
+      touch(run, now);
+    }
     return {
       accepted: true,
       status: run.status,
-      cancelRequestedAt: run.cancelRequestedAt ?? run.updatedAt,
+      cancelRequestedAt: run.cancelRequestedAt,
     };
   }
   if (run.status === "succeeded" || run.status === "failed" || run.status === "timed_out") {

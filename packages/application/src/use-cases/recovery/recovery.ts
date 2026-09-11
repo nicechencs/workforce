@@ -22,16 +22,33 @@ export async function reconcile(ctx: AppContext, projectId: string): Promise<Rec
     if (run.projectId !== projectId) {
       continue;
     }
-    if (ctx.world.unknownStatuses.has(run.id)) {
+    if (run.status === "cancelled") {
+      ctx.world.unknownStatuses.delete(run.id);
+      continue;
+    }
+
+    if (run.cancelRequestedAt) {
+      if (run.handleId) {
+        let inspected: { status: string } | undefined;
+        try {
+          inspected = await ctx.host.inspect(run.handleId);
+        } catch {
+          // Inspection failures leave cancellation pending for a later reconcile.
+        }
+        if (inspected?.status === "cancelled") {
+          settleRunCancel(ctx, run.id);
+          ctx.world.unknownStatuses.delete(run.id);
+          cancelled.push(run.id);
+          continue;
+        }
+      }
+      ctx.world.unknownStatuses.add(run.id);
       unknown.push(run.id);
       continue;
     }
-    if (run.cancelRequestedAt && run.status !== "cancelled") {
-      if (run.handleId) {
-        await ctx.host.inspect(run.handleId);
-      }
-      settleRunCancel(ctx, run.id);
-      cancelled.push(run.id);
+
+    if (ctx.world.unknownStatuses.has(run.id)) {
+      unknown.push(run.id);
     }
   }
 
