@@ -16,14 +16,24 @@
 
 权威顺序以 [decision-register.md](decision-register.md) §1 / D01 为准，此处不抄录。不要把 [02-development-task-backlog.md](02-development-task-backlog.md) 里过时的“均未开始”当成现状。
 
+## 0. 分支模型
+
+| 分支 | 角色 | 说明 |
+|---|---|---|
+| `dev` | 仓库**默认分支**；日常开发与集成 | 所有 PR 的合并目标；`task/*` 从最新 `dev` 拉出 |
+| `release` | 未来发版 | 发版时从 `dev` 切出并冻结；V0.1 发布流程属 T17，**尚未实现** |
+| `task/*` | 短期任务分支 / 独立 worktree | 从最新 `dev` 拉出，合入后删除 |
+
+`main` 已重命名为 `dev`，不再是集成分支。
+
 ## 1. 角色
 
 命名 bot 的仓库职责只写在本表。会话内 Planner / Developer / Reviewer 见 [agent-workflow.md](../guides/agent-workflow.md)，不与下表混用同一套结论词。
 
 | 角色 | 职责 | 禁止 |
 |---|---|---|
-| **项目管理-bot** | 排期、边界、领取范围；`main` 的最终合入门禁 | 不写业务代码；不代替 review / headed 验收 |
-| **Coding-bot** | 以 Cursor 为主写代码；从最新 `main` rebase；CI 变绿；解决冲突 | **不得自行 merge** 到 `main` |
+| **项目管理-bot** | 排期、边界、领取范围；`dev` 的最终合入门禁 | 不写业务代码；不代替 review / headed 验收 |
+| **Coding-bot** | 以 Cursor 为主写代码；从最新 `dev` rebase；CI 变绿；解决冲突 | **不得自行 merge** 到 `dev` |
 | **review-bot** | 对照冻结决策做书面 PR 评审：`pass` / `conditional` / `reject` | 不 merge；不做 headed 桌面验收 |
 | **Test-bot** | 仅做真实 headed Electron / 桌面点击验收 | 不改代码；不做 PR 代码评审 |
 | **UI审查-bot** | UI 包或桌面页面变更时的视觉 / 交互审查 | 不替代 review-bot 的契约评审；不 merge |
@@ -31,17 +41,17 @@
 ## 2. PR 管道
 
 ```text
-从最新 main 开分支
+从最新 dev 开分支
   → 聚焦 PR
   → CI 绿：format:check、lint、typecheck、test、build、check:docs
   → review-bot 书面评审（对照冻结决策）
-  → 项目管理-bot squash merge 进 main
+  → 项目管理-bot squash merge 进 dev
   → 若本 PR 声称桌面主路径可用：Test-bot headed 验收（可选，但声称则必须）
 ```
 
-- 分支从最新 `main` 拉出；合入前 rebase / 同步。
+- 分支从最新 `dev` 拉出；合入前 rebase / 同步。
 - Coding-bot 把 CI 修绿并处理冲突后停在待评审；**不自合**。
-- 合入 `main` 只用 squash merge，且仅项目管理-bot 执行。
+- 合入 `dev` 只用 squash merge，且仅项目管理-bot 执行。
 - UI 包 / `apps/desktop` 页面变更时加 UI审查-bot；仅文档或非 UI 包可跳过。
 - 本仓库的协作 PR 由人/项目管理-bot 显式发起。
 

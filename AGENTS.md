@@ -4,7 +4,7 @@
 
 ## 红线
 
-- 当前日常集成分支是 `main`。从已确认的基线创建短期 `task/*` 分支或独立 worktree；未经用户明确授权，不 push、不创建 PR、不发布。
+- 当前日常集成分支是 `dev`，`dev` 同时是仓库**默认分支**：日常开发和集成只发生在 `dev`。从已确认的基线创建短期 `task/*` 分支或独立 worktree；未来发版使用 `release` 分支，不把 `dev` 当发布分支。未经用户明确授权，不 push、不创建 PR、不发布。
 - 不让多个 Agent 共用同一个可写 checkout。并行任务的文件范围必须不重叠；公共文件和共享契约只有一个负责人。
 - 不绕过 `packages/protocol`、公开 `exports`、Application use case、Runtime SPI、Policy 或 Workspace/Process 边界复制第二套规则。
 - 不把 Mock、合成产物、未运行的真实 Runtime 或未验证的平台写成“已完成”。
@@ -15,17 +15,17 @@
 
 先读取当前任务命中的最小文档范围，不为形式通读 `docs/`。
 
-| 触发条件                             | 必须读取                                                               |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| 选择模型、推理等级或处理工具限制     | [Agent 能力与工具](docs/reference/agent-runtime.md)                    |
-| 委派、并行、交接或独立审查           | [Agent 协作指南](docs/guides/agent-workflow.md)                        |
-| 开 PR、rebase、书面评审或合入 `main` | [V0.1 协作与评审](docs/planning/04-collab-and-review.md)               |
-| 选择验证命令                         | [测试与验证](docs/guides/testing-and-validation.md)                    |
-| 新增或重写文档                       | [文档风格与治理](docs/STYLE.md) 与 [文档索引](docs/README.md)          |
-| 修改公共协议、状态或 API             | 对应 `docs/blueprint/`、`docs/protocols/`、ADR、状态矩阵和能力矩阵     |
-| 修改 T00–T21 负责范围或共享文件      | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
-| 判断当前完成度                       | [实现进度](docs/planning/03-implementation-status.md) 与当前源码、测试 |
-| 修改产品或规划文档                   | 同步追加 [产品沟通历史](docs/planning/communication-history.md)        |
+| 触发条件                            | 必须读取                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| 选择模型、推理等级或处理工具限制    | [Agent 能力与工具](docs/reference/agent-runtime.md)                    |
+| 委派、并行、交接或独立审查          | [Agent 协作指南](docs/guides/agent-workflow.md)                        |
+| 开 PR、rebase、书面评审或合入 `dev` | [V0.1 协作与评审](docs/planning/04-collab-and-review.md)               |
+| 选择验证命令                        | [测试与验证](docs/guides/testing-and-validation.md)                    |
+| 新增或重写文档                      | [文档风格与治理](docs/STYLE.md) 与 [文档索引](docs/README.md)          |
+| 修改公共协议、状态或 API            | 对应 `docs/blueprint/`、`docs/protocols/`、ADR、状态矩阵和能力矩阵     |
+| 修改 T00–T21 负责范围或共享文件     | [开发任务清单](docs/planning/02-development-task-backlog.md)           |
+| 判断当前完成度                      | [实现进度](docs/planning/03-implementation-status.md) 与当前源码、测试 |
+| 修改产品或规划文档                  | 同步追加 [产品沟通历史](docs/planning/communication-history.md)        |
 
 必读内容缺失、互相冲突或与代码不一致时，说明差异，只暂停依赖该结论的步骤，不自行补写事实。
 

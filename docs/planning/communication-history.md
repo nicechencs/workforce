@@ -87,3 +87,12 @@ updated: 2026-09-11
 - **决定：** `WorkflowDraft` 始终保持 draft，作者操作状态只属于 `AuthoringChangeSet`/step；多目标使用逐目标 `expectedRevision`，staged steps 持久化状态并支持失败、部分应用、取消、过期、重试和恢复。`ProjectExecutionSnapshot` 是 workflow-bound 的唯一版本来源，direct 永不推进 WorkflowInstance/Project；吸收 direct 产物必须新建 workflow-bound/follow-up command，显式引用精确 `ArtifactVersion` 并重新验收。启动流程前段只解析 placement intent，选定 Node/Runtime、Lease、WorkspaceInstance 后组装 PlacementSnapshot，再原子创建 Run、snapshot、Event/Outbox。
 - **文档影响：** `blueprint/10-database-schema.md` 删除 runs CHECK 对已移除 `workflow_version_id` 的引用，统一 step `patchRef` 存储/保留规则，并补齐现行 M3 Run 尚无 mode/transport/placement/snapshot 字段时的 T04 expand → backfill → switch → contract migration；`blueprint/03-system-architecture.md`、`diagrams/node-scheduling-flow.md`、`diagrams/dual-execution-mode-flow.md`、`diagrams/workflow-authoring-flow.md` 与 Product UI 核心流程同步启动顺序和 Run/snapshot/Event/Outbox 原子边界；Project 计划确认只创建 execution snapshot，`workflow.start` 才创建 WorkflowInstance。API blueprint/矩阵保持 `/teams/{id}/drafts...`、`/workflows/{id}/drafts...` 写草稿、`versions` 只读 published。`03-implementation-status.md` 与 MVP 计划明确 T04 migration、T16 current-M3 upgrade fixture 仍 planned/not implemented；`check-docs` fenced block 只识别 0–3 个前导空格，并覆盖 4 空格/tab 测试。
 - **状态：** **planned**。本轮仍只修正文档与文档检查器；T04 migration、T16 upgrade fixture、D17/D18 实现与公共 schema 均未实现。
+
+---
+
+## 2026-09-11（Asia/Taipei）分支模型改为 `dev` / `release`
+
+- **决定：** 仓库默认分支由 `main` 改为 `dev`。`dev` 是唯一的日常开发与集成分支，同时是默认分支；未来发版使用 `release` 分支（从 `dev` 切出）。既有 `main` 上的提交历史整体保留并落到 `dev`，`main` 不再作为集成分支存在。
+- **文档影响：** [AGENTS.md](../../AGENTS.md) 红线与「按任务读取」的合入目标改为 `dev`；[04-collab-and-review.md](04-collab-and-review.md) 新增 §0 分支模型，PR 管道的合并目标与角色表改为 `dev`；[04-repository-structure.md](../blueprint/04-repository-structure.md) §17 GitHub 基线改为默认分支 `dev` 并补 `release`；[01-product-vision-prd.md](../blueprint/01-product-vision-prd.md) §13 与 [12-mvp-implementation-plan.md](../blueprint/12-mvp-implementation-plan.md) 的建仓步骤改为设置 `dev` 保护。
+- **不改动：** `docs/spikes/` 里的 `main` 是隔离实验仓的分支名，保留为历史记录；`05-task-protocol.md`、`11-api-design.md` 中 DTO 示例的 `ref` / `baseRef: "main"` 是任意 ref 取值示例，不是分支策略，本轮不改协议。
+- **状态：** 本地 **implemented**（`dev` 已建立并含原 `main` 与待合并任务分支的全部内容）。远程默认分支、远程 `main` 的处置与 `release` 发布流程 **未实现**：远程仍为 `origin/main`，推送与改默认分支需本次任务之外的明确授权，`release` 流程属 T17。

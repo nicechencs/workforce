@@ -457,8 +457,9 @@ docs/blueprint/
 建仓时建议：
 
 - 私有仓库 `workforce`
-- 默认分支 `main`
-- 禁止直接 push 到 `main`
+- 默认分支 `dev`（日常开发与集成）
+- 禁止直接 push 到 `dev`
+- 发版分支 `release`（从 `dev` 切出；发布流程见 T17，尚未实现）
 - 必须通过 PR 与 CI
 - squash merge
 - 启用 Dependabot/Renovate 之一

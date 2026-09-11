@@ -361,7 +361,7 @@ Spike 产出 ADR 和可执行 fixture，不直接成为未经整理的产品代�
 1. 创建私有仓库 `workforce`。
 2. 提交蓝图到 `docs/blueprint/`。
 3. 初始化 monorepo skeleton。
-4. 设置 `main` 保护、PR 模板和 CI。
+4. 设置 `dev`（默认分支）保护、PR 模板和 CI。
 5. 创建 M1–M6 milestones 与首批 issues。
 
 此时需要关联 GitHub 账号；此前的蓝图工作不依赖 GitHub。

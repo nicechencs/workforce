@@ -209,7 +209,7 @@ V0.1 成功不是功能数量，而是以下闭环可重复运行：
 9. API Contract
 10. MVP Implementation Plan
 
-完成以上蓝图并冻结关键接口后，初始化 `workforce` monorepo，关联 GitHub，建立 `main` 分支保护、PR 流程和 GitHub Actions。
+完成以上蓝图并冻结关键接口后，初始化 `workforce` monorepo，关联 GitHub，建立 `dev`（默认分支）分支保护、PR 流程和 GitHub Actions。
 
 ## 14. 混合与分布式执行补充
 
