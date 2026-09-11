@@ -4,14 +4,28 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
 
 import { MOCK_PLAN_DOCUMENT } from "@workforce/application";
 import { WorkforceSqlite } from "@workforce/database";
 import { createCanonicalAction } from "@workforce/policy";
+import { protocolVersion } from "@workforce/protocol";
+import type { StoredHandle } from "@workforce/runtime-sdk";
+import type { RuntimeHandle } from "@workforce/runtime-spi";
 
+import { buildApi } from "../src/api/index.js";
+import { SessionRegistry } from "../src/api/auth.js";
+import { createComposedAppServicesForTest } from "../src/composition/app-services.js";
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
-import { sqlitePath } from "../src/composition/persist.js";
+import {
+  dualWriteSqlite,
+  hostStorePath,
+  sqlitePath,
+  worldPath,
+} from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
+import { createIdFactory } from "../src/modules/ids.js";
+import { MemoryReceiptStore } from "../src/modules/receipts.js";
 import { commandHeaders, json, uniqueLockPath } from "./helpers.js";
 
 interface Harness {
@@ -21,11 +35,24 @@ interface Harness {
   auth: Record<string, string>;
 }
 
+interface InjectHarness {
+  api: FastifyInstance;
+  services: ComposedAppServices;
+  stateDir: string;
+  auth: Record<string, string>;
+}
+
 const daemons: Harness[] = [];
+const injectedApis: InjectHarness[] = [];
 
 afterEach(async () => {
   for (const item of daemons.splice(0)) {
     await item.daemon.close();
+    fs.rmSync(item.stateDir, { recursive: true, force: true });
+  }
+  for (const item of injectedApis.splice(0)) {
+    await item.api.close();
+    await item.services.close();
     fs.rmSync(item.stateDir, { recursive: true, force: true });
   }
 });
@@ -50,6 +77,59 @@ async function startComposed(stateDir?: string): Promise<Harness> {
   return harness;
 }
 
+async function startInjected(
+  stateDir?: string,
+  completeAfterMs = 5,
+  sqliteWriter?: typeof dualWriteSqlite,
+): Promise<InjectHarness> {
+  const dir = stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "wf-t10-inject-"));
+  const options = { stateDir: dir, completeAfterMs };
+  const services = sqliteWriter
+    ? await createComposedAppServicesForTest(options, sqliteWriter)
+    : await createComposedAppServices(options);
+  const sessions = new SessionRegistry("usr_test", "cli_test");
+  const session = sessions.issue();
+  const api = buildApi({
+    services,
+    receipts: new MemoryReceiptStore(),
+    sessions,
+    ids: createIdFactory(),
+    now: () => new Date(),
+    protocolVersion,
+    pid: process.pid,
+    startIdentity: `test:${process.pid}`,
+    bootstrapToken: "test-bootstrap-token",
+    sse: { heartbeatMs: 30, pollMs: 20 },
+    getPort: () => 0,
+  });
+  await api.ready();
+  const harness = {
+    api,
+    services,
+    stateDir: dir,
+    auth: { authorization: `Bearer ${session.token}` },
+  };
+  injectedApis.push(harness);
+  return harness;
+}
+
+async function injectJson(
+  harness: InjectHarness,
+  pathName: string,
+  init: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: string } = {},
+): Promise<{ status: number; body: unknown }> {
+  const response = await harness.api.inject({
+    method: init.method ?? "GET",
+    url: pathName,
+    headers: init.headers,
+    payload: init.body,
+  });
+  return {
+    status: response.statusCode,
+    body: response.body.length > 0 ? (JSON.parse(response.body) as unknown) : null,
+  };
+}
+
 async function poll<T>(
   fn: () => Promise<T | undefined | false | null>,
   timeoutMs = 2500,
@@ -64,6 +144,61 @@ async function poll<T>(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`timed out after ${timeoutMs}ms (last=${JSON.stringify(last)})`);
+}
+
+async function startRunningRun(
+  harness: InjectHarness,
+  suffix: string,
+): Promise<{
+  projectId: string;
+  run: { id: string; status: string; stateRevision: number };
+}> {
+  const created = await injectJson(harness, "/api/v1/projects", {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `create-${suffix}`),
+    body: JSON.stringify({
+      name: "Cancel settlement",
+      objective: "wait for runtime confirmation",
+      operationId: `op_create_${suffix}`,
+    }),
+  });
+  expect(created.status).toBe(201);
+  const project = created.body as { id: string; stateRevision: number };
+  const planned = await injectJson(harness, `/api/v1/projects/${project.id}:start-planning`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `plan-${suffix}`, project.stateRevision),
+    body: JSON.stringify({ operationId: `op_plan_${suffix}` }),
+  });
+  expect(planned.status).toBe(200);
+  const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+  const confirmed = await injectJson(harness, `/api/v1/projects/${project.id}:confirm-plan`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `confirm-${suffix}`, planning.stateRevision),
+    body: JSON.stringify({
+      planArtifactVersionId: planning.planArtifactVersionId,
+      operationId: `op_confirm_${suffix}`,
+    }),
+  });
+  expect(confirmed.status).toBe(200);
+  const ready = confirmed.body as { stateRevision: number };
+  const started = await injectJson(harness, `/api/v1/projects/${project.id}:start`, {
+    method: "POST",
+    headers: commandHeaders(harness.auth, `start-${suffix}`, ready.stateRevision),
+    body: JSON.stringify({ operationId: `op_start_${suffix}` }),
+  });
+  expect(started.status).toBe(200);
+
+  const run = await poll(async () => {
+    const listed = await injectJson(harness, `/api/v1/runs?projectId=${project.id}`, {
+      headers: harness.auth,
+    });
+    return (
+      listed.body as {
+        items: Array<{ id: string; status: string; stateRevision: number }>;
+      }
+    ).items.find((item) => item.status === "running");
+  });
+  return { projectId: project.id, run };
 }
 
 describe("composed M3 mock loop", () => {
@@ -309,6 +444,367 @@ describe("composed M3 mock loop", () => {
     } else {
       expect(finished.status).toBe("completed");
     }
+  });
+
+  it("settles a run only after the Host confirms cancellation and persists it idempotently", async () => {
+    const first = await startInjected(undefined, 60_000);
+    const { auth, services, stateDir } = first;
+    const { run: running } = await startRunningRun(first, "cancel");
+    const accepted = await injectJson(first, `/api/v1/runs/${running.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(auth, "cancel-run", running.stateRevision),
+      body: JSON.stringify({ reason: "stop", operationId: "op_cancel_run" }),
+    });
+    expect(accepted.status).toBe(202);
+    expect(accepted.body).toMatchObject({ resource: { type: "run", id: running.id } });
+    const durableRun = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === running.id);
+    expect(durableRun?.cancelRequestedAt).toBeTruthy();
+
+    const pending = await injectJson(first, `/api/v1/runs/${running.id}`, { headers: auth });
+    expect(pending.body).toMatchObject({ status: "running", cancelRequested: true });
+
+    const settled = await poll(async () => {
+      const current = await injectJson(first, `/api/v1/runs/${running.id}`, { headers: auth });
+      const body = current.body as {
+        id: string;
+        status: string;
+        stateRevision: number;
+        cancelRequested: boolean;
+      };
+      return body.status === "cancelled" ? body : undefined;
+    });
+    expect(settled.cancelRequested).toBe(true);
+
+    const run = services.app.world.runs.get(running.id);
+    expect(run?.handleId).toBeTruthy();
+    await (
+      services as unknown as {
+        handleTerminal(event: {
+          handleId: string;
+          hostRunId: string;
+          status: "cancelled";
+        }): Promise<void>;
+      }
+    ).handleTerminal({
+      handleId: run!.handleId!,
+      hostRunId: running.id,
+      status: "cancelled",
+    });
+    const afterDuplicate = await injectJson(first, `/api/v1/runs/${running.id}`, {
+      headers: auth,
+    });
+    expect(afterDuplicate.body).toMatchObject({
+      status: "cancelled",
+      stateRevision: settled.stateRevision,
+    });
+
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${running.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({
+      status: "cancelled",
+      stateRevision: settled.stateRevision,
+      cancelRequested: true,
+    });
+  });
+
+  it("preserves a pending cancellation through restart without dispatching another run", async () => {
+    const first = await startInjected(undefined, 60_000);
+    const { services, stateDir } = first;
+    const { projectId, run } = await startRunningRun(first, "cancel-restart");
+    const handleId = services.app.world.runs.get(run.id)?.handleId;
+    expect(handleId).toBeTruthy();
+
+    const accepted = await injectJson(first, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "cancel-before-restart", run.stateRevision),
+      body: JSON.stringify({ reason: "restart", operationId: "op_cancel_before_restart" }),
+    });
+    expect(accepted.status).toBe(202);
+    const pending = await injectJson(first, `/api/v1/runs/${run.id}`, {
+      headers: first.auth,
+    });
+    expect(pending.body).toMatchObject({ status: "running", cancelRequested: true });
+
+    const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+      headers: first.auth,
+    });
+    const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+      (item) => item.id,
+    );
+    await expect(services.host.inspect(handleId!)).resolves.toMatchObject({ status: "running" });
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${run.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({ status: "running", cancelRequested: true });
+    expect(second.services.app.world.runs.get(run.id)?.handleId).toBe(handleId);
+
+    const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+      headers: second.auth,
+    });
+    const afterIds = (after.body as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    expect(afterIds.sort()).toEqual(beforeIds.sort());
+    await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "unknown",
+    });
+  });
+
+  it.each(["deleted", "corrupt", "stale"] as const)(
+    "restores handle identity from SQLite when JSON sidecars are %s",
+    async (sidecarState) => {
+      const first = await startInjected(undefined, 60_000);
+      const { projectId, run } = await startRunningRun(first, `sqlite-handle-${sidecarState}`);
+      const handleId = first.services.app.world.runs.get(run.id)?.handleId;
+      expect(handleId).toBeTruthy();
+
+      const durable = await poll(() => first.services.sqlite.handles.get(run.id) ?? undefined);
+      const durableStored = durable.handle as StoredHandle;
+      expect(durable.runId).toBe(run.id);
+      expect(durableStored.handle.handleId).toBe(handleId);
+      expect(durableStored.handle.process?.startIdentity).toBe(durable.startIdentity);
+
+      const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+        headers: first.auth,
+      });
+      const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+        (item) => item.id,
+      );
+      const stateDir = first.stateDir;
+      await first.api.close();
+      await first.services.close();
+      injectedApis.splice(injectedApis.indexOf(first), 1);
+
+      if (sidecarState === "stale") {
+        const sidecar = JSON.parse(fs.readFileSync(hostStorePath(stateDir), "utf8")) as {
+          handles: StoredHandle[];
+        };
+        const stale = sidecar.handles.find(
+          (record) => record.request.operationId === durableStored.request.operationId,
+        );
+        expect(stale).toBeTruthy();
+        stale!.handle.handleId = "hdl_stale_sidecar";
+        stale!.handle.process = {
+          pid: (durable.pid ?? 0) + 1,
+          startIdentity: "stale-sidecar-identity",
+        };
+        fs.writeFileSync(hostStorePath(stateDir), JSON.stringify(sidecar), "utf8");
+      } else {
+        for (const sidecar of [worldPath(stateDir), hostStorePath(stateDir)]) {
+          if (sidecarState === "deleted") {
+            fs.unlinkSync(sidecar);
+          } else {
+            fs.writeFileSync(sidecar, "{not-json", "utf8");
+          }
+        }
+      }
+
+      const second = await startInjected(stateDir, 60_000);
+      const restoredRun = second.services.app.world.runs.get(run.id);
+      expect(restoredRun?.handleId).toBe(handleId);
+      const reopened = second.services.sqlite.handles.get(run.id);
+      expect(reopened?.startIdentity).toBe(durable.startIdentity);
+      expect((reopened?.handle as StoredHandle).handle.handleId).toBe(handleId);
+
+      let inspectedHandle: RuntimeHandle | undefined;
+      second.services.host.adapter.inspect = async (handle) => {
+        inspectedHandle = structuredClone(handle as RuntimeHandle);
+        return {
+          handle: { handleId: handle.handleId, runId: handle.runId },
+          status: "running",
+        };
+      };
+      await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+        status: "running",
+      });
+      expect(inspectedHandle).toMatchObject({
+        handleId,
+        process: {
+          pid: durable.pid,
+          startIdentity: durable.startIdentity,
+        },
+      });
+
+      let cancelledHandle: RuntimeHandle | undefined;
+      second.services.host.adapter.cancel = async (handle) => {
+        cancelledHandle = structuredClone(handle as RuntimeHandle);
+        return { operationId: `cancel:${handle.handleId}`, accepted: true };
+      };
+      const current = await injectJson(second, `/api/v1/runs/${run.id}`, {
+        headers: second.auth,
+      });
+      const cancelled = await injectJson(second, `/api/v1/runs/${run.id}:cancel`, {
+        method: "POST",
+        headers: commandHeaders(
+          second.auth,
+          `cancel-sqlite-${sidecarState}`,
+          (current.body as { stateRevision: number }).stateRevision,
+        ),
+        body: JSON.stringify({ operationId: `op_cancel_sqlite_${sidecarState}` }),
+      });
+      expect(cancelled.status).toBe(202);
+      expect(cancelledHandle).toMatchObject({
+        handleId,
+        process: {
+          pid: durable.pid,
+          startIdentity: durable.startIdentity,
+        },
+      });
+
+      const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+        headers: second.auth,
+      });
+      const afterIds = (after.body as { items: Array<{ id: string }> }).items.map(
+        (item) => item.id,
+      );
+      expect(afterIds.sort()).toEqual(beforeIds.sort());
+    },
+    20_000,
+  );
+
+  it("does not acknowledge cancel when its SQLite commit fails and keeps the queue retryable", async () => {
+    let failNextWrite = false;
+    const sqliteWriter: typeof dualWriteSqlite = async (...args) => {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error("injected SQLite write failure");
+      }
+      await dualWriteSqlite(...args);
+    };
+    const harness = await startInjected(undefined, 60_000, sqliteWriter);
+    const { services } = harness;
+    const { run } = await startRunningRun(harness, "cancel-write-failure");
+    await poll(() =>
+      services.sqlite.worldSnapshot.load().runs.some((item) => item.id === run.id)
+        ? true
+        : undefined,
+    );
+
+    failNextWrite = true;
+    const failed = await injectJson(harness, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "cancel-write-failure", run.stateRevision),
+      body: JSON.stringify({ operationId: "op_cancel_write_failure" }),
+    });
+    expect(failed.status).toBe(500);
+    const afterFailure = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === run.id);
+    expect(afterFailure?.cancelRequestedAt).toBeUndefined();
+    const retryState = await injectJson(harness, `/api/v1/runs/${run.id}`, {
+      headers: harness.auth,
+    });
+    expect(retryState.body).toMatchObject({ status: "running", cancelRequested: true });
+    const retryRevision = (retryState.body as { stateRevision: number }).stateRevision;
+
+    const retried = await injectJson(harness, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "cancel-write-retry", retryRevision),
+      body: JSON.stringify({ operationId: "op_cancel_write_retry" }),
+    });
+    expect(retried.status).toBe(202);
+    const durableRun = services.sqlite.worldSnapshot.load().runs.find((item) => item.id === run.id);
+    expect(durableRun?.cancelRequestedAt).toBeTruthy();
+  });
+
+  // Requires T09 reconcile to persist an honest recovery-time cancelRequestedAt from Host facts.
+  it("recovers a Host-confirmed cancellation after pending and terminal SQLite writes fail", async () => {
+    const failureTarget: { runId?: string } = {};
+    let pendingWriteFailures = 0;
+    let terminalWriteFailures = 0;
+    const sqliteWriter: typeof dualWriteSqlite = async (sqlite, world, synced, handles) => {
+      const target = failureTarget.runId
+        ? world.runs.find((item) => item.id === failureTarget.runId)
+        : undefined;
+      if (target?.status === "cancelled") {
+        terminalWriteFailures += 1;
+        throw new Error("injected terminal SQLite write failure");
+      }
+      if (target?.cancelRequestedAt) {
+        pendingWriteFailures += 1;
+        throw new Error("injected pending SQLite write failure");
+      }
+      await dualWriteSqlite(sqlite, world, synced, handles);
+    };
+    const first = await startInjected(undefined, 60_000, sqliteWriter);
+    const { services, stateDir } = first;
+    const { projectId, run } = await startRunningRun(first, "cancel-terminal-write-failure");
+    const handleId = services.app.world.runs.get(run.id)?.handleId;
+    expect(handleId).toBeTruthy();
+    await poll(() =>
+      services.sqlite.worldSnapshot.load().runs.some((item) => item.id === run.id)
+        ? true
+        : undefined,
+    );
+    failureTarget.runId = run.id;
+
+    const failed = await injectJson(first, `/api/v1/runs/${run.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(first.auth, "cancel-terminal-write-failure", run.stateRevision),
+      body: JSON.stringify({ operationId: "op_cancel_terminal_write_failure" }),
+    });
+    expect(failed.status).toBe(500);
+    expect(pendingWriteFailures).toBe(1);
+
+    await poll(async () => {
+      const current = await injectJson(first, `/api/v1/runs/${run.id}`, {
+        headers: first.auth,
+      });
+      return (current.body as { status: string }).status === "cancelled" ? true : undefined;
+    });
+    await poll(() => (terminalWriteFailures > 0 ? true : undefined));
+    await expect(services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    const staleSqliteRun = services.sqlite.worldSnapshot
+      .load()
+      .runs.find((item) => item.id === run.id);
+    expect(staleSqliteRun).toMatchObject({ status: "running" });
+    expect(staleSqliteRun?.cancelRequestedAt).toBeUndefined();
+
+    const before = await injectJson(first, `/api/v1/runs?projectId=${projectId}`, {
+      headers: first.auth,
+    });
+    const beforeIds = (before.body as { items: Array<{ id: string }> }).items.map(
+      (item) => item.id,
+    );
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${run.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({ status: "cancelled", cancelRequested: true });
+    const restoredRun = second.services.app.world.runs.get(run.id);
+    expect(restoredRun?.handleId).toBe(handleId);
+    expect(restoredRun?.cancelRequestedAt).toBeTruthy();
+    await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    await poll(() => {
+      const persisted = second.services.sqlite.worldSnapshot
+        .load()
+        .runs.find((item) => item.id === run.id);
+      return persisted?.status === "cancelled" && persisted.cancelRequestedAt ? true : undefined;
+    });
+    const after = await injectJson(second, `/api/v1/runs?projectId=${projectId}`, {
+      headers: second.auth,
+    });
+    const afterIds = (after.body as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    expect(afterIds.sort()).toEqual(beforeIds.sort());
   });
 
   it("rehydrates the same project and does not duplicate runs on replay", async () => {

@@ -231,12 +231,8 @@ function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: Ap
       createdAt: run.createdAt,
       status: run.status,
       stateRevision: run.stateRevision,
+      ...ifPresent("cancelRequestedAt", run.cancelRequestedAt),
     });
-    if (run.cancelRequestedAt) {
-      sqliteDbOf(tx)
-        .prepare("UPDATE runs SET cancel_requested_at = ? WHERE id = ?")
-        .run(run.cancelRequestedAt, run.id);
-    }
     return;
   }
   if (existing.stateRevision > run.stateRevision) {
@@ -257,6 +253,9 @@ function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: Ap
         .prepare("UPDATE runs SET state_revision = ? WHERE id = ?")
         .run(run.stateRevision, run.id);
     }
+  }
+  if (run.cancelRequestedAt !== undefined) {
+    runs.recordCancelRequest(tx, run.id, run.cancelRequestedAt);
   }
 }
 

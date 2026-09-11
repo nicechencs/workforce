@@ -12,7 +12,12 @@ import type {
   TaskRecord,
   WorkflowInstanceRecord,
 } from "@workforce/application";
-import { isConstraintError, PersistenceError, WorkforceSqlite } from "@workforce/database";
+import {
+  isConstraintError,
+  PersistenceError,
+  type RuntimeHandleRecord,
+  WorkforceSqlite,
+} from "@workforce/database";
 import type { CommandReceipt, ReceiptScope, WorkforceEvent } from "@workforce/protocol";
 import type { RuntimeHostStore } from "@workforce/runtime-sdk";
 import type {
@@ -96,6 +101,8 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
   private readonly events = new Map<string, HostRuntimeEvent[]>();
   private session: StoredNodeSession | undefined;
 
+  constructor(private readonly persistHandle?: (record: StoredHandle) => Promise<void>) {}
+
   load(snapshot: PersistedHostStore | undefined): void {
     this.operations.clear();
     this.operationsByScope.clear();
@@ -177,6 +184,7 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
     const stored = clone(record);
     this.handles.set(stored.handle.handleId, stored);
     this.handlesByRunId.set(stored.handle.runId, stored.handle.handleId);
+    await this.persistHandle?.(stored);
   }
 
   async appendEvent(event: HostRuntimeEvent): Promise<void> {
@@ -229,7 +237,7 @@ export function readJsonFile<T>(file: string): T | undefined {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8")) as T;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) {
       return undefined;
     }
     throw error;
@@ -410,13 +418,35 @@ export async function loadComposition(
   if (entities.projects.length === 0) {
     return json;
   }
+  let sqliteHandleRows = sqlite.handles.list();
+  const persistedOperations = new Set(
+    sqliteHandleRows.map((record) => storedHandleFromSqlite(record).request.operationId),
+  );
+  for (const handle of json?.host.handles ?? []) {
+    if (!persistedOperations.has(handle.request.operationId)) {
+      await persistRuntimeHandle(sqlite, handle);
+    }
+  }
+  sqliteHandleRows = sqlite.handles.list();
+  const sqliteHandles = sqliteHandleRows.map(storedHandleFromSqlite);
   const base = json?.world ?? emptyWorld();
   const sqliteHasBudgets = entities.budgets.length > 0;
+  const sqliteHandlesByRunId = new Map(
+    sqliteHandleRows.map((record, index) => [record.runId, sqliteHandles[index]!] as const),
+  );
+  const handlesByOperation = new Map(
+    sqliteHandles.map((record) => [record.request.operationId, record.handle.handleId] as const),
+  );
   const world: PersistedWorld = {
     ...base,
     projects: entities.projects,
     tasks: entities.tasks,
-    runs: entities.runs,
+    runs: entities.runs.map((run) => {
+      const handleId =
+        sqliteHandlesByRunId.get(run.id)?.handle.handleId ??
+        handlesByOperation.get(run.operationId);
+      return handleId ? { ...run, handleId } : run;
+    }),
     approvals: entities.approvals,
     artifacts: entities.artifacts,
     workflows: entities.workflows,
@@ -439,7 +469,10 @@ export async function loadComposition(
   };
   return {
     world,
-    host: json?.host ?? { version: 1, operations: [], handles: [], events: [] },
+    host: {
+      ...(json?.host ?? { version: 1, operations: [], events: [] }),
+      handles: sqliteHandles,
+    },
   };
 }
 
@@ -447,6 +480,7 @@ export async function dualWriteSqlite(
   sqlite: WorkforceSqlite,
   snapshot: PersistedWorld,
   synced: { eventIds: Set<string>; operationIds: Set<string> },
+  handles: StoredHandle[] = [],
 ): Promise<void> {
   const pendingEvents = snapshot.events.filter((event) => !synced.eventIds.has(event.id));
   const pendingReceipts = snapshot.receipts.filter(
@@ -476,6 +510,20 @@ export async function dualWriteSqlite(
           },
           snapshot.clock,
         );
+        for (const handle of handles) {
+          const run = snapshot.runs.find(
+            (record) => record.operationId === handle.request.operationId,
+          );
+          if (!run) {
+            throw new Error(
+              `runtime handle ${handle.handle.handleId} has no Application Run for operation ${handle.request.operationId}`,
+            );
+          }
+          sqlite.handles.put(tx, {
+            runId: run.id,
+            ...runtimeHandleValues(handle, snapshot.clock),
+          });
+        }
       } catch (error) {
         if (!(error instanceof PersistenceError) || error.code !== "revision_conflict") {
           throw error;
@@ -520,4 +568,61 @@ export async function dualWriteSqlite(
       throw error;
     }
   }
+}
+
+export async function persistRuntimeHandle(
+  sqlite: WorkforceSqlite,
+  handle: StoredHandle,
+): Promise<boolean> {
+  return sqlite.uow.withTransaction(async (tx) => {
+    const record = runtimeHandleValues(handle, new Date().toISOString());
+    return sqlite.handles.putByOperation(tx, {
+      operationId: handle.request.operationId,
+      ...record,
+    });
+  });
+}
+
+function runtimeHandleValues(
+  handle: StoredHandle,
+  recordedAt: string,
+): Omit<RuntimeHandleRecord, "runId"> {
+  const process = handle.handle.process;
+  if (!process) {
+    throw new Error(`runtime handle ${handle.handle.handleId} has no persistent process identity`);
+  }
+  return {
+    pid: process.pid,
+    startIdentity: process.startIdentity,
+    handle,
+    recordedAt,
+  };
+}
+
+function storedHandleFromSqlite(record: RuntimeHandleRecord): StoredHandle {
+  if (!isStoredHandle(record.handle)) {
+    throw new Error(`runtime_handles row for ${record.runId} does not contain a StoredHandle`);
+  }
+  const handle = clone(record.handle);
+  if (record.pid !== null) {
+    handle.handle.process = {
+      pid: record.pid,
+      startIdentity: record.startIdentity,
+    };
+  }
+  return handle;
+}
+
+function isStoredHandle(value: unknown): value is StoredHandle {
+  if (!value || typeof value !== "object" || !("handle" in value) || !("request" in value)) {
+    return false;
+  }
+  const stored = value as Partial<StoredHandle>;
+  return Boolean(
+    stored.handle &&
+    typeof stored.handle.handleId === "string" &&
+    typeof stored.handle.runId === "string" &&
+    stored.request &&
+    typeof stored.request.operationId === "string",
+  );
 }

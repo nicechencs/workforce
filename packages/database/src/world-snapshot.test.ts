@@ -138,6 +138,75 @@ describe("SqliteWorldSnapshot", () => {
     }
   });
 
+  it("persists cancelRequestedAt on the first Run snapshot insert", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const cancelRequestedAt = "2026-09-10T10:00:30.000Z";
+    const snapshot = sampleSnapshot();
+    snapshot.runs = snapshot.runs.map((run) => ({ ...run, cancelRequestedAt }));
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.worldSnapshot.save(tx, snapshot, now);
+      });
+
+      expect(db.worldSnapshot.load().runs[0]?.cancelRequestedAt).toBe(cancelRequestedAt);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("persists the first cancelRequestedAt update for an existing Run across reload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const path = join(dir, "workforce.sqlite");
+    const first = WorkforceSqlite.open(path);
+    const snapshot = sampleSnapshot();
+    const cancelRequestedAt = "2026-09-10T10:00:30.000Z";
+    try {
+      await first.uow.withTransaction(async (tx) => {
+        first.worldSnapshot.save(tx, snapshot, now);
+      });
+      expect(first.worldSnapshot.load().runs[0]?.cancelRequestedAt).toBeUndefined();
+
+      await first.uow.withTransaction(async (tx) => {
+        first.worldSnapshot.save(
+          tx,
+          {
+            ...snapshot,
+            runs: snapshot.runs.map((run) => ({ ...run, cancelRequestedAt })),
+          },
+          now,
+        );
+      });
+
+      // Missing or repeated requests cannot clear or replace the accepted intent.
+      await first.uow.withTransaction(async (tx) => {
+        first.worldSnapshot.save(tx, snapshot, now);
+        first.worldSnapshot.save(
+          tx,
+          {
+            ...snapshot,
+            runs: snapshot.runs.map((run) => ({
+              ...run,
+              cancelRequestedAt: "2026-09-10T10:00:45.000Z",
+            })),
+          },
+          now,
+        );
+      });
+    } finally {
+      first.close();
+    }
+
+    const reopened = WorkforceSqlite.open(path);
+    try {
+      expect(reopened.worldSnapshot.load().runs[0]?.cancelRequestedAt).toBe(cancelRequestedAt);
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("CAS-rejects a snapshot save that would rewind state_revision", async () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
     dirs.push(dir);

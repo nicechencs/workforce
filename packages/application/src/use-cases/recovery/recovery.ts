@@ -22,17 +22,47 @@ export async function reconcile(ctx: AppContext, projectId: string): Promise<Rec
     if (run.projectId !== projectId) {
       continue;
     }
-    if (ctx.world.unknownStatuses.has(run.id)) {
+    if (
+      run.status === "succeeded" ||
+      run.status === "failed" ||
+      run.status === "timed_out" ||
+      run.status === "cancelled"
+    ) {
+      ctx.world.unknownStatuses.delete(run.id);
+      continue;
+    }
+
+    if (!run.handleId) {
+      ctx.world.unknownStatuses.add(run.id);
       unknown.push(run.id);
       continue;
     }
-    if (run.cancelRequestedAt && run.status !== "cancelled") {
-      if (run.handleId) {
-        await ctx.host.inspect(run.handleId);
-      }
-      settleRunCancel(ctx, run.id);
-      cancelled.push(run.id);
+
+    let inspected: { status: string };
+    try {
+      inspected = await ctx.host.inspect(run.handleId);
+    } catch {
+      ctx.world.unknownStatuses.add(run.id);
+      unknown.push(run.id);
+      continue;
     }
+
+    if (inspected.status === "cancelled") {
+      const recoveredCancelAt = run.cancelRequestedAt ?? ctx.world.nowIso();
+      settleRunCancel(ctx, run.id);
+      run.cancelRequestedAt ??= recoveredCancelAt;
+      ctx.world.unknownStatuses.delete(run.id);
+      cancelled.push(run.id);
+      continue;
+    }
+
+    if (inspected.status === "unknown" || inspected.status === "orphaned") {
+      ctx.world.unknownStatuses.add(run.id);
+      unknown.push(run.id);
+      continue;
+    }
+
+    ctx.world.unknownStatuses.delete(run.id);
   }
 
   if (project.cancelRequestedAt && project.status !== "cancelled") {

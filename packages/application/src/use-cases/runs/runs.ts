@@ -2,7 +2,7 @@ import { startIdempotencyKey } from "@workforce/domain";
 
 import type { AppContext } from "../projects/context.js";
 import { expectRevision, touch } from "../projects/context.js";
-import { notFound, validationFailed } from "../projects/errors.js";
+import { notFound, UseCaseError, validationFailed } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
@@ -157,14 +157,40 @@ export async function cancelRun(
   input: { operationId: string; idempotencyKey: string; runId: string },
 ): Promise<{ accepted: true; status: RunRecord["status"]; cancelRequestedAt: string }> {
   const run = requireRun(ctx, input.runId);
+  if (run.status === "cancelled") {
+    if (!run.cancelRequestedAt) {
+      const now = ctx.world.nowIso();
+      run.cancelRequestedAt = now;
+      touch(run, now);
+    }
+    return {
+      accepted: true,
+      status: run.status,
+      cancelRequestedAt: run.cancelRequestedAt,
+    };
+  }
+  if (run.status === "succeeded" || run.status === "failed" || run.status === "timed_out") {
+    throw new UseCaseError("invalid_transition", `run cannot 'cancel' from '${run.status}'`, {
+      details: { entity: "run", id: run.id, from: run.status, command: "cancel" },
+    });
+  }
   if (run.cancelRequestedAt) {
     return { accepted: true, status: run.status, cancelRequestedAt: run.cancelRequestedAt };
   }
+
+  if (run.handleId) {
+    const result = await ctx.host.cancel(run.handleId, "user_cancel");
+    if (!result.accepted) {
+      throw new UseCaseError("conflict", "runtime did not accept run cancellation", {
+        retryable: true,
+        details: { runId: run.id, handleId: run.handleId },
+      });
+    }
+  }
+
   const now = ctx.world.nowIso();
   run.cancelRequestedAt = now;
-  if (run.handleId) {
-    await ctx.host.cancel(run.handleId, "user_cancel");
-  }
+  touch(run, now);
   return { accepted: true, status: run.status, cancelRequestedAt: now };
 }
 

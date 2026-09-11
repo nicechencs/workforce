@@ -13,6 +13,10 @@ export interface RuntimeHandleRecord {
   recordedAt: string;
 }
 
+export interface RuntimeHandleByOperationRecord extends Omit<RuntimeHandleRecord, "runId"> {
+  operationId: string;
+}
+
 export class SqliteHandleRepository {
   constructor(private readonly db: DatabaseSync) {}
 
@@ -26,13 +30,17 @@ export class SqliteHandleRepository {
     if (!row) {
       return null;
     }
-    return {
-      runId: requiredText(cell(row, "run_id"), "run_id"),
-      pid: optionalInt(cell(row, "pid")),
-      startIdentity: requiredText(cell(row, "start_identity"), "start_identity"),
-      handle: parseJson(cell(row, "handle_json"), "handle_json"),
-      recordedAt: requiredText(cell(row, "recorded_at"), "recorded_at"),
-    };
+    return rowToHandle(row);
+  }
+
+  list(): RuntimeHandleRecord[] {
+    return this.db
+      .prepare(
+        `SELECT run_id, pid, start_identity, handle_json, recorded_at
+           FROM runtime_handles ORDER BY run_id ASC`,
+      )
+      .all()
+      .map(rowToHandle);
   }
 
   put(tx: Tx, record: RuntimeHandleRecord): void {
@@ -53,4 +61,30 @@ export class SqliteHandleRepository {
       record.recordedAt,
     );
   }
+
+  putByOperation(tx: Tx, record: RuntimeHandleByOperationRecord): boolean {
+    const db = sqliteDbOf(tx);
+    const run = db.prepare("SELECT id FROM runs WHERE operation_id = ?").get(record.operationId);
+    if (!run) {
+      return false;
+    }
+    this.put(tx, {
+      runId: requiredText(cell(run, "id"), "id"),
+      pid: record.pid,
+      startIdentity: record.startIdentity,
+      handle: record.handle,
+      recordedAt: record.recordedAt,
+    });
+    return true;
+  }
+}
+
+function rowToHandle(row: Record<string, unknown>): RuntimeHandleRecord {
+  return {
+    runId: requiredText(cell(row, "run_id"), "run_id"),
+    pid: optionalInt(cell(row, "pid")),
+    startIdentity: requiredText(cell(row, "start_identity"), "start_identity"),
+    handle: parseJson(cell(row, "handle_json"), "handle_json"),
+    recordedAt: requiredText(cell(row, "recorded_at"), "recorded_at"),
+  };
 }

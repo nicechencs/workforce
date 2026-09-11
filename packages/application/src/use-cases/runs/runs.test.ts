@@ -21,6 +21,8 @@ import {
 import type { EnginePort } from "../projects/engine-port.js";
 import { createWorkforceApp } from "../projects/service.js";
 import { UseCaseError } from "../projects/errors.js";
+import type { RuntimeHostPort, StartRunHostRequest } from "./host.js";
+import { recordRunTimedOut, settleRunCancel } from "./runs.js";
 
 function engine(): EnginePort {
   return {
@@ -41,6 +43,297 @@ function engine(): EnginePort {
     nextBackoffMs,
   };
 }
+
+class RecordingRuntimeHost implements RuntimeHostPort {
+  readonly cancelCalls: { handleId: string; reason?: string }[] = [];
+  cancelFailuresRemaining = 0;
+  acceptCancellation = true;
+
+  async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
+    return { handleId: `hdl_${request.operationId}`, runId: `host_${request.operationId}` };
+  }
+
+  async pause(_handleId: string): Promise<{ accepted: boolean }> {
+    void _handleId;
+    return { accepted: true };
+  }
+
+  async cancel(handleId: string, reason?: string): Promise<{ accepted: boolean }> {
+    this.cancelCalls.push({ handleId, ...(reason ? { reason } : {}) });
+    if (this.cancelFailuresRemaining > 0) {
+      this.cancelFailuresRemaining -= 1;
+      throw new Error("runtime cancel transport failed");
+    }
+    return { accepted: this.acceptCancellation };
+  }
+
+  async inspect(_handleId: string): Promise<{ status: string }> {
+    void _handleId;
+    return { status: "running" };
+  }
+}
+
+async function startRunningRun(host?: RuntimeHostPort) {
+  const app = createWorkforceApp({ engine: engine(), ...(host ? { host } : {}) });
+  const created = await app.createProject({
+    operationId: "op_create",
+    idempotencyKey: "create",
+    organizationId: "org",
+    name: "n",
+    objective: "o",
+  });
+  const planning = await app.startPlanning({
+    operationId: "op_plan",
+    idempotencyKey: "plan",
+    projectId: created.project.id,
+    workspaceId: "wsp",
+    teamVersionId: "tmv",
+    runtimeId: "mock",
+    budgetId: "bdg",
+    executionNodeId: "ndl_local",
+    runtimeInstallationId: "rtm",
+    workspaceInstanceId: "wsi",
+    planDigest: "digest",
+  });
+  await app.confirmPlan({
+    operationId: "op_confirm",
+    idempotencyKey: "confirm",
+    projectId: created.project.id,
+    approvalId: planning.approvalId,
+    graph: {
+      id: "wfv",
+      workflowId: "wf",
+      version: 1,
+      entryNodeIds: ["solo"],
+      nodes: [{ id: "solo", kind: "task", role: "developer", expectedOutputIds: ["out"] }],
+      edges: [],
+    },
+  });
+  await app.start({
+    operationId: "op_start",
+    idempotencyKey: "start",
+    projectId: created.project.id,
+  });
+  const task = [...app.world.tasks.values()][0];
+  if (!task) {
+    throw new Error("missing task");
+  }
+  const started = await app.startRun({ operationId: "op_run", taskId: task.id });
+  return { app, run: started.run };
+}
+
+describe("run cancellation", () => {
+  it.each(["succeeded", "failed", "timed_out"] as const)(
+    "rejects cancellation from terminal status %s without side effects",
+    async (terminalStatus) => {
+      const host = new RecordingRuntimeHost();
+      const { app, run } = await startRunningRun(host);
+      if (terminalStatus === "succeeded") {
+        app.recordRunSucceeded(run.id);
+      } else if (terminalStatus === "failed") {
+        app.recordRunFailed(run.id);
+      } else {
+        recordRunTimedOut(app.ctx, run.id);
+      }
+      const before = { ...run };
+
+      await expect(
+        app.cancelRun({
+          operationId: `op_cancel_${terminalStatus}`,
+          idempotencyKey: `cancel_${terminalStatus}`,
+          runId: run.id,
+        }),
+      ).rejects.toMatchObject({
+        code: "invalid_transition",
+        retryable: false,
+        details: { entity: "run", id: run.id, from: terminalStatus, command: "cancel" },
+      });
+
+      expect(run).toEqual(before);
+      expect(host.cancelCalls).toEqual([]);
+    },
+  );
+
+  it("treats cancellation of an already cancelled run as idempotent", async () => {
+    const host = new RecordingRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    const first = await app.cancelRun({
+      operationId: "op_cancel_first",
+      idempotencyKey: "cancel_first",
+      runId: run.id,
+    });
+    settleRunCancel(app.ctx, run.id);
+    const before = { ...run };
+
+    const repeated = await app.cancelRun({
+      operationId: "op_cancel_repeated",
+      idempotencyKey: "cancel_repeated",
+      runId: run.id,
+    });
+
+    expect(repeated).toEqual({
+      accepted: true,
+      status: "cancelled",
+      cancelRequestedAt: first.cancelRequestedAt,
+    });
+    expect(run).toEqual(before);
+    expect(host.cancelCalls).toEqual([{ handleId: run.handleId, reason: "user_cancel" }]);
+  });
+
+  it("records a real no-op acceptance for a legacy cancelled run without a timestamp", async () => {
+    const host = new RecordingRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    await app.cancelRun({
+      operationId: "op_cancel_legacy_setup",
+      idempotencyKey: "cancel_legacy_setup",
+      runId: run.id,
+    });
+    settleRunCancel(app.ctx, run.id);
+    delete run.cancelRequestedAt;
+    const revision = run.stateRevision;
+    app.world.clock.advance(1_000);
+    const acceptedAt = app.world.nowIso();
+
+    const accepted = await app.cancelRun({
+      operationId: "op_cancel_legacy",
+      idempotencyKey: "cancel_legacy",
+      runId: run.id,
+    });
+
+    expect(accepted).toEqual({
+      accepted: true,
+      status: "cancelled",
+      cancelRequestedAt: acceptedAt,
+    });
+    expect(run).toMatchObject({
+      status: "cancelled",
+      cancelRequestedAt: acceptedAt,
+      updatedAt: acceptedAt,
+      stateRevision: revision + 1,
+    });
+    expect(host.cancelCalls).toHaveLength(1);
+
+    const beforeRepeat = { ...run };
+    app.world.clock.advance(1_000);
+    const repeated = await app.cancelRun({
+      operationId: "op_cancel_legacy_again",
+      idempotencyKey: "cancel_legacy_again",
+      runId: run.id,
+    });
+    expect(repeated).toEqual(accepted);
+    expect(run).toEqual(beforeRepeat);
+    expect(host.cancelCalls).toHaveLength(1);
+  });
+
+  it("rejects a new cancel after a requested cancellation loses the terminal race", async () => {
+    const host = new RecordingRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    await app.cancelRun({
+      operationId: "op_cancel_before_success",
+      idempotencyKey: "cancel_before_success",
+      runId: run.id,
+    });
+    app.recordRunSucceeded(run.id);
+    const before = { ...run };
+
+    await expect(
+      app.cancelRun({
+        operationId: "op_cancel_after_success",
+        idempotencyKey: "cancel_after_success",
+        runId: run.id,
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid_transition",
+      details: { from: "succeeded", command: "cancel" },
+    });
+    expect(run).toEqual(before);
+    expect(host.cancelCalls).toHaveLength(1);
+  });
+
+  it.each(["same", "new"] as const)(
+    "keeps a failed Host cancellation retryable for a %s command",
+    async (retryKind) => {
+      const host = new RecordingRuntimeHost();
+      host.cancelFailuresRemaining = 1;
+      const { app, run } = await startRunningRun(host);
+      const before = { ...run };
+      const command = {
+        operationId: "op_cancel_retry",
+        idempotencyKey: "cancel_retry",
+        runId: run.id,
+      };
+
+      await expect(app.cancelRun(command)).rejects.toThrow("runtime cancel transport failed");
+      expect(run).toEqual(before);
+
+      const retried = await app.cancelRun(
+        retryKind === "same"
+          ? command
+          : {
+              operationId: "op_cancel_retry_new",
+              idempotencyKey: "cancel_retry_new",
+              runId: run.id,
+            },
+      );
+      expect(retried).toMatchObject({ accepted: true, status: "running" });
+      expect(run.cancelRequestedAt).toBe(retried.cancelRequestedAt);
+      expect(run.stateRevision).toBe(before.stateRevision + 1);
+      expect(host.cancelCalls).toHaveLength(2);
+
+      await app.cancelRun({
+        operationId: "op_cancel_after_success",
+        idempotencyKey: "cancel_after_success",
+        runId: run.id,
+      });
+      expect(host.cancelCalls).toHaveLength(2);
+      expect(run.stateRevision).toBe(before.stateRevision + 1);
+    },
+  );
+
+  it("does not record cancellation when Host declines it", async () => {
+    const host = new RecordingRuntimeHost();
+    host.acceptCancellation = false;
+    const { app, run } = await startRunningRun(host);
+    const before = { ...run };
+
+    await expect(
+      app.cancelRun({
+        operationId: "op_cancel_declined",
+        idempotencyKey: "cancel_declined",
+        runId: run.id,
+      }),
+    ).rejects.toMatchObject({ code: "conflict", retryable: true });
+    expect(run).toEqual(before);
+    expect(host.cancelCalls).toHaveLength(1);
+  });
+
+  it("records a no-handle cancellation locally without calling Host", async () => {
+    const host = new RecordingRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    delete run.handleId;
+    const revision = run.stateRevision;
+
+    const accepted = await app.cancelRun({
+      operationId: "op_cancel_no_handle",
+      idempotencyKey: "cancel_no_handle",
+      runId: run.id,
+    });
+
+    expect(accepted).toMatchObject({ accepted: true, status: "running" });
+    expect(run.cancelRequestedAt).toBe(accepted.cancelRequestedAt);
+    expect(run.stateRevision).toBe(revision + 1);
+    expect(host.cancelCalls).toEqual([]);
+
+    const repeated = await app.cancelRun({
+      operationId: "op_cancel_no_handle_again",
+      idempotencyKey: "cancel_no_handle_again",
+      runId: run.id,
+    });
+    expect(repeated.cancelRequestedAt).toBe(accepted.cancelRequestedAt);
+    expect(run.stateRevision).toBe(revision + 1);
+    expect(host.cancelCalls).toEqual([]);
+  });
+});
 
 describe("run pause on Mock", () => {
   it("returns unsupported_capability and does not fake paused", async () => {

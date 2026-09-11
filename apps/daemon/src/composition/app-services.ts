@@ -8,6 +8,7 @@ import {
   WorkforceApp,
   createWorkforceApp,
   integratePatches,
+  settleRunCancel,
   type ApprovalRecord,
   type ProjectRecord,
   type RunRecord,
@@ -83,6 +84,7 @@ import {
   hydrateWorld,
   JsonRuntimeHostStore,
   loadComposition,
+  persistRuntimeHandle,
   persistSnapshot,
   sqlitePath,
   type ArtifactContentRecord,
@@ -92,6 +94,8 @@ import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 
 const encoder = new TextEncoder();
+type SqliteWriter = typeof dualWriteSqlite;
+const sqliteWriterOption = Symbol("sqliteWriter");
 
 export interface ComposedAppServicesOptions {
   stateDir: string;
@@ -100,6 +104,10 @@ export interface ComposedAppServicesOptions {
   completeAfterMs?: number;
   policyEngine?: InMemoryPolicyEngine;
 }
+
+type InternalComposedAppServicesOptions = ComposedAppServicesOptions & {
+  [sqliteWriterOption]?: SqliteWriter;
+};
 
 export class ComposedAppServices implements AppServices {
   readonly app: WorkforceApp;
@@ -110,6 +118,7 @@ export class ComposedAppServices implements AppServices {
   readonly policy: CompositionPolicy;
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
+  private readonly sqliteWriter: SqliteWriter;
   private readonly operations = new Map<string, CommandReceipt>();
   private readonly artifactContents = new Map<string, ArtifactContentRecord>();
   private readonly workspaces = new Map<string, WorkspaceDto>();
@@ -129,6 +138,7 @@ export class ComposedAppServices implements AppServices {
     artifacts: LocalArtifactStore;
     worktrees: CompositionWorktreeHost;
     policy: CompositionPolicy;
+    sqliteWriter: SqliteWriter;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -138,6 +148,7 @@ export class ComposedAppServices implements AppServices {
     this.artifacts = input.artifacts;
     this.worktrees = input.worktrees;
     this.policy = input.policy;
+    this.sqliteWriter = input.sqliteWriter;
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -146,7 +157,9 @@ export class ComposedAppServices implements AppServices {
     const clientId = options.clientId ?? loadOrCreateClientId(options.stateDir);
     const sqlite = WorkforceSqlite.open(sqlitePath(options.stateDir));
     const snapshot = await loadComposition(options.stateDir, sqlite);
-    const hostStore = new JsonRuntimeHostStore();
+    const hostStore = new JsonRuntimeHostStore(async (handle) => {
+      await persistRuntimeHandle(sqlite, handle);
+    });
     if (snapshot?.host) {
       hostStore.load(snapshot.host);
     }
@@ -190,6 +203,8 @@ export class ComposedAppServices implements AppServices {
       artifacts,
       worktrees,
       policy,
+      sqliteWriter:
+        (options as InternalComposedAppServicesOptions)[sqliteWriterOption] ?? dualWriteSqlite,
     });
     composed.services = services;
 
@@ -215,6 +230,30 @@ export class ComposedAppServices implements AppServices {
       await host.recover();
     } catch {
       // Mock adapter does not keep live processes across process restarts.
+    }
+    for (const run of app.world.runs.values()) {
+      if (isTerminalRun(run)) {
+        continue;
+      }
+      const handleId =
+        run.handleId ??
+        snapshot?.host.operations.find((operation) => operation.operationId === run.operationId)
+          ?.handleId ??
+        snapshot?.host.handles.find((handle) => handle.request.operationId === run.operationId)
+          ?.handle.handleId;
+      if (!handleId) {
+        app.markRunUnknown(run.id);
+        continue;
+      }
+      run.handleId = handleId;
+      try {
+        const observed = await host.inspect(handleId);
+        if (observed.status === "unknown" || observed.status === "orphaned") {
+          app.markRunUnknown(run.id);
+        }
+      } catch {
+        app.markRunUnknown(run.id);
+      }
     }
     for (const project of app.world.projects.values()) {
       await app.reconcile(project.id);
@@ -739,7 +778,7 @@ export class ComposedAppServices implements AppServices {
         idempotencyKey: ctx.operationId,
         runId: id,
       });
-      this.persist();
+      await this.persistDurably();
       return {
         status: 202,
         body: {
@@ -973,6 +1012,8 @@ export class ComposedAppServices implements AppServices {
         await this.dispatchReadyTasks(run.projectId);
       } else if (event.status === "failed") {
         this.app.recordRunFailed(run.id);
+      } else if (event.status === "cancelled") {
+        settleRunCancel(this.app.ctx, run.id);
       }
       this.persist();
     });
@@ -1351,26 +1392,33 @@ export class ComposedAppServices implements AppServices {
   private persist(): void {
     if (this.closed) {
       try {
-        this.writeSnapshot();
+        void this.writeSnapshot().catch(() => undefined);
       } catch {
         return;
       }
       return;
     }
-    this.writeSnapshot();
+    void this.writeSnapshot().catch(() => undefined);
   }
 
-  private writeSnapshot(): void {
+  private persistDurably(): Promise<void> {
+    return this.writeSnapshot();
+  }
+
+  private writeSnapshot(): Promise<void> {
     const world = dumpWorld({
       world: this.app.world,
       operations: [...this.operations.values()],
       artifactContents: [...this.artifactContents.values()],
       workspaces: [...this.workspaces.values()],
     });
-    persistSnapshot(this.stateDir, { world, host: this.hostStore.dump() });
-    this.sqliteWrite = this.sqliteWrite
-      .then(() => dualWriteSqlite(this.sqlite, world, this.synced))
-      .catch(() => undefined);
+    const host = this.hostStore.dump();
+    persistSnapshot(this.stateDir, { world, host });
+    const committed = this.sqliteWrite.then(() =>
+      this.sqliteWriter(this.sqlite, world, this.synced, host.handles),
+    );
+    this.sqliteWrite = committed.catch(() => undefined);
+    return committed;
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -1580,6 +1628,18 @@ export async function createComposedAppServices(
   return ComposedAppServices.open(options);
 }
 
+/** Internal test seam; intentionally not re-exported from composition/index.ts or the package root. */
+export async function createComposedAppServicesForTest(
+  options: ComposedAppServicesOptions,
+  sqliteWriter: SqliteWriter,
+): Promise<ComposedAppServices> {
+  const internalOptions: InternalComposedAppServicesOptions = {
+    ...options,
+    [sqliteWriterOption]: sqliteWriter,
+  };
+  return ComposedAppServices.open(internalOptions);
+}
+
 function optionalRevision(expectedStateRevision: number | undefined): {
   expectedStateRevision?: number;
 } {
@@ -1602,6 +1662,15 @@ function hasAttemptRun(runs: Map<string, RunRecord>, task: TaskRecord): boolean 
 
 function latestRun(runs: Map<string, RunRecord>, taskId: string): RunRecord | undefined {
   return [...runs.values()].filter((run) => run.taskId === taskId).at(-1);
+}
+
+function isTerminalRun(run: RunRecord): boolean {
+  return (
+    run.status === "succeeded" ||
+    run.status === "failed" ||
+    run.status === "cancelled" ||
+    run.status === "timed_out"
+  );
 }
 
 function publicAuthorizationRef(value: string): string {

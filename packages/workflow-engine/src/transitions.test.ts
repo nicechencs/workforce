@@ -34,6 +34,23 @@ describe("M3 status matrix", () => {
     expect(() => nextRunStatus("running", "waiting_review")).toThrow(InvalidTransitionError);
   });
 
+  it("settles a pending Run after Runtime confirms cancellation", () => {
+    expect(nextRunStatus("pending", "cancel-settled")).toBe("cancelled");
+  });
+
+  it("continues to settle cancellation from other non-terminal Run states", () => {
+    for (const status of ["starting", "running", "waiting_input", "paused"] as const) {
+      expect(nextRunStatus(status, "cancel-settled")).toBe("cancelled");
+    }
+  });
+
+  it("does not extend Run cancellation or completion transitions beyond the matrix", () => {
+    for (const status of ["succeeded", "failed", "timed_out", "cancelled"] as const) {
+      expect(() => nextRunStatus(status, "cancel-settled")).toThrow(InvalidTransitionError);
+    }
+    expect(() => nextRunStatus("pending", "succeed")).toThrow(InvalidTransitionError);
+  });
+
   it("consumes an approval once", () => {
     const approved = nextApprovalStatus("pending", "approve");
     expect(nextApprovalStatus(approved, "consume")).toBe("consumed");
