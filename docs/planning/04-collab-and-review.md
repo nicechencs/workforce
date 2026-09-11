@@ -67,5 +67,5 @@ review-bot 对每个 PR 核对下列**决策登记**红线；任一项回归则 
 1. **Codex live exec**（T15：Process 已接线；本机无 live `codex exec`。需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**
 3. **项目制循环上已落地的画布 / 自定义 Team 写接口**（M7 / T18–T19：已在 main。给 Project 编排 Team 与 Workflow，不是外挂。不要在普通 PR 里顺便改 T18 画布文件或 T19 Team 写面）
-4. **对话生成工作流 / 双执行模式**（M7–M8 / T20–T21：D17 会话 DTO 仍 planned。T20 仅有作者面壳 + 写 API 落草稿；禁止假 Agent 成功或发明 chat path。D18 `orchestrationMode` 已由 T02 冻结在 `StartRunRequest`；T21 UI / M8 **未实现**。未领取前不要顺便做假 mode 按钮）
+4. **对话生成工作流 / 双执行模式**（M7–M8 / T20–T21：D17 会话 DTO 仍 planned。T20 仅有作者面壳 + 写 API 落草稿；禁止假 Agent 成功或发明 chat path。D18 `orchestrationMode` 已由 T02 冻结在 `StartRunRequest`；T21 **UI 切片已接线**，M8 调度 / headed / 生产 Codex direct **未完成**。不要顺便发明 `:direct` path 或假 mode）
 5. **远程控制面 / 容器 runner**（D19：产品能力已冻结；enrollment / Docker / K8s **未实现**。未领取前不要顺便做远程节点或容器调度）

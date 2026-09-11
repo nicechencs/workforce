@@ -63,6 +63,7 @@ import type {
   PatchWorkflowVersionInput,
 } from "./dto.js";
 import { AppError } from "./errors.js";
+import { assertStartOrchestrationAllowed } from "./orchestration.js";
 import { createIdFactory, prefixes, type IdFactory } from "./ids.js";
 import type { AppServices, CommandResult } from "./index.js";
 import { paginate } from "./paginate.js";
@@ -169,6 +170,10 @@ export class FakeAppServices implements AppServices {
         pause: false,
         resume: false,
         archive: false,
+      },
+      orchestration: {
+        workflowBound: true,
+        direct: false,
       },
     };
   }
@@ -550,6 +555,7 @@ export class FakeAppServices implements AppServices {
   ): CommandResult<ProjectDto> {
     const record = this.requireProject(id);
     this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
+    assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
     if (input.budgetHardLimitMinor !== undefined) {
       throw new AppError(
         "unknown_cost_not_enforceable",

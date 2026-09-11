@@ -199,3 +199,11 @@ updated: 2026-09-12
 - **决定：** #24（T20 作者面壳）已 squash 合入 `main` `edce1a4`。#25 rebase 到该 tip：同时保留 T20 UI shell + M7 写 API 落未发布草稿（chat 禁用至 session DTO）与 D18 `orchestrationMode` 协议冻结。作者面壳 headed 复测 **PASS**（`66a9c284` / `WORKFORCE-PR24-66a9c284-AUTHORING-SHELL-RETEST.md`）。不发明 `/runs/{id}:direct` 或 chat path。不宣称对话生成、T21 UI、M8 或生产 Codex direct。D19 远程 enrollment / 容器 runner 仍 **未实现**。
 - **文档影响：** 冲突页（实现进度、任务清单、能力矩阵、协作评审、本历史）同时保留 T20 现行状态与 `orchestrationMode` 冻结表述。
 - **状态：** T20 UI shell **implemented**（main）。`orchestrationMode` 字段 **implemented**。会话协议 / 对话生成 / T21 UI / M8 / D19 runner **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T21 双执行模式 UI 切片（非 M8 完成）
+
+- **决定：** 在 main tip（含 #25 `b700010` `orchestrationMode` 冻结）上做 T21 Desktop UI 切片：项目详情与 Task 详情展示 `orchestrationMode` 选择面；`GET /capabilities` / Runtime probe 未声明 `orchestration.direct` 时禁用 direct；选择写入现有 `POST /projects/{id}:start`（省略仍默认 `workflow_bound`）。无能力组合返回冻结错误 `unsupported_capability`。**不发明** `/runs/{id}:direct`、chat、enrollment 或容器 path。不改 T18 画布文件或 T19 Team 写面。不宣称 M8 调度完成、headed PASS 或生产 Codex direct。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 行改为 UI 切片已接线；[api-capability-matrix.md](api-capability-matrix.md) M8 行记录字段+UI 进度且不增 path；[02-development-task-backlog.md](02-development-task-backlog.md) / [04-collab-and-review.md](04-collab-and-review.md) 去掉「T21 UI 未实现」的现行概括。
+- **状态：** T21 UI 切片 **implemented**（happy-dom；headed 未跑）。M8 调度 / 生产 Codex direct / D19 runner / 会话协议 **planned**。

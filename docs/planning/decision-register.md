@@ -19,7 +19,7 @@
 
 主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环的可写面（画布、自定义 Team、对话生成、双执行模式）**尚未实现**。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：画布、自定义 Team 写面与 T21 启动面 UI 切片已接线；对话会话协议与 M8 调度 **尚未完成**。
 
 ## 1. 冻结总表
 
@@ -197,7 +197,7 @@ SSE：
 - 前端不得私自创造矩阵中不存在的 endpoint
 - Team：项目循环的第一环。M3 Mock 主路径只读预设模板；自定义编排是 **M7 必达**（D16），用来给**该项目**配团队，不是后置或独立 HR 产品
 - 工作流：项目循环的编排环。M3 只读已发布目录（`GET /workflows` 已接通）；可视化画布是 **M7 必达**（D15）；对话生成草稿是 **M7 扩展**（D17），生成后必须可编辑。用来给**该项目**编排并发布执行图，不是后置或独立 IDE
-- Agent 执行：每个 bot/Agent 可 **跟随已发布工作流** 或 **直接执行**（D18，**M8**）。无 capability 则禁用；禁止假 mode。T02 已冻结启动字段 `orchestrationMode`（`workflow_bound | direct`，位于 `StartRunRequest` / `packages/protocol`）。本登记**不发明** `/runs/{id}:direct` 或其它新 Run path；M8 UI / 调度 / 生产 Codex direct **尚未实现**
+- Agent 执行：每个 bot/Agent 可 **跟随已发布工作流** 或 **直接执行**（D18，**M8**）。无 capability 则禁用；禁止假 mode。T02 已冻结启动字段 `orchestrationMode`（`workflow_bound | direct`，位于 `StartRunRequest` / `packages/protocol`）。本登记**不发明** `/runs/{id}:direct` 或其它新 Run path；T21 UI 切片已接线，M8 调度 / 生产 Codex direct **尚未实现**
 - 项目归档可延后，列表不展示伪造的归档成功
 - Artifact content / read / verify / approval / input **必须**带 `artifactVersionId` 或精确 `version`；`latest` 只用于非执行性浏览
 - 公开 `TaskDto` **必须**包含 `dependsOn: { taskId, waitFor }[]`，映射已发布执行 DAG；无依赖返回 `[]`，不得省略后让 UI 编造边
@@ -450,7 +450,7 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 当某个 bot/Agent 做事时，执行模式是一等产品能力，不是隐藏开关。
 
-**范围（M8 必达，尚未实现）：**
+**范围（M8 必达；T21 UI 切片已接线，调度尚未完成）：**
 
 1. **workflow-bound：** 跟随该项目已确认、已发布的 `WorkflowVersion`（D02）。Agent 只执行图中轮到它的节点，不得暗改活动执行图。
 2. **direct：** 直接执行用户/任务此刻给出的目标（ad-hoc / 绕过该次已发布图）。仍受 Policy、Workspace、预算、Approval 与 capability probe 约束；不是「无协议乱跑」。
@@ -466,7 +466,7 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 - 用户能在 Agent / Task / 启动面选择模式（具体落点由 IA 与 T21，不在此发明控件 id）。
 - 无 probe 支持的组合不得启动。
-- 能力矩阵只命名已冻结字段 `orchestrationMode`，不发明 `/runs/{id}:direct` 之类 path。字段冻结 ≠ T21 UI / M8 完成。
+- 能力矩阵只命名已冻结字段 `orchestrationMode`，不发明 `/runs/{id}:direct` 之类 path。T21 UI 切片 ≠ M8 完成。
 
 **非目标：**
 

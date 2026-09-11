@@ -3,7 +3,7 @@
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
 **日期：** 2026-09-11  
-**修订：** 2026-09-11 — §9：Desktop 作者面壳 + 写 API 落草稿已有；会话协议 / 编排 Agent 仍未实现。同日 §2/§3 对齐 D19：默认本机；远程与容器是一等 Placement；V0.1 隔离仍是 worktree，容器 runner 未实现。同日主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned）。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**修订：** 2026-09-12 — §10：T21 启动面选择控件已接线；无 probe 时 direct disabled。不宣称 M8 完成。2026-09-11 — §9：Desktop 作者面壳 + 写 API 落草稿已有；会话协议 / 编排 Agent 仍未实现。同日 §2/§3 对齐 D19：默认本机；远程与容器是一等 Placement；V0.1 隔离仍是 worktree，容器 runner 未实现。同日主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned）。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
@@ -177,7 +177,7 @@ flowchart TD
 - 未发布图不能被 Runtime 执行。写接口未就绪时，「对话生成」不得假成功。
 - 会话协议未由 T02 冻结前，对话发送不是已实现 endpoint；页面不得假成功。结构化落草稿复用矩阵已列的 M7 workflow 写接口，产出仍是未发布版本。
 
-## 10. 按 Agent 选择执行模式（M8，尚未实现）
+## 10. 按 Agent 选择执行模式（M8；T21 UI 切片已接线）
 
 ```mermaid
 flowchart TD
@@ -196,4 +196,4 @@ flowchart TD
 - workflow-bound 与 direct 都是一等模式，UI/API 必须诚实，靠 probe 显隐。
 - direct 仍受 Policy、隔离 worktree、预算与 Approval 约束，不是无协议乱跑。
 - 重试创建新 Run，不改写旧 Run 的模式。
-- 当前代码无此选择面；不得预置可点击成功的「直接执行」。
+- T21 启动面已有选择控件；无 probe 时「直接执行」必须 disabled。不得把 happy-dom 切片写成 M8 完成或生产 Codex direct。
