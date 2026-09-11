@@ -174,9 +174,9 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 2. **Version**: run `--version`, parse `codex-cli X.Y.Z`. Record adapter + CLI + desktop package versions on the Run snapshot.
 3. **Auth**: `codex login status` (expect a logged-in line on stderr here). If not logged in, `validate` fails with an auth error; do not start. Credential Broker injects API key only when using `--with-api-key` stdin; ChatGPT-subscription auth stays in Codex’s own store. Never copy `auth.json` into Host events.
 4. **Capability probe**: parse `--help` / `exec --help` at validate time. Do not hardcode `proto`, `pause`, or guessed flags. If a subcommand is missing, mark the Host capability unsupported.
-5. **Start mapping (Adapter still unproven)**: the Linux host probe verified a corrected global-flag argv and one JSONL success shape, but not the Process/Policy integration. Keep start unavailable until the blocking ports below exist.
-6. **Declare unsupported**: `lifecycle.pause`, `event.resume` (cursor). Cancel = Host process-tree kill via T06, then map process exit to `runtime.cancelled`/`orphaned` after identity checks.
-7. **Windows spawn**: read stdout/stderr asynchronously; 15s timeouts on detect; do not deadlock on help.
+5. **Start mapping (injected Process + resolved context)**: T06 captured Process exists (`ProcessController.spawnCaptured` with multiplexed `output`, `stdin`, `wait`, plus existing `inspect`/`cancel`). T15 must inject that port and a `resolveStart` factory; it must not interpret opaque `snapshotRef` / `workspaceInstanceId`, must not spawn outside Process, and must not change public `StartRunRequest`. Start/stream/cancel are allowed only when detect + validate + CLI + Process + complete resolved context all pass. Otherwise fail-closed (`validation_failed` for detect/CLI, `unsupported_capability` for missing Process/context or win32 capture). This is Adapter plumbing, **not** live `codex exec` completion.
+6. **Declare unsupported**: `lifecycle.pause`, `event.resume` (cursor). Cancel = Process `cancel` (Host process-tree kill via T06), then map process exit to `runtime.cancelled`/`orphaned` after identity checks. Captured output cannot be re-attached after Adapter/Daemon restart; `reconcile` stays fail-closed (`attached: false`).
+7. **Windows spawn**: captured Process is fail-closed unsupported on win32 until T06 Job Object stream capture exists. Detect still uses 15s timeouts and async stdout; do not deadlock on help.
 
 ### T05 (Mock / Host)
 
@@ -194,29 +194,20 @@ Sync `WaitForExit` + redirected stdout deadlocked `--help` until killed at 15s; 
 ### 契约变更请求
 
 The executable path itself needs no common-contract change: `RuntimeConfig.executable` already
-covers it, and Windows discovery stays internal to T15. Production execution does have two
-blocking contract requests:
+covers it, and Windows discovery stays internal to T15.
 
-1. **T02 / Runtime SPI:** provide an SPI-only resolved start context rather than making the
-   Adapter interpret opaque `snapshotRef` or `workspaceInstanceId` values. A compatible shape is
-   `ResolvedStartRunRequest = { command: StartRunRequest; workspace: WorkspaceGrant; context:
-   { prompt: string }; permission: { sandbox: "read-only" | "workspace-write"; approval:
-   "never" | "on-request" }; environment: Record<string, string>; deadline?: string }`. Existing
-   protocol fields remain unchanged; the Host constructs this internal value after Workspace and
-   Policy checks. Without it, T15 cannot select `cwd`, obtain the prompt, or enforce sandbox and
-   approval settings.
-2. **T06 / Process port:** add a captured-process operation, for example
-   `spawnCaptured({ argv, cwd, env, stdin }): Promise<{ handle: ProcessHandle; stdout:
-   AsyncIterable<Uint8Array>; stderr: AsyncIterable<Uint8Array>; wait(): Promise<{ exitCode:
-   number | null; signal?: string }> }>` plus a documented durable-output/re-attach behavior for
-   Daemon restart. The current `spawn` discards stdout/stderr, exposes no stdin write or exit
-   result, and `inspect` only reports `alive`; T15 therefore cannot stream JSONL, distinguish
-   success/failure, or reconcile remaining events without opening a second process-control path.
+**Landed (T06 / #11), consume as-is:** `ProcessController.spawnCaptured` is additive on the
+existing Process port. The implemented shape uses a single-consumer multiplexed `output`
+(`{ source: "stdout" | "stderr"; chunk: Uint8Array }`) plus `stdin?: Uint8Array` and
+`wait(): Promise<{ exitCode; signal }>`. T06 remains the only implementation owner. T15 must
+inject this port; it must not open a second process-control path. Durable re-attach of captured
+stdout after Daemon restart is **not** provided — Adapter `reconcile` must stay fail-closed.
 
-Compatibility impact: both can be additive at the TypeScript port level, but changing
-`RuntimeAdapter.start` requires coordinated T02/T05/T15 consumer updates and contract tests. The
-captured-process API can be additive to `ProcessController`; T06 remains the only implementation
-owner.
+**Still Host-internal, not a protocol change:** T15 injects a `resolveStart` factory that returns
+`{ cwd, prompt, sandbox, approval, environment? }` after Workspace and Policy checks. Public
+`StartRunRequest` stays unchanged. Do not make the Adapter interpret opaque `snapshotRef` or
+`workspaceInstanceId`. Do not add public HTTP endpoints for this context. Changing
+`RuntimeAdapter.start` would still require coordinated T02/T05/T15 work; this slice avoids that.
 
 Non-blocking note for T00/T02: do not make `codex proto` a V0.1 requirement. The measured CLI has
 no such command. Session `resume` is not an `event.resume` cursor, and `lifecycle.pause` must stay
@@ -279,6 +270,8 @@ data. This does not claim that Codex initialization made no underlying auth-rela
 The parser fixture in `runtimes/codex` now follows this live redacted success shape plus the
 officially documented `turn.failed` and `error` types. Until a streaming redactor can protect
 across complete events, the decoder replaces all arbitrary text and raw payloads with fixed,
-bounded metadata. Production `start/stream/cancel/reconcile` remains blocked until the Process
-port captures stdout/stderr, stdin and exit, and the start contract supplies resolved
-Workspace/Policy/context inputs.
+bounded metadata. Adapter `start/stream/cancel` now go through the captured Process port when
+Process + `resolveStart` + detect/validate + CLI all allow; otherwise they fail closed. That is
+not live `codex exec` evidence. Production Host composition still defaults to Mock. Auth
+`login status`, mid-run input, event-cursor resume, and win32 captured spawn remain untested or
+unsupported.

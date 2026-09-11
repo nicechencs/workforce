@@ -71,9 +71,15 @@ importers:
       '@workforce/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@workforce/process':
+        specifier: workspace:*
+        version: link:../../packages/process
       '@workforce/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@workforce/runtime-codex':
+        specifier: workspace:*
+        version: link:../../runtimes/codex
       '@workforce/runtime-mock':
         specifier: workspace:*
         version: link:../../runtimes/mock
@@ -373,6 +379,12 @@ importers:
 
   runtimes/codex:
     dependencies:
+      '@workforce/process':
+        specifier: workspace:*
+        version: link:../../packages/process
+      '@workforce/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@workforce/runtime-sdk':
         specifier: workspace:*
         version: link:../../packages/runtime-sdk

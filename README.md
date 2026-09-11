@@ -50,7 +50,7 @@ apps/desktop                 Electron + Vite + React shell and P0 pages
 apps/daemon                  Loopback Fastify; production uses composed Mock services
 packages/*                   Shared libraries (protocol, application, database, ui, …)
 runtimes/mock                Mock runtime adapter (wired in daemon composition)
-runtimes/codex               Detect/describe/validate; live exec not enabled
+runtimes/codex               Detect/validate + injected Process start/stream/cancel; live exec not claimed
 templates/software-development-team
 tooling/eslint               Shared ESLint config + boundary test
 tooling/typescript           Shared tsconfig presets

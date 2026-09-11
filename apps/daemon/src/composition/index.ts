@@ -1,3 +1,4 @@
+export { createComposedCodexRuntime } from "./codex.js";
 export {
   ComposedAppServices,
   createComposedAppServices,
