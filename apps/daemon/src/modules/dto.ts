@@ -57,6 +57,8 @@ export interface ProjectDto {
   updatedAt: string;
   planArtifactVersionId?: string;
   teamVersionId?: string;
+  /** Set after `:start`. Echo of requested D18 mode; not a scheduler claim. */
+  orchestrationMode?: "workflow_bound" | "direct";
 }
 
 export interface RunDto {
@@ -77,6 +79,8 @@ export interface RunDto {
   };
   createdAt: string;
   updatedAt: string;
+  /** Copied from the project `:start` request onto this Run. */
+  orchestrationMode?: "workflow_bound" | "direct";
 }
 
 export interface ApprovalDto {

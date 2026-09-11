@@ -23,6 +23,7 @@ export function startRequestDigest(request: StartRunRequest): string {
       placement: request.placement,
       runtime: request.runtime,
       snapshotRef: request.snapshotRef,
+      orchestrationMode: request.orchestrationMode,
     }),
   );
 }

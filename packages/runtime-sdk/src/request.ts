@@ -17,6 +17,7 @@ export function createStartRunRequest(
     snapshotRef?: string;
     placement?: Partial<StartRunRequest["placement"]>;
     runtime?: Partial<StartRunRequest["runtime"]>;
+    orchestrationMode?: StartRunRequest["orchestrationMode"];
   } = {},
 ): StartRunRequest {
   const taskId = overrides.taskId ?? "tsk_01JTESTDEVELOPERA0000000000";
@@ -46,5 +47,8 @@ export function createStartRunRequest(
       protocolVersion: overrides.runtime?.protocolVersion ?? "0.1",
     },
     snapshotRef: overrides.snapshotRef ?? "snap_01JTESTDEVA_TASKDEF000000",
+    ...(overrides.orchestrationMode !== undefined
+      ? { orchestrationMode: overrides.orchestrationMode }
+      : {}),
   });
 }

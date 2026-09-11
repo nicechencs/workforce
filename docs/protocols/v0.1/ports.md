@@ -73,7 +73,7 @@ interface RuntimeAdapter {
 }
 ```
 
-`StartRunRequest` 必须包含 D07 的 node/runtime/workspace binding。`transport` ∈ `process | sdk | http`。产品 Placement kind 默认 `local`（[D19](../../planning/decision-register.md#d19-执行-placement本机远程与容器)）；远程/容器与 enrollment 不进入本 SPI 结构，也不在此发明 path。D18 `orchestrationMode` ∈ `workflow_bound | direct` 已冻结在同一 `StartRunRequest`（`packages/protocol`）；省略则默认 `workflow_bound`。旧名 `executionMode` 不是同义词，也不表示 Placement。本条不增加 `/runs/{id}:direct` 或其它 Run path。`direct` 字段可解析不等于 T21 UI 或生产 Codex 已支持直接执行。
+`StartRunRequest` 必须包含 D07 的 node/runtime/workspace binding。`transport` ∈ `process | sdk | http`。产品 Placement kind 默认 `local`（[D19](../../planning/decision-register.md#d19-执行-placement本机远程与容器)）；远程/容器与 enrollment 不进入本 SPI 结构，也不在此发明 path。D18 `orchestrationMode` ∈ `workflow_bound | direct` 已冻结在同一 `StartRunRequest`（`packages/protocol`）；省略则默认 `workflow_bound`。composed `startProject` 经 `StartRunHostRequest` 把该字段传入本结构。旧名 `executionMode` 不是同义词，也不表示 Placement。本条不增加 `/runs/{id}:direct` 或其它 Run path。`direct` 字段可解析或回读不等于已有 direct 调度或生产 Codex 已支持直接执行。
 
 ## Workspace / Process / Policy / Artifact
 
