@@ -1,5 +1,6 @@
-export const UNTESTED_PROCESS_PLATFORMS = ["darwin", "linux"] as const;
-export const UNTESTED_CAPTURED_PROCESS_PLATFORMS = ["win32", "darwin"] as const;
+export const UNTESTED_PROCESS_PLATFORMS = ["darwin"] as const;
+export const UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS = ["win32"] as const;
+export const UNTESTED_CAPTURED_PROCESS_PLATFORMS = ["darwin"] as const;
 
 export function formatWin32StartIdentity(pid: number, createTimeUtc: Date | string): string {
   if (!Number.isInteger(pid) || pid <= 0) {

@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
-import { PassThrough, type Readable } from "node:stream";
+
+import type { ManagedCapturedOutput } from "./captured-output.js";
 
 export type TrackedProcessExit =
   | { kind: "exit"; exitCode: number | null; signal: string | null }
@@ -14,20 +15,15 @@ export type TrackedProcess = {
   helper?: ChildProcess;
   child?: ChildProcess;
   completion?: Promise<TrackedProcessExit>;
-  stdout?: Readable;
-  stderr?: Readable;
+  output?: ManagedCapturedOutput;
+  posixGroup?: {
+    pgid: number;
+    sessionId: number;
+    rootStartIdentity: string;
+    owned: boolean;
+  };
   dir?: string;
 };
-
-export function captureChildOutput(child: ChildProcess): { stdout: Readable; stderr: Readable } {
-  if (!child.stdout || !child.stderr) {
-    throw new Error("captured process streams are unavailable");
-  }
-  return {
-    stdout: forwardOutput(child.stdout),
-    stderr: forwardOutput(child.stderr),
-  };
-}
 
 export function observeChild(child: ChildProcess): Promise<TrackedProcessExit> {
   child.stdin?.on("error", ignoreStreamError);
@@ -54,14 +50,4 @@ export function observeChild(child: ChildProcess): Promise<TrackedProcessExit> {
 
 function ignoreStreamError(): void {
   // Streams surface their stored error to an eventual async iterator or stdin completion callback.
-}
-
-function forwardOutput(source: Readable): Readable {
-  const output = new PassThrough();
-  output.on("error", ignoreStreamError);
-  source.once("error", (error) => {
-    output.destroy(error);
-  });
-  source.pipe(output);
-  return output;
 }

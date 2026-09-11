@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatWin32StartIdentity,
+  UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS,
   UNTESTED_CAPTURED_PROCESS_PLATFORMS,
   UNTESTED_PROCESS_PLATFORMS,
 } from "./start-identity.js";
@@ -21,13 +22,19 @@ describe("formatWin32StartIdentity", () => {
 });
 
 describe("UNTESTED_PROCESS_PLATFORMS", () => {
-  it("documents darwin and linux as untested", () => {
-    expect(UNTESTED_PROCESS_PLATFORMS).toEqual(["darwin", "linux"]);
+  it("documents macOS as untested", () => {
+    expect(UNTESTED_PROCESS_PLATFORMS).toEqual(["darwin"]);
   });
 });
 
 describe("UNTESTED_CAPTURED_PROCESS_PLATFORMS", () => {
-  it("documents Windows and macOS as untested for captured processes", () => {
-    expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32", "darwin"]);
+  it("documents macOS as untested for captured processes", () => {
+    expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["darwin"]);
+  });
+});
+
+describe("UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS", () => {
+  it("documents Windows captured processes as fail-closed unsupported", () => {
+    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32"]);
   });
 });

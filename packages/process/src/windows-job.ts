@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { mergeMinimalEnv } from "./env.js";
 import { identityMismatchError } from "./start-identity.js";
-import { captureChildOutput, observeChild, type TrackedProcess } from "./tracked.js";
+import { observeChild, type TrackedProcess } from "./tracked.js";
 import {
   pollUntil,
   queryWin32StartIdentity,
@@ -54,17 +54,14 @@ export async function spawnWindows(req: {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
-  capture?: boolean;
 }): Promise<TrackedProcess> {
-  if (!req.capture) {
-    try {
-      const job = await trySpawnInJob(req);
-      if (job) {
-        return job;
-      }
-    } catch {
-      // Job Object path is preferred but not required; fall back to spawn + taskkill.
+  try {
+    const job = await trySpawnInJob(req);
+    if (job) {
+      return job;
     }
+  } catch {
+    // Job Object path is preferred but not required; fall back to spawn + taskkill.
   }
   return spawnFallback(req);
 }
@@ -240,7 +237,6 @@ async function spawnFallback(req: {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
-  capture?: boolean;
 }): Promise<TrackedProcess> {
   const exe = req.argv[0];
   if (exe === undefined) {
@@ -251,9 +247,8 @@ async function spawnFallback(req: {
     env: req.env,
     windowsHide: true,
     detached: false,
-    stdio: ["pipe", req.capture ? "pipe" : "ignore", req.capture ? "pipe" : "ignore"],
+    stdio: ["pipe", "ignore", "ignore"],
   });
-  const output = req.capture ? captureChildOutput(child) : undefined;
   const completion = observeChild(child);
   await waitForChildSpawn(child);
   if (child.pid === undefined) {
@@ -267,7 +262,6 @@ async function spawnFallback(req: {
     usedJob: false,
     child,
     completion,
-    ...output,
   };
 }
 

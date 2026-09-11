@@ -1,46 +1,22 @@
 import process from "node:process";
-import type { Readable, Writable } from "node:stream";
+import type { Writable } from "node:stream";
+
+import type {
+  CapturedProcess,
+  CapturedSpawnRequest,
+  ProcessCancelMode,
+  ProcessController,
+  ProcessHandle,
+  ProcessStatus,
+  SpawnRequest,
+} from "@workforce/application/ports";
 
 import { mergeMinimalEnv } from "./env.js";
-import { cancelPosix, inspectPosix, spawnPosix } from "./posix-process.js";
+import { cancelPosix, inspectPosix, spawnPosix, trackedPosixGroupAlive } from "./posix-process.js";
 import type { TrackedProcess } from "./tracked.js";
 import { cancelWindows, inspectWindows, spawnWindows } from "./windows-job.js";
 
-export type ProcessCancelMode = "graceful" | "force";
-
-export interface ProcessHandle {
-  pid: number;
-  startIdentity: string;
-}
-
-export interface SpawnRequest {
-  argv: string[];
-  cwd: string;
-  env?: Record<string, string>;
-}
-
-export interface CapturedSpawnRequest extends SpawnRequest {
-  stdin?: Uint8Array;
-}
-
-export interface ProcessStatus {
-  alive: boolean;
-  startIdentity: string;
-}
-
-export interface ProcessExitResult {
-  exitCode: number | null;
-  signal: string | null;
-}
-
-export interface CapturedProcess {
-  handle: ProcessHandle;
-  stdout: AsyncIterable<Uint8Array>;
-  stderr: AsyncIterable<Uint8Array>;
-  wait(): Promise<ProcessExitResult>;
-}
-
-export class OsProcessController {
+export class OsProcessController implements ProcessController {
   readonly #tracked = new Map<string, TrackedProcess>();
 
   async spawn(req: SpawnRequest): Promise<ProcessHandle> {
@@ -53,20 +29,23 @@ export class OsProcessController {
     if (req.stdin !== undefined && !(req.stdin instanceof Uint8Array)) {
       throw new Error("CapturedSpawnRequest.stdin must be a Uint8Array");
     }
+    assertCapturedProcessSupported(process.platform);
     const tracked = await this.#spawnTracked(normalized, true);
     const child = tracked.child;
     const completion = tracked.completion;
-    if (!child?.stdin || !tracked.stdout || !tracked.stderr || !completion) {
+    const output = tracked.output;
+    if (!child?.stdin || !output || !completion) {
       await this.cancel(tracked.handle, "force");
       throw new Error("captured process streams are unavailable");
     }
 
+    const handle = publicHandle(tracked);
+    output.setAbortHandler(() => this.cancel(handle, "force"));
     const stdinCompletion = finishStdin(child.stdin, req.stdin);
     const settled = Promise.all([completion, stdinCompletion]);
     return {
-      handle: publicHandle(tracked),
-      stdout: readBytes(tracked.stdout),
-      stderr: readBytes(tracked.stderr),
+      handle,
+      output: output.iterable,
       async wait() {
         const [processResult, stdinResult] = await settled;
         if (processResult.kind === "error") {
@@ -91,32 +70,47 @@ export class OsProcessController {
       await cancelPosix(handle, mode, tracked);
     }
     if (mode === "force") {
-      this.#tracked.delete(trackKey(handle));
+      this.#releaseTrackedWhenStopped(trackKey(handle), tracked);
     }
   }
 
   async inspect(handle: ProcessHandle): Promise<ProcessStatus> {
+    const key = trackKey(handle);
+    const tracked = this.#tracked.get(key);
     if (process.platform === "win32") {
       return inspectWindows(handle);
     }
-    return inspectPosix(handle);
+    const status = await inspectPosix(handle, tracked);
+    if (!status.alive && this.#tracked.get(key) === tracked) {
+      this.#tracked.delete(key);
+    }
+    return status;
   }
 
   async #spawnTracked(
     req: { argv: string[]; cwd: string; env: Record<string, string> },
     capture: boolean,
   ): Promise<TrackedProcess> {
-    const normalized = { ...req, capture };
     const tracked =
-      process.platform === "win32" ? await spawnWindows(normalized) : await spawnPosix(normalized);
+      process.platform === "win32"
+        ? await spawnWindows(req)
+        : await spawnPosix({ ...req, capture });
     const key = trackKey(tracked.handle);
     this.#tracked.set(key, tracked);
-    void tracked.completion?.then(() => {
-      if (this.#tracked.get(key) === tracked) {
-        this.#tracked.delete(key);
-      }
-    });
+    void tracked.completion?.then(() => this.#releaseTrackedWhenStopped(key, tracked));
     return tracked;
+  }
+
+  #releaseTrackedWhenStopped(key: string, tracked: TrackedProcess | undefined): void {
+    if (!tracked || this.#tracked.get(key) !== tracked) {
+      return;
+    }
+    if (tracked.platform === "posix" && trackedPosixGroupAlive(tracked)) {
+      const timer = setTimeout(() => this.#releaseTrackedWhenStopped(key, tracked), 1_000);
+      timer.unref();
+      return;
+    }
+    this.#tracked.delete(key);
   }
 }
 
@@ -200,16 +194,6 @@ function finishStdin(stdin: Writable, input: Uint8Array | undefined): Promise<St
   });
 }
 
-async function* readBytes(stream: Readable): AsyncIterable<Uint8Array> {
-  for await (const chunk of stream) {
-    if (chunk instanceof Uint8Array) {
-      yield chunk;
-      continue;
-    }
-    yield Buffer.from(String(chunk));
-  }
-}
-
 function isClosedPipeError(error: Error): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return (
@@ -219,4 +203,20 @@ function isClosedPipeError(error: Error): boolean {
 
 function toError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+export function assertCapturedProcessSupported(platform: NodeJS.Platform): void {
+  if (platform !== "win32") {
+    return;
+  }
+  const error = new Error(
+    "captured processes are unsupported on win32 until Job Object stream capture is available",
+  );
+  error.name = "UnsupportedProcessCapabilityError";
+  Object.assign(error, {
+    code: "unsupported_capability",
+    capability: "process.capture",
+    platform: "win32",
+  });
+  throw error;
 }

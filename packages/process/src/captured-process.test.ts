@@ -1,216 +1,336 @@
 import { randomUUID } from "node:crypto";
-import type { ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import { tmpdir } from "node:os";
-import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
-import { OsProcessController } from "./os-process-controller.js";
-import { UNTESTED_CAPTURED_PROCESS_PLATFORMS } from "./start-identity.js";
-import { captureChildOutput } from "./tracked.js";
+import type { ProcessOutput } from "@workforce/application/ports";
+
+import { CAPTURED_OUTPUT_BUFFER_LIMIT } from "./captured-output.js";
+import { assertCapturedProcessSupported, OsProcessController } from "./os-process-controller.js";
+import {
+  UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS,
+  UNTESTED_CAPTURED_PROCESS_PLATFORMS,
+} from "./start-identity.js";
 import { pollUntil } from "./windows-inspect.js";
 
 const cwd = tmpdir();
+const capturedProcess = process.platform === "win32" ? describe.skip : describe;
+const linuxProcess = process.platform === "linux" ? describe : describe.skip;
 
-describe(`OsProcessController.spawnCaptured (${process.platform})`, () => {
-  it("passes argv literally without shell interpretation and keeps stdout/stderr separate", async () => {
+capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () => {
+  it("passes argv literally without shell interpretation", async () => {
     const controller = new OsProcessController();
     const literal = `literal; echo not-a-shell-${randomUUID()}`;
     const captured = await controller.spawnCaptured({
-      argv: literalArgv(literal),
+      argv: ["/usr/bin/printf", "%s", literal],
       cwd,
     });
 
-    const [stdout, stderr, exit] = await Promise.all([
-      collect(captured.stdout),
-      collect(captured.stderr),
-      captured.wait(),
-    ]);
-
-    expect(stdout).toBe(literal);
-    expect(stderr).toBe("");
+    const [output, exit] = await Promise.all([collect(captured.output), captured.wait()]);
+    expect(output.stdout).toBe(literal);
+    expect(output.stderr).toBe("");
     expect(exit).toEqual({ exitCode: 0, signal: null });
   });
 
-  it("writes optional stdin to completion and closes the pipe", async () => {
+  it("writes optional stdin to EOF and multiplexes stdout/stderr", async () => {
     const controller = new OsProcessController();
     const input = new TextEncoder().encode("prompt from stdin\nsecond line");
     const captured = await controller.spawnCaptured({
-      argv: stdinArgv(),
+      argv: ["/bin/sh", "-c", "cat; printf stdin-ended >&2"],
       cwd,
       stdin: input,
     });
 
-    const [stdout, stderr, exit] = await Promise.all([
-      collect(captured.stdout),
-      collect(captured.stderr),
-      captured.wait(),
-    ]);
-
-    expect(stdout).toBe(new TextDecoder().decode(input));
-    expect(stderr).toBe("stdin-ended");
+    const [output, exit] = await Promise.all([collect(captured.output), captured.wait()]);
+    expect(output.stdout).toBe(new TextDecoder().decode(input));
+    expect(output.stderr).toBe("stdin-ended");
     expect(exit).toEqual({ exitCode: 0, signal: null });
   });
 
-  it("adds only the requested environment overlay to the inherited minimal environment", async () => {
+  it("uses the minimal environment plus the requested overlay", async () => {
     const controller = new OsProcessController();
     const captured = await controller.spawnCaptured({
-      argv: environmentArgv(),
+      argv: ["/bin/sh", "-c", 'printf %s "$WF_CAPTURE_TEST"'],
       cwd,
       env: { WF_CAPTURE_TEST: "overlay-value" },
     });
 
-    const [stdout, exit] = await Promise.all([collect(captured.stdout), captured.wait()]);
-    expect(stdout).toBe("overlay-value");
+    const [output, exit] = await Promise.all([collect(captured.output), captured.wait()]);
+    expect(output.stdout).toBe("overlay-value");
     expect(exit).toEqual({ exitCode: 0, signal: null });
   });
 
-  it("returns a structured non-zero exit", async () => {
+  it("returns a structured non-zero exit and wait is idempotent", async () => {
     const controller = new OsProcessController();
     const captured = await controller.spawnCaptured({
-      argv: nonZeroArgv(),
+      argv: ["/bin/sh", "-c", "exit 7"],
       cwd,
     });
 
-    await expect(captured.wait()).resolves.toEqual({ exitCode: 7, signal: null });
-    await expect(collect(captured.stdout)).resolves.toBe("");
-    await expect(collect(captured.stderr)).resolves.toBe("");
+    const expected = { exitCode: 7, signal: null };
+    await expect(captured.wait()).resolves.toEqual(expected);
+    await expect(captured.wait()).resolves.toEqual(expected);
+    await expect(collect(captured.output)).resolves.toEqual({ stdout: "", stderr: "" });
   });
 
-  it("uses the captured handle with the existing inspect and cancel path", async () => {
+  it("treats a child closing a large stdin early as a settled pipe", async () => {
     const controller = new OsProcessController();
     const captured = await controller.spawnCaptured({
-      argv: sleeperArgv(),
+      argv: ["/bin/sh", "-c", "exit 0"],
+      cwd,
+      stdin: new Uint8Array(4 * 1024 * 1024),
+    });
+
+    await expect(captured.wait()).resolves.toEqual({ exitCode: 0, signal: null });
+    await expect(collect(captured.output)).resolves.toEqual({ stdout: "", stderr: "" });
+  });
+
+  it("drains large stdout and stderr fairly through one consumer", async () => {
+    const controller = new OsProcessController();
+    const bytesPerSource = 2 * 1024 * 1024;
+    const captured = await controller.spawnCaptured({
+      argv: [
+        "/bin/sh",
+        "-c",
+        "dd if=/dev/zero bs=65536 count=32 2>/dev/null & dd if=/dev/zero bs=65536 count=32 >&2 2>/dev/null & wait",
+      ],
       cwd,
     });
 
-    const before = await controller.inspect(captured.handle);
-    expect(before).toEqual({ alive: true, startIdentity: captured.handle.startIdentity });
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    for await (const event of captured.output) {
+      if (event.source === "stdout") {
+        stdoutBytes += event.chunk.byteLength;
+      } else {
+        // This consumer intentionally ignores stderr content while still draining the mux.
+        stderrBytes += event.chunk.byteLength;
+      }
+    }
 
+    expect(stdoutBytes).toBe(bytesPerSource);
+    expect(stderrBytes).toBe(bytesPerSource);
+    await expect(captured.wait()).resolves.toEqual({ exitCode: 0, signal: null });
+  });
+
+  it("force-cancels on bounded-output overflow when output is not consumed", async () => {
+    const controller = new OsProcessController();
+    const blocks = Math.ceil(CAPTURED_OUTPUT_BUFFER_LIMIT / 65_536) + 1;
+    const captured = await controller.spawnCaptured({
+      argv: ["/bin/sh", "-c", `dd if=/dev/zero bs=65536 count=${blocks} 2>/dev/null; sleep 60`],
+      cwd,
+    });
+
+    const exit = await withTimeout(captured.wait(), 5_000);
+    expect(exit.signal).toBe("SIGKILL");
+    await expect(collect(captured.output)).rejects.toMatchObject({
+      name: "ProcessOutputOverflowError",
+      code: "process_output_overflow",
+    });
+    await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+  });
+
+  it("force-cancels when the sole output iterator returns before EOF", async () => {
+    const controller = new OsProcessController();
+    const captured = await controller.spawnCaptured({
+      argv: ["/bin/sh", "-c", "while :; do printf x; sleep 0.01; done"],
+      cwd,
+    });
+
+    for await (const event of captured.output) {
+      expect(event.source).toBe("stdout");
+      break;
+    }
+
+    const exit = await withTimeout(captured.wait(), 5_000);
+    expect(exit.signal).toBe("SIGKILL");
+    await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+  });
+
+  it("uses a captured handle with the existing inspect and cancel path", async () => {
+    const controller = new OsProcessController();
+    const captured = await controller.spawnCaptured({ argv: ["/bin/sleep", "60"], cwd });
+
+    await expect(controller.inspect(captured.handle)).resolves.toEqual({
+      alive: true,
+      startIdentity: captured.handle.startIdentity,
+    });
     await controller.cancel(captured.handle, "force");
-    await captured.wait();
-    const stopped = await pollUntil(
-      async () => !(await controller.inspect(captured.handle)).alive,
-      5_000,
+    await expect(withTimeout(captured.wait(), 5_000)).resolves.toEqual({
+      exitCode: null,
+      signal: "SIGKILL",
+    });
+    await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+  });
+
+  it("rejects spawn errors and invalid requests", async () => {
+    const controller = new OsProcessController();
+    await expect(
+      controller.spawnCaptured({ argv: [`workforce-missing-${randomUUID()}`], cwd }),
+    ).rejects.toThrow();
+    await expect(controller.spawnCaptured({ argv: [], cwd })).rejects.toThrow(
+      "SpawnRequest.argv[0] must be an executable",
     );
-    expect(stopped).toBe(true);
-    if (process.platform !== "win32") {
-      await expect(captured.wait()).resolves.toEqual({ exitCode: null, signal: "SIGKILL" });
+    await expect(
+      controller.spawnCaptured({ argv: ["/usr/bin/printf", "bad\0argument"], cwd }),
+    ).rejects.toThrow("without null bytes");
+    await expect(
+      controller.spawnCaptured({
+        argv: ["/usr/bin/printf"],
+        cwd,
+        stdin: "not bytes" as unknown as Uint8Array,
+      }),
+    ).rejects.toThrow("CapturedSpawnRequest.stdin must be a Uint8Array");
+  });
+});
+
+linuxProcess("POSIX managed process group", () => {
+  it("inspects and force-cancels a group after its root exits", async () => {
+    const controller = new OsProcessController();
+    const nonOwner = new OsProcessController();
+    const captured = await controller.spawnCaptured({
+      argv: ["/bin/sh", "-c", "sleep 60 & child=$!; printf '%s\\n' \"$child\"; exit 0"],
+      cwd,
+    });
+    const iterator = captured.output[Symbol.asyncIterator]();
+
+    try {
+      const first = await withTimeout(iterator.next(), 5_000);
+      expect(first.done).toBe(false);
+      const childPid = Number((await readStdoutLine(iterator, first)).trim());
+      expect(Number.isInteger(childPid)).toBe(true);
+      expect(await pollUntil(() => !isLiveLinuxPid(captured.handle.pid), 5_000)).toBe(true);
+      expect(isLiveLinuxPid(childPid)).toBe(true);
+
+      await nonOwner.cancel(captured.handle, "force");
+      expect(isLiveLinuxPid(childPid)).toBe(true);
+      await expect(controller.inspect(captured.handle)).resolves.toEqual({
+        alive: true,
+        startIdentity: captured.handle.startIdentity,
+      });
+
+      await controller.cancel(captured.handle, "force");
+      await iterator.return?.();
+      await expect(withTimeout(captured.wait(), 5_000)).resolves.toEqual({
+        exitCode: 0,
+        signal: null,
+      });
+      expect(await pollUntil(() => !isLiveLinuxPid(childPid), 5_000)).toBe(true);
+      await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
+    } finally {
+      await controller.cancel(captured.handle, "force");
     }
   });
 
-  it("keeps the existing non-captured spawn/inspect/cancel behavior", async () => {
+  it("rejects a mismatched root identity without killing the live group", async () => {
     const controller = new OsProcessController();
-    const handle = await controller.spawn({ argv: sleeperArgv(), cwd });
+    const handle = await controller.spawn({ argv: ["/bin/sleep", "60"], cwd });
+    const mismatched = { ...handle, startIdentity: `${handle.startIdentity}:reused` };
+
+    try {
+      await expect(controller.cancel(mismatched, "force")).rejects.toMatchObject({
+        code: "identity_mismatch",
+      });
+      await expect(controller.inspect(handle)).resolves.toMatchObject({ alive: true });
+    } finally {
+      await controller.cancel(handle, "force");
+    }
+  });
+
+  it("keeps existing non-captured spawn/inspect/cancel behavior", async () => {
+    const controller = new OsProcessController();
+    const handle = await controller.spawn({ argv: ["/bin/sleep", "60"], cwd });
 
     await expect(controller.inspect(handle)).resolves.toEqual({
       alive: true,
       startIdentity: handle.startIdentity,
     });
     await controller.cancel(handle, "force");
-    const stopped = await pollUntil(async () => !(await controller.inspect(handle)).alive, 5_000);
-    expect(stopped).toBe(true);
-  });
-
-  it("rejects spawn errors and invalid requests", async () => {
-    const controller = new OsProcessController();
-    await expect(
-      controller.spawnCaptured({
-        argv: [`workforce-missing-${randomUUID()}`],
-        cwd,
-      }),
-    ).rejects.toThrow();
-    await expect(controller.spawnCaptured({ argv: [], cwd })).rejects.toThrow(
-      "SpawnRequest.argv[0] must be an executable",
+    expect(await pollUntil(async () => !(await controller.inspect(handle)).alive, 5_000)).toBe(
+      true,
     );
-    await expect(
-      controller.spawnCaptured({
-        argv: [process.execPath, "bad\0argument"],
-        cwd,
-      }),
-    ).rejects.toThrow("without null bytes");
-    await expect(
-      controller.spawnCaptured({
-        argv: [process.execPath],
-        cwd,
-        stdin: "not bytes" as unknown as Uint8Array,
-      }),
-    ).rejects.toThrow("CapturedSpawnRequest.stdin must be a Uint8Array");
-  });
-
-  it("records the captured-process platforms not run for this delivery", () => {
-    expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32", "darwin"]);
   });
 });
 
-describe("captured output streams", () => {
-  it("forwards stream completion without waiting for a consumer to attach", async () => {
-    const stdout = new PassThrough();
-    const stderr = new PassThrough();
-    const captured = captureChildOutput({ stdout, stderr } as unknown as ChildProcess);
-
-    stdout.end("fast stdout");
-    stderr.end("fast stderr");
-
-    await expect(collect(captured.stdout)).resolves.toBe("fast stdout");
-    await expect(collect(captured.stderr)).resolves.toBe("fast stderr");
+describe("captured process platform support", () => {
+  it("fails closed before spawn on Windows", () => {
+    expect(() => assertCapturedProcessSupported("win32")).toThrowError(
+      expect.objectContaining({
+        name: "UnsupportedProcessCapabilityError",
+        code: "unsupported_capability",
+        capability: "process.capture",
+        platform: "win32",
+      }),
+    );
   });
 
-  it("surfaces an output stream error to its async consumer", async () => {
-    const stdout = new PassThrough();
-    const stderr = new PassThrough();
-    const captured = captureChildOutput({ stdout, stderr } as unknown as ChildProcess);
-    const consuming = collect(captured.stdout);
-
-    stdout.destroy(new Error("stdout failed"));
-
-    await expect(consuming).rejects.toThrow("stdout failed");
-    stderr.end();
+  it("records Windows as unsupported and macOS as untested", () => {
+    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32"]);
+    expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["darwin"]);
   });
 });
 
-async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of stream) {
-    chunks.push(chunk);
+async function collect(
+  output: AsyncIterable<ProcessOutput>,
+): Promise<{ stdout: string; stderr: string }> {
+  const stdout: Uint8Array[] = [];
+  const stderr: Uint8Array[] = [];
+  for await (const event of output) {
+    (event.source === "stdout" ? stdout : stderr).push(event.chunk);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return {
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
+  };
 }
 
-function literalArgv(literal: string): string[] {
-  if (process.platform === "win32") {
-    return [process.execPath, "-e", "process.stdout.write(process.argv[1])", literal];
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
-  return ["/usr/bin/printf", "%s", literal];
 }
 
-function stdinArgv(): string[] {
-  if (process.platform === "win32") {
-    return [
-      process.execPath,
-      "-e",
-      "process.stdin.on('data', c => process.stdout.write(c)); process.stdin.on('end', () => process.stderr.write('stdin-ended'))",
-    ];
+function isLiveLinuxPid(pid: number): boolean {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const closed = stat.lastIndexOf(")");
+    return (
+      closed >= 0 &&
+      stat
+        .slice(closed + 1)
+        .trim()
+        .split(/\s+/)[0] !== "Z"
+    );
+  } catch {
+    return false;
   }
-  return ["/bin/sh", "-c", "cat; printf stdin-ended >&2"];
 }
 
-function nonZeroArgv(): string[] {
-  if (process.platform === "win32") {
-    return [process.execPath, "-e", "process.exitCode = 7"];
+async function readStdoutLine(
+  iterator: AsyncIterator<ProcessOutput>,
+  first: IteratorResult<ProcessOutput>,
+): Promise<string> {
+  let result = "";
+  let current = first;
+  while (!current.done) {
+    if (current.value.source === "stdout") {
+      result += new TextDecoder().decode(current.value.chunk);
+      const newline = result.indexOf("\n");
+      if (newline >= 0) {
+        return result.slice(0, newline);
+      }
+    }
+    current = await iterator.next();
   }
-  return ["/bin/sh", "-c", "exit 7"];
-}
-
-function environmentArgv(): string[] {
-  if (process.platform === "win32") {
-    return [process.execPath, "-e", "process.stdout.write(process.env.WF_CAPTURE_TEST ?? '')"];
-  }
-  return ["/bin/sh", "-c", 'printf %s "$WF_CAPTURE_TEST"'];
-}
-
-function sleeperArgv(): string[] {
-  if (process.platform === "win32") {
-    return [process.execPath, "-e", "setInterval(() => {}, 60_000)"];
-  }
-  return ["/bin/sleep", "60"];
+  throw new Error("process output ended before the child pid line");
 }

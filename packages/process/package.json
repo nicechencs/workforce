@@ -21,6 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@workforce/application": "workspace:*",
     "@workforce/domain": "workspace:*"
   },
   "devDependencies": {
