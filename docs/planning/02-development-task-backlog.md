@@ -396,7 +396,7 @@ flowchart TD
 - 模式写入新 Run 的可审计字段；重试新 Run，不改旧 Run。
 - T02 已冻结 `orchestrationMode`；Desktop UI 切片已接线；composed `:start` 已把字段写入现有 start/Run 记录。仍不发明 `/runs/{id}:direct`，不渲染假 mode。M8 调度不是本切片验收。
 
-**验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。项目启动面 headed smoke 已在 `#26` / `f3b2045` **PASS**；完整 headed 套件、M8 调度与生产 Codex direct **未宣称**。
+**验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。#26 / `f3b2045` 项目「开始执行」headed smoke **PASS**（`WORKFORCE-TIP-f3b2045-ORCHESTRATION-START-SMOKE.md`）。composed 透传以 unit / composed 为证，不把该 smoke 算作透传 headed。完整 headed 套件、M8 调度与生产 Codex direct **未宣称**。
 
 **集成依赖：** T02 `orchestrationMode` **已冻结**（本卡字段依赖已满足）。仍需 T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 

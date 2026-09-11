@@ -521,4 +521,4 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`），**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针 + composed start 透传（项目启动面 headed smoke PASS at `f3b2045`），M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。
+T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`），**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针（#26 `f3b2045` headed smoke PASS）+ composed start 透传（#28 仅 unit/composed），M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。
