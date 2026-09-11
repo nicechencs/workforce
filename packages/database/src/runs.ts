@@ -211,7 +211,7 @@ export class SqliteRunRepository {
     const changes = db
       .prepare(
         `UPDATE runs
-            SET status = ?, state_revision = state_revision + 1, ended_at = COALESCE(?, ended_at)
+            SET status = ?, state_revision = state_revision + 1, ended_at = COALESCE(ended_at, ?)
           WHERE id = ? AND state_revision = ?`,
       )
       .run(input.status, ended, input.runId, input.expectedStateRevision);

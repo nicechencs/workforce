@@ -391,6 +391,83 @@ describe("WorkforceSqlite", () => {
     }
   });
 
+  it("preserves a legacy cancelled Run's ended_at when its revision is updated", async () => {
+    const db = openDb();
+    db.seedMinimalGraph(ids, now);
+    const endedAt = "2026-09-10T10:01:00.000Z";
+    const metadataUpdateAt = "2026-09-10T10:05:00.000Z";
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.runs.insert(tx, {
+          runId: "run_cancelled",
+          organizationId: ids.organizationId,
+          taskId: ids.taskId,
+          operationId: "op_cancelled",
+          attempt: 1,
+          generation: 1,
+          definitionRevision: 1,
+          status: "cancelled",
+          stateRevision: 4,
+          createdAt: now,
+        });
+      });
+      db.connection
+        .prepare("UPDATE runs SET ended_at = ? WHERE id = ?")
+        .run(endedAt, "run_cancelled");
+
+      await db.uow.withTransaction(async (tx) => {
+        db.runs.updateStatus(tx, {
+          runId: "run_cancelled",
+          expectedStateRevision: 4,
+          status: "cancelled",
+          at: metadataUpdateAt,
+        });
+      });
+
+      expect(
+        db.connection
+          .prepare("SELECT status, state_revision, ended_at FROM runs WHERE id = ?")
+          .get("run_cancelled"),
+      ).toMatchObject({ status: "cancelled", state_revision: 5, ended_at: endedAt });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("records ended_at when a Run first enters a terminal status", async () => {
+    const db = openDb();
+    db.seedMinimalGraph(ids, now);
+    const endedAt = "2026-09-10T10:01:00.000Z";
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.runs.insertPending(tx, {
+          runId: "run_first_terminal",
+          organizationId: ids.organizationId,
+          taskId: ids.taskId,
+          operationId: "op_first_terminal",
+          attempt: 1,
+          generation: 1,
+          definitionRevision: 1,
+          createdAt: now,
+        });
+        db.runs.updateStatus(tx, {
+          runId: "run_first_terminal",
+          expectedStateRevision: 1,
+          status: "cancelled",
+          at: endedAt,
+        });
+      });
+
+      expect(
+        db.connection
+          .prepare("SELECT status, state_revision, ended_at FROM runs WHERE id = ?")
+          .get("run_first_terminal"),
+      ).toMatchObject({ status: "cancelled", state_revision: 2, ended_at: endedAt });
+    } finally {
+      db.close();
+    }
+  });
+
   it("covers every D04 storage-matrix record", () => {
     const records = STORAGE_MATRIX.map((row) => row.record);
     expect(records).toEqual(
