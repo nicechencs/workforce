@@ -29,6 +29,8 @@ pnpm test
 pnpm build
 ```
 
+One-click local Desktop (dev): double-click `start.cmd` on Windows, or run `./start.sh` / `node tooling/scripts/start-desktop.mjs`. The launcher checks Node.js `>=22`, installs with `pnpm install --frozen-lockfile` when `node_modules` is missing, then starts `@workforce/desktop` `dev`. Electron shows a window and starts the loopback Daemon; close the window to stop. This is not a packaged installer and does not enable live Codex exec. `node tooling/scripts/start-desktop.mjs --dry-run` only prints the planned command.
+
 `pnpm test` runs unit tests, the M3 Mock HTTP integration, and a **headless happy-dom page driver** for the project main path (create → plan → confirm → start against the composed Mock daemon). That is not a real Electron window and does not replace headed human click-through. It is not a live Codex proof.
 
 Electron is **not** launched by default. An opt-in helper scripts the same page selectors via `executeJavaScript`; a human is still required for a true window (native directory dialog, SSE / Run console, visual checks):

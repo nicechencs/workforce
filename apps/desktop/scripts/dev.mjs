@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,11 +11,41 @@ import { bundlePreload } from "./bundle-preload.mjs";
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const electronPath = require("electron");
-const tscBin = path.join(root, "node_modules/.bin/tsc");
+
+function resolveBin(name) {
+  const dir = path.join(root, "node_modules", ".bin");
+  if (process.platform === "win32") {
+    for (const ext of [".cmd", ".exe", ""]) {
+      const candidate = path.join(dir, `${name}${ext}`);
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return path.join(dir, name);
+}
+
+const tscBin = resolveBin("tsc");
+
+function quoteForCmd(arg) {
+  const value = String(arg);
+  if (/^[A-Za-z0-9_./:=@+-\\]+$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/"/g, '""')}"`;
+}
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: "inherit" });
+    const isWin = process.platform === "win32";
+    const file = isWin ? (process.env.ComSpec ?? "cmd.exe") : command;
+    const spawnArgs = isWin
+      ? ["/d", "/s", "/c", [command, ...args].map(quoteForCmd).join(" ")]
+      : args;
+    const child = spawn(file, spawnArgs, {
+      cwd: root,
+      stdio: "inherit",
+    });
     child.on("exit", (code) => {
       if (code === 0) {
         resolve(undefined);
