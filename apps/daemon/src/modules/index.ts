@@ -28,6 +28,8 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  WorkflowDto,
+  WorkflowVersionDto,
   WorkspaceDto,
 } from "./dto.js";
 
@@ -49,6 +51,9 @@ export interface AppServices {
 
   listTeams(query: ListQuery): PageDto<TeamDto>;
   getTeam(id: string): TeamDto | null;
+  listWorkflows(query: ListQuery): PageDto<WorkflowDto>;
+  getWorkflow(id: string): WorkflowDto | null;
+  getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null;
   listNodes(query: ListQuery): PageDto<NodeDto>;
   getNode(id: string): NodeDto | null;
   listRuntimes(query: ListQuery): PageDto<RuntimeDto>;

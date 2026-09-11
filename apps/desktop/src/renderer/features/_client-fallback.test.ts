@@ -79,6 +79,7 @@ describe("preload transport", () => {
     expect(hasCatalogMethod(catalog, "listTeams")).toBe(true);
     expect(hasCatalogMethod(catalog, "createProjectWorkspace")).toBe(true);
     expect(hasCatalogMethod(catalog, "getProjectBudget")).toBe(true);
-    expect(hasCatalogMethod(catalog, "listWorkflows")).toBe(false);
+    expect(hasCatalogMethod(catalog, "listWorkflows")).toBe(true);
+    expect(hasCatalogMethod(catalog, "getWorkflow")).toBe(true);
   });
 });

@@ -65,6 +65,10 @@ export const paths = {
   projectWorkspaces: (id: string) => `/api/v1/projects/${id}/workspaces`,
   teams: (query?: ListQuery) => `/api/v1/teams${listSearch(query)}`,
   team: (id: string) => `/api/v1/teams/${id}`,
+  workflows: (query?: ListQuery) => `/api/v1/workflows${listSearch(query)}`,
+  workflow: (id: string) => `/api/v1/workflows/${id}`,
+  workflowVersion: (id: string, versionId: string) =>
+    `/api/v1/workflows/${id}/versions/${versionId}`,
   nodes: (query?: ListQuery) => `/api/v1/nodes${listSearch(query)}`,
   node: (id: string) => `/api/v1/nodes/${id}`,
   runtimes: (query?: ListQuery) => `/api/v1/runtimes${listSearch(query)}`,

@@ -2,6 +2,7 @@ export const FEATURE_DELIVERY_WORKFLOW_ID = "software-development-team.feature-d
 export const FEATURE_DELIVERY_VERSION = "0.1.0" as const;
 
 export type WorkflowStepKind = "task" | "delivery" | "approval";
+export type WorkflowCatalogSource = "loading" | "live" | "empty" | "unavailable";
 
 export interface WorkflowStepView {
   id: string;
@@ -87,8 +88,13 @@ export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
   readonly: true,
 };
 
+export const CATALOG_LOADING_NOTE = "正在读取已发布工作流目录…";
 export const LIVE_CATALOG_NOTE =
-  "能力矩阵未列 GET /workflows（D08：不得发明 endpoint）。显示软件开发团队已发布模板夹具。IA §6.2：结构化步骤，不是可视化编辑器，也不表示真实 Runtime 已可执行。";
+  "只读已发布模板与结构化步骤。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。";
+export const EMPTY_CATALOG_NOTE =
+  "已发布工作流目录为空。此页只读展示已发布模板、版本和结构化步骤，不会回退本地夹具冒充已接通。";
+export const UNAVAILABLE_CATALOG_NOTE =
+  "无法读取 GET /workflows。目录未加载；不回退到本地夹具冒充已接通。";
 
 export type WorkflowActionId = "create" | "edit" | "canvas";
 
@@ -99,36 +105,39 @@ export interface WorkflowPageModel {
   hasCanvasEditor: false;
   actions: WorkflowActionId[];
   workflows: WorkflowTemplateView[];
-  source: "preset" | "live";
-  note: string | null;
+  source: WorkflowCatalogSource;
+  note: string;
 }
 
 export function workflowPageModel(
-  input: { liveWorkflows?: WorkflowTemplateView[] | null } = {},
+  input: {
+    liveWorkflows?: WorkflowTemplateView[] | null;
+    status?: "loading" | "ok" | "empty" | "error";
+  } = {},
 ): WorkflowPageModel {
+  const base = {
+    readonly: true as const,
+    canCreate: false as const,
+    canEdit: false as const,
+    hasCanvasEditor: false as const,
+    actions: [] as WorkflowActionId[],
+  };
   const live = input.liveWorkflows;
   if (live && live.length > 0) {
     return {
-      readonly: true,
-      canCreate: false,
-      canEdit: false,
-      hasCanvasEditor: false,
-      actions: [],
+      ...base,
       workflows: live.map((workflow) => ({ ...workflow, readonly: true })),
       source: "live",
-      note: null,
+      note: LIVE_CATALOG_NOTE,
     };
   }
-  return {
-    readonly: true,
-    canCreate: false,
-    canEdit: false,
-    hasCanvasEditor: false,
-    actions: [],
-    workflows: [FEATURE_DELIVERY_WORKFLOW],
-    source: "preset",
-    note: LIVE_CATALOG_NOTE,
-  };
+  if (input.status === "empty" || (Array.isArray(live) && live.length === 0)) {
+    return { ...base, workflows: [], source: "empty", note: EMPTY_CATALOG_NOTE };
+  }
+  if (input.status === "error") {
+    return { ...base, workflows: [], source: "unavailable", note: UNAVAILABLE_CATALOG_NOTE };
+  }
+  return { ...base, workflows: [], source: "loading", note: CATALOG_LOADING_NOTE };
 }
 
 export function rejectWorkflowCanvas(): { ok: false; reason: string } {
@@ -153,7 +162,7 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
         .map((item) => asVersionView(item))
         .filter((item): item is WorkflowVersionView => item !== null)
     : [];
-  const fallback = versions[0]?.id ?? FEATURE_DELIVERY_VERSION;
+  const fallback = versions[0]?.id ?? "";
   const activeVersionId =
     typeof record.activeVersionId === "string" ? record.activeVersionId : fallback;
   return {
@@ -161,7 +170,7 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
     name,
     description,
     activeVersionId,
-    versions: versions.length > 0 ? versions : [FEATURE_DELIVERY_VERSION_VIEW],
+    versions,
     readonly: true,
   };
 }
@@ -181,14 +190,14 @@ function asVersionView(value: unknown): WorkflowVersionView | null {
     ? record.steps
         .map((item) => asStepView(item))
         .filter((item): item is WorkflowStepView => item !== null)
-    : FEATURE_DELIVERY_STEPS;
+    : [];
   return {
     id,
     version,
     status,
     immutable: true,
-    entry: typeof record.entry === "string" ? record.entry : "planning",
-    steps: steps.length > 0 ? steps : FEATURE_DELIVERY_STEPS,
+    entry: typeof record.entry === "string" ? record.entry : "",
+    steps,
   };
 }
 

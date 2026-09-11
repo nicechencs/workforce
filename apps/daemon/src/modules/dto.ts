@@ -218,6 +218,8 @@ export interface TeamDto {
   roles: TeamRoleDto[];
 }
 
+export type { WorkflowDto, WorkflowStepDto, WorkflowVersionDto } from "@workforce/protocol";
+
 export interface NodeDto {
   id: string;
   kind: "local";

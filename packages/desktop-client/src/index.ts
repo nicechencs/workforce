@@ -48,5 +48,8 @@ export type {
   TeamDto,
   TeamRoleDto,
   VersionDto,
+  WorkflowDto,
+  WorkflowStepDto,
+  WorkflowVersionDto,
   WorkspaceDto,
 } from "./types.js";

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { PageDto } from "@workforce/desktop-client";
+import type { WorkflowDto } from "@workforce/desktop-client";
 
 import type { FeaturePageProps } from "../contract.js";
-import { asCatalogClient, hasCatalogMethod, useWorkforceClient } from "../hooks.js";
+import { useWorkforceClient } from "../hooks.js";
 import {
   badgeStyle,
   buttonStyle,
@@ -15,12 +15,12 @@ import {
 } from "../projects/ui.js";
 import {
   asWorkflowView,
-  FEATURE_DELIVERY_WORKFLOW,
   rejectWorkflowCanvas,
   stepKindLabel,
   versionById,
   workflowById,
   workflowPageModel,
+  type WorkflowCatalogSource,
   type WorkflowStepView,
   type WorkflowTemplateView,
   type WorkflowVersionView,
@@ -28,31 +28,44 @@ import {
 
 export function WorkflowsPage(props: FeaturePageProps) {
   const client = useWorkforceClient();
-  const [workflows, setWorkflows] = useState<WorkflowTemplateView[]>([FEATURE_DELIVERY_WORKFLOW]);
-  const [note, setNote] = useState<string | null>(workflowPageModel().note);
-  const [source, setSource] = useState<"preset" | "live">("preset");
+  const initial = workflowPageModel({ status: "loading" });
+  const [workflows, setWorkflows] = useState<WorkflowTemplateView[]>(initial.workflows);
+  const [note, setNote] = useState(initial.note);
+  const [source, setSource] = useState<WorkflowCatalogSource>(initial.source);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const catalog = asCatalogClient(client);
-      if (!hasCatalogMethod(catalog, "listWorkflows")) {
-        return;
-      }
       try {
-        const page: PageDto<unknown> = await catalog.listWorkflows();
-        const parsed = page.items
-          .map(asWorkflowView)
-          .filter((item): item is WorkflowTemplateView => item !== null);
-        if (!cancelled && parsed.length > 0) {
-          const model = workflowPageModel({ liveWorkflows: parsed });
+        if (props.params.workflowId) {
+          const dto: WorkflowDto = await client.getWorkflow(props.params.workflowId);
+          const parsed = asWorkflowView(dto);
+          if (cancelled) {
+            return;
+          }
+          const model = workflowPageModel({
+            liveWorkflows: parsed ? [parsed] : [],
+            status: parsed ? "ok" : "empty",
+          });
           setWorkflows(model.workflows);
           setNote(model.note);
           setSource(model.source);
+          return;
         }
+        const page = await client.listWorkflows();
+        const parsed = page.items
+          .map(asWorkflowView)
+          .filter((item): item is WorkflowTemplateView => item !== null);
+        if (cancelled) {
+          return;
+        }
+        const model = workflowPageModel({ liveWorkflows: parsed, status: "ok" });
+        setWorkflows(model.workflows);
+        setNote(model.note);
+        setSource(model.source);
       } catch {
         if (!cancelled) {
-          const model = workflowPageModel();
+          const model = workflowPageModel({ status: "error" });
           setWorkflows(model.workflows);
           setNote(model.note);
           setSource(model.source);
@@ -62,13 +75,11 @@ export function WorkflowsPage(props: FeaturePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, props.params.workflowId]);
 
   const workflowId = props.params.workflowId;
   if (workflowId) {
-    const workflow =
-      workflowById(workflows, workflowId) ??
-      (workflowId === FEATURE_DELIVERY_WORKFLOW.id ? FEATURE_DELIVERY_WORKFLOW : null);
+    const workflow = workflowById(workflows, workflowId);
     return (
       <WorkflowDetailPage
         workflow={workflow}
@@ -83,28 +94,34 @@ export function WorkflowsPage(props: FeaturePageProps) {
   return (
     <main style={pageStyle}>
       <h1 style={titleStyle}>工作流</h1>
-      {note ? <p style={mutedStyle}>{note}</p> : null}
+      <p style={mutedStyle}>{note}</p>
       <p style={mutedStyle}>模板、版本和结构化步骤。V0.1 没有画布编辑器。</p>
       <section style={cardStyle}>
-        <ul style={listStyle}>
-          {workflows.map((workflow) => {
-            const version = versionById(workflow, undefined);
-            return (
-              <li
-                key={workflow.id}
-                style={listItemStyle}
-                data-testid={`workflow-row-${workflow.id}`}
-                onClick={() => props.navigate(`/workflows/${workflow.id}`)}
-              >
-                <strong>{workflow.name}</strong>
-                <div style={mutedStyle}>
-                  {workflow.id} · 版本 {version?.version ?? workflow.activeVersionId} ·{" "}
-                  {version?.steps.length ?? 0} 步
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        {workflows.length === 0 ? (
+          <p style={mutedStyle} data-testid="workflow-empty">
+            {source === "empty" ? "当前没有已发布的工作流模板。" : null}
+          </p>
+        ) : (
+          <ul style={listStyle}>
+            {workflows.map((workflow) => {
+              const version = versionById(workflow, undefined);
+              return (
+                <li
+                  key={workflow.id}
+                  style={listItemStyle}
+                  data-testid={`workflow-row-${workflow.id}`}
+                  onClick={() => props.navigate(`/workflows/${workflow.id}`)}
+                >
+                  <strong>{workflow.name}</strong>
+                  <div style={mutedStyle}>
+                    {workflow.id} · 版本 {version?.version ?? workflow.activeVersionId} ·{" "}
+                    {version?.steps.length ?? 0} 步
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
     </main>
   );
@@ -113,8 +130,8 @@ export function WorkflowsPage(props: FeaturePageProps) {
 function WorkflowDetailPage(props: {
   workflow: WorkflowTemplateView | null;
   versionId?: string | undefined;
-  note: string | null;
-  source: "preset" | "live";
+  note: string;
+  source: WorkflowCatalogSource;
   navigate: (path: string) => void;
 }) {
   if (!props.workflow) {
@@ -129,7 +146,8 @@ function WorkflowDetailPage(props: {
             返回工作流
           </button>
         </p>
-        <p>未找到该工作流模板。</p>
+        <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
+        {props.source === "unavailable" ? <p style={mutedStyle}>{props.note}</p> : null}
       </main>
     );
   }
@@ -137,6 +155,8 @@ function WorkflowDetailPage(props: {
   const selected = versionById(props.workflow, props.versionId);
   const canvas = rejectWorkflowCanvas();
   const versionRoute = Boolean(props.versionId);
+  const sourceLabel =
+    props.source === "live" ? "GET /workflows" : props.source === "empty" ? "空目录" : "目录未加载";
 
   return (
     <main style={pageStyle}>
@@ -158,10 +178,9 @@ function WorkflowDetailPage(props: {
         </div>
         <p style={mutedStyle}>{props.workflow.description}</p>
         <p style={mutedStyle}>
-          来源 {props.source === "live" ? "typed catalog" : "模板夹具"} · 活动版本{" "}
-          {props.workflow.activeVersionId}
+          来源 {sourceLabel} · 活动版本 {props.workflow.activeVersionId}
         </p>
-        {props.note ? <p style={mutedStyle}>{props.note}</p> : null}
+        <p style={mutedStyle}>{props.note}</p>
         <p style={mutedStyle}>{canvas.reason}</p>
         <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>版本</h2>
         <ul style={listStyle}>
