@@ -455,7 +455,8 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 }
 
 function withoutOperationId(body: Record<string, unknown>): Record<string, unknown> {
-  const { operationId: _operationId, ...rest } = body;
+  const rest = { ...body };
+  delete rest.operationId;
   return rest;
 }
 
