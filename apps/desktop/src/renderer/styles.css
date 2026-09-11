@@ -149,6 +149,53 @@ a {
   display: none;
 }
 
+.wf-nav-brand-toggle {
+  position: relative;
+  display: inline-flex;
+  width: var(--wf-control-h);
+  height: var(--wf-control-h);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--wf-radius-btn);
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.wf-nav-expand-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  color: var(--wf-text-secondary);
+  transition: opacity 150ms ease;
+}
+
+.wf-nav-brand-toggle .wf-brand-mark {
+  transition: opacity 150ms ease;
+}
+
+.wf-nav-brand-toggle:hover,
+.wf-nav-brand-toggle:focus-visible {
+  background: var(--wf-bg-hover);
+}
+
+.wf-nav-brand-toggle:hover .wf-brand-mark,
+.wf-nav-brand-toggle:focus-visible .wf-brand-mark {
+  opacity: 0;
+}
+
+.wf-nav-brand-toggle:hover .wf-nav-expand-icon,
+.wf-nav-brand-toggle:focus-visible .wf-nav-expand-icon {
+  opacity: 1;
+  color: var(--wf-text-primary);
+}
+
 .wf-nav-list {
   display: flex;
   min-height: 0;
@@ -279,6 +326,7 @@ a {
 }
 
 .wf-topbar-page {
+  margin: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -286,6 +334,14 @@ a {
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--wf-text-primary);
+}
+
+.wf-topbar-subtitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--wf-font-meta);
+  color: var(--wf-text-secondary);
 }
 
 .wf-topbar-workspace {
@@ -380,6 +436,10 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--wf-space-8);
+}
+
+.wf-page-header-toolbar {
+  justify-content: flex-end;
 }
 
 /* ─── 文字与工具类 ─────────────────────────────────────────────────────── */
@@ -1253,13 +1313,19 @@ button.wf-list-row:hover {
   .wf-shell .wf-nav-item.is-current::before {
     content: none;
   }
+
+  .wf-shell .wf-nav-collapse {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .wf-nav,
   .wf-btn,
   .wf-tab,
-  .wf-nav-item {
+  .wf-nav-item,
+  .wf-nav-brand-toggle .wf-brand-mark,
+  .wf-nav-expand-icon {
     transition: none;
   }
 

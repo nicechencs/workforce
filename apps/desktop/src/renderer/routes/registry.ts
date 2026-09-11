@@ -1,4 +1,5 @@
 import type { FeatureSlot } from "@workforce/ui";
+import type { ReactNode } from "react";
 
 import { SHELL_ROUTES, type ShellRoute } from "./catalog.js";
 
@@ -10,7 +11,7 @@ export interface FeatureModule {
     params: Record<string, string>;
     path: string;
     navigate: (path: string) => void;
-  }) => unknown;
+  }) => ReactNode;
 }
 
 export interface ResolvedRoute {

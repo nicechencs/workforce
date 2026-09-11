@@ -7,6 +7,7 @@ import {
 } from "@workforce/desktop-client";
 import { primaryNavItems, type ConnectionSnapshot, type WorkforcePreloadApi } from "@workforce/ui";
 
+import { OutletErrorBoundary } from "../components/outlet-error-boundary.js";
 import { PlaceholderPage } from "../components/placeholder-page.js";
 import { ShellFrame } from "../components/shell-frame.js";
 import type { RouteRegistry } from "../routes/registry.js";
@@ -90,11 +91,13 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
           void api.connection.reconnect().then(setConnection);
         }}
       >
-        {shouldRenderFeaturePage(resolved, Page) && Page && resolved ? (
-          (Page({ params: resolved.params, path, navigate }) as ReactNode)
-        ) : (
-          <PlaceholderPage title={resolved?.route.title ?? "未找到页面"} />
-        )}
+        <OutletErrorBoundary resetKey={path}>
+          {shouldRenderFeaturePage(resolved, Page) && Page && resolved ? (
+            <Page key={path} params={resolved.params} path={path} navigate={navigate} />
+          ) : (
+            <PlaceholderPage title={resolved?.route.title ?? "未找到页面"} />
+          )}
+        </OutletErrorBoundary>
       </ShellFrame>
     </WorkforceProvider>
   );

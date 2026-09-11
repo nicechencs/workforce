@@ -7,6 +7,7 @@ import type {
 } from "react";
 
 import { cn } from "./cn.js";
+import { useLiftPageChrome } from "./page-chrome.js";
 import {
   IconApprovals,
   IconDashboard,
@@ -41,9 +42,22 @@ export interface PageProps {
 }
 
 export function Page(props: PageProps): ReactNode {
+  const lifted = useLiftPageChrome(props.title, props.subtitle);
   return (
-    <section className={cn("wf-page", props.className)} data-testid={props.testId}>
-      <PageHeader title={props.title} subtitle={props.subtitle} actions={props.actions} />
+    <section
+      className={cn("wf-page", props.className)}
+      data-testid={props.testId}
+      aria-label={lifted ? props.title : undefined}
+    >
+      {lifted ? (
+        props.actions !== undefined ? (
+          <header className="wf-page-header wf-page-header-toolbar">
+            <div className="wf-page-header-actions">{props.actions}</div>
+          </header>
+        ) : null
+      ) : (
+        <PageHeader title={props.title} subtitle={props.subtitle} actions={props.actions} />
+      )}
       {props.children}
     </section>
   );

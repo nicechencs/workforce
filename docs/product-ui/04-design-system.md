@@ -73,7 +73,8 @@ updated: 2026-09-11
 
 - 窗内画布缝 12px；底栏上方留 4px 缝，底栏方角贴窗底、只用上边框。
 - 左侧导航是圆角面板卡片（默认 220px，可折叠为 56px 图标轨）；主列是独立的圆角面板。
-- 页面内容统一 `--wf-space-12` 内边距（`.wf-page`），顶栏已含页标题，正文第一块不再额外加顶距。
+- 展开时轨顶是品牌标 + 名称 + 折叠按钮；折叠后品牌标独占轨顶，悬停或聚焦时变为展开按钮，不与折叠按钮并排挤在 56px 内。
+- 页面内容统一 `--wf-space-12` 内边距（`.wf-page`），顶栏已含页标题与说明，壳内 `Page` 不再重复渲染 h1；正文第一块不再额外加顶距。
 
 ## 3. 组件层
 
@@ -81,7 +82,7 @@ updated: 2026-09-11
 
 | 需求 | 组件 | 规则 |
 |---|---|---|
-| 页面骨架 | `Page` / `PageHeader` | 一个页面一个 `title`；`subtitle` 是 meta 档说明 |
+| 页面骨架 | `Page` / `PageHeader` | 一个页面一个 `title`；壳内 title / subtitle 登记到顶栏，`actions` 留在正文工具行；无壳时 `PageHeader` 仍渲染标题 |
 | 独立内容块 | `Card` | `default` 带边框与 xs 阴影；`plain` 嵌在已有框内；`subtle` 弱底无边框 |
 | 指标 | `Kpi` / `MetricGrid` | 数值用 title 档，标签用 meta 档 |
 | 主要或次要命令 | `Button` | `primary` ≤ 1；其余按权重用 `secondary` / `outline` / `ghost` / `danger` / `dangerOutline`。默认 `secondary` |

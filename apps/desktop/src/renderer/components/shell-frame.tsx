@@ -5,6 +5,7 @@ import type { BannerModel, ShellView } from "@workforce/ui";
 import { nextThemeMode, themeModeLabel, useTheme } from "../app/theme.js";
 import { cn } from "./cn.js";
 import { IconMoon, IconPanelClose, IconPanelOpen, IconSun, IconSystem } from "./icons.js";
+import { PageChromeProvider, usePageChrome } from "./page-chrome.js";
 import { Button, NavIcon, Notice, StatusText } from "./ui.js";
 
 const NAV_COLLAPSED_KEY = "workforce:nav-collapsed";
@@ -47,26 +48,73 @@ export function ShellFrame(props: ShellFrameProps): ReactNode {
   }, [collapsed]);
 
   return (
+    <PageChromeProvider>
+      <ShellFrameLayout
+        view={view}
+        collapsed={collapsed}
+        onToggleCollapsed={() => {
+          setCollapsed((current) => !current);
+        }}
+        onNavigate={onNavigate}
+        onBannerAction={onBannerAction}
+      >
+        {children}
+      </ShellFrameLayout>
+    </PageChromeProvider>
+  );
+}
+
+function ShellFrameLayout(
+  props: ShellFrameProps & {
+    collapsed: boolean;
+    onToggleCollapsed: () => void;
+  },
+): ReactNode {
+  const { view, collapsed, onToggleCollapsed, onNavigate, onBannerAction, children } = props;
+  const chrome = usePageChrome();
+  const title = chrome?.title ?? view.title;
+  const subtitle = chrome?.subtitle;
+
+  return (
     <div className="wf-shell" data-nav-collapsed={collapsed ? "true" : "false"}>
       <div className="wf-shell-body">
         <aside className="wf-nav" aria-label="一级导航">
           <div className="wf-nav-header">
-            <span className="wf-brand">
-              <span className="wf-brand-mark" aria-hidden="true">
-                W
-              </span>
-              <span className="wf-brand-label">Workforce</span>
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
-              onClick={() => {
-                setCollapsed((current) => !current);
-              }}
-            >
-              {collapsed ? <IconPanelOpen size={16} /> : <IconPanelClose size={16} />}
-            </Button>
+            {collapsed ? (
+              <button
+                type="button"
+                className="wf-nav-brand-toggle"
+                aria-label="展开侧栏"
+                aria-expanded={false}
+                onClick={onToggleCollapsed}
+              >
+                <span className="wf-brand-mark" aria-hidden="true">
+                  W
+                </span>
+                <span className="wf-nav-expand-icon" aria-hidden="true">
+                  <IconPanelOpen size={16} />
+                </span>
+              </button>
+            ) : (
+              <>
+                <span className="wf-brand">
+                  <span className="wf-brand-mark" aria-hidden="true">
+                    W
+                  </span>
+                  <span className="wf-brand-label">Workforce</span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="wf-nav-collapse"
+                  aria-label="收起侧栏"
+                  aria-expanded={true}
+                  onClick={onToggleCollapsed}
+                >
+                  <IconPanelClose size={16} />
+                </Button>
+              </>
+            )}
           </div>
           <nav className="wf-nav-list">
             <div className="wf-nav-group-label">工作台</div>
@@ -94,7 +142,10 @@ export function ShellFrame(props: ShellFrameProps): ReactNode {
         <div className="wf-shell-main">
           <header className="wf-topbar">
             <div className="wf-topbar-context">
-              <span className="wf-topbar-page">{view.title}</span>
+              <h1 className="wf-topbar-page">{title}</h1>
+              {subtitle !== undefined ? (
+                <span className="wf-topbar-subtitle">{subtitle}</span>
+              ) : null}
               <span className="wf-topbar-sep" aria-hidden="true">
                 /
               </span>

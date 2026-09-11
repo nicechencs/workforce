@@ -189,3 +189,11 @@ updated: 2026-09-11
 - **决定：** 按 [06-t02-contract-request-c5-c9.md](06-t02-contract-request-c5-c9.md) 的推荐默认全批，并做一处更优修正：HTTP `RunDto` 的三轴在 Application 写入方落地前保持**可选**，禁止填假 `workflow_bound`。其余：`POST /tasks/{id}/runs` 为 HTTP 落点但本切片不实现该路由；`StartRunRequest` 不动；`ProjectDto`/`RunDto`/`TeamDto` 迁入 `packages/protocol`；快照公共 DTO 不含 policy/budget；`ExecutionSnapshotId` + `SnapshotRef` 别名 + `snp_`；`PlacementSnapshot` 无 `mode`，Host 不再平行维护一套 binding 形状；`RuntimeHandle` 增加可选 node 字段；`transport` 类型以 protocol 为唯一声明，Profile 列留给 T04。
 - **文档影响：** 本请求页改为 `status: current` 并写「已裁决」；补手写 `run.schema.json` 与 `project-execution-snapshot.schema.json`；蓝图 07 §18 去掉 snapshot 上的 `mode`，§7 标明内部 Ports 请求 ≠ protocol `StartRunRequest`；本文件追加本条。
 - **状态：** 契约层 **implemented**（protocol/domain/spi/sdk 再导出）。HTTP 启动路由、confirmPlan 拆分、Profile `transport` 列、capabilities mode 维度、Run 响应必填 **仍 planned**。
+
+---
+
+## 2026-09-11（Asia/Taipei）桌面壳：折叠轨品牌标与切页空白
+
+- **决定：** 启动后的壳缺陷按可见行为收口，不改产品对象或协议。(1) 折叠后的 56px 图标轨只保留品牌标，悬停/聚焦变为展开，禁止 Logo 与折叠按钮并排；(2) 页标题与说明只出现在顶栏，壳内 `Page` 不再重复 h1；(3) 特性页必须作为 React 元素挂载，禁止把 `Page()` 当函数调用，避免切左侧菜单时 hooks 数量变化把整棵树打成空白。
+- **文档影响：** [UI 设计系统](../product-ui/04-design-system.md) §2.4 / §3 补折叠轨与顶栏标题规则。**未改** decision-register、state-matrix、api-capability-matrix、任务清单结论。
+- **状态：** **implemented**（展示层）。真窗口点击仍为人工项。
