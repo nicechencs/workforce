@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { IPC_INVOKE_CHANNELS } from "../src/preload/contracts.js";
@@ -49,7 +51,7 @@ describe("desktop composition", () => {
     ).toEqual({ kind: "url", target: "http://127.0.0.1:5173/" });
     expect(resolveRendererLoadTarget({}, "/app")).toEqual({
       kind: "file",
-      target: "/app/dist/renderer/index.html",
+      target: path.join("/app", "dist/renderer/index.html"),
     });
   });
 

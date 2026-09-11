@@ -253,6 +253,8 @@ describe("CodexRuntimeAdapter", () => {
       detect: () => detected(),
       process: processPort,
       resolveStart: () => ({ ...context(), prompt: "" }),
+      // This case exercises the resolved-context guard, not the win32 capture guard.
+      platform: "linux",
     });
     await expect(adapter.start(startRequest())).rejects.toMatchObject({
       code: "unsupported_capability",
