@@ -16,7 +16,7 @@ updated: 2026-09-11
 
 文档改动看起来是「M7 画布 + M8 双执行模式」，但真正卡住整个 D15–D18 的不是画布，而是**三条被文档埋在执行面里的前置不变量**。在它们落地前，画布、对话生成、双执行模式任何一条都无法诚实实现：
 
-0. **SQLite 现在不是权威，也没有权威到能承载这些不变量。** 实际写入链是「Application 内存 world → `dumpWorld` → 写 `world.json` → 之后才异步投影进 SQLite」，且这次投影**吞掉约束错误与 `revision_conflict`**（`apps/daemon/src/composition/persist.ts:552-556, 591-595`）。文档的 migration expand → backfill → switch → contract 假设 SQLite 是事实来源；要让它成为事实，`switch` 阶段就不只是加列，而是一次「谁来负责不变量」的架构切换。在没做这个切换前，任何 NOT NULL/CHECK 收紧都可能**静默不生效**——见 §3.6。
+0. **SQLite 现在不是权威，也没有权威到能承载这些不变量。** 实际写入链是「Application 内存 world → `dumpWorld` → 写 `world.json` → 之后才异步投影进 SQLite」，且这次投影**吞掉 `isConstraintError` 覆盖的约束错误与 `revision_conflict`**（`apps/daemon/src/composition/persist.ts:552-556, 591-595`；2026-09-11 起非约束类失败已由 `persist()` 经 `console.error` 报出，约束类仍被吞）。文档的 migration expand → backfill → switch → contract 假设 SQLite 是事实来源；要让它成为事实，`switch` 阶段就不只是加列，而是一次「谁来负责不变量」的架构切换。在没做这个切换前，任何 NOT NULL/CHECK 收紧都可能**静默不生效**——见 §3.6。
 1. **迁移是公共前置，不是 D18 的收尾工作。** 文档把 `orchestration_mode`、`transport`、`placement_snapshot_json`、`execution_snapshot_id` 的目标形态定义为 `NOT NULL` + 互斥 `CHECK`，同时要求「现行 M3 Run 先 nullable」。这意味着 expand 阶段必须**先于**任何会写 Run 的 D17/D18 代码——否则新代码要么写不进库，要么必须写一个立刻要拆掉的临时分支。
 2. **映射必须显式，而当前 Run 的 placement 语义是倒的。** `StartRunRequest` 现在要求调用方**先给出** `executionNodeId` / `runtimeInstallationId` / `workspaceInstanceId`；文档冻结的顺序是先解析 placement intent，再选 Node/Runtime、拿 Lease、建 WorkspaceInstance，**最后**组装唯一 `PlacementSnapshot`。wire 契约与执行顺序互相矛盾，必须先解决再写调度。另外 `runs.snapshot_ref` 现在的取值是 Mock 场景名字面量（`"mock:success"`），与 `execution_snapshot_id` **不是同一个概念**，不能复用。
 3. **`ProjectExecutionSnapshot` 的写入时机和归属都要挪。** 文档要求计划确认只创建 snapshot 并进入 `ready`，`workflow.start` 才创建 `WorkflowInstance`；当前 `confirmPlan` 直接创建 `WorkflowInstance` 并把 `project.workflowInstanceId` 写死。这是 M3 主路径的真实行为改动，牵动 daemon、typed client、桌面页 driver 与集成测试。
@@ -24,6 +24,14 @@ updated: 2026-09-11
 另外三个**文档没写、但会直接决定 D15–D18 正确性**的代码事实：公开 Task 的 `dependsOn` 从 `task_dependencies` 投影，而该表**全库无生产写入方**；`workflow_versions.definition_json` 每次写实例都被 upsert 覆盖，等价于**可变版本表**；D15/D18 要新增字段的 `RunDto`/`ProjectDto`/`TeamDto` **不在 `packages/protocol`**，而是 daemon 与 desktop-client 两处手写副本。这三条不是措辞问题，而是实现路径上的硬约束，见 §3.5 与 §4。
 
 ## 2. 基线事实（已实际读取）
+
+> **历史记录：** 本节是 **`c613609` 基线时点**的代码事实（本页创建时实际读取）。它不作为当前事实使用，保留以说明后续切片为何这样排序。自该时点以后已发生三件事：
+>
+> 1. **T02 已冻结执行三轴公共契约**：`packages/protocol/src/execution.ts` 现导出 `orchestrationModes`（`workflow_bound` / `direct`）、`runtimeTransports`、`placementIntentModes`、`placementSnapshotSchema` 与 `runExecutionSnapshotSchema`（含 `superRefine`），并有 `execution.test.ts`。因此下文 2.1 中「协议与 domain 均无、grep 全库 0 命中」的描述只适用于 `c613609`。
+> 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。
+> 3. **S2a 已落地 `SqliteProjectExecutionSnapshotRepository`**（insert-once，无 update）与 `MemoryWorld.executionSnapshots`。但 `confirmPlan` 仍直接创建 `WorkflowInstance`，D02「确认时只写 snapshot、启动时才建实例」**未实现**。
+>
+> 仍成立的行为结论：2.3 的「SQLite 是事实上的事后投影」与 2.4 的 `confirmPlan` 语义、2.6 的 `workflow_versions` 被 upsert 覆写且 `content_hash` 恒为 `sha256:empty`。2.3 中「投影失败被吞掉」本轮只做到**部分可见**：非约束类失败改由 `persist()` 经 `console.error` 报告，`dualWriteSqlite` 仍吞掉 `isConstraintError` 覆盖的 UNIQUE/PK 失败（§3.6 的伴随项仍未完成，也即本页 §6 验收与测试矩阵的「投影失败可见性」仍为未达成目标），见 [03-implementation-status.md](03-implementation-status.md) §3 持久化回归修复切片；SQLite 仍是投影而非权威。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
 ### 2.1 公共契约现状
 
@@ -88,7 +96,7 @@ HTTP command
 两个直接后果：
 
 - **SQLite 是投影，不是权威。** 读取侧 `loadComposition()` 先读 `world.json`，仅当 `entities.projects.length > 0` 时才用 SQLite 实体表覆盖（`persist.ts:443-445`）。所以「从 `ProjectExecutionSnapshot` 读版本」这类不变量，**必须先在内存模型里成立**，否则会出现「SQLite 列已按新语义写、行为仍按旧语义跑」的分叉。
-- **投影失败被吞掉。** `dualWriteSqlite` 在外层 catch 里丢弃所有 `isConstraintError`（`persist.ts:591-595`），并在 handle 写入处丢弃 `revision_conflict`（`persist.ts:552-556`）；同一时刻 `world.json` 已经写成功。这意味着：**在 expand 之后新增的 NOT NULL/CHECK 列，如果忘记同步某条 insert/update SQL，失败会静默发生**，表现为 SQLite 落后于 `world.json`，而不是报错。
+- **投影失败被吞掉（仅约束类）。** `dualWriteSqlite` 在外层 catch 里丢弃所有 `isConstraintError`（`persist.ts:591-595`；非约束类失败自 2026-09-11 起由 `persist()` 经 `console.error` 报出，约束类仍被吞），并在 handle 写入处丢弃 `revision_conflict`（`persist.ts:552-556`）；同一时刻 `world.json` 已经写成功。这意味着：**在 expand 之后新增的 NOT NULL/CHECK 列，如果忘记同步某条 insert/update SQL，失败会静默发生**，表现为 SQLite 落后于 `world.json`，而不是报错。
 
 另外 `SqliteWorldSnapshot.save` 会在 `state_revision` 跳变时用裸 `UPDATE runs SET state_revision = ?` 绕过 CAS（`world-snapshot.ts:251-255`）。
 
@@ -268,7 +276,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 
 - `packages/application`：新增 `ProjectExecutionSnapshotRecord`（`id`/`projectId`/`workflowVersionId`/`teamVersionId`/`contentHash`/`policySnapshot`/`budgetSnapshot?`/`createdAt`）；`ProjectRecord` 与 `WorkflowInstanceRecord` 增加 `executionSnapshotId?`；`MemoryWorld` 增加 `executionSnapshots` map 与 `executionSnapshotForProject()`。
 - `packages/database`：新增 `execution-snapshots.ts` 的 `SqliteProjectExecutionSnapshotRepository`（`get`/`findByProject`/`listAll`/`insert`），**只有 insert、没有 update**：同 id 同 `contentHash` 是幂等 no-op，同 id 不同 hash 抛 `conflict`，这就是"只写一次"的强制点。该 repository **刻意不 import `@workforce/domain`/`@workforce/policy`**，因此在 §8 的 store 缺口下仍可独立执行。
-- `SqliteWorldSnapshot` 增加 `executionSnapshots` 成员与 `WorldEntitySnapshot.executionSnapshots` 字段，`save` 在 projects/workflows 之前先写快照（避免 FK 顺序问题），`load` 一并读回。
+- `SqliteWorldSnapshot` 增加 `executionSnapshots` 成员与 `WorldEntitySnapshot.executionSnapshots` 字段，`load` 一并读回。`save` 的插入顺序经 2026-09-11 修复：`project_execution_snapshots` 对 projects / workflow_versions / team_versions 有外键，必须先写这些父行再写快照；S2a 最初实现写成「先写快照」，任何非空快照都会 `FOREIGN KEY constraint failed` 并回滚整个事务（回归测试见 `packages/database/src/world-snapshot.test.ts`）。
 - `SqliteProjectRepository` 与 `SqliteWorkflowInstanceRepository` 补 `execution_snapshot_id` 列的读写（两个 repository 本来就 import `@workforce/application`，在该包内已可运行）。
 
 **仍未做（下一步）**：`confirmPlan` 改为创建 snapshot 并进入 `ready`（不建实例）、`startExecution` 改为创建引用 snapshot 的实例、执行图来源改为 snapshot 引用的已发布 `WorkflowVersion`、`task_dependencies` 落库、以及 `:confirm-plan` 的事务边界决策（§3.7a）。

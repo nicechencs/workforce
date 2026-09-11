@@ -102,7 +102,7 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 
 - branded IDs、entities、state transitions
 - SQLite/Drizzle schema 和 migrations
-- T04 的 D17/D18 migration（expand → backfill → switch → contract）及 T16 的 current-M3 upgrade fixture 作为 planned upgrade gate；当前 M3 migration 不包含该能力
+- T04 的 D17/D18 migration（expand → backfill → switch → contract）及 T16 的 current-M3 upgrade fixture 作为 planned upgrade gate；仓库已落地 `005_execution_axes_expand` 的 **expand**（5 张新表 + 6 个可空列，无 backfill、无 `NOT NULL`/互斥 CHECK），backfill/switch/contract 与 upgrade fixture 仍未实现
 - repository ports 与实现
 - append-only Event Store
 - 配置版本快照
@@ -193,11 +193,11 @@ V0.1 要证明的不是“很多 Agent 可以聊天”，而是一条软件开�
 | M7 Project Authoring | 自定义 TeamVersion、对话生成可编辑 WorkflowDraft、画布发布不可变 WorkflowVersion；未发布图不可执行 |
 | M8 Dual Execution | 每个 Agent 可选 `workflow_bound`/`direct`；两模式共享 Task/Run 治理，unsupported 能力启动前拒绝 |
 
-M7/M8 是 V0.1 产品 release gate（不是 M3 Mock 闭环 gate）：M7 必须完成项目制编排作者环，M8 必须完成双执行模式及真实 capability/Policy/Run 证据。T04 migration 必须完成历史 workflow-bound/direct 数据的 snapshot 回填、切换和约束收紧，T16 current-M3 upgrade fixture 必须真实验证升级与 repair/quarantine；两者当前均 planned、未实现。未达 M7/M8 时不得宣称产品需求整体完成；M3–M6 可独立演示其已验证切片。仍不在文档中承诺固定日历日期。
+M7/M8 是 V0.1 产品 release gate（不是 M3 Mock 闭环 gate）：M7 必须完成项目制编排作者环，M8 必须完成双执行模式及真实 capability/Policy/Run 证据。T04 migration 必须完成历史 workflow-bound/direct 数据的 snapshot 回填、切换和约束收紧，T16 current-M3 upgrade fixture 必须真实验证升级与 repair/quarantine；两者当前均**未完成**：`005_execution_axes_expand` 只落了 expand，backfill/switch/contract 与 upgrade fixture 仍未实现。未达 M7/M8 时不得宣称产品需求整体完成；M3–M6 可独立演示其已验证切片。仍不在文档中承诺固定日历日期。
 
 ## 6. 工作分解
 
-M7 的 D17 后端由 T14 负责 Application authoring use case（proposal/change-set 校验、CAS/staged apply、Policy/Budget/Credential/Event、取消/重试、保留与脱敏）；T20 负责 Renderer 会话面，T18 负责画布。T04 负责 authoring/snapshot migration，T16 负责 current-M3 upgrade fixture 和恢复验收；这些迁移与 fixture 仍为 planned，不能按现有 M3 代码宣称完成。M8 的 D18 由 T02/T09/T10/T21 共同按契约、调度、API、UI 分层负责。具体会话与 mode endpoint 由 T02 冻结前不在本计划发明。
+M7 的 D17 后端由 T14 负责 Application authoring use case（proposal/change-set 校验、CAS/staged apply、Policy/Budget/Credential/Event、取消/重试、保留与脱敏）；T20 负责 Renderer 会话面，T18 负责画布。T04 负责 authoring/snapshot migration，T16 负责 current-M3 upgrade fixture 和恢复验收；这些迁移与 fixture 仍**未完成**（仅 `005_execution_axes_expand` 的 expand 已落地：建表与可空列，无 backfill、无约束收紧、无写入方），不能按现有 M3 代码宣称完成。M8 的 D18 由 T02/T09/T10/T21 共同按契约、调度、API、UI 分层负责；T02 已冻结协议三轴枚举与 `runExecutionSnapshotSchema`，但 Run/HTTP/UI 面仍无 mode 字段。具体会话与 mode endpoint 由 T02 冻结前不在本计划发明。
 
 ### Epic A：Foundation
 
@@ -218,7 +218,7 @@ M7 的 D17 后端由 T14 负责 Application authoring use case（proposal/change
 - SQLite schema/migrations
 - repositories 和 transaction manager
 - Event envelope、sequence 和 subscriptions
-- D17/D18 schema upgrade：T04 expand/backfill/switch/contract；T16 current-M3 upgrade fixture、repair/quarantine 与恢复演练（planned）
+- D17/D18 schema upgrade：T04 `005_execution_axes_expand` 已落 expand（新表 + 可空列）；backfill/switch/contract，以及 T16 current-M3 upgrade fixture、repair/quarantine 与恢复演练仍 planned
 - retention、redaction 和 diagnostics
 
 ### Epic D：Workflow

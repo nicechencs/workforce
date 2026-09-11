@@ -12,13 +12,15 @@ updated: 2026-09-11
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
 修订：2026-09-11 — 桌面 IPC allowlist 补上只读 `GET /workflows` / `{id}` / `{id}/versions/{versionId}`（Daemon composition 早已返回已发布模板；headed 真窗口读失败是 Electron 代理拒路，不是 Fake-only）。不宣称 headed Electron / live Codex 已在 CI 复验。同日规划冻结 D17 对话生成工作流、D18 双执行模式与[产品沟通历史](communication-history.md)；**均未实现**，不得把本文件写成 chat authoring / 直接执行已完成。#16 `dependsOn` + `LocalArtifactStore`、#17 画布/自定义 Team 决策文档、#18 IPC 目录放行的已验证结论仍有效。
 
+修订：2026-09-11（本轮，基线 `fdce1b2` + 未提交修复）— 发现并修复 daemon 持久化回归：`dumpWorld` / `dualWriteSqlite` / `loadComposition` / `hydrateWorld` 都没有传递 `world.executionSnapshots`，于是 `SqliteWorldSnapshot.save()` 在 `for..of` 处解引用 `undefined` 抛错，`persist()` 又把该失败静默 `catch` 掉。修复后该字段全链贯通、旧 `world.json` 缺字段回退 `[]`，且非约束类投影失败经 `console.error` 可见（`dualWriteSqlite` 仍吞掉 `isConstraintError` 覆盖的 UNIQUE/PK 失败，见 §3「持久化回归修复切片」）。本轮另外修掉 `SqliteWorldSnapshot.save()` 的插入顺序缺陷：`project_execution_snapshots` 对 projects / workflow_versions / team_versions 有外键，原实现先插 snapshot 再插父表，任何非空 snapshot 都会 `FOREIGN KEY constraint failed` 并回滚整个事务；现改为在 project / workflow 循环之后插入，并加了回归测试（`packages/database/src/world-snapshot.test.ts`）。证据见 §3「持久化回归修复切片」：基线 `fdce1b2` 上 `apps/daemon/tests/composition.test.ts` 的真实断言失败 `expected 500 to be 202` 已消失，该文件只剩 Windows `fs.rmSync` 拆除期的 EPERM。本轮**不**宣称 D02 confirm/start 拆分、D15 `workflow_versions` 不可变、D17 对话生成或 D18 双执行模式已实现；T04 仍只完成 005 expand。
+
 ## 1. 本轮目标与结果
 
 目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布、自定义 Team 与对话生成是该循环上 **M7 已规划、未实现** 的编排面；按 Agent 双执行模式是 **M8 已规划、未实现**。都不是外挂功能，也**都还没有代码**。
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
-M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：M7 需完成 TeamVersion/WorkflowDraft/画布与 D17 authoring 闭环，M8 需完成 `workflow_bound`/`direct` 双模式及 capability/Policy/Run 证据。当前两者均未实现。D17/D18 所需 T04 schema migration（含 snapshot-only contract）及 T16 current-M3 upgrade fixture 也只是规划项，未由现有 M3 migration/测试实现。
+M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：M7 需完成 TeamVersion/WorkflowDraft/画布与 D17 authoring 闭环，M8 需完成 `workflow_bound`/`direct` 双模式及 capability/Policy/Run 证据。当前两者均未实现。D17/D18 的前置不是「全无代码」：T02 已冻结执行三轴公共契约（`packages/protocol/src/execution.ts` 的 `orchestrationModes` 与 `runExecutionSnapshotSchema`，带测试），T04 已落地 `005_execution_axes_expand` 的 **expand**（5 张新表 + 6 个可空列），S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract 与 snapshot-only contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、新 Run 双写三轴、`authoring_change_sets` 写入方，以及 T16 current-M3 upgrade fixture。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
@@ -28,7 +30,7 @@ M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | M3 持久化完成；D17/D18 migration planned，未实现 | migration 002/003/004 + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar。authoring ChangeSet/step、snapshot backfill、switch/contract 仍待实现 |
+| T04 | M3 持久化完成；D17/D18 migration 只完成 expand | migration **001–005** + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar。`005_execution_axes_expand` 为纯加法/可空：新表 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots`，加可空列 `projects.execution_snapshot_id`、`workflow_instances.execution_snapshot_id`、`runs.orchestration_mode` / `transport` / `execution_snapshot_id` / `placement_snapshot_json`；**无** `NOT NULL`、**无** workflow_bound/direct 互斥 CHECK、**无** backfill。snapshot backfill、switch/contract、三轴双写与 authoring ChangeSet 写入方仍待实现 |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
@@ -40,17 +42,17 @@ M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
-| T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口）。current-M3 schema upgrade fixture、迁移恢复和 ChangeSet staged recovery 尚未运行 |
+| T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口）。current-M3 schema upgrade fixture、迁移恢复和 ChangeSet staged recovery 尚未运行；执行三轴是已冻结的协议 schema，DB 侧只到 005 expand，无 wire/HTTP/UI 面 |
 | T17 | 未开始 | 打包/签名 |
 | T18 | 已规划，未实现 | 可视化工作流画布（D15）。只读目录已接通 `GET /workflows`（含 #18 Desktop IPC allowlist）；画布与写接口未实现 |
 | T19 | 已规划，未实现 | 自定义 Team 编排（D16）。当前 teams 页仍是只读预设 |
 | T20 | 已规划，未实现 | 对话式工作流编排 UI（D17）。无对话入口、无生成用例、无会话协议 |
 | T20-B | 已规划，未实现 | D17 Application authoring use case（T14 owner）。无 proposal/change-set、CAS/staged apply 或会话保留/脱敏实现 |
-| T21 | 已规划，未实现 | 双执行模式（D18）。无 workflow-bound / direct 选择面，无 `orchestrationMode` 字段 |
+| T21 | 已规划，未实现 | 双执行模式（D18）。协议层已存在 `orchestrationModes`（`workflow_bound` / `direct`）与 `runExecutionSnapshotSchema`（`packages/protocol/src/execution.ts`，见 §3）；但 `RunDto` / `ProjectDto` / `TeamDto`、HTTP 与 UI 都**没有** mode 选择面，也没有任何写入 `runs.orchestration_mode` 的路径。M3 缺省模式仍按协议兼容为 `workflow_bound` |
 
 ## 3. 实际验证
 
-环境：Linux，Node 22+，pnpm 9.4。
+环境：历史切片多为 Linux（Node 22+，pnpm 9.4）；本轮持久化回归修复切片为 Windows（Node v24.19.0，pnpm 9.4.0）。每个代码块都注明了实际环境。
 
 ```text
 pnpm lint                 # 通过（tooling/spikes 已从 ESLint 忽略，因其为实验脚本）
@@ -77,6 +79,22 @@ pnpm check:docs
 ```text
 pnpm check:docs
 ```
+
+持久化回归修复切片（Windows，Node v24.19.0，pnpm 9.4.0；基线 `fdce1b2` + 本轮未提交修复）：
+
+```text
+pnpm install --frozen-lockfile
+  # 本 checkout 缺 workspace links，先补齐
+pnpm exec vitest run packages/database packages/protocol packages/application
+  # 22 files / 128 tests 通过（本轮复跑确认）
+pnpm exec vitest run apps/daemon/tests
+  # 8 个文件中 7 个通过；35 passed，4 failed（唯一失败文件 composition.test.ts，全部是 Windows 上 fs.rmSync 拆除期的 EPERM；本轮复跑确认）
+pnpm --filter @workforce/database typecheck   # 退出 0
+pnpm --filter @workforce/daemon typecheck     # 退出 0
+pnpm lint                                     # 退出 0
+```
+
+修复内容：`apps/daemon/src/composition/persist.ts` 的 `dumpWorld` / `dualWriteSqlite` / `loadComposition` / `hydrateWorld` 现在贯通 `executionSnapshots`，`loadSnapshot` 对缺失字段回退 `[]`；`apps/daemon/src/composition/app-services.ts` 的 `persist()` 不再静默丢弃失败，而是 `console.error` 报告（请求路径仍为 fire-and-forget；`dualWriteSqlite` 仍吞掉 `isConstraintError` 覆盖的 UNIQUE/PK 失败，属未完成项）。另修 `packages/database/src/world-snapshot.ts` 的 `save()` 插入顺序：`executionSnapshots` 改为在 projects / workflows 之后插入，避免外键失败回滚整事务；回归测试见 `packages/database/src/world-snapshot.test.ts`。**基线对照：** 未修复的 `fdce1b2` 上 `apps/daemon/tests/composition.test.ts` 有 10 条失败，含真实断言 `expected 500 to be 202`；修复后只剩上述拆除期 EPERM。**全量 `pnpm exec vitest run`（本轮实跑 2 次）：** 465 passed / 8 failed 与 466 passed / 7 failed，失败文件 3 个。除上述拆除期 `fs.rmSync` EPERM 外，`apps/daemon/tests/composition.test.ts` 的 `walks create → plan → confirm → start over HTTP with mock completion`（5649ms / 5620ms）与一次 `settles a run only after the Host confirms cancellation…`（5002ms）是**并行负载下超过 vitest 默认 5000ms 超时**（报错为 `Test timed out in 5000ms`，非断言失败；单独跑该文件为 12 passed / 4 EPERM），`runtimes/codex/src/adapter.test.ts` 的 1 条与本轮无关（该包未被改动）。**随本轮一并修掉的其它缺陷：** `packages/database/src/execution-snapshots.ts` 的 `PersistenceError("validation_failed")` 不是合法 `PersistenceErrorCode`（自 `fdce1b2` 起 `packages/database` 无法 typecheck）；`execution-snapshots.test.ts` 5 条用例缺少 `await`，断言实际未生效；`persistence.test.ts` 的 `003` 迁移列表未随 `005` 更新。**本轮未运行：** `pnpm build`、headed Electron、live `codex exec`。**已知无关失败：** `apps/desktop/tests/composition.test.ts` 有 1 条 Windows 路径分隔符失败。
 
 关键场景：
 
