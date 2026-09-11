@@ -4,14 +4,20 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
 
 import { MOCK_PLAN_DOCUMENT } from "@workforce/application";
 import { WorkforceSqlite } from "@workforce/database";
 import { createCanonicalAction } from "@workforce/policy";
+import { protocolVersion } from "@workforce/protocol";
 
+import { buildApi } from "../src/api/index.js";
+import { SessionRegistry } from "../src/api/auth.js";
 import { ComposedAppServices, createComposedAppServices } from "../src/composition/index.js";
 import { sqlitePath } from "../src/composition/persist.js";
 import { startDaemon, type StartedDaemon } from "../src/bootstrap/index.js";
+import { createIdFactory } from "../src/modules/ids.js";
+import { MemoryReceiptStore } from "../src/modules/receipts.js";
 import { commandHeaders, json, uniqueLockPath } from "./helpers.js";
 
 interface Harness {
@@ -21,11 +27,24 @@ interface Harness {
   auth: Record<string, string>;
 }
 
+interface InjectHarness {
+  api: FastifyInstance;
+  services: ComposedAppServices;
+  stateDir: string;
+  auth: Record<string, string>;
+}
+
 const daemons: Harness[] = [];
+const injectedApis: InjectHarness[] = [];
 
 afterEach(async () => {
   for (const item of daemons.splice(0)) {
     await item.daemon.close();
+    fs.rmSync(item.stateDir, { recursive: true, force: true });
+  }
+  for (const item of injectedApis.splice(0)) {
+    await item.api.close();
+    await item.services.close();
     fs.rmSync(item.stateDir, { recursive: true, force: true });
   }
 });
@@ -48,6 +67,52 @@ async function startComposed(stateDir?: string): Promise<Harness> {
   };
   daemons.push(harness);
   return harness;
+}
+
+async function startInjected(stateDir?: string, completeAfterMs = 5): Promise<InjectHarness> {
+  const dir = stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "wf-t10-inject-"));
+  const services = await createComposedAppServices({ stateDir: dir, completeAfterMs });
+  const sessions = new SessionRegistry("usr_test", "cli_test");
+  const session = sessions.issue();
+  const api = buildApi({
+    services,
+    receipts: new MemoryReceiptStore(),
+    sessions,
+    ids: createIdFactory(),
+    now: () => new Date(),
+    protocolVersion,
+    pid: process.pid,
+    startIdentity: `test:${process.pid}`,
+    bootstrapToken: "test-bootstrap-token",
+    sse: { heartbeatMs: 30, pollMs: 20 },
+    getPort: () => 0,
+  });
+  await api.ready();
+  const harness = {
+    api,
+    services,
+    stateDir: dir,
+    auth: { authorization: `Bearer ${session.token}` },
+  };
+  injectedApis.push(harness);
+  return harness;
+}
+
+async function injectJson(
+  harness: InjectHarness,
+  pathName: string,
+  init: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: string } = {},
+): Promise<{ status: number; body: unknown }> {
+  const response = await harness.api.inject({
+    method: init.method ?? "GET",
+    url: pathName,
+    headers: init.headers,
+    payload: init.body,
+  });
+  return {
+    status: response.statusCode,
+    body: response.body.length > 0 ? (JSON.parse(response.body) as unknown) : null,
+  };
 }
 
 async function poll<T>(
@@ -309,6 +374,111 @@ describe("composed M3 mock loop", () => {
     } else {
       expect(finished.status).toBe("completed");
     }
+  });
+
+  it("settles a run only after the Host confirms cancellation and persists it idempotently", async () => {
+    const first = await startInjected(undefined, 60_000);
+    const { auth, services, stateDir } = first;
+
+    const created = await injectJson(first, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "create-cancel"),
+      body: JSON.stringify({
+        name: "Cancel settlement",
+        objective: "wait for runtime confirmation",
+        operationId: "op_create_cancel",
+      }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await injectJson(first, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "plan-cancel", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_plan_cancel" }),
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await injectJson(first, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "confirm-cancel", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_confirm_cancel",
+      }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+    await injectJson(first, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "start-cancel", ready.stateRevision),
+      body: JSON.stringify({ operationId: "op_start_cancel" }),
+    });
+
+    const running = await poll(async () => {
+      const listed = await injectJson(first, `/api/v1/runs?projectId=${project.id}`, {
+        headers: auth,
+      });
+      return (
+        listed.body as {
+          items: Array<{ id: string; status: string; stateRevision: number }>;
+        }
+      ).items.find((item) => item.status === "running");
+    });
+    const accepted = await injectJson(first, `/api/v1/runs/${running.id}:cancel`, {
+      method: "POST",
+      headers: commandHeaders(auth, "cancel-run", running.stateRevision),
+      body: JSON.stringify({ reason: "stop", operationId: "op_cancel_run" }),
+    });
+    expect(accepted.status).toBe(202);
+    expect(accepted.body).toMatchObject({ resource: { type: "run", id: running.id } });
+
+    const pending = await injectJson(first, `/api/v1/runs/${running.id}`, { headers: auth });
+    expect(pending.body).toMatchObject({ status: "running", cancelRequested: true });
+
+    const settled = await poll(async () => {
+      const current = await injectJson(first, `/api/v1/runs/${running.id}`, { headers: auth });
+      const body = current.body as {
+        id: string;
+        status: string;
+        stateRevision: number;
+        cancelRequested: boolean;
+      };
+      return body.status === "cancelled" ? body : undefined;
+    });
+    expect(settled.cancelRequested).toBe(true);
+
+    const run = services.app.world.runs.get(running.id);
+    expect(run?.handleId).toBeTruthy();
+    await (
+      services as unknown as {
+        handleTerminal(event: {
+          handleId: string;
+          hostRunId: string;
+          status: "cancelled";
+        }): Promise<void>;
+      }
+    ).handleTerminal({
+      handleId: run!.handleId!,
+      hostRunId: running.id,
+      status: "cancelled",
+    });
+    const afterDuplicate = await injectJson(first, `/api/v1/runs/${running.id}`, {
+      headers: auth,
+    });
+    expect(afterDuplicate.body).toMatchObject({
+      status: "cancelled",
+      stateRevision: settled.stateRevision,
+    });
+
+    await first.api.close();
+    await services.close();
+    injectedApis.splice(injectedApis.indexOf(first), 1);
+
+    const second = await startInjected(stateDir, 60_000);
+    const restored = await injectJson(second, `/api/v1/runs/${running.id}`, {
+      headers: second.auth,
+    });
+    expect(restored.body).toMatchObject({
+      status: "cancelled",
+      stateRevision: settled.stateRevision,
+    });
   });
 
   it("rehydrates the same project and does not duplicate runs on replay", async () => {

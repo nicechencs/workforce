@@ -8,6 +8,7 @@ import {
   WorkforceApp,
   createWorkforceApp,
   integratePatches,
+  settleRunCancel,
   type ApprovalRecord,
   type ProjectRecord,
   type RunRecord,
@@ -973,6 +974,8 @@ export class ComposedAppServices implements AppServices {
         await this.dispatchReadyTasks(run.projectId);
       } else if (event.status === "failed") {
         this.app.recordRunFailed(run.id);
+      } else if (event.status === "cancelled") {
+        settleRunCancel(this.app.ctx, run.id);
       }
       this.persist();
     });
