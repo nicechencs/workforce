@@ -59,7 +59,9 @@ export function resolveDaemonLaunchArgs(
     flags.push("--import", options.importModule);
   }
   if (entry.endsWith(".ts") || entry.endsWith(".mts") || entry.endsWith(".cts")) {
-    flags.push("--experimental-strip-types");
+    // Strip-only mode rejects TypeScript that has to emit code (parameter properties),
+    // which the daemon sources use. The dev entry needs a real transformation pass.
+    flags.push("--experimental-transform-types");
   }
   return [...flags, entry, "--state-dir", stateDir];
 }

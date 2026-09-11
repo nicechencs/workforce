@@ -50,9 +50,9 @@ describe("desktop smoke env", () => {
     );
   });
 
-  it("adds type-stripping when the supervisor launches the TypeScript daemon entry", () => {
+  it("adds type transformation when the supervisor launches the TypeScript daemon entry", () => {
     const tsArgs = resolveDaemonLaunchArgs("/app/daemon/src/index.ts", "/tmp/state");
-    expect(tsArgs[0]).toBe("--experimental-strip-types");
+    expect(tsArgs[0]).toBe("--experimental-transform-types");
     expect(tsArgs).toContain("/app/daemon/src/index.ts");
     expect(resolveDaemonLaunchArgs("/app/daemon/dist/index.js", "/tmp/state")[0]).toBe(
       "/app/daemon/dist/index.js",
@@ -66,7 +66,7 @@ describe("desktop smoke env", () => {
     expect(args.slice(0, 4)).toEqual([
       "--import",
       "file:///loader.mjs",
-      "--experimental-strip-types",
+      "--experimental-transform-types",
       "/app/daemon/src/index.ts",
     ]);
   });
