@@ -1,7 +1,7 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 仅有 Desktop UI shell + 写 API 落草稿；会话 / 草稿 DTO 已冻结；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）；发送仍禁用，不得写成对话编排完成。T21 项目启动面 UI 已探针，composed `:start` 已把 `orchestrationMode` 写入现有 start/Run 记录**（项目启动面 headed smoke PASS；Task 详情不挂未接线控件；M8 调度 / 完整 headed 套件 / 生产 Codex direct 未完成）。
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18 画布已接线（headed PASS）。T19 自定义 Team 写面已接线（headed 草稿 persist PASS）。T20 已有 Desktop UI shell + 写 API 落草稿 + Desktop-local 会话存储 / 仅用户 append；会话 / 草稿 DTO 与 V0.1 传输已冻结（无 Daemon chat path）；编排 Agent 仍 planned，不得写成对话编排完成。T21 项目启动面 UI 已探针，composed `:start` 已把 `orchestrationMode` 写入现有 start/Run 记录**（项目启动面 headed smoke PASS；Task 详情不挂未接线控件；M8 调度 / 完整 headed 套件 / 生产 Codex direct 未完成）。
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D19](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -83,7 +83,7 @@ flowchart TD
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
-| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 已冻结会话 / 草稿 DTO；V0.1 传输已冻结为 Desktop-local / in-process，无 Daemon chat path。发送接线后才能宣称接通。UI shell 已开工，发送 / 编排 Agent 仍是缺口 | 高 / 中 |
+| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 已冻结会话 / 草稿 DTO；V0.1 传输已冻结为 Desktop-local / in-process，无 Daemon chat path。本机会话存储 + 仅用户 append 已接线。编排 Agent 仍是缺口 | 高 / 中 |
 | T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 已冻结 `orchestrationMode`；项目启动面 UI 已探针；composed start 已写入现有 start/Run 记录。Task 详情不挂未接线控件。领取调度时不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
@@ -374,14 +374,14 @@ flowchart TD
 - 「工作流」入口增加对话生成：用户描述 bot/角色、流程 X、任务 Y；Agent 产出未发布草稿。
 - 生成后必须能跳到 T18 画布或结构化编辑；禁止一次生成即锁定。
 - 落草稿复用矩阵已列的 M7 workflow（及可选 Team）写接口；**不发明** chat HTTP path 或 Daemon chat 资源。
-- 写接口未就绪或会话发送未接线时，入口不得假成功。会话 / 草稿 DTO 已冻结（T02）；V0.1 传输已冻结为 **Desktop-local / in-process**。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false，直至后续 Desktop 会话存储 + 仅用户 append 接线。编排 Agent 回复仍 planned。
+- 写接口未就绪或编排 Agent 未接线时，入口不得假成功。会话 / 草稿 DTO 已冻结（T02）；V0.1 传输已冻结为 **Desktop-local / in-process**。Desktop 会话存储 + 仅用户 append 已接线；`CHAT_SESSION_PROTOCOL_FROZEN=true` 只表示该切片。编排 Agent 回复仍 planned。
 - 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成。
 - 对话回复不得写成 Task/Run 完成。
 
-**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。发送仍禁用（`CHAT_SESSION_PROTOCOL_FROZEN=false`）；编排 Agent 仍 planned。未实现时无成功态按钮。不得把 Mock 聊天冒充已实现。headed 未跑不得宣称对话编排可用。desktop-client **只导出类型**，无 chat HTTP 方法。
-**完整卡验收（仍未到）：** Desktop 会话存储 + 仅用户 append 接线后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。Agent 回复与 M7 完成不在本切片。
+**验收（现行切片）：** DTO 已在 main；V0.1 传输已冻结为 Desktop-local / in-process（无 Daemon chat path）。Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput` 已接线（`CHAT_SESSION_PROTOCOL_FROZEN=true` 只表示该本机切片）。编排 Agent 仍 planned。未实现 Agent 时无生成成功态。不得把 Mock 聊天或用户消息冒充 Agent 已实现。headed 未跑不得宣称对话编排可用。desktop-client **只导出类型**，无 chat HTTP 方法。
+**完整卡验收（仍未到）：** 编排 Agent 生成草稿 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。Agent 回复与 M7 完成不在本切片。
 
-**集成依赖：** T02 会话/草稿契约 **已冻结**（`AuthoringSessionDto` / `AuthoringDraftDto`）。V0.1 传输 **已冻结**（Desktop-local / in-process）。仍需发送接线、T18 画布、T10 写 API、T19 若生成 Team 草稿。DTO / 传输冻结不是本卡发送验收，也不发明 chat path。
+**集成依赖：** T02 会话/草稿契约 **已冻结**（`AuthoringSessionDto` / `AuthoringDraftDto`）。V0.1 传输 **已冻结**（Desktop-local / in-process）。本机会话存储 + 用户 append **已接线**。仍需编排 Agent、T18 画布、T10 写 API、T19 若生成 Team 草稿。不发明 chat path。
 
 ### T21 — 双执行模式
 

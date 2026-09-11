@@ -1,4 +1,4 @@
-import { useReducer, type FormEvent, type ReactNode } from "react";
+import { useEffect, useReducer, type FormEvent, type ReactNode } from "react";
 
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
@@ -15,16 +15,74 @@ import {
   warningStyle,
 } from "../projects/ui.js";
 import {
+  AGENT_REPLY_GAP,
+  canAppendUserMessage,
   emptyAuthoringModel,
+  landedDraftProjection,
   landUnpublishedDraft,
+  proposalDraftFromForm,
   reduceAuthoring,
   type AuthoringFormField,
+  type AuthoringSessionMessageDto,
   type LandedDraft,
 } from "./model.js";
+import { getDefaultAuthoringSessionStore, resolveAuthoringProjectId } from "./session-store.js";
 
 export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   const client = useWorkforceClient();
   const [model, dispatch] = useReducer(reduceAuthoring, undefined, emptyAuthoringModel);
+  const store = getDefaultAuthoringSessionStore();
+  const projectId = resolveAuthoringProjectId(props.params.projectId);
+
+  useEffect(() => {
+    const existing = store
+      .list()
+      .find((session) => session.projectId === projectId && session.status === "open");
+    dispatch({
+      type: "sessionHydrated",
+      session: existing ?? store.create({ projectId }),
+    });
+  }, [projectId, store]);
+
+  function persistDraftProjection(sessionId: string, form: typeof model.form): void {
+    const current = store.load(sessionId);
+    if (!current || current.draft?.kind === "landed") {
+      return;
+    }
+    const proposal = proposalDraftFromForm(form);
+    if (!proposal) {
+      return;
+    }
+    dispatch({ type: "sessionUpdated", session: store.attachDraft(sessionId, proposal) });
+  }
+
+  function onAppendUser(): void {
+    const intentEl = document.getElementById("wf-authoring-intent");
+    const intentText =
+      intentEl instanceof HTMLTextAreaElement ? intentEl.value : model.form.intentText;
+    const hydrated = reduceAuthoring(model, {
+      type: "hydrate",
+      form: { ...model.form, intentText },
+    });
+    dispatch({ type: "hydrate", form: { ...model.form, intentText } });
+    const submitted = reduceAuthoring(hydrated, { type: "submitChat" });
+    dispatch({ type: "submitChat" });
+    const appended = canAppendUserMessage(submitted);
+    if (!appended.ok) {
+      return;
+    }
+    try {
+      const session = store.appendUserMessage({
+        sessionId: appended.sessionId,
+        role: "user",
+        content: appended.content,
+      });
+      dispatch({ type: "sessionUpdated", session, clearIntent: true });
+      persistDraftProjection(session.id, { ...model.form, intentText });
+    } catch (error) {
+      dispatch({ type: "appendFailed", error });
+    }
+  }
 
   async function onLandDraft(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -51,6 +109,9 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
     }
     try {
       const draft = await landUnpublishedDraft(client, submitted.form);
+      const sessionId = model.chat.sessionId ?? store.create({ projectId }).id;
+      const session = store.attachDraft(sessionId, landedDraftProjection(draft));
+      dispatch({ type: "sessionUpdated", session });
       dispatch({ type: "landed", draft });
     } catch (error) {
       dispatch({ type: "failure", error });
@@ -77,8 +138,12 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
         explanation={model.chat.explanation}
         intentText={model.form.intentText}
         submitting={model.phase === "submitting"}
+        submitEnabled={model.chat.sessionId !== null && model.phase !== "submitting"}
+        sessionId={model.chat.sessionId}
+        projectId={model.chat.projectId}
+        messages={model.chat.messages}
         onIntentChange={(value) => dispatch({ type: "change", field: "intentText", value })}
-        onSubmitChat={() => dispatch({ type: "submitChat" })}
+        onAppendUser={onAppendUser}
       />
       <StructuredDraftForm
         model={model}
@@ -102,18 +167,29 @@ function ConversationPanel(props: {
   explanation: string;
   intentText: string;
   submitting: boolean;
+  submitEnabled: boolean;
+  sessionId: string | null;
+  projectId: string;
+  messages: readonly AuthoringSessionMessageDto[];
   onIntentChange: (value: string) => void;
-  onSubmitChat: () => void;
+  onAppendUser: () => void;
 }): ReactNode {
+  const appendDisabled = props.submitting || !props.submitEnabled || !props.sessionId;
   return (
     <section style={cardStyle} data-testid="workflow-authoring-chat">
       <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>编排对话</h2>
       <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-        <span style={badgeStyle("muted")}>不可发送</span>
+        <span style={badgeStyle("muted")}>本机会话 · 仅用户</span>
       </div>
       <p style={mutedStyle}>{props.explanation}</p>
+      <p style={mutedStyle} data-testid="workflow-authoring-session-id">
+        {props.sessionId
+          ? `会话 ${props.sessionId} · 项目 ${props.projectId}（Desktop-local，非 Daemon chat）`
+          : `项目 ${props.projectId}（Desktop-local，正在建立本机会话）`}
+      </p>
+      <MessageList messages={props.messages} />
       <label style={labelStyle} htmlFor="wf-authoring-intent">
-        意图（保留，不发送）
+        用户消息（只写入本机会话，不调用编排 Agent）
       </label>
       <textarea
         id="wf-authoring-intent"
@@ -126,17 +202,59 @@ function ConversationPanel(props: {
       <button
         type="button"
         data-testid="workflow-authoring-send-chat"
-        style={buttonStyle("primary", true)}
-        disabled
-        onClick={props.onSubmitChat}
+        style={buttonStyle("primary", appendDisabled)}
+        disabled={appendDisabled}
+        onClick={props.onAppendUser}
       >
-        发送给编排 Agent
+        追加用户消息
       </button>
-      <p style={mutedStyle} data-testid="workflow-authoring-chat-empty">
-        没有 Agent 回复。未冻结会话协议前，这里不会出现生成成功的对话气泡。
+      <p style={mutedStyle} data-testid="workflow-authoring-agent-gap">
+        {AGENT_REPLY_GAP}
       </p>
     </section>
   );
+}
+
+function MessageList(props: { messages: readonly AuthoringSessionMessageDto[] }): ReactNode {
+  if (props.messages.length === 0) {
+    return (
+      <p style={mutedStyle} data-testid="workflow-authoring-chat-empty">
+        还没有用户消息。编排 Agent 回复仍 planned，这里不会出现生成成功的对话气泡。
+      </p>
+    );
+  }
+  return (
+    <ul
+      style={{ listStyle: "none", padding: 0, margin: "0 0 var(--wf-space-md, 12px)" }}
+      data-testid="workflow-authoring-messages"
+    >
+      {props.messages.map((message) => (
+        <li
+          key={message.id}
+          data-testid={`workflow-authoring-message-${message.role}`}
+          data-role={message.role}
+          style={{
+            ...cardStyle,
+            marginBottom: "var(--wf-space-sm, 8px)",
+            background: "var(--wf-color-page, #e8edf2)",
+          }}
+        >
+          <strong>{messageRoleLabel(message.role)}</strong>
+          <p style={{ margin: "var(--wf-space-xs, 4px) 0 0" }}>{message.content}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function messageRoleLabel(role: AuthoringSessionMessageDto["role"]): string {
+  if (role === "user") {
+    return "用户";
+  }
+  if (role === "system") {
+    return "系统（不是生成成功）";
+  }
+  return "编排 Agent 角色已预留（不是生成成功）";
 }
 
 function StructuredDraftForm(props: {

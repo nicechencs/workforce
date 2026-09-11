@@ -18,7 +18,11 @@ import { startDaemon, type StartedDaemon } from "../../daemon/src/bootstrap/inde
 import { proxyConnectedApiRequest } from "../src/main/composition.js";
 import { WorkforceProvider } from "../src/renderer/app/workforce-context.js";
 import { WorkflowAuthoringPage } from "../src/renderer/features/workflow-authoring/page.js";
-import { CHAT_SESSION_GAP } from "../src/renderer/features/workflow-authoring/model.js";
+import {
+  AGENT_REPLY_GAP,
+  CHAT_SESSION_GAP,
+} from "../src/renderer/features/workflow-authoring/model.js";
+import { resetDefaultAuthoringSessionStoreForTests } from "../src/renderer/features/workflow-authoring/session-store.js";
 import { WorkflowsPage } from "../src/renderer/features/workflows/page.js";
 import { installHappyDom, uninstallHappyDom } from "./install-happy-dom.js";
 
@@ -32,6 +36,7 @@ const roots: Root[] = [];
 
 beforeEach(() => {
   installHappyDom();
+  resetDefaultAuthoringSessionStoreForTests();
 });
 
 afterEach(async () => {
@@ -187,7 +192,10 @@ describe("workflow authoring write path", () => {
       expect(chat).toBeInstanceOf(HTMLButtonElement);
       expect((chat as HTMLButtonElement).disabled).toBe(true);
       expect(document.body.innerText).toContain(CHAT_SESSION_GAP);
-      expect(document.querySelector('[data-testid="workflow-authoring-chat-ready"]')).toBeNull();
+      expect(
+        document.querySelector('[data-testid="workflow-authoring-chat-ready"]')?.textContent,
+      ).toContain("本机用户消息已接线");
+      expect(document.body.innerText).not.toContain("会话已接通");
       expect(document.body.innerText).not.toContain("Agent 已生成");
     },
   );
@@ -218,10 +226,10 @@ describe("workflow authoring write path", () => {
         );
       });
 
-      const send = await waitFor("disabled send", () =>
+      const send = await waitFor("send control", () =>
         document.querySelector('[data-testid="workflow-authoring-send-chat"]'),
       );
-      expect((send as HTMLButtonElement).disabled).toBe(true);
+      expect(send).toBeInstanceOf(HTMLButtonElement);
 
       await act(async () => {
         setInput("workflow-authoring-intent", "请生成完整工作流");
@@ -235,7 +243,7 @@ describe("workflow authoring write path", () => {
         "empty intent",
         () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
       );
-      expect(empty).toContain("发送未接线");
+      expect(empty).toContain("编排 Agent 尚未接线");
       expect(
         document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
           ?.value,
@@ -350,4 +358,125 @@ describe("workflow authoring write path", () => {
     ).toBe("保留意图");
     expect(document.querySelector('[data-testid="workflow-authoring-landed"]')).toBeNull();
   });
+
+  it(
+    "appends a user message into the in-process store and reloads it",
+    { timeout: 20_000 },
+    async () => {
+      const requests: string[] = [];
+      const client = createDesktopClient({
+        transport: {
+          async request(req) {
+            requests.push(`${req.method} ${req.path}`);
+            return {
+              status: 500,
+              headers: {},
+              body: {
+                type: "urn:workforce:error:write_failed",
+                title: "write failed",
+                status: 500,
+                code: "write_failed",
+                detail: "POST /workflows failed",
+                instance: req.path,
+                requestId: "",
+                retryable: true,
+              },
+            };
+          },
+        },
+      });
+      const host = document.createElement("div");
+      document.body.append(host);
+      const root = createRoot(host);
+      roots.push(root);
+      await act(async () => {
+        root.render(
+          wrap(
+            client,
+            createElement(WorkflowAuthoringPage, {
+              path: "/workflows",
+              params: {},
+              navigate: () => undefined,
+            }),
+          ),
+        );
+      });
+      const sessionLabel = await waitFor(
+        "local session",
+        () => document.querySelector('[data-testid="workflow-authoring-session-id"]')?.textContent,
+      );
+      expect(sessionLabel).toContain("cas_");
+      expect(sessionLabel).toContain("Desktop-local");
+
+      const send = await waitFor("enabled user append", () => {
+        const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
+        return button instanceof HTMLButtonElement && !button.disabled ? button : null;
+      });
+      await act(async () => {
+        setInput("workflow-authoring-intent", "请记下这段用户意图");
+      });
+      await act(async () => {
+        send.click();
+      });
+      const messages = await waitFor(
+        "user message",
+        () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+      );
+      expect(messages).toContain("请记下这段用户意图");
+      expect(messages).toContain("用户");
+      expect(document.body.innerText).toContain(AGENT_REPLY_GAP);
+      expect(document.body.innerText).not.toContain("Agent 已生成");
+      expect(document.querySelector('[data-testid="workflow-authoring-chat-empty"]')).toBeNull();
+      expect(requests.some((item) => /chat|authoring-session/i.test(item))).toBe(false);
+
+      await act(async () => {
+        setInput("workflow-authoring-name", "保留名称");
+        setInput("workflow-authoring-intent", "失败后也要在");
+      });
+      await act(async () => {
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-land-draft"]')
+          ?.click();
+      });
+      const error = await waitFor(
+        "write failure keeps chat",
+        () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
+      );
+      expect(error).toContain("POST /workflows failed");
+      expect(
+        document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+      ).toContain("请记下这段用户意图");
+      expect(
+        document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
+          ?.value,
+      ).toBe("失败后也要在");
+
+      await act(async () => {
+        root.unmount();
+      });
+      roots.pop();
+      const remount = document.createElement("div");
+      document.body.append(remount);
+      const remountRoot = createRoot(remount);
+      roots.push(remountRoot);
+      await act(async () => {
+        remountRoot.render(
+          wrap(
+            client,
+            createElement(WorkflowAuthoringPage, {
+              path: "/workflows",
+              params: {},
+              navigate: () => undefined,
+            }),
+          ),
+        );
+      });
+      const reloaded = await waitFor(
+        "reloaded user message",
+        () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+      );
+      expect(reloaded).toContain("请记下这段用户意图");
+      expect(document.body.innerText).not.toContain("Agent 已生成");
+    },
+  );
 });

@@ -264,3 +264,11 @@ updated: 2026-09-12
 - **文档影响：** 冲突页同时保留 #28 T21 现行透传表述与 D17 Desktop-local 传输冻结。
 - **状态：** T21 composed 透传 **implemented**（main，unit/composed）。V0.1 传输决策 **frozen**（Desktop-local）。T20 发送 / 编排 Agent / M7 / M8 **planned**。
 
+---
+
+## 2026-09-12（Asia/Taipei）T20 Desktop-local 会话存储 + 仅用户 append（非 Agent、非 M7）
+
+- **决定：** 在 #29 `ecfc047`（D17 V0.1 Desktop-local / in-process 传输冻结）之上实现 T20 下一刀：Desktop renderer 进程内 `InProcessAuthoringSessionStore`，按会话 id 持有 `AuthoringSessionDto` 消息与未发布草稿投影；作者面按 `AppendAuthoringSessionMessageInput` **只追加用户消息**。`CHAT_SESSION_PROTOCOL_FROZEN` 翻成 true **仅表示** 本机会话存储 + 用户 append 已接线并通过测试（无 Daemon chat path / 无 desktop-client chat HTTP 方法）。**不**实现编排 Agent / LLM 循环，**不**渲染假 Agent 成功回复，**不**增加 Daemon OpenAPI chat 路由或公开 chat HTTP path。结构化「名称 → 已有 M7 写 API 落未发布草稿 → 深链 T18 画布」保持原样。不发明 enrollment / 容器 / `:direct` endpoint。不宣称 M7 / M8 / 对话生成完成。Placement 默认仍是本机。headed 本切片未跑，不得宣称对话编排可用。
+- **文档影响：** [decision-register.md](decision-register.md) D17 写明传输已冻结且本机会话存储 + 用户 append 已接线、Agent 仍 planned；[api-capability-matrix.md](api-capability-matrix.md) 仍**不增加** chat 资源；[03-implementation-status.md](03-implementation-status.md) T20 改为会话存储 + 用户 append，M7 / Agent 未完成；[02-development-task-backlog.md](02-development-task-backlog.md) T20 现行验收同步；[04-collab-and-review.md](04-collab-and-review.md) 仍禁止假 Agent 成功；[02-core-user-flows.md](../product-ui/02-core-user-flows.md) §9 同步。
+- **状态：** Desktop-local 会话存储 + 仅用户 append **implemented**（unit / happy-dom）。编排 Agent / 对话生成 / M7 / M8 **planned**。
+

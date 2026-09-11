@@ -19,7 +19,7 @@
 
 主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：画布、自定义 Team 写面与 T21 启动面 UI 切片已接线；D17 会话 / 草稿 DTO 与 V0.1 **Desktop-local / in-process** 传输已冻结；T21 composed start 已透传请求模式；对话发送 / 编排 Agent 与 M8 调度 **尚未完成**。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：画布、自定义 Team 写面与 T21 启动面 UI 切片已接线；D17 会话 / 草稿 DTO 与 V0.1 **Desktop-local / in-process** 传输已冻结；T21 composed start 已透传请求模式；本机会话存储 + 仅用户 append 已接线；编排 Agent 与 M8 调度 **尚未完成**。
 
 ## 1. 冻结总表
 
@@ -27,7 +27,7 @@
 |---|---|---|
 | 产品主对象 | 项目制：一切围绕 Project；Team / Task / Workflow 在项目内编排；工作流必须高度可定制 | T00、T12、T14、T18–T21 |
 | 工作流作者路径 | 对话生成草稿（D17）后必须可在画布/结构化面编辑（D15）；未发布不得执行 | T18、T20、T02 |
-| D17 会话传输 | V0.1 **Desktop-local / in-process**，对照已冻结 DTO；**无** Daemon chat 资源，矩阵不列公开 chat HTTP path。后续发送 = Desktop 会话存储 + 仅用户 append；Agent 回复仍 planned | T20、T02 |
+| D17 会话传输 | V0.1 **Desktop-local / in-process**，对照已冻结 DTO；**无** Daemon chat 资源，矩阵不列公开 chat HTTP path。Desktop 会话存储 + 仅用户 append 已接线；Agent 回复仍 planned | T20、T02 |
 | Agent 执行模式 | 绑定已发布工作流，或直接执行；两者皆一等、靠 probe 诚实显隐（D18） | T21、T09、T10 |
 | 执行 Placement | 种类：`local`（本机，**默认**）\| `remote` \| `container`。调度意图仍为 `automatic \| local_only \| remote_only \| specific_node`，系统默认 `local_only`。V0.1 只实现 Local Node + worktree；远程=契约/Mock，容器=planned，均非 later nicety（D07 / D19） | T02、T05、T09、T10、T13 |
 | 初始交付结果 | 固定基线 SHA 的整合 patch/分支 + 报告；合回用户目标分支是显式动作 | T06、T08、T14、T16 |
@@ -415,7 +415,7 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 ## 9. 对话生成与双执行模式（M7/M8）
 
-用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**对话发送 / 编排 Agent 尚未实现**；本登记不发明 chat 或 execution-mode endpoint。V0.1 D17 传输已冻结为 Desktop-local / in-process（见下）。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**编排 Agent / 对话生成尚未实现**；用户消息可写入 Desktop-local 会话。本登记不发明 chat 或 execution-mode endpoint。V0.1 D17 传输已冻结为 Desktop-local / in-process（见下）。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
 D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
 
@@ -439,14 +439,14 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 - 对话生成草稿后，用户能打开画布编辑并发布（依赖 T18 写接口）。
 - T02 已冻结会话 / 草稿 DTO：`AuthoringSessionDto`、`AuthoringDraftDto`（`packages/protocol`）。能力矩阵命名该 DTO，**不列** chat HTTP path。
-- **V0.1 会话传输（已冻结）：Desktop-local / in-process。** 对照上述 DTO 在 Desktop 进程内持有会话；**无** Daemon chat 资源，也不发明公开 chat HTTP path。后续 T20 发送接线 = Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput`；编排 Agent 回复仍 planned。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false，直至真实接线。DTO / 传输冻结 ≠ 对话发送、编排 Agent 或 M7 完成；禁止假 Agent 成功。
+- **V0.1 会话传输（已冻结）：Desktop-local / in-process。** 对照上述 DTO 在 Desktop 进程内持有会话；**无** Daemon chat 资源，也不发明公开 chat HTTP path。T20 已接线 Desktop 会话存储 + 仅用户 `AppendAuthoringSessionMessageInput`；`CHAT_SESSION_PROTOCOL_FROZEN=true` 只表示该本机存储与用户 append，**不是**编排 Agent / M7 完成。禁止假 Agent 成功。
 - 生成失败、空意图、校验失败必须诚实错误，不回退夹具冒充已生成。
 
 **非目标：**
 
 - 不把对话窗口当成 Runtime，也不把「Agent 在聊天里说做完了」写成 Task/Run 完成。
 - 不另造一套与 D15 无关的图协议。
-- 不在发送未接线时让前端假装已保存对话产物或已收到 Agent 回复。V0.1 无 Daemon chat endpoint。
+- 不把用户消息或结构化落草稿假装成已收到 Agent 回复。V0.1 无 Daemon chat endpoint。
 
 ### D18 — 双执行模式：绑定工作流与直接执行
 
@@ -523,4 +523,4 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`）；V0.1 传输已冻结为 Desktop-local / in-process，**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针（#26 `f3b2045` headed smoke PASS）+ composed start 透传（#28 仅 unit/composed），M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。
+T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`）；V0.1 传输已冻结为 Desktop-local / in-process，Desktop 会话存储 + 仅用户 append 已接线，**不**发明 chat path。编排 Agent 仍 planned。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针（#26 `f3b2045` headed smoke PASS）+ composed start 透传（#28 仅 unit/composed），M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。

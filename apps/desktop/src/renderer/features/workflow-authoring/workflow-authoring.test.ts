@@ -1,3 +1,4 @@
+import { DesktopClient, paths } from "@workforce/desktop-client";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -6,15 +7,19 @@ import { loadFeatureModules } from "../../app/feature-modules.js";
 import { WorkflowAuthoringEntry } from "./entry.js";
 import * as authoringModule from "./index.js";
 import {
+  AGENT_REPLY_GAP,
   AUTHORING_ROUTE_GAP,
   CHAT_SESSION_GAP,
   CHAT_SESSION_PROTOCOL_FROZEN,
   buildDraftGraph,
+  canAppendUserMessage,
   canvasEditLink,
   emptyAuthoringModel,
   isWorkflowAuthoringHash,
+  landedDraftProjection,
   landUnpublishedDraft,
   parseStructuredIntent,
+  proposalDraftFromForm,
   reduceAuthoring,
   rejectChatSubmit,
   type AuthoringSessionDto,
@@ -22,6 +27,10 @@ import {
   type LandedDraft,
 } from "./model.js";
 import { WorkflowAuthoringPage } from "./page.js";
+import {
+  DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
+  InProcessAuthoringSessionStore,
+} from "./session-store.js";
 
 function filledForm() {
   return {
@@ -60,21 +69,31 @@ function fakeVersion(workflowId = "wfd_1") {
 }
 
 describe("workflow-authoring protocol honesty", () => {
-  it("keeps chat send disabled after the session DTO freeze", () => {
-    expect(CHAT_SESSION_PROTOCOL_FROZEN).toBe(false);
+  it("wires user-append + local store without inventing a Daemon chat path", () => {
+    expect(CHAT_SESSION_PROTOCOL_FROZEN).toBe(true);
     expect(CHAT_SESSION_GAP).toContain("AuthoringSessionDto");
-    expect(CHAT_SESSION_GAP).toContain("发送仍禁用");
+    expect(CHAT_SESSION_GAP).toContain("Desktop-local");
+    expect(CHAT_SESSION_GAP).toContain("Daemon chat");
+    expect(AGENT_REPLY_GAP).toContain("planned");
     const compileOnly: AuthoringSessionDto | null = null;
     expect(compileOnly).toBeNull();
     const model = emptyAuthoringModel();
-    expect(model.chat.enabled).toBe(false);
+    expect(model.chat.enabled).toBe(true);
     expect(model.chat.submitEnabled).toBe(false);
+    expect(model.chat.agentReplyPlanned).toBe(true);
     expect(model.chat.messages).toEqual([]);
     expect(model.chat.explanation).toBe(CHAT_SESSION_GAP);
     expect(model.routeGap).toBe(AUTHORING_ROUTE_GAP);
     expect(rejectChatSubmit().ok).toBe(false);
+    expect(rejectChatSubmit().reason).toBe(AGENT_REPLY_GAP);
     expect(canvasEditLink("wfd_1", "wfv_1").available).toBe(true);
     expect(canvasEditLink("wfd_1", "wfv_1").href).toBe("/workflows/wfd_1/versions/wfv_1");
+    const methodNames = Object.getOwnPropertyNames(DesktopClient.prototype);
+    expect(methodNames.some((name) => /chat|authoringSession|appendAuthoring/i.test(name))).toBe(
+      false,
+    );
+    expect(Object.keys(paths).some((name) => /chat|authoring/i.test(name))).toBe(false);
+    expect(JSON.stringify(paths)).not.toMatch(/authoring-session|\/chat|conversational/i);
   });
 
   it("does not register a feature slot that would overwrite workflows", () => {
@@ -105,7 +124,7 @@ describe("structured intent", () => {
       return;
     }
     expect(parsed.code).toBe("empty_intent");
-    expect(parsed.reason).toContain("发送未接线");
+    expect(parsed.reason).toContain("编排 Agent 尚未接线");
   });
 
   it("rejects a blank form without claiming generation succeeded", () => {
@@ -147,7 +166,7 @@ describe("structured intent", () => {
 });
 
 describe("authoring reducer", () => {
-  it("keeps typed fields after empty intent, validation, chat reject, and write failure", () => {
+  it("keeps typed fields after empty intent, validation, missing session, and write failure", () => {
     const typed = reduceAuthoring(emptyAuthoringModel(), {
       type: "change",
       field: "intentText",
@@ -166,9 +185,10 @@ describe("authoring reducer", () => {
 
     const chat = reduceAuthoring(typed, { type: "submitChat" });
     expect(chat.phase).toBe("failed");
-    expect(chat.error).toBe(CHAT_SESSION_GAP);
+    expect(chat.error).toContain("本机会话尚未建立");
     expect(chat.form.intentText).toBe("请生成");
     expect(chat.chat.messages).toEqual([]);
+    expect(canAppendUserMessage(typed).ok).toBe(false);
 
     const failed = reduceAuthoring(
       reduceAuthoring(emptyAuthoringModel(), { type: "change", field: "name", value: "保留我" }),
@@ -180,7 +200,33 @@ describe("authoring reducer", () => {
     expect(failed.error).toContain("daemon rejected create");
   });
 
-  it("records a landed draft without turning chat into a success thread", () => {
+  it("records a user append and a landed draft without inventing an Agent success thread", () => {
+    const store = new InProcessAuthoringSessionStore();
+    const session = store.create({ projectId: "prj_1" });
+    const ready = reduceAuthoring(emptyAuthoringModel(), { type: "sessionHydrated", session });
+    const typed = reduceAuthoring(ready, {
+      type: "change",
+      field: "intentText",
+      value: "请生成",
+    });
+    expect(typed.chat.submitEnabled).toBe(true);
+    const submitted = reduceAuthoring(typed, { type: "submitChat" });
+    expect(submitted.phase).toBe("idle");
+    const appended = store.appendUserMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "请生成",
+    });
+    const updated = reduceAuthoring(submitted, {
+      type: "sessionUpdated",
+      session: appended,
+      clearIntent: true,
+    });
+    expect(updated.form.intentText).toBe("");
+    expect(updated.chat.messages).toHaveLength(1);
+    expect(updated.chat.messages[0]?.role).toBe("user");
+    expect(updated.chat.messages.some((message) => message.role === "authoring_agent")).toBe(false);
+
     const draft: LandedDraft = {
       workflowId: "wfd_1",
       workflowName: "功能交付",
@@ -190,15 +236,109 @@ describe("authoring reducer", () => {
       catalogHref: "/workflows/wfd_1",
       canvas: canvasEditLink("wfd_1", "wfv_1"),
     };
-    const landed = reduceAuthoring(
-      reduceAuthoring(emptyAuthoringModel(), { type: "change", field: "name", value: "功能交付" }),
-      { type: "landed", draft },
-    );
+    const named = reduceAuthoring(updated, { type: "change", field: "name", value: "功能交付" });
+    const landed = reduceAuthoring(named, { type: "landed", draft });
     expect(landed.phase).toBe("landed");
     expect(landed.form.name).toBe("功能交付");
-    expect(landed.chat.messages).toEqual([]);
+    expect(landed.form.intentText).toBe("");
+    expect(landed.chat.messages).toHaveLength(1);
+    expect(landed.chat.messages[0]?.role).toBe("user");
     expect(landed.chat.submitEnabled).toBe(false);
     expect(landed.draft?.unpublished).toBe(true);
+    expect(landedDraftProjection(draft).kind).toBe("landed");
+  });
+
+  it("keeps existing user messages when append or write fails", () => {
+    const store = new InProcessAuthoringSessionStore();
+    const session = store.appendUserMessage({
+      sessionId: store.create({ projectId: "prj_keep" }).id,
+      role: "user",
+      content: "先记下",
+    });
+    const ready = reduceAuthoring(
+      reduceAuthoring(emptyAuthoringModel(), { type: "sessionHydrated", session }),
+      { type: "change", field: "intentText", value: "再补一句" },
+    );
+    const appendFailed = reduceAuthoring(ready, {
+      type: "appendFailed",
+      error: new Error("store rejected append"),
+    });
+    expect(appendFailed.form.intentText).toBe("再补一句");
+    expect(appendFailed.chat.messages[0]?.content).toBe("先记下");
+    expect(appendFailed.error).toContain("store rejected append");
+
+    const writeFailed = reduceAuthoring(
+      reduceAuthoring(appendFailed, { type: "change", field: "name", value: "保留我" }),
+      { type: "failure", error: new Error("daemon rejected create") },
+    );
+    expect(writeFailed.form.name).toBe("保留我");
+    expect(writeFailed.form.intentText).toBe("再补一句");
+    expect(writeFailed.chat.messages[0]?.content).toBe("先记下");
+  });
+});
+
+describe("in-process authoring session store", () => {
+  it("creates, loads, and appends user messages against the frozen DTO", () => {
+    const store = new InProcessAuthoringSessionStore({
+      now: () => "2026-09-12T00:00:00.000Z",
+      id: (prefix) => `${prefix}test`,
+    });
+    const created = store.create({
+      projectId: "prj_1",
+      intentText: " 创建 planner 跑功能交付 ",
+    });
+    expect(created.id).toMatch(/^cas_/);
+    expect(created.projectId).toBe("prj_1");
+    expect(created.protocolVersion).toBe("0.1");
+    expect(created.status).toBe("open");
+    expect(created.messages).toEqual([
+      {
+        id: "cam_test",
+        role: "user",
+        content: "创建 planner 跑功能交付",
+        createdAt: "2026-09-12T00:00:00.000Z",
+      },
+    ]);
+    expect(store.load(created.id)).toEqual(created);
+
+    const appended = store.appendUserMessage({
+      sessionId: created.id,
+      role: "user",
+      content: " 再加审查 ",
+    });
+    expect(appended.messages).toHaveLength(2);
+    expect(appended.messages[1]?.role).toBe("user");
+    expect(appended.messages[1]?.content).toBe("再加审查");
+    expect(appended.stateRevision).toBe(created.stateRevision + 1);
+    expect(appended.messages.some((message) => message.role === "authoring_agent")).toBe(false);
+    expect(store.load(created.id)?.messages).toHaveLength(2);
+  });
+
+  it("projects an unpublished draft and rejects Agent append / missing session", () => {
+    const store = new InProcessAuthoringSessionStore();
+    const created = store.create({ projectId: DESKTOP_LOCAL_AUTHORING_PROJECT_ID });
+    const proposal = proposalDraftFromForm(filledForm());
+    expect(proposal?.kind).toBe("proposal");
+    expect(proposal && proposal.kind === "proposal" ? proposal.unpublished : false).toBe(true);
+    const withDraft = store.attachDraft(created.id, proposal!);
+    expect(withDraft.draft?.kind).toBe("proposal");
+
+    expect(() =>
+      store.appendUserMessage({
+        sessionId: created.id,
+        role: "authoring_agent" as "user",
+        content: "假回复",
+      }),
+    ).toThrow();
+    expect(() =>
+      store.appendUserMessage({
+        sessionId: "cas_missing",
+        role: "user",
+        content: "丢了也不要编造 Agent",
+      }),
+    ).toThrow(/不存在/);
+    expect(store.load(created.id)?.messages).toEqual([]);
+    expect(store.load("cas_missing")).toBeUndefined();
   });
 });
 
@@ -274,7 +414,7 @@ describe("landUnpublishedDraft", () => {
 });
 
 describe("authoring UI", () => {
-  it("renders a disabled chat path and no fake Agent reply", () => {
+  it("renders user-append chrome without a fake Agent reply", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowAuthoringPage, {
         params: {},
@@ -283,27 +423,29 @@ describe("authoring UI", () => {
       }),
     );
     expect(html).toContain("workflow-authoring-page");
-    expect(html).toContain("发送给编排 Agent");
+    expect(html).toContain("追加用户消息");
     expect(html).toContain("workflow-authoring-send-chat");
     expect(html).toContain("disabled");
     expect(html).toContain(CHAT_SESSION_GAP);
-    expect(html).toContain("没有 Agent 回复");
+    expect(html).toContain(AGENT_REPLY_GAP);
+    expect(html).toContain("还没有用户消息");
     expect(html).not.toContain("Agent 已生成");
     expect(html).not.toContain("会话已接通");
     expect(html).not.toContain("workflow-authoring-landed");
   });
 
-  it("keeps the workflows entry honest: disabled chat, openable authoring shell", () => {
+  it("keeps the workflows entry honest: Agent generate disabled, local store ready", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowAuthoringEntry, { navigate: () => undefined }),
     );
     expect(html).toContain("对话生成");
     expect(html).toContain("workflow-authoring-chat-disabled");
     expect(html).toContain("用对话生成");
-    expect(html).toContain("打开作者面（结构化落草稿）");
+    expect(html).toContain("打开作者面（用户消息 + 结构化落草稿）");
     expect(html).toContain(CHAT_SESSION_GAP);
+    expect(html).toContain("workflow-authoring-chat-ready");
+    expect(html).toContain("本机用户消息已接线；编排 Agent 仍 planned");
     expect(html).not.toContain("会话已接通");
     expect(html).not.toContain("Agent 已生成");
-    expect(html).not.toContain("workflow-authoring-chat-ready");
   });
 });

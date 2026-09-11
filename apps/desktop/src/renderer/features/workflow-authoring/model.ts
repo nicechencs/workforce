@@ -1,4 +1,7 @@
 import type {
+  AuthoringDraftDto,
+  AuthoringSessionDto,
+  AuthoringSessionMessageDto,
   CommandOptions,
   CreateTeamInput,
   CreateWorkflowInput,
@@ -11,17 +14,21 @@ import type {
   WorkflowVersionDto,
 } from "@workforce/desktop-client";
 
-/** Compile-only: session/draft DTO is frozen. Send is not wired. */
-export type { AuthoringDraftDto, AuthoringSessionDto } from "@workforce/desktop-client";
+import { DESKTOP_LOCAL_AUTHORING_PROJECT_ID } from "./session-store.js";
+
+export type { AuthoringDraftDto, AuthoringSessionDto, AuthoringSessionMessageDto };
 
 /**
- * DTO exists in `@workforce/protocol`. Do not flip this until a follow-up
- * wires send without claiming Agent generation works.
+ * User-append + Desktop-local session store are wired. This flag does **not**
+ * mean an authoring Agent / LLM loop exists. Daemon chat path stays absent.
  */
-export const CHAT_SESSION_PROTOCOL_FROZEN = false;
+export const CHAT_SESSION_PROTOCOL_FROZEN = true;
 
 export const CHAT_SESSION_GAP =
-  "T02 已冻结对话会话 / 草稿 DTO（AuthoringSessionDto / AuthoringDraftDto）。能力矩阵仍不列 chat endpoint；本页发送仍禁用，也不能把假的 Agent 回复渲染成生成成功。后续接线才能打开发送。";
+  "Desktop-local / in-process 会话存储已接线：用户消息按 AppendAuthoringSessionMessageInput 追加，对照已冻结 AuthoringSessionDto / AuthoringDraftDto。能力矩阵仍不列 chat endpoint / Daemon chat 资源。编排 Agent 回复仍 planned，禁止把假回复渲染成生成成功。";
+
+export const AGENT_REPLY_GAP =
+  "编排 Agent 回复仍 planned。本页不会生成或渲染假装成功的 Agent 气泡，用户消息也不是 Task/Run 完成。";
 
 export const AUTHORING_ROUTE_GAP =
   "T11 路由表与 FEATURE_SLOTS 没有预留 workflow-authoring slot。本特征可导入，由工作流页用 ?authoring=1 挂入，不改 catalog.ts。";
@@ -72,10 +79,14 @@ export interface LandedDraft {
 }
 
 export interface AuthoringChatState {
-  enabled: false;
-  submitEnabled: false;
+  enabled: true;
+  submitEnabled: boolean;
   explanation: string;
-  messages: readonly [];
+  agentReplyPlanned: true;
+  sessionId: string | null;
+  projectId: string;
+  messages: readonly AuthoringSessionMessageDto[];
+  draft: AuthoringDraftDto | undefined;
 }
 
 export interface AuthoringViewModel {
@@ -91,8 +102,11 @@ export interface AuthoringViewModel {
 export type AuthoringAction =
   | { type: "change"; field: AuthoringFormField; value: string }
   | { type: "hydrate"; form: Partial<AuthoringForm> }
+  | { type: "sessionHydrated"; session: AuthoringSessionDto }
+  | { type: "sessionUpdated"; session: AuthoringSessionDto; clearIntent?: boolean }
   | { type: "submitChat" }
   | { type: "submitDraft" }
+  | { type: "appendFailed"; error: unknown }
   | { type: "failure"; error: unknown }
   | { type: "landed"; draft: LandedDraft };
 
@@ -126,17 +140,38 @@ export const emptyAuthoringForm: AuthoringForm = {
   teamName: "",
 };
 
+export function emptyAuthoringChat(projectId?: string): AuthoringChatState {
+  return {
+    enabled: true,
+    submitEnabled: false,
+    explanation: CHAT_SESSION_GAP,
+    agentReplyPlanned: true,
+    sessionId: null,
+    projectId: projectId?.trim() || DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
+    messages: [],
+    draft: undefined,
+  };
+}
+
+export function chatFromSession(session: AuthoringSessionDto, intentText = ""): AuthoringChatState {
+  return {
+    enabled: true,
+    submitEnabled: intentText.trim().length > 0,
+    explanation: CHAT_SESSION_GAP,
+    agentReplyPlanned: true,
+    sessionId: session.id,
+    projectId: session.projectId,
+    messages: session.messages,
+    draft: session.draft,
+  };
+}
+
 export function emptyAuthoringModel(): AuthoringViewModel {
   return {
     form: { ...emptyAuthoringForm },
     phase: "idle",
     error: null,
-    chat: {
-      enabled: false,
-      submitEnabled: false,
-      explanation: CHAT_SESSION_GAP,
-      messages: [],
-    },
+    chat: emptyAuthoringChat(),
     draft: null,
     routeGap: AUTHORING_ROUTE_GAP,
     note: DRAFT_NOT_RUNTIME_NOTE,
@@ -169,8 +204,38 @@ export function canvasEditLink(workflowId: string, versionId: string): CanvasLin
   };
 }
 
+export function rejectAgentGeneration(): { ok: false; reason: string } {
+  return { ok: false, reason: AGENT_REPLY_GAP };
+}
+
+/** Agent generation stays rejected. User-only append is a separate path. */
 export function rejectChatSubmit(): { ok: false; reason: string } {
-  return { ok: false, reason: CHAT_SESSION_GAP };
+  return rejectAgentGeneration();
+}
+
+export function canAppendUserMessage(state: AuthoringViewModel):
+  | {
+      ok: true;
+      content: string;
+      sessionId: string;
+    }
+  | { ok: false; reason: string; code: "empty_intent" | "session_missing" } {
+  const content = state.form.intentText.trim();
+  if (content.length === 0) {
+    return {
+      ok: false,
+      code: "empty_intent",
+      reason: "请先写下要追加到本机会话的用户消息。编排 Agent 不会自动回复。",
+    };
+  }
+  if (!state.chat.sessionId) {
+    return {
+      ok: false,
+      code: "session_missing",
+      reason: "本机会话尚未建立。已保留你的输入，没有编造 Agent 回复。",
+    };
+  }
+  return { ok: true, content, sessionId: state.chat.sessionId };
 }
 
 export function parseStructuredIntent(form: AuthoringForm): IntentParseResult {
@@ -185,7 +250,7 @@ export function parseStructuredIntent(form: AuthoringForm): IntentParseResult {
       ok: false,
       code: hasFreeText ? "empty_intent" : "validation_failed",
       reason: hasFreeText
-        ? "只有自由文本、没有可落库的工作流名称。会话 DTO 已冻结但发送未接线，不能把这段文字当成 Agent 已生成的草稿。"
+        ? "只有自由文本、没有可落库的工作流名称。编排 Agent 尚未接线，不能把这段文字当成 Agent 已生成的草稿。你可以把这段文字追加为本机会话中的用户消息。"
         : "请填写工作流名称后再写入未发布草稿。",
     };
   }
@@ -245,32 +310,55 @@ export function reduceAuthoring(
   action: AuthoringAction,
 ): AuthoringViewModel {
   switch (action.type) {
-    case "change":
+    case "change": {
+      const form = { ...state.form, [action.field]: action.value };
       return {
         ...state,
-        form: { ...state.form, [action.field]: action.value },
+        form,
         phase:
           state.phase === "submitting"
             ? "submitting"
             : state.phase === "landed"
               ? "idle"
               : state.phase,
-        chat: emptyAuthoringModel().chat,
+        chat: withComposer(state.chat, form.intentText),
       };
-    case "hydrate":
+    }
+    case "hydrate": {
+      const form = { ...state.form, ...action.form };
       return {
         ...state,
-        form: { ...state.form, ...action.form },
-        chat: emptyAuthoringModel().chat,
+        form,
+        chat: withComposer(state.chat, form.intentText),
+      };
+    }
+    case "sessionHydrated":
+      return {
+        ...state,
+        chat: chatFromSession(action.session, state.form.intentText),
+      };
+    case "sessionUpdated":
+      return {
+        ...state,
+        form: action.clearIntent ? { ...state.form, intentText: "" } : state.form,
+        error: action.clearIntent ? null : state.error,
+        chat: chatFromSession(action.session, action.clearIntent ? "" : state.form.intentText),
       };
     case "submitChat": {
-      const rejected = rejectChatSubmit();
+      const appended = canAppendUserMessage(state);
+      if (!appended.ok) {
+        return {
+          ...state,
+          phase: appended.code === "empty_intent" ? "empty_intent" : "failed",
+          error: appended.reason,
+          chat: withComposer(state.chat, state.form.intentText),
+        };
+      }
       return {
         ...state,
-        phase: "failed",
-        error: rejected.reason,
-        draft: null,
-        chat: emptyAuthoringModel().chat,
+        phase: state.phase === "landed" ? "landed" : "idle",
+        error: null,
+        chat: withComposer(state.chat, appended.content),
       };
     }
     case "submitDraft": {
@@ -281,23 +369,30 @@ export function reduceAuthoring(
           phase: parsed.code,
           error: parsed.reason,
           draft: null,
-          chat: emptyAuthoringModel().chat,
+          chat: withComposer(state.chat, state.form.intentText),
         };
       }
       return {
         ...state,
         phase: "submitting",
         error: null,
-        chat: emptyAuthoringModel().chat,
+        chat: withComposer(state.chat, state.form.intentText),
       };
     }
+    case "appendFailed":
+      return {
+        ...state,
+        phase: "failed",
+        error: errorMessage(action.error),
+        chat: withComposer(state.chat, state.form.intentText),
+      };
     case "failure":
       return {
         ...state,
         phase: "failed",
         error: errorMessage(action.error),
         draft: null,
-        chat: emptyAuthoringModel().chat,
+        chat: withComposer(state.chat, state.form.intentText),
       };
     case "landed":
       return {
@@ -305,9 +400,55 @@ export function reduceAuthoring(
         phase: "landed",
         error: null,
         draft: action.draft,
-        chat: emptyAuthoringModel().chat,
+        chat: withComposer(state.chat, state.form.intentText),
       };
   }
+}
+
+function withComposer(chat: AuthoringChatState, intentText: string): AuthoringChatState {
+  return {
+    ...chat,
+    submitEnabled: intentText.trim().length > 0 && chat.sessionId !== null,
+  };
+}
+
+export function proposalDraftFromForm(form: AuthoringForm): AuthoringDraftDto | undefined {
+  const parsed = parseStructuredIntent(form);
+  if (!parsed.ok) {
+    return undefined;
+  }
+  const workflow: NonNullable<Extract<AuthoringDraftDto, { kind: "proposal" }>["workflow"]> = {
+    name: parsed.intent.name,
+  };
+  if (parsed.intent.description.length > 0) {
+    workflow.description = parsed.intent.description;
+  }
+  if (
+    parsed.intent.graph.nodes !== undefined ||
+    parsed.intent.graph.steps !== undefined ||
+    parsed.intent.graph.entry !== undefined
+  ) {
+    workflow.graph = parsed.intent.graph;
+  }
+  const draft: AuthoringDraftDto = {
+    kind: "proposal",
+    unpublished: true,
+    workflow,
+  };
+  if (parsed.intent.teamName) {
+    draft.team = { name: parsed.intent.teamName };
+  }
+  return draft;
+}
+
+export function landedDraftProjection(draft: LandedDraft): AuthoringDraftDto {
+  return {
+    kind: "landed",
+    unpublished: true,
+    workflowId: draft.workflowId,
+    workflowVersionId: draft.versionId,
+    ...(draft.teamId ? { teamId: draft.teamId } : {}),
+  };
 }
 
 export function errorMessage(error: unknown): string {
