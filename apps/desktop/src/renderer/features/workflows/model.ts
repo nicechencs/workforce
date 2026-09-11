@@ -109,6 +109,19 @@ export interface WorkflowPageModel {
   note: string;
 }
 
+export function catalogListCard(source: WorkflowCatalogSource): {
+  testId: "workflow-empty" | "workflow-error" | "workflow-loading";
+  text: string;
+} {
+  if (source === "empty") {
+    return { testId: "workflow-empty", text: "当前没有已发布的工作流模板。" };
+  }
+  if (source === "unavailable") {
+    return { testId: "workflow-error", text: UNAVAILABLE_CATALOG_NOTE };
+  }
+  return { testId: "workflow-loading", text: CATALOG_LOADING_NOTE };
+}
+
 export function workflowPageModel(
   input: {
     liveWorkflows?: WorkflowTemplateView[] | null;

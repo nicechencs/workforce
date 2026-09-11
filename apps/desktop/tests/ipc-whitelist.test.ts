@@ -40,4 +40,40 @@ describe("IPC whitelist", () => {
     expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/projects" })).toBe(true);
     expect(isAllowedApiRequest({ method: "DELETE", path: "/api/v1/projects" })).toBe(false);
   });
+
+  it("allows read-only workflow catalog paths used by the desktop page", () => {
+    const featureDelivery = "software-development-team.feature-delivery";
+    expect(isAllowedApiRequest({ method: "GET", path: "/api/v1/workflows" })).toBe(true);
+    expect(
+      isAllowedApiRequest({
+        method: "GET",
+        path: `/api/v1/workflows/${featureDelivery}`,
+      }),
+    ).toBe(true);
+    expect(
+      isAllowedApiRequest({
+        method: "GET",
+        path: `/api/v1/workflows/${featureDelivery}/versions/0.1.0`,
+      }),
+    ).toBe(true);
+    expect(
+      isAllowedApiRequest({
+        method: "GET",
+        path: `/api/v1/workflows?limit=20`,
+      }),
+    ).toBe(true);
+    expect(isAllowedApiRequest({ method: "POST", path: "/api/v1/workflows" })).toBe(false);
+    expect(
+      isAllowedApiRequest({
+        method: "PATCH",
+        path: `/api/v1/workflows/${featureDelivery}`,
+      }),
+    ).toBe(false);
+    expect(
+      isAllowedApiRequest({
+        method: "POST",
+        path: `/api/v1/workflows/${featureDelivery}/versions/0.1.0:publish`,
+      }),
+    ).toBe(false);
+  });
 });

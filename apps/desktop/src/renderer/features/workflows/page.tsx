@@ -15,6 +15,7 @@ import {
 } from "../projects/ui.js";
 import {
   asWorkflowView,
+  catalogListCard,
   rejectWorkflowCanvas,
   stepKindLabel,
   versionById,
@@ -98,9 +99,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
       <p style={mutedStyle}>模板、版本和结构化步骤。V0.1 没有画布编辑器。</p>
       <section style={cardStyle}>
         {workflows.length === 0 ? (
-          <p style={mutedStyle} data-testid="workflow-empty">
-            {source === "empty" ? "当前没有已发布的工作流模板。" : null}
-          </p>
+          <CatalogListStatus source={source} />
         ) : (
           <ul style={listStyle}>
             {workflows.map((workflow) => {
@@ -124,6 +123,15 @@ export function WorkflowsPage(props: FeaturePageProps) {
         )}
       </section>
     </main>
+  );
+}
+
+function CatalogListStatus(props: { source: WorkflowCatalogSource }) {
+  const card = catalogListCard(props.source);
+  return (
+    <p style={mutedStyle} data-testid={card.testId}>
+      {card.text}
+    </p>
   );
 }
 

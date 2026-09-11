@@ -64,6 +64,9 @@ export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[]
   { method: "GET", path: "/api/v1/nodes/{id}" },
   { method: "GET", path: "/api/v1/teams" },
   { method: "GET", path: "/api/v1/teams/{id}" },
+  { method: "GET", path: "/api/v1/workflows" },
+  { method: "GET", path: "/api/v1/workflows/{id}" },
+  { method: "GET", path: "/api/v1/workflows/{id}/versions/{versionId}" },
   { method: "GET", path: "/api/v1/projects/{id}/budget" },
   { method: "POST", path: "/api/v1/projects/{id}/budget:raise" },
 ];

@@ -36,4 +36,25 @@ describe("REST proxy", () => {
     });
     expect(safe.path).toBe("/api/v1/projects?limit=20&cursor=abc");
   });
+
+  it("lets the desktop page proxy published workflow catalog reads", () => {
+    const listed = assertSafeApiRequest({
+      method: "GET",
+      path: "/api/v1/workflows?limit=20",
+    });
+    expect(listed.path).toBe("/api/v1/workflows?limit=20");
+    const version = assertSafeApiRequest({
+      method: "GET",
+      path: "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
+    });
+    expect(version.path).toBe(
+      "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
+    );
+    expect(() =>
+      assertSafeApiRequest({
+        method: "POST",
+        path: "/api/v1/workflows",
+      }),
+    ).toThrow(/not on the Desktop allowlist/);
+  });
 });
