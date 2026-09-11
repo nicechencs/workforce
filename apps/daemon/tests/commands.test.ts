@@ -332,9 +332,29 @@ describe("daemon resource commands", () => {
     const started = await json(daemon.port, `/api/v1/projects/${project.id}:start`, {
       method: "POST",
       headers: commandHeaders(auth, "orch-bound", ready.stateRevision),
-      body: JSON.stringify({ orchestrationMode: "workflow_bound" }),
+      body: JSON.stringify({
+        orchestrationMode: "workflow_bound",
+        operationId: "op_orch_bound",
+      }),
     });
     expect(started.status).toBe(200);
-    expect(started.body).toMatchObject({ status: "running" });
+    expect(started.body).toMatchObject({
+      status: "running",
+      orchestrationMode: "workflow_bound",
+    });
+
+    const listed = await json(daemon.port, `/api/v1/runs?projectId=${project.id}`, {
+      headers: auth,
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject({
+      items: [{ orchestrationMode: "workflow_bound" }],
+    });
+
+    const receipt = await json(daemon.port, "/api/v1/operations/op_orch_bound", { headers: auth });
+    expect(receipt.status).toBe(200);
+    expect(receipt.body).toMatchObject({
+      result: { orchestrationMode: "workflow_bound" },
+    });
   });
 });

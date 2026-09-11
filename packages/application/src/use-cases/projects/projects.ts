@@ -1,3 +1,5 @@
+import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
+
 import type { AppContext } from "./context.js";
 import { expectRevision, touch } from "./context.js";
 import type { WorkflowGraph } from "./engine-port.js";
@@ -43,6 +45,8 @@ export interface StartExecutionInput {
   idempotencyKey: string;
   projectId: string;
   expectedStateRevision?: number;
+  /** Existing `:start` field. Omit → workflow_bound. Not a direct scheduler. */
+  orchestrationMode?: OrchestrationMode;
 }
 
 export interface CancelProjectInput {
@@ -284,13 +288,14 @@ export async function startExecution(
   ctx: AppContext,
   input: StartExecutionInput,
 ): Promise<{ reused: boolean; project: ProjectRecord }> {
+  const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
   return ctx.world.uow.withTransaction(async (tx) => {
     return withIdempotency(
       ctx.world,
       tx,
       {
         operationId: input.operationId,
-        digest: digestOf({ projectId: input.projectId }),
+        digest: digestOf({ projectId: input.projectId, orchestrationMode }),
         scope: {
           principalId: ctx.principalId,
           clientId: ctx.clientId,
@@ -324,6 +329,7 @@ export async function startExecution(
 
         const now = ctx.world.nowIso();
         project.status = nextStatus;
+        project.orchestrationMode = orchestrationMode;
         touch(project, now);
 
         workflow.status = ctx.engine.nextWorkflowStatus(workflow.status, "validate");

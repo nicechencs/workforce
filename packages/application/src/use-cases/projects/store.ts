@@ -17,6 +17,7 @@ import type {
 } from "../../ports/index.js";
 import type {
   CommandReceipt,
+  OrchestrationMode,
   ProtocolError,
   ReceiptScope,
   WorkforceEvent,
@@ -42,6 +43,8 @@ export interface ProjectRecord {
   workflowVersionId?: string;
   planArtifactVersionId?: string;
   cancelRequestedAt?: string;
+  /** D18 requested start mode. Not a scheduler switch. */
+  orchestrationMode?: OrchestrationMode;
   createdAt: string;
   updatedAt: string;
 }
@@ -83,6 +86,8 @@ export interface RunRecord {
   operationId: string;
   cancelRequestedAt?: string;
   handleId?: string;
+  /** Copied from the project `:start` request onto this Run. */
+  orchestrationMode?: OrchestrationMode;
   createdAt: string;
   updatedAt: string;
 }

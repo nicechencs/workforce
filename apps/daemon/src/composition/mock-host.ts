@@ -63,6 +63,9 @@ export class ComposedMockHost implements RuntimeHostPort {
         protocolVersion: request.runtime.protocolVersion || "0.1",
       },
       snapshotRef: request.snapshotRef || "mock:success",
+      ...(request.orchestrationMode !== undefined
+        ? { orchestrationMode: request.orchestrationMode }
+        : {}),
     });
     const handle = await this.host.start(parsed);
     this.handles.set(handle.handleId, handle);

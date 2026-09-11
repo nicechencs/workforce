@@ -197,7 +197,7 @@ SSE：
 - 前端不得私自创造矩阵中不存在的 endpoint
 - Team：项目循环的第一环。M3 Mock 主路径只读预设模板；自定义编排是 **M7 必达**（D16），用来给**该项目**配团队，不是后置或独立 HR 产品
 - 工作流：项目循环的编排环。M3 只读已发布目录（`GET /workflows` 已接通）；可视化画布是 **M7 必达**（D15）；对话生成草稿是 **M7 扩展**（D17），生成后必须可编辑。用来给**该项目**编排并发布执行图，不是后置或独立 IDE
-- Agent 执行：每个 bot/Agent 可 **跟随已发布工作流** 或 **直接执行**（D18，**M8**）。无 capability 则禁用；禁止假 mode。T02 已冻结启动字段 `orchestrationMode`（`workflow_bound | direct`，位于 `StartRunRequest` / `packages/protocol`）。本登记**不发明** `/runs/{id}:direct` 或其它新 Run path；T21 UI 切片已接线，M8 调度 / 生产 Codex direct **尚未实现**
+- Agent 执行：每个 bot/Agent 可 **跟随已发布工作流** 或 **直接执行**（D18，**M8**）。无 capability 则禁用；禁止假 mode。T02 已冻结启动字段 `orchestrationMode`（`workflow_bound | direct`，位于 `StartRunRequest` / `packages/protocol`）。本登记**不发明** `/runs/{id}:direct` 或其它新 Run path；T21 UI 切片已接线且 start/Run 记录已回读请求模式，M8 调度 / 生产 Codex direct **尚未实现**
 - 项目归档可延后，列表不展示伪造的归档成功
 - Artifact content / read / verify / approval / input **必须**带 `artifactVersionId` 或精确 `version`；`latest` 只用于非执行性浏览
 - 公开 `TaskDto` **必须**包含 `dependsOn: { taskId, waitFor }[]`，映射已发布执行 DAG；无依赖返回 `[]`，不得省略后让 UI 编造边
@@ -450,12 +450,12 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 当某个 bot/Agent 做事时，执行模式是一等产品能力，不是隐藏开关。
 
-**范围（M8 必达；T21 UI 切片已接线，调度尚未完成）：**
+**范围（M8 必达；T21 UI 切片已接线；requested `orchestrationMode` 已写入现有 start/Run 记录，调度尚未完成）：**
 
 1. **workflow-bound：** 跟随该项目已确认、已发布的 `WorkflowVersion`（D02）。Agent 只执行图中轮到它的节点，不得暗改活动执行图。
 2. **direct：** 直接执行用户/任务此刻给出的目标（ad-hoc / 绕过该次已发布图）。仍受 Policy、Workspace、预算、Approval 与 capability probe 约束；不是「无协议乱跑」。
 3. 两种模式都必须在 UI 与 API **诚实**出现：用 `GET /capabilities` 或 Runtime/Agent probe 决定能否选；无能力则禁用或启动前 `422 unsupported_capability`；禁止假 mode、假成功、把只读文案做成可点。
-4. 模式记录在 Run / 启动命令的可审计字段 **`orchestrationMode`**（`workflow_bound | direct`）。T02 已把该字段冻结在 `packages/protocol` 的 `StartRunRequest`（省略则默认 `workflow_bound`，与现有 M3 Mock 一致）。旧名 `executionMode` 不是本字段，也不得表示 Placement。重试创建新 Run，不改写旧 Run 的模式。本条仍**不发明** HTTP path。
+4. 模式记录在 Run / 启动命令的可审计字段 **`orchestrationMode`**（`workflow_bound | direct`）。T02 已把该字段冻结在 `packages/protocol` 的 `StartRunRequest`（省略则默认 `workflow_bound`，与现有 M3 Mock 一致）。composed `:start` 现把该字段写入 `project.start` receipt、`ProjectRecord`、后续 `startRun` / host `StartRunRequest` 与公开 Run DTO。旧名 `executionMode` 不是本字段，也不得表示 Placement。重试创建新 Run，不改写旧 Run 的模式。本条仍**不发明** HTTP path，也不表示已有 direct 调度。
 
 **M3 Mock 仍允许：**
 
@@ -521,4 +521,4 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 - 页面/API：[api-capability-matrix.md](api-capability-matrix.md)
 - ADR：[0003-v01-contract-freeze.md](../adr/0003-v01-contract-freeze.md)
 
-T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`），**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针/部分接线，M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。
+T02 必须把已冻结的 M3 字段变成单一 schema 源与 fixture。T01/T03 不依赖本节字段即可开工。M7 写接口已扩展。D17 会话 / 草稿 DTO 已冻结（`AuthoringSessionDto` / `AuthoringDraftDto`），**不**发明 chat path。M8 启动字段 `orchestrationMode` 已冻结在 `StartRunRequest`（缺省 `workflow_bound`）；T21 项目启动面已探针（#26 `f3b2045` headed smoke PASS）+ composed start 透传（#28 仅 unit/composed），M8 调度仍是后续兼容扩展。D19 的 `placementKind`（若落地）同样是兼容扩展。不回退已冻结的 M3 字段，也不在本登记发明 path。

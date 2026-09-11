@@ -26,7 +26,11 @@ import {
 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
-import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  type CommandReceipt,
+  type WorkforceEvent,
+} from "@workforce/protocol";
 import { InvalidTransitionError } from "@workforce/workflow-engine";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";
@@ -760,7 +764,8 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
-      assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
+      const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
+      assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
       await this.policy.assertStartAllowed({
         runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
         resource: `project:${project.id}`,
@@ -783,6 +788,7 @@ export class ComposedAppServices implements AppServices {
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
         projectId: project.id,
+        orchestrationMode,
         ...optionalRevision(ctx.ifMatch),
       });
       await this.dispatchReadyTasks(project.id);
@@ -921,12 +927,16 @@ export class ComposedAppServices implements AppServices {
       });
       const live = this.requireTask(id);
       if (live.status === "ready") {
-        await this.assertRuntimeStartAllowed(this.requireProject(live.projectId));
+        const retryProject = this.requireProject(live.projectId);
+        await this.assertRuntimeStartAllowed(retryProject);
         await this.app.startRun({
           operationId: runOperationId(live),
           idempotencyKey: runOperationId(live),
           taskId: live.id,
           snapshotRef: "mock:success",
+          ...(retryProject.orchestrationMode !== undefined
+            ? { orchestrationMode: retryProject.orchestrationMode }
+            : {}),
         });
       }
       const run = this.app.world.activeRunForTask(id) ?? latestRun(this.app.world.runs, id);
@@ -1245,12 +1255,16 @@ export class ComposedAppServices implements AppServices {
       if (hasAttemptRun(this.app.world.runs, task)) {
         continue;
       }
-      await this.assertRuntimeStartAllowed(this.requireProject(projectId));
+      const liveProject = this.requireProject(projectId);
+      await this.assertRuntimeStartAllowed(liveProject);
       await this.app.startRun({
         operationId: runOperationId(task),
         idempotencyKey: runOperationId(task),
         taskId: task.id,
         snapshotRef: "mock:success",
+        ...(liveProject.orchestrationMode !== undefined
+          ? { orchestrationMode: liveProject.orchestrationMode }
+          : {}),
       });
     }
   }
@@ -1842,6 +1856,9 @@ export class ComposedAppServices implements AppServices {
     if (project.teamVersionId !== undefined) {
       dto.teamVersionId = project.teamVersionId;
     }
+    if (project.orchestrationMode !== undefined) {
+      dto.orchestrationMode = project.orchestrationMode;
+    }
     return dto;
   }
 
@@ -1871,7 +1888,7 @@ export class ComposedAppServices implements AppServices {
   }
 
   private runDto(run: RunRecord): RunDto {
-    return {
+    const dto: RunDto = {
       id: run.id,
       taskId: run.taskId,
       projectId: run.projectId,
@@ -1886,6 +1903,10 @@ export class ComposedAppServices implements AppServices {
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
     };
+    if (run.orchestrationMode !== undefined) {
+      dto.orchestrationMode = run.orchestrationMode;
+    }
+    return dto;
   }
 
   private approvalDto(approval: ApprovalRecord): ApprovalDto {

@@ -1,6 +1,10 @@
 import { UseCaseError } from "@workforce/application";
 import type { ApprovalStatus, ProjectStatus, RunStatus, TaskStatus } from "@workforce/domain";
-import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  type CommandReceipt,
+  type WorkforceEvent,
+} from "@workforce/protocol";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 import {
   nextApprovalStatus,
@@ -555,7 +559,8 @@ export class FakeAppServices implements AppServices {
   ): CommandResult<ProjectDto> {
     const record = this.requireProject(id);
     this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
-    assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
+    const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
+    assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
     if (input.budgetHardLimitMinor !== undefined) {
       throw new AppError(
         "unknown_cost_not_enforceable",
@@ -568,6 +573,7 @@ export class FakeAppServices implements AppServices {
       status,
       stateRevision: record.dto.stateRevision + 1,
       updatedAt: this.timestamp(),
+      orchestrationMode,
     };
     record.dto = next;
     this.spawnExecution(next, ctx);
@@ -654,7 +660,12 @@ export class FakeAppServices implements AppServices {
       updatedAt: ts,
     };
     record.dto = task;
-    const run = this.insertRun(task, ctx, "waiting_input");
+    const run = this.insertRun(
+      task,
+      ctx,
+      "waiting_input",
+      this.projects.get(task.projectId)?.dto.orchestrationMode,
+    );
     this.appendEvent("task.retried", "task", task.id, task.projectId, {
       correlationId: ctx.operationId,
       taskId: task.id,
@@ -1066,7 +1077,7 @@ export class FakeAppServices implements AppServices {
       dependsOn: [],
     };
     this.tasks.set(task.id, { dto: task });
-    this.insertRun(task, ctx, "waiting_input");
+    this.insertRun(task, ctx, "waiting_input", project.orchestrationMode);
     this.appendEvent("task.created", "task", task.id, project.id, {
       correlationId: ctx.operationId,
       taskId: task.id,
@@ -1074,7 +1085,12 @@ export class FakeAppServices implements AppServices {
     });
   }
 
-  private insertRun(task: TaskDto, ctx: CommandContext, status: RunStatus): RunDto {
+  private insertRun(
+    task: TaskDto,
+    ctx: CommandContext,
+    status: RunStatus,
+    orchestrationMode?: ProjectDto["orchestrationMode"],
+  ): RunDto {
     const ts = this.timestamp();
     const dto: RunDto = {
       id: this.ids(prefixes.run),
@@ -1091,6 +1107,9 @@ export class FakeAppServices implements AppServices {
       createdAt: ts,
       updatedAt: ts,
     };
+    if (orchestrationMode !== undefined) {
+      dto.orchestrationMode = orchestrationMode;
+    }
     this.runs.set(dto.id, { dto });
     this.appendEvent("run.status_changed", "run", dto.id, dto.projectId, {
       correlationId: ctx.operationId,

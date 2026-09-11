@@ -231,3 +231,19 @@ updated: 2026-09-12
 - **决定：** #26（T21 `orchestrationMode` 启动面 + capability gating）已 squash 合入 `main` `f3b2045`。#27 rebase 到该 tip：同时保留 T21 项目启动面探针/部分接线（Task 详情不挂未接线控件；M8 未完成）与 D17 `AuthoringSessionDto` / `AuthoringDraftDto` 协议冻结。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。不发明 chat / `:direct` / enrollment / 容器 path。不宣称对话生成、T20 发送、M7 或 M8 完成。
 - **文档影响：** 冲突页同时保留 T21 现行部分接线表述与 D17 会话 DTO 冻结表述。
 - **状态：** T21 UI **部分接线**（main）。会话 / 草稿 DTO **implemented**。T20 发送 / 编排 Agent / M7 / M8 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T21 / D18 composed `:start` 透传（非 M8 调度）
+
+- **决定：** 加深 T21 / D18 部分接线：`POST /projects/{id}:start` 接受的 `orchestrationMode` 必须进入 composed `startProject` → `app.start` → 已有 `project.start` receipt / `ProjectRecord`，并在后续 `startRun` 写入 `StartRunHostRequest` / `StartRunRequest` 与 `RunDto`。省略仍默认 `workflow_bound`。`orchestration.direct=false` 时 direct 继续 `422 unsupported_capability`。旧名 `executionMode` 仍拒绝。不发明 `/runs/{id}:direct`、chat、enrollment 或容器 path。不实现 direct 调度器；有能力时若记录 `direct` 也只是回显请求，调度仍走已发布图。本切片证据是 unit / composed 测试，**不**宣称 #28 透传 headed PASS。不宣称 M8 完成、完整 headed 套件、Task 级 start 或生产 Codex direct。D19 本机默认不变。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 行改为 UI 探针 + composed start 透传；[api-capability-matrix.md](api-capability-matrix.md) M8 行写明字段已落入现有 start/Run 记录且调度未改；[decision-register.md](decision-register.md) D18 补诚实进度；[02-development-task-backlog.md](02-development-task-backlog.md) / [04-collab-and-review.md](04-collab-and-review.md) 同步「字段已记录、调度未完成」。
+- **状态：** start/Run 透传 **implemented**（unit / composed）。M8 调度 / #28 headed / 完整 headed 套件 / 生产 Codex direct / Task 级 start **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T21 项目启动面 headed smoke PASS（非完整 headed / 非 M8）
+
+- **决定：** #26 tip `f3b2045` 上项目「开始执行」`orchestrationMode` UI / start path 的 true-window smoke 已 **PASS**（`WORKFORCE-TIP-f3b2045-ORCHESTRATION-START-SMOKE.md`：direct 诚实 disabled；`workflow_bound` 能启动 Run）。只覆盖该启动面，不代替其余真窗路径，也不把 Task 详情重新挂上未接线控件。#28 composed 透传仍只以 unit / composed 为证，**不**把该 smoke 算作 #28 headed PASS。不宣称完整 headed 套件、M8 调度或生产 Codex direct。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T21 UI / start path 不再写「headed 未跑」；T21 行区分 #26 smoke 与 #28 透传证据。
+- **状态：** 项目启动面 headed smoke **implemented**（`f3b2045`）。#28 透传 headed / 完整 headed 套件 / M8 **planned**。

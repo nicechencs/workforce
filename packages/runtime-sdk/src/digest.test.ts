@@ -15,4 +15,13 @@ describe("startRequestDigest", () => {
     const b = createStartRunRequest({ snapshotRef: "mock:failure" });
     expect(startRequestDigest(a)).not.toBe(startRequestDigest(b));
   });
+
+  it("includes orchestrationMode so omit and explicit workflow_bound match, direct differs", () => {
+    const omitted = createStartRunRequest();
+    const bound = createStartRunRequest({ orchestrationMode: "workflow_bound" });
+    const direct = createStartRunRequest({ orchestrationMode: "direct" });
+    expect(omitted.orchestrationMode).toBe("workflow_bound");
+    expect(startRequestDigest(omitted)).toBe(startRequestDigest(bound));
+    expect(startRequestDigest(direct)).not.toBe(startRequestDigest(bound));
+  });
 });
