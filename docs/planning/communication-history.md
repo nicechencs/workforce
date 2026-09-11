@@ -157,3 +157,11 @@ updated: 2026-09-11
 - **决定：** (1) 更正本文件上一条与 [03-implementation-status.md](03-implementation-status.md) 中对「投影被吞掉」的描述：实测 `packages/database` 的实体 repository（`runs` / `budgets` / `projects` / `records` / `workflows` / `tasks` / `execution-snapshots`）都已把 `isConstraintError` 覆盖的 2067/1555 转换为 `PersistenceError("conflict")` 并向上抛，因此 `dualWriteSqlite` 外层 `isConstraintError` 分支对实体的 insert / upsert 路径不可达（`node_instances.update`、`runs.updateStatus` 与 `receipts.putPending` 等未包装路径仍可到达）。真正造成静默的是 `persist()` 的 fire-and-forget `catch`（`apps/daemon/src/composition/app-services.ts`），该项已在上一轮改为 `console.error` 上报。(2) 顺手把该分支也从「丢弃」改为「上报」，使这些未包装路径的约束失败不再静默；新增两条单元测试（`apps/daemon/tests/persist-snapshot.test.ts`）分别断言原始约束错误被上报、且非约束错误仍然向上传播。不改任何冻结规则、状态机或公共契约。
 - **文档影响：** [03-implementation-status.md](03-implementation-status.md) §3 与修订段更正「仍吞掉 UNIQUE/PK」的表述；[05-d17-d18-landing-plan.md](05-d17-d18-landing-plan.md) §2 历史标注同步更正，并说明该页 §6「投影失败可见性」的字面要求（失败可被观测）已满足、更强的「可阻断 / 可对账」仍为 planned。上一条历史条目保留原文，以本文为准。
 - **状态：** **implemented**（可见性收口 + 测试）。**仍未实现 / 仍为 planned：** 投影失败「可阻断 / 可对账」（落地计划 §3.6 的更强语义）、D02 confirm/start 拆分、D15 `workflow_versions` 不可变、D17、D18。**未验证：** 本轮未跑全量 `pnpm test` 之外的 `pnpm build`、headed Electron、live `codex exec`。
+
+---
+
+## 2026-09-11（Asia/Taipei）新增 T02 契约变更请求（C5–C9）
+
+- **决定：** 把 [D15–D18 落地方案](05-d17-d18-landing-plan.md) §4 的 C5–C9 整理成一份可供 T02 直接裁决的契约变更请求，并**更正该表的现状描述**：`3c46807` 已把 C6/C7/C8 与 C9 的 Adapter SPI 侧冻结进 `packages/protocol/src/execution.ts` 与 [ports.md](../protocols/v0.1/ports.md)，落地方案 §5 S0 亦已记录 C9 方案 A 废弃，§4 表中 C6/C7 两行仍写「无」、C8/C9 两行仍写冻结前的旧现状，属文档滞后而非待办。请求本身**不做任何裁决**，只给出建议字段/签名、理由与兼容性影响，并列出六处必须先了断的既有文档互相矛盾（`PlacementSnapshot.mode`、`policySnapshotRef` vs inline JSON、`NodeExecutionBinding` 平行模型、`placement_snapshot_json` 双归属、`transport` 无权威列、`RuntimeHandle` 缺绑定字段）。
+- **文档影响：** 新增 [06-t02-contract-request-c5-c9.md](06-t02-contract-request-c5-c9.md)（`type: proposal`、`status: proposed`）；[docs/README.md](../README.md) 的中英文 Planning 索引各补一条；本文件追加本条。**未改** decision-register、state-matrix、api-capability-matrix、05-d17-d18-landing-plan 的任何结论，也未改任何源码、测试或锁文件——契约裁决权仍在 T02。
+- **状态：** **planned / proposed**（等待 T02 裁决）。CR-1–CR-6 与 X1–X8 均未落地；`packages/protocol` 中现有 execution 轴代码不受影响，无行为变更。**另更正上一条历史里的一处判断：** 该条把 `pnpm format:check` 的红写成仓库既有缺陷；实测那是本机 `core.autocrlf=true` 造成 CRLF 检出、与 `.prettierrc` 的 `endOfLine: "lf"` 不一致所致，Linux CI 上为绿，仓库并无此缺陷。
