@@ -599,6 +599,16 @@ export async function dualWriteSqlite(
     if (!isConstraintError(error)) {
       throw error;
     }
+    // Defensive branch: the entity repositories used by save() already map UNIQUE/PRIMARY KEY
+    // (2067/1555) into PersistenceError("conflict") and rethrow, but the unmapped update paths
+    // (node_instances.update, runs.updateStatus) and the receipt writer can still emit a raw
+    // constraint error here. Discarding it would let SQLite fall behind world.json with no
+    // signal (the divergence D04 forbids), so report instead of swallowing.
+    console.error(
+      "[workforce] SQLite projection hit a constraint failure and was skipped; " +
+        "world.json is now ahead of the entity tables",
+      error,
+    );
   }
 }
 

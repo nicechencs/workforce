@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { WorkforceSqlite } from "@workforce/database";
 
 import type { PersistedHostStore, PersistedWorld } from "../src/composition/persist.js";
-import { loadSnapshot, persistSnapshot, worldPath } from "../src/composition/persist.js";
+import { dualWriteSqlite, loadSnapshot, persistSnapshot, worldPath } from "../src/composition/persist.js";
 
 /**
  * D04: the world.json sidecar must stay readable across upgrades. State written
@@ -76,5 +78,53 @@ describe("composition world sidecar", () => {
     persistSnapshot(dir, { world: { ...legacyWorld(), executionSnapshots: [record] }, host });
 
     expect(loadSnapshot(dir)?.world.executionSnapshots).toEqual([record]);
+  });
+
+  it("reports a raw constraint failure from the projection instead of discarding it", async () => {
+    const dir = stateDir();
+    const sqlite = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const constraint = Object.assign(new Error("UNIQUE constraint failed: runs.id"), {
+      errcode: 2067,
+    });
+    const save = vi.spyOn(sqlite.worldSnapshot, "save").mockImplementation(() => {
+      throw constraint;
+    });
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        dualWriteSqlite(
+          sqlite,
+          { ...legacyWorld(), executionSnapshots: [] },
+          { eventIds: new Set<string>(), operationIds: new Set<string>() },
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(report).toHaveBeenCalledWith(expect.stringContaining("constraint failure"), constraint);
+    } finally {
+      report.mockRestore();
+      save.mockRestore();
+      sqlite.close();
+    }
+  });
+
+  it("still propagates a non-constraint projection failure", async () => {
+    const dir = stateDir();
+    const sqlite = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const failure = new Error("projection exploded");
+    const save = vi.spyOn(sqlite.worldSnapshot, "save").mockImplementation(() => {
+      throw failure;
+    });
+    try {
+      await expect(
+        dualWriteSqlite(
+          sqlite,
+          { ...legacyWorld(), executionSnapshots: [] },
+          { eventIds: new Set<string>(), operationIds: new Set<string>() },
+        ),
+      ).rejects.toThrow(failure);
+    } finally {
+      save.mockRestore();
+      sqlite.close();
+    }
   });
 });
