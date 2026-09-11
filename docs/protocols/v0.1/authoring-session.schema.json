@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/authoring-session.schema.json",
   "title": "AuthoringSession",
-  "description": "D17 conversational authoring session and unpublished draft projection. Executable source is packages/protocol AuthoringSessionDto / AuthoringDraftDto. Not a Runtime, Task, or Run. Not a chat HTTP path. T20 send stays disabled until a follow-up wires this DTO. Old name executionMode is not accepted.",
+  "description": "D17 conversational authoring session and unpublished draft projection. Executable source is packages/protocol AuthoringSessionDto / AuthoringDraftDto. Not a Runtime, Task, or Run. V0.1 transport is Desktop-local / in-process. Not a Daemon chat resource and not a public chat HTTP path. T20 send stays disabled until a follow-up wires a Desktop session store plus user-only append. Agent replies remain planned. Do not set CHAT_SESSION_PROTOCOL_FROZEN=true. Old name executionMode is not accepted.",
   "type": "object",
   "additionalProperties": false,
   "required": [
