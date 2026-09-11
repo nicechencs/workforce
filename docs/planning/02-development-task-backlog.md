@@ -1,12 +1,12 @@
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐项目循环上的画布与自定义 Team，**代码未实现**。  
-前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15 / D16](decision-register.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18–T21 代码均未实现**。  
+前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
 
-这是一份后续开发交接清单，不是当前已经分配给 agent 的工作。任务按依赖分批领取，不建议同时开 18 个 agent。领取 T18/T19 时按**项目制**实现：画布与自定义 Team 是「围着一个项目编排 Team / Tasks / Workflow」，不是独立产品。
+这是一份后续开发交接清单，不是当前已经分配给 agent 的工作。任务按依赖分批领取，不建议同时开全部 agent。领取 T18–T21 时按**项目制**实现：画布、对话生成、自定义 Team 与双执行模式都围着一个项目，不是独立产品。
 
 - 先完成 T00 的共享决策与 T01 工程骨架，再用 T02 冻结可执行契约。
 - T03 的独立技术实验可以与前两项并行，不向产品目录复制未经整理的实验代码。
@@ -25,7 +25,8 @@
 | M4 真实编码 | 已探测能力的 Codex 在隔离仓库执行并输出固定版本 diff/报告 | T03、T06、T07、T15、T16 |
 | M5 完整受控 Alpha | 真实规划、返工、接管、整合验收、预算和恢复全部走通 | T08、T09、T12–T16 完整验收 |
 | M6 三平台 Alpha | Windows/macOS/Linux 安装与恢复 smoke 通过 | T17 |
-| M7 补齐项目制循环 | 围着 Project：自定义 Team 可编排并绑定；Tasks 可解释；画布可编排并发布 WorkflowVersion。未发布图/草稿 Team 不可执行、不可开始规划 | T02 扩展、T09 校验发布、T10 写 API、T18、T19、T16 |
+| M7 补齐项目制循环 | 围着 Project：自定义 Team 可编排并绑定；Tasks 可解释；对话可生成草稿；画布可编排并发布 WorkflowVersion。未发布图/草稿 Team 不可执行、不可开始规划 | T02 扩展、T09 校验发布、T10 写 API、T18、T19、T20、T16 |
+| M8 双执行模式 | 每个 Agent 可跟随已发布工作流或直接执行；capability probe 诚实显隐；无能力不得假 mode | T02 扩展、T09 调度、T10 API、T21、T16 |
 
 M1/M2 允许交错开发。M3 必须包含最小权限与审批 gate，不能先把真实 Runtime 无约束接进来，最后才补安全。
 
@@ -45,11 +46,15 @@ flowchart TD
   M3 --> Live[真实运行与治理验收 T16]
   T15 --> Live
   Live --> T17[三平台发布 T17]
-  T02 --> Orchestration[画布 T18 / 自定义 Team T19]
+  T02 --> Orchestration[画布 T18 / 自定义 Team T19 / 对话生成 T20]
   T10 --> Orchestration
   T09 --> Orchestration
   M3 --> Orchestration
   Orchestration --> M7[M7 补齐项目制循环]
+  M7 --> Dual[双执行模式 T21]
+  T09 --> Dual
+  T10 --> Dual
+  Dual --> M8[M8 双执行模式]
 ~~~
 
 图表示集成依赖；精确开工条件见任务卡。所有阶段均以实际可运行证据验收，不估算固定日历日期。
@@ -78,6 +83,8 @@ flowchart TD
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
 | T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
+| T20 | 项目循环：对话生成工作流 | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
+| T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `executionMode`（或等价）后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
@@ -87,7 +94,7 @@ flowchart TD
 
 **目标：** 把 R01–R09 从分析意见变成唯一可实现规则。
 
-**所有权：** docs/blueprint/、docs/product-ui/、docs/adr/；新增 docs/planning/decision-register.md、state-matrix.md、api-capability-matrix.md。不修改后续 agent 的源码或现有评审结论以掩盖未解决问题。
+**所有权：** docs/blueprint/、docs/product-ui/、docs/adr/；新增 docs/planning/decision-register.md、state-matrix.md、api-capability-matrix.md、communication-history.md。不修改后续 agent 的源码或现有评审结论以掩盖未解决问题。产品/规划变更必须回写沟通历史。
 
 **工作：**
 
@@ -356,6 +363,43 @@ flowchart TD
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
+### T20 — 对话式工作流编排
+
+**目标：** 兑现 D17：用户能通过对话让 Agent **生成**可编辑的 Workflow / 角色 / 任务草稿（高度可定制的作者路径），再交给 D15 画布编辑与发布。不是独立聊天产品，也不是 Runtime。
+
+**所有权：** `apps/desktop/src/renderer/features/workflow-authoring/` 及包内测试。不改 protocol、daemon composition、workflow-engine、路由表或 T18 画布文件。会话 / 草稿 DTO 缺口提交 T02。
+
+**工作：**
+
+- 「工作流」入口增加对话生成：用户描述 bot/角色、流程 X、任务 Y；Agent 产出未发布草稿。
+- 生成后必须能跳到 T18 画布或结构化编辑；禁止一次生成即锁定。
+- 落草稿复用矩阵已列的 M7 workflow（及可选 Team）写接口；**不发明**未冻结 chat endpoint。
+- 写接口或会话协议未就绪时，入口不得假成功。
+- 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成。
+- 对话回复不得写成 Task/Run 完成。
+
+**验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
+
+**集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
+
+### T21 — 双执行模式
+
+**目标：** 兑现 D18：每个 bot/Agent 做事时可选择 **跟随已发布工作流** 或 **直接执行**；两者皆一等，靠 capability probe 诚实显隐。
+
+**所有权：** 启动/探测相关 Application 接线说明与 `renderer` 中不与 T13/T19 重叠的执行模式切片（领取时锁定精确文件）。不改 protocol / daemon composition / 路由表。`executionMode`（或 T02 所定等价字段）归 T02；调度归 T09；HTTP 归 T10。
+
+**工作：**
+
+- UI 在 Agent / Task / 启动面展示两种模式；无 probe 则 disabled 并说明。
+- workflow-bound：只执行已确认 `WorkflowVersion` 中轮到的节点。
+- direct：即席执行当前目标，仍走 Policy、Workspace、预算、Approval；不是 Renderer 直接 spawn。
+- 模式写入新 Run 的可审计字段；重试新 Run，不改旧 Run。
+- T02 未冻结字段前不发明 `/runs/{id}:direct`，不渲染假 mode。
+
+**验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
+
+**集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
+
 ## 5. 实际并行领取建议
 
 ### 第 0 批：澄清与降低不确定性
@@ -380,7 +424,7 @@ T02 不必一次冻结所有远期协议；M3 必需字段和所有消费者使�
 
 ### 第 3 批：集成与发布
 
-T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。最终接线、迁移顺序和主分支验收由一个协调者控制。
+T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Codex，再 T17。M7（T18/T19/T20）在 M3 只读面稳定且 T02 写出接口后领取，不塞进 M3/M4 随机 PR。M8（T21）在 T02 冻结执行 mode 字段后领取。最终接线、迁移顺序和主分支验收由一个协调者控制。
 
 ## 6. 避免冲突的硬规则
 
@@ -395,6 +439,8 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 | planning/delivery 业务编排 | T14，调用 T09 公共用例 |
 | 工作流画布 UI | T18；图协议归 T02，发布校验归 T09，HTTP 归 T10 |
 | 自定义 Team 写 UI | T19；TeamVersion 契约归 T02，HTTP 归 T10 |
+| 对话生成工作流 UI | T20；会话/草稿契约归 T02，落草稿复用 M7 写接口，画布仍归 T18 |
+| 双执行模式 | T21；mode 字段归 T02，调度归 T09，HTTP 归 T10 |
 | Release/打包配置 | T17，避免与 T11 同时编辑生命周期文件 |
 
 - 每个 agent 一个分支/独立 worktree；不要让多个 agent 共用同一可写 checkout。
@@ -413,7 +459,7 @@ T16 从早期维护场景，在模块可用时逐个接通。先 M3 再真实 Co
 1. README.md 与适用 AGENTS.md
 2. docs/planning/01-design-review.md
 3. docs/planning/02-development-task-backlog.md 中 Txx 的完整任务卡
-4. docs/planning/decision-register.md、state-matrix.md、api-capability-matrix.md
+4. docs/planning/decision-register.md、state-matrix.md、api-capability-matrix.md、communication-history.md
 5. 本任务引用的蓝图和已冻结协议
 
 工作基线：<commit/branch>
