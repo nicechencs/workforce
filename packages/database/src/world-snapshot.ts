@@ -27,8 +27,12 @@ import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.j
 import {
   SqliteAuthoringChangeSetRepository,
   SqliteTeamDraftRepository,
+  SqliteWorkflowAuthoringScopeRepository,
   SqliteWorkflowDraftRepository,
+  type WorkflowAuthoringScopeExpectation,
+  type WorkflowAuthoringScopeRecord,
 } from "./authoring.js";
+import { SqliteWorkflowCatalogRepository } from "./catalog.js";
 import { organizationIdOfProject } from "./ensure.js";
 import { PersistenceError } from "./errors.js";
 import { SqliteProjectExecutionSnapshotRepository } from "./execution-snapshots.js";
@@ -68,6 +72,7 @@ export interface WorldEntitySnapshot {
   usageKeys: string[];
   executionSnapshots: ProjectExecutionSnapshotRecord[];
   /** T20-B authoring data is independent of executable workflow instances. */
+  workflowAuthoringScopes?: WorkflowAuthoringScopeRecord[];
   workflowDrafts?: WorkflowDraftDto[];
   teamDrafts?: TeamDraftDto[];
   authoringChangeSets?: AuthoringChangeSetDto[];
@@ -85,6 +90,8 @@ export class SqliteWorldSnapshot {
   readonly reservations: SqliteReservationRepository;
   readonly usage: SqliteUsageRepository;
   readonly executionSnapshots: SqliteProjectExecutionSnapshotRepository;
+  readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
+  readonly workflowAuthoringScopes: SqliteWorkflowAuthoringScopeRepository;
   readonly workflowDrafts: SqliteWorkflowDraftRepository;
   readonly teamDrafts: SqliteTeamDraftRepository;
   readonly authoringChangeSets: SqliteAuthoringChangeSetRepository;
@@ -101,7 +108,9 @@ export class SqliteWorldSnapshot {
     this.reservations = new SqliteReservationRepository(db);
     this.usage = new SqliteUsageRepository(db);
     this.executionSnapshots = new SqliteProjectExecutionSnapshotRepository(db);
-    this.workflowDrafts = new SqliteWorkflowDraftRepository(db);
+    this.catalogWorkflows = new SqliteWorkflowCatalogRepository(db);
+    this.workflowAuthoringScopes = new SqliteWorkflowAuthoringScopeRepository(db);
+    this.workflowDrafts = new SqliteWorkflowDraftRepository(db, this.workflowAuthoringScopes);
     this.teamDrafts = new SqliteTeamDraftRepository(db);
     this.authoringChangeSets = new SqliteAuthoringChangeSetRepository(db);
   }
@@ -120,6 +129,7 @@ export class SqliteWorldSnapshot {
       reservations: this.reservations.listActive(),
       usageKeys: this.usage.listIdempotencyKeys(),
       executionSnapshots: this.executionSnapshots.listAll(),
+      workflowAuthoringScopes: this.workflowAuthoringScopes.listAll(),
       workflowDrafts: this.workflowDrafts.listAll(),
       teamDrafts: this.teamDrafts.listAll(),
       authoringChangeSets: this.authoringChangeSets.listAll(),
@@ -197,8 +207,20 @@ export class SqliteWorldSnapshot {
     for (const run of snapshot.runs) {
       saveAppRun(tx, this.runs, this.db, run);
     }
+
+    // Authoring authority is established only after Project rows are present,
+    // and before any workflow draft can be read or appended. A snapshot must
+    // carry an explicit scope record, or the database must already contain the
+    // scope; ChangeSet metadata is not an authority grant.
+    const workflowScopes = ensureWorkflowAuthoringScopes(this, tx, snapshot, at);
     for (const draft of sortWorkflowDrafts(snapshot.workflowDrafts ?? [])) {
-      persistWorkflowDraft(tx, this.workflowDrafts, draft);
+      persistWorkflowDraft(
+        tx,
+        this.workflowAuthoringScopes,
+        this.workflowDrafts,
+        draft,
+        workflowScopes,
+      );
     }
     for (const draft of sortTeamDrafts(snapshot.teamDrafts ?? [])) {
       persistTeamDraft(tx, this.teamDrafts, draft);
@@ -237,9 +259,22 @@ export class SqliteWorldSnapshot {
 
 function persistWorkflowDraft(
   tx: Tx,
+  scopeRepository: SqliteWorkflowAuthoringScopeRepository,
   repository: SqliteWorkflowDraftRepository,
   draft: WorkflowDraftDto,
+  scopes: ReadonlyMap<string, WorkflowAuthoringScopeExpectation>,
 ): void {
+  const expected = scopes.get(draft.workflowId);
+  if (expected === undefined) {
+    throw new PersistenceError(
+      "not_found",
+      `workflow ${draft.workflowId} has no authoring scope metadata`,
+    );
+  }
+
+  // Check authority before the identical-row short circuit as well: an old
+  // draft row must not become an implicit write authority after migration.
+  scopeRepository.requireInTransaction(tx, draft.workflowId, expected);
   const existing = repository.get(draft.id);
   if (existing) {
     if (!sameJson(existing, draft)) {
@@ -250,8 +285,91 @@ function persistWorkflowDraft(
     }
     return;
   }
-  const current = repository.listByWorkflow(draft.workflowId).at(-1)?.revision ?? 0;
-  repository.append(tx, draft, current);
+  // Read the CAS revision through the same SqliteTx as the append. This also
+  // enforces workflow authoring authority before any draft write is attempted.
+  const current = repository.getCurrentRevision(tx, draft.workflowId, expected);
+  repository.append(tx, draft, current, expected);
+}
+
+function ensureWorkflowAuthoringScopes(
+  snapshot: SqliteWorldSnapshot,
+  tx: Tx,
+  input: WorldEntitySnapshot,
+  at: string,
+): Map<string, WorkflowAuthoringScopeExpectation> {
+  const expected = new Map<string, WorkflowAuthoringScopeExpectation>();
+  const records = new Map<string, WorkflowAuthoringScopeRecord>();
+
+  for (const scope of input.workflowAuthoringScopes ?? []) {
+    mergeWorkflowScope(records, scope);
+  }
+
+  for (const [workflowId, scope] of records) {
+    const db = sqliteDbOf(tx);
+    const catalogExists = db
+      .prepare("SELECT 1 AS present FROM catalog_workflows WHERE id = ?")
+      .get(workflowId);
+    if (catalogExists === undefined) {
+      // This compatibility path writes only a stable identity label. It never
+      // copies prompt/summary content into catalog or authority metadata.
+      snapshot.catalogWorkflows.upsert(tx, {
+        id: workflowId,
+        name: "Authoring workflow",
+        description: "",
+        status: "draft",
+        stateRevision: 1,
+        definitionRevision: 1,
+        createdAt: scope.createdAt,
+        updatedAt: at,
+      });
+    }
+
+    const authority = snapshot.workflowAuthoringScopes.getInTransaction(tx, workflowId);
+    if (authority === null) {
+      snapshot.workflowAuthoringScopes.create(tx, scope);
+    } else {
+      snapshot.workflowAuthoringScopes.requireInTransaction(tx, workflowId, scope);
+    }
+    expected.set(workflowId, {
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
+    });
+  }
+
+  // A pre-009 snapshot may contain a draft with an already durable scope but
+  // no ChangeSet (for example, after a sidecar-only restart). Reuse the
+  // existing database authority; a missing one remains fail-closed below.
+  for (const draft of input.workflowDrafts ?? []) {
+    if (expected.has(draft.workflowId)) continue;
+    const authority = snapshot.workflowAuthoringScopes.getInTransaction(tx, draft.workflowId);
+    if (authority !== null) {
+      expected.set(draft.workflowId, {
+        organizationId: authority.organizationId,
+        projectId: authority.projectId,
+      });
+    }
+  }
+  return expected;
+}
+
+function mergeWorkflowScope(
+  records: Map<string, WorkflowAuthoringScopeRecord>,
+  incoming: WorkflowAuthoringScopeRecord,
+): void {
+  const existing = records.get(incoming.workflowId);
+  if (existing === undefined) {
+    records.set(incoming.workflowId, incoming);
+    return;
+  }
+  if (
+    existing.organizationId !== incoming.organizationId ||
+    existing.projectId !== incoming.projectId
+  ) {
+    throw new PersistenceError(
+      "constraint",
+      `workflow ${incoming.workflowId} authoring scope has conflicting Project authority`,
+    );
+  }
 }
 
 function persistTeamDraft(

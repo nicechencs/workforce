@@ -51,6 +51,7 @@ export {
   MIGRATION_006_SQL,
   MIGRATION_007_SQL,
   MIGRATION_008_SQL,
+  MIGRATION_009_SQL,
 } from "./schema.js";
 export {
   EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
@@ -64,8 +65,12 @@ export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./
 export {
   SqliteAuthoringChangeSetRepository,
   SqliteTeamDraftRepository,
+  SqliteWorkflowAuthoringScopeRepository,
   SqliteWorkflowDraftRepository,
   type AuthoringStepUpdate,
+  type CreateWorkflowAuthoringScopeInput,
+  type WorkflowAuthoringScopeExpectation,
+  type WorkflowAuthoringScopeRecord,
 } from "./authoring.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";

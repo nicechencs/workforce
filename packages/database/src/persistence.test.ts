@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import type { WorkflowDraftDto } from "@workforce/protocol";
 
 import { WorkforceSqlite } from "./database.js";
 import { PersistenceError } from "./errors.js";
@@ -17,6 +18,7 @@ import {
   MIGRATION_006_SQL,
   MIGRATION_007_SQL,
   MIGRATION_008_SQL,
+  MIGRATION_009_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -57,6 +59,7 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("003_budget_alignment")).toBe(true);
       expect(applied.has("004_policy_grants")).toBe(true);
       expect(applied.has("008_execution_axis_migration_audit")).toBe(true);
+      expect(applied.has("009_workflow_authoring_scopes")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -89,6 +92,7 @@ describe("WorkforceSqlite", () => {
         "006_catalog_definitions",
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -139,6 +143,7 @@ describe("WorkforceSqlite", () => {
         "006_catalog_definitions",
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -177,6 +182,7 @@ describe("WorkforceSqlite", () => {
         "006_catalog_definitions",
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -225,6 +231,7 @@ describe("WorkforceSqlite", () => {
         "006_catalog_definitions",
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
 
       for (const table of [
@@ -233,6 +240,7 @@ describe("WorkforceSqlite", () => {
         "authoring_change_sets",
         "authoring_change_set_steps",
         "project_execution_snapshots",
+        "workflow_authoring_scopes",
       ]) {
         expect(tableExists(db.connection, table)).toBe(true);
       }
@@ -293,6 +301,87 @@ describe("WorkforceSqlite", () => {
     }
   });
 
+  it("applies 009 after 001-008 and fails closed when replaying a legacy draft", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-legacy-authoring-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    const draft: WorkflowDraftDto = {
+      id: "wfd_legacy_009",
+      workflowId: "wf_legacy_009",
+      revision: 1,
+      status: "draft",
+      graph: {
+        entryNodeIds: ["legacy_node"],
+        nodes: [{ id: "legacy_node", kind: "task", role: "developer" }],
+        edges: [],
+        failurePolicy: { default: "fail" },
+        concurrencyPolicy: { runWorktree: "isolated", integrationWorktree: "dedicated" },
+      },
+      contentHash: "sha256:legacy-009",
+      updatedAt: now,
+      updatedBy: "usr_author",
+    };
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      const prior = [
+        ["001_init", MIGRATION_001_SQL],
+        ["002_entity_alignment", MIGRATION_002_SQL],
+        ["003_budget_alignment", MIGRATION_003_SQL],
+        ["004_policy_grants", MIGRATION_004_SQL],
+        ["005_execution_axes_expand", MIGRATION_005_SQL],
+        ["006_catalog_definitions", MIGRATION_006_SQL],
+        ["007_runtime_profile_transport_expand", MIGRATION_007_SQL],
+        ["008_execution_axis_migration_audit", MIGRATION_008_SQL],
+      ] as const;
+      for (const [version, sql] of prior) {
+        db.connection.exec(sql);
+        db.connection
+          .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+          .run(version, checksumSql(sql), now);
+      }
+      db.seedMinimalGraph(ids, now);
+      db.connection
+        .prepare(
+          `INSERT INTO catalog_workflows (
+             id, name, description, status, state_revision, definition_revision,
+             active_version_id, created_at, updated_at
+           ) VALUES (?, 'Legacy', '', 'draft', 1, 1, NULL, ?, ?)`,
+        )
+        .run(draft.workflowId, now, now);
+      db.connection
+        .prepare(
+          `INSERT INTO workflow_drafts (
+             id, workflow_id, revision, status, graph_json, content_hash, updated_at, updated_by
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          draft.id,
+          draft.workflowId,
+          draft.revision,
+          draft.status,
+          JSON.stringify(draft.graph),
+          draft.contentHash,
+          draft.updatedAt,
+          draft.updatedBy,
+        );
+
+      expect(migrate(db.connection)).toEqual(["009_workflow_authoring_scopes"]);
+      expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
+      expect(db.workflowDrafts.get(draft.id)).toEqual(draft);
+      await expect(
+        db.uow.withTransaction(async (tx) => {
+          db.workflowDrafts.append(tx, draft, 1, {
+            organizationId: ids.organizationId,
+            projectId: ids.projectId,
+          });
+        }),
+      ).rejects.toMatchObject({ code: "not_found" });
+      expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
   it("applies catalog definitions on a database that already has 001-005", () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
     dirs.push(dir);
@@ -320,6 +409,7 @@ describe("WorkforceSqlite", () => {
         "006_catalog_definitions",
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
       for (const table of [
         "catalog_workflows",
@@ -359,12 +449,16 @@ describe("WorkforceSqlite", () => {
       expect(ran).toEqual([
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
+        "009_workflow_authoring_scopes",
       ]);
       expect(appliedMigrations(db.connection).get("007_runtime_profile_transport_expand")).toBe(
         checksumSql(MIGRATION_007_SQL),
       );
       expect(appliedMigrations(db.connection).get("008_execution_axis_migration_audit")).toBe(
         checksumSql(MIGRATION_008_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("009_workflow_authoring_scopes")).toBe(
+        checksumSql(MIGRATION_009_SQL),
       );
 
       const transportColumn = (

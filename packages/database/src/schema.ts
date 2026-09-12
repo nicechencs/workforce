@@ -817,6 +817,31 @@ CREATE INDEX idx_execution_axis_migration_unresolved
   WHERE classification IN ('eligible', 'repair_required', 'quarantined');
 `;
 
+/**
+ * T20-B/D17 authoring authority.  A catalog workflow is not authorable by
+ * chat until it is explicitly bound to one Project and organization.  The
+ * binding is deliberately separate from catalog_workflows so historical
+ * catalog rows remain readable while authoring writes fail closed.
+ *
+ * Forward-only: do not rewrite 001-008.  The organization/project pair is
+ * checked by the database repository before insertion because the existing
+ * schema does not have a composite organization/project key.
+ */
+export const MIGRATION_009_SQL = `
+CREATE TABLE workflow_authoring_scopes (
+  workflow_id TEXT PRIMARY KEY REFERENCES catalog_workflows(id),
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL
+);
+
+CREATE INDEX idx_workflow_authoring_scopes_project
+  ON workflow_authoring_scopes(project_id, workflow_id);
+CREATE INDEX idx_workflow_authoring_scopes_organization
+  ON workflow_authoring_scopes(organization_id, workflow_id);
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -826,4 +851,5 @@ export const MIGRATIONS = [
   { version: "006_catalog_definitions", sql: MIGRATION_006_SQL },
   { version: "007_runtime_profile_transport_expand", sql: MIGRATION_007_SQL },
   { version: "008_execution_axis_migration_audit", sql: MIGRATION_008_SQL },
+  { version: "009_workflow_authoring_scopes", sql: MIGRATION_009_SQL },
 ] as const;

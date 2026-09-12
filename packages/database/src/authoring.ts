@@ -17,9 +17,119 @@ import { PersistenceError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
 import { asJsonText, cell, optionalText, parseJson, requiredInt, requiredText } from "./sql.js";
 
+export interface WorkflowAuthoringScopeRecord {
+  workflowId: string;
+  organizationId: string;
+  projectId: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export type CreateWorkflowAuthoringScopeInput = WorkflowAuthoringScopeRecord;
+
+export interface WorkflowAuthoringScopeExpectation {
+  organizationId: string;
+  projectId: string;
+}
+
+/**
+ * Durable authority binding for conversational workflow authoring.
+ *
+ * All mutating and authority-sensitive reads accept the real SqliteTx.  This
+ * lets a caller create/read the binding, read the draft CAS revision, append
+ * the draft, and append its event as one SQLite transaction.  A missing row is
+ * intentionally a not_found error: legacy catalog workflows are not silently
+ * treated as authorable.
+ */
+export class SqliteWorkflowAuthoringScopeRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  get(workflowId: string): WorkflowAuthoringScopeRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT workflow_id, organization_id, project_id, created_at, created_by
+           FROM workflow_authoring_scopes
+          WHERE workflow_id = ?`,
+      )
+      .get(workflowId);
+    return row === undefined ? null : rowToWorkflowAuthoringScope(row);
+  }
+
+  getInTransaction(tx: Tx, workflowId: string): WorkflowAuthoringScopeRecord | null {
+    const db = sqliteDbOf(tx);
+    const row = db
+      .prepare(
+        `SELECT workflow_id, organization_id, project_id, created_at, created_by
+           FROM workflow_authoring_scopes
+          WHERE workflow_id = ?`,
+      )
+      .get(workflowId);
+    return row === undefined ? null : rowToWorkflowAuthoringScope(row);
+  }
+
+  listAll(): WorkflowAuthoringScopeRecord[] {
+    return this.db
+      .prepare(
+        `SELECT workflow_id, organization_id, project_id, created_at, created_by
+           FROM workflow_authoring_scopes
+          ORDER BY created_at ASC, workflow_id ASC`,
+      )
+      .all()
+      .map(rowToWorkflowAuthoringScope);
+  }
+
+  requireInTransaction(
+    tx: Tx,
+    workflowId: string,
+    expected: WorkflowAuthoringScopeExpectation,
+  ): WorkflowAuthoringScopeRecord {
+    const scope = this.getInTransaction(tx, workflowId);
+    if (scope === null) {
+      throw new PersistenceError("not_found", `workflow ${workflowId} has no authoring authority`);
+    }
+    if (
+      scope.organizationId !== expected.organizationId ||
+      scope.projectId !== expected.projectId
+    ) {
+      throw new PersistenceError(
+        "constraint",
+        `workflow ${workflowId} authoring authority is outside the requested scope`,
+      );
+    }
+    return scope;
+  }
+
+  create(tx: Tx, input: CreateWorkflowAuthoringScopeInput): void {
+    const db = sqliteDbOf(tx);
+    assertProjectOrganization(db, input.projectId, input.organizationId);
+    assertCatalogWorkflow(db, input.workflowId);
+    try {
+      db.prepare(
+        `INSERT INTO workflow_authoring_scopes (
+           workflow_id, organization_id, project_id, created_at, created_by
+         ) VALUES (?, ?, ?, ?, ?)`,
+      ).run(
+        input.workflowId,
+        input.organizationId,
+        input.projectId,
+        input.createdAt,
+        input.createdBy,
+      );
+    } catch (error) {
+      mapAuthoringWriteError(
+        error,
+        `workflow ${input.workflowId} authoring authority already exists or conflicts`,
+      );
+    }
+  }
+}
+
 /** Append-only, revision-CAS storage for un-published workflow drafts. */
 export class SqliteWorkflowDraftRepository {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly scopeRepository = new SqliteWorkflowAuthoringScopeRepository(db),
+  ) {}
 
   get(id: string): WorkflowDraftDto | null {
     const row = this.db.prepare("SELECT * FROM workflow_drafts WHERE id = ?").get(id);
@@ -40,17 +150,30 @@ export class SqliteWorkflowDraftRepository {
       .map(rowToWorkflowDraft);
   }
 
-  append(tx: Tx, input: WorkflowDraftDto, expectedRevision: number): void {
+  /**
+   * Read the current draft revision inside the caller's SQLite transaction.
+   * Missing workflow authority fails closed before the revision is exposed.
+   */
+  getCurrentRevision(
+    tx: Tx,
+    workflowId: string,
+    expected: WorkflowAuthoringScopeExpectation,
+  ): number {
+    this.scopeRepository.requireInTransaction(tx, workflowId, expected);
+    const db = sqliteDbOf(tx);
+    return currentRevision(db, workflowId);
+  }
+
+  append(
+    tx: Tx,
+    input: WorkflowDraftDto,
+    expectedRevision: number,
+    expected: WorkflowAuthoringScopeExpectation,
+  ): void {
     const draft = parseWorkflowDraft(input);
     const db = sqliteDbOf(tx);
-    assertNextRevision(
-      db,
-      "workflow_drafts",
-      "workflow_id",
-      draft.workflowId,
-      draft.revision,
-      expectedRevision,
-    );
+    const revision = this.getCurrentRevision(tx, draft.workflowId, expected);
+    assertRevision("workflow_drafts", draft.workflowId, draft.revision, expectedRevision, revision);
     try {
       db.prepare(
         `INSERT INTO workflow_drafts (
@@ -311,6 +434,62 @@ function assertNextRevision(
   if (current !== expectedRevision || revision !== current + 1) {
     throw new PersistenceError("revision_conflict", `${table} ${ownerId} revision changed`);
   }
+}
+
+function assertRevision(
+  table: string,
+  ownerId: string,
+  nextRevision: number,
+  expectedRevision: number,
+  current: number,
+): void {
+  if (current !== expectedRevision || nextRevision !== current + 1) {
+    throw new PersistenceError("revision_conflict", `${table} ${ownerId} revision changed`);
+  }
+}
+
+function currentRevision(db: DatabaseSync, workflowId: string): number {
+  const row = db
+    .prepare(
+      "SELECT COALESCE(MAX(revision), 0) AS revision FROM workflow_drafts WHERE workflow_id = ?",
+    )
+    .get(workflowId) as Record<string, unknown>;
+  return requiredInt(cell(row, "revision"), "revision");
+}
+
+function assertCatalogWorkflow(db: DatabaseSync, workflowId: string): void {
+  const row = db.prepare("SELECT 1 AS present FROM catalog_workflows WHERE id = ?").get(workflowId);
+  if (row === undefined) {
+    throw new PersistenceError("not_found", `catalog workflow ${workflowId} was not found`);
+  }
+}
+
+function assertProjectOrganization(
+  db: DatabaseSync,
+  projectId: string,
+  organizationId: string,
+): void {
+  const row = db.prepare("SELECT organization_id FROM projects WHERE id = ?").get(projectId) as
+    Record<string, unknown> | undefined;
+  if (row === undefined) {
+    throw new PersistenceError("not_found", `project ${projectId} was not found`);
+  }
+  if (requiredText(cell(row, "organization_id"), "organization_id") !== organizationId) {
+    throw new PersistenceError(
+      "constraint",
+      `project ${projectId} does not belong to organization ${organizationId}`,
+    );
+  }
+}
+
+function rowToWorkflowAuthoringScope(row: Record<string, unknown>): WorkflowAuthoringScopeRecord {
+  return {
+    workflowId: requiredText(cell(row, "workflow_id"), "workflow_id"),
+    organizationId: requiredText(cell(row, "organization_id"), "organization_id"),
+    projectId: requiredText(cell(row, "project_id"), "project_id"),
+    createdAt: requiredText(cell(row, "created_at"), "created_at"),
+    createdBy: requiredText(cell(row, "created_by"), "created_by"),
+  };
 }
 
 function assertSourceRunBelongsToProject(db: DatabaseSync, changeSet: AuthoringChangeSetDto): void {

@@ -29,6 +29,7 @@ import { SqliteExecutionAxisMigrationRepository } from "./execution-axis-migrati
 import {
   SqliteAuthoringChangeSetRepository,
   SqliteTeamDraftRepository,
+  SqliteWorkflowAuthoringScopeRepository,
   SqliteWorkflowDraftRepository,
 } from "./authoring.js";
 
@@ -61,6 +62,7 @@ export class WorkforceSqlite {
   readonly executionAxisMigration: SqliteExecutionAxisMigrationRepository;
   readonly workflowDrafts: SqliteWorkflowDraftRepository;
   readonly teamDrafts: SqliteTeamDraftRepository;
+  readonly workflowAuthoringScopes: SqliteWorkflowAuthoringScopeRepository;
   readonly authoringChangeSets: SqliteAuthoringChangeSetRepository;
 
   private constructor(
@@ -89,7 +91,11 @@ export class WorkforceSqlite {
     this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
     this.catalogTeams = new SqliteTeamCatalogRepository(connection);
     this.executionAxisMigration = new SqliteExecutionAxisMigrationRepository(connection);
-    this.workflowDrafts = new SqliteWorkflowDraftRepository(connection);
+    this.workflowAuthoringScopes = new SqliteWorkflowAuthoringScopeRepository(connection);
+    this.workflowDrafts = new SqliteWorkflowDraftRepository(
+      connection,
+      this.workflowAuthoringScopes,
+    );
     this.teamDrafts = new SqliteTeamDraftRepository(connection);
     this.authoringChangeSets = new SqliteAuthoringChangeSetRepository(connection);
   }

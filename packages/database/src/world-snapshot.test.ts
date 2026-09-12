@@ -134,6 +134,15 @@ describe("SqliteWorldSnapshot", () => {
         updatedBy: "usr_author",
       },
     ];
+    snapshot.workflowAuthoringScopes = [
+      {
+        workflowId: "wf_authoring",
+        organizationId: ids.organizationId,
+        projectId: ids.projectId,
+        createdAt: now,
+        createdBy: "usr_author",
+      },
+    ];
     snapshot.teamDrafts = [
       {
         id: "tmd_snap",
@@ -173,7 +182,40 @@ describe("SqliteWorldSnapshot", () => {
       },
     ];
     await db.uow.withTransaction(async (tx) => {
-      db.worldSnapshot.save(tx, snapshot, now);
+      // The base entity rows must exist before the authority FK can be
+      // created; keep both phases in the same SQLite transaction.
+      db.worldSnapshot.save(
+        tx,
+        {
+          ...snapshot,
+          workflowDrafts: undefined,
+          teamDrafts: undefined,
+          authoringChangeSets: undefined,
+        },
+        now,
+      );
+      db.worldSnapshot.save(
+        tx,
+        {
+          projects: [],
+          tasks: [],
+          workflows: [],
+          nodes: [],
+          approvals: [],
+          artifacts: [],
+          runs: [],
+          budgets: [],
+          reservations: [],
+          usageKeys: [],
+          executionSnapshots: [],
+          workflowVersions: [],
+          workflowAuthoringScopes: snapshot.workflowAuthoringScopes,
+          workflowDrafts: snapshot.workflowDrafts,
+          teamDrafts: snapshot.teamDrafts,
+          authoringChangeSets: snapshot.authoringChangeSets,
+        },
+        now,
+      );
     });
     await db.uow.withTransaction(async (tx) => {
       db.worldSnapshot.save(tx, snapshot, now);
@@ -183,11 +225,96 @@ describe("SqliteWorldSnapshot", () => {
     const reopened = WorkforceSqlite.open(path);
     try {
       const loaded = reopened.worldSnapshot.load();
+      expect(loaded.workflowAuthoringScopes).toEqual(snapshot.workflowAuthoringScopes);
       expect(loaded.workflowDrafts).toEqual(snapshot.workflowDrafts);
       expect(loaded.teamDrafts).toEqual(snapshot.teamDrafts);
       expect(loaded.authoringChangeSets).toEqual(snapshot.authoringChangeSets);
     } finally {
       reopened.close();
+    }
+  });
+
+  it("fails closed when replaying a pre-009 workflow draft without authority", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-authoring-legacy-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const draft: NonNullable<WorldEntitySnapshot["workflowDrafts"]>[number] = {
+      id: "wfd_legacy",
+      workflowId: "wf_legacy",
+      revision: 1,
+      status: "draft",
+      graph: {
+        entryNodeIds: ["legacy_node"],
+        nodes: [{ id: "legacy_node", kind: "task", role: "developer" }],
+        edges: [],
+        failurePolicy: { default: "fail" },
+        concurrencyPolicy: { runWorktree: "isolated", integrationWorktree: "dedicated" },
+      },
+      contentHash: "sha256:legacy",
+      updatedAt: now,
+      updatedBy: "usr_author",
+    };
+    try {
+      db.seedMinimalGraph(ids, now);
+      await db.uow.withTransaction(async (tx) => {
+        db.catalogWorkflows.upsert(tx, {
+          id: draft.workflowId,
+          name: "Legacy workflow",
+          description: "",
+          status: "draft",
+          stateRevision: 1,
+          definitionRevision: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+      // Simulate a pre-009 database row: the draft exists, but no authority
+      // binding was ever recorded for its catalog workflow.
+      db.connection
+        .prepare(
+          `INSERT INTO workflow_drafts (
+             id, workflow_id, revision, status, graph_json, content_hash, updated_at, updated_by
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          draft.id,
+          draft.workflowId,
+          draft.revision,
+          draft.status,
+          JSON.stringify(draft.graph),
+          draft.contentHash,
+          draft.updatedAt,
+          draft.updatedBy,
+        );
+
+      await expect(
+        db.uow.withTransaction(async (tx) => {
+          db.worldSnapshot.save(
+            tx,
+            {
+              projects: [],
+              tasks: [],
+              workflows: [],
+              nodes: [],
+              approvals: [],
+              artifacts: [],
+              runs: [],
+              budgets: [],
+              reservations: [],
+              usageKeys: [],
+              executionSnapshots: [],
+              workflowDrafts: [draft],
+              teamDrafts: [],
+              authoringChangeSets: [],
+            },
+            now,
+          );
+        }),
+      ).rejects.toMatchObject({ code: "not_found" });
+      expect(db.workflowDrafts.get(draft.id)).toEqual(draft);
+      expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
+    } finally {
+      db.close();
     }
   });
 
