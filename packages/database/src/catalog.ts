@@ -96,6 +96,35 @@ export class SqliteWorkflowCatalogRepository {
     }
   }
 
+  /** Create-only identity path used by chat confirmation; it never overwrites. */
+  create(tx: Tx, record: WorkflowDefinitionRecord): void {
+    try {
+      sqliteDbOf(tx)
+        .prepare(
+          `INSERT INTO catalog_workflows (
+             id, name, description, status, state_revision, definition_revision,
+             active_version_id, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          record.id,
+          record.name,
+          record.description,
+          record.status,
+          record.stateRevision,
+          record.definitionRevision,
+          record.activeVersionId ?? null,
+          record.createdAt,
+          record.updatedAt,
+        );
+    } catch (error) {
+      if (isConstraintError(error)) {
+        throw new PersistenceError("conflict", `catalog workflow ${record.id} already exists`);
+      }
+      throw error;
+    }
+  }
+
   upsertVersion(tx: Tx, record: WorkflowVersionRecord): void {
     const db = sqliteDbOf(tx);
     db.prepare(

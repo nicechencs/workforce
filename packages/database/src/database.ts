@@ -32,6 +32,14 @@ import {
   SqliteWorkflowAuthoringScopeRepository,
   SqliteWorkflowDraftRepository,
 } from "./authoring.js";
+import {
+  SqliteAuthoringChatPatchRepository,
+  SqliteAuthoringMessageRepository,
+  SqliteAuthoringProposalRepository,
+  SqliteAuthoringSessionRepository,
+  SqliteAuthoringSourceRunRepository,
+  SqliteAuthoringTurnRepository,
+} from "./chat-authoring.js";
 
 export interface OpenWorkforceDbOptions extends OpenSqliteOptions {
   migrate?: boolean;
@@ -64,6 +72,12 @@ export class WorkforceSqlite {
   readonly teamDrafts: SqliteTeamDraftRepository;
   readonly workflowAuthoringScopes: SqliteWorkflowAuthoringScopeRepository;
   readonly authoringChangeSets: SqliteAuthoringChangeSetRepository;
+  readonly authoringSessions: SqliteAuthoringSessionRepository;
+  readonly authoringMessages: SqliteAuthoringMessageRepository;
+  readonly authoringTurns: SqliteAuthoringTurnRepository;
+  readonly authoringProposals: SqliteAuthoringProposalRepository;
+  readonly authoringPatches: SqliteAuthoringChatPatchRepository;
+  readonly authoringSourceRuns: SqliteAuthoringSourceRunRepository;
 
   private constructor(
     readonly path: string,
@@ -98,6 +112,16 @@ export class WorkforceSqlite {
     );
     this.teamDrafts = new SqliteTeamDraftRepository(connection);
     this.authoringChangeSets = new SqliteAuthoringChangeSetRepository(connection);
+    this.authoringSessions = new SqliteAuthoringSessionRepository(connection);
+    this.authoringMessages = new SqliteAuthoringMessageRepository(connection);
+    this.authoringTurns = new SqliteAuthoringTurnRepository(connection, this.authoringSessions);
+    this.authoringProposals = new SqliteAuthoringProposalRepository(
+      connection,
+      this.authoringSessions,
+      this.authoringTurns,
+    );
+    this.authoringPatches = new SqliteAuthoringChatPatchRepository(this.authoringProposals);
+    this.authoringSourceRuns = new SqliteAuthoringSourceRunRepository(connection);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {

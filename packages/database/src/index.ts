@@ -52,6 +52,7 @@ export {
   MIGRATION_007_SQL,
   MIGRATION_008_SQL,
   MIGRATION_009_SQL,
+  MIGRATION_010_SQL,
 } from "./schema.js";
 export {
   EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
@@ -62,6 +63,26 @@ export {
   type ExecutionAxisMigrationItem,
 } from "./execution-axis-migration.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
+export {
+  SqliteAuthoringChatPatchRepository,
+  SqliteAuthoringMessageRepository,
+  SqliteAuthoringProposalRepository,
+  SqliteAuthoringSessionRepository,
+  SqliteAuthoringSourceRunRepository,
+  SqliteAuthoringTurnRepository,
+  type AuthoringChatPatchBinding,
+  type AuthoringMessageRecord,
+  type AuthoringProjectRecord,
+  type AuthoringProposalRecord,
+  type AuthoringProposalTargetInput,
+  type AuthoringSessionRecord,
+  type AuthoringSourceRunRecord,
+  type AuthoringTurnRecord,
+  type CompleteAuthoringTurnInput,
+  type CreateAuthoringMessageInput,
+  type CreateAuthoringProposalInput,
+  type CreateAuthoringTurnInput,
+} from "./chat-authoring.js";
 export {
   SqliteAuthoringChangeSetRepository,
   SqliteTeamDraftRepository,

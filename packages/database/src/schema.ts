@@ -842,6 +842,104 @@ CREATE INDEX idx_workflow_authoring_scopes_organization
   ON workflow_authoring_scopes(organization_id, workflow_id);
 `;
 
+/**
+ * D17/P0 chat authoring metadata.  This schema intentionally contains only
+ * references, hashes and redacted metadata: raw chat content, prompts and
+ * proposal summaries are never durable database fields.
+ */
+export const MIGRATION_010_SQL = `
+CREATE TABLE authoring_sessions (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  protocol_version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'failed', 'closed')),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE authoring_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES authoring_sessions(id),
+  role TEXT NOT NULL CHECK (role IN ('user', 'system', 'authoring_agent')),
+  content_ref TEXT,
+  content_hash TEXT NOT NULL,
+  redacted_preview TEXT,
+  retention_until TEXT,
+  created_at TEXT NOT NULL,
+  CHECK (content_ref IS NOT NULL OR redacted_preview IS NOT NULL)
+);
+
+CREATE TABLE authoring_turns (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES authoring_sessions(id),
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  source_run_id TEXT NOT NULL REFERENCES runs(id),
+  protocol_version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'accepted', 'running', 'awaiting_confirmation', 'completed',
+    'failed', 'cancelled', 'closed'
+  )),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  task_id TEXT,
+  run_id TEXT,
+  proposal_id TEXT,
+  change_set_id TEXT,
+  workflow_draft_id TEXT,
+  patch_refs_json TEXT NOT NULL CHECK (json_valid(patch_refs_json)),
+  completed_operation_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE authoring_proposals (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES authoring_sessions(id),
+  turn_id TEXT NOT NULL REFERENCES authoring_turns(id),
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  source_run_id TEXT NOT NULL REFERENCES runs(id),
+  proposal_ref TEXT NOT NULL,
+  proposal_hash TEXT NOT NULL,
+  redacted_preview TEXT,
+  status TEXT NOT NULL CHECK (status IN ('proposed', 'confirmed', 'rejected', 'failed')),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE authoring_proposal_targets (
+  proposal_id TEXT NOT NULL REFERENCES authoring_proposals(id),
+  ordinal INTEGER NOT NULL CHECK (ordinal > 0),
+  target_type TEXT NOT NULL CHECK (target_type IN ('team', 'task', 'workflow')),
+  operation TEXT NOT NULL CHECK (operation IN ('create', 'update')),
+  target_id TEXT,
+  expected_revision INTEGER,
+  patch_ref TEXT NOT NULL,
+  PRIMARY KEY (proposal_id, ordinal),
+  UNIQUE (proposal_id, patch_ref),
+  CHECK (
+    (operation = 'create' AND target_id IS NULL AND expected_revision IS NULL)
+    OR (operation = 'update' AND target_id IS NOT NULL AND expected_revision IS NOT NULL)
+  )
+);
+
+CREATE INDEX idx_authoring_sessions_project
+  ON authoring_sessions(project_id, updated_at, id);
+CREATE INDEX idx_authoring_messages_session
+  ON authoring_messages(session_id, created_at, id);
+CREATE INDEX idx_authoring_turns_session
+  ON authoring_turns(session_id, created_at, id);
+CREATE INDEX idx_authoring_turns_source_run
+  ON authoring_turns(source_run_id, id);
+CREATE INDEX idx_authoring_proposals_turn
+  ON authoring_proposals(turn_id, id);
+CREATE INDEX idx_authoring_proposal_targets_patch
+  ON authoring_proposal_targets(patch_ref, proposal_id);
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -852,4 +950,5 @@ export const MIGRATIONS = [
   { version: "007_runtime_profile_transport_expand", sql: MIGRATION_007_SQL },
   { version: "008_execution_axis_migration_audit", sql: MIGRATION_008_SQL },
   { version: "009_workflow_authoring_scopes", sql: MIGRATION_009_SQL },
+  { version: "010_authoring_chat_metadata", sql: MIGRATION_010_SQL },
 ] as const;

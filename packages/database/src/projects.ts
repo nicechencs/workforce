@@ -28,6 +28,13 @@ export class SqliteProjectRepository {
     return row ? rowToProject(row) : null;
   }
 
+  getInTransaction(tx: Tx, id: string): ProjectRecord | null {
+    const row = sqliteDbOf(tx)
+      .prepare(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = ?`)
+      .get(id);
+    return row ? rowToProject(row) : null;
+  }
+
   listByOrganization(organizationId: string): ProjectRecord[] {
     return this.db
       .prepare(

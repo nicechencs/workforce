@@ -19,6 +19,7 @@ import {
   MIGRATION_007_SQL,
   MIGRATION_008_SQL,
   MIGRATION_009_SQL,
+  MIGRATION_010_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -60,6 +61,7 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("004_policy_grants")).toBe(true);
       expect(applied.has("008_execution_axis_migration_audit")).toBe(true);
       expect(applied.has("009_workflow_authoring_scopes")).toBe(true);
+      expect(applied.has("010_authoring_chat_metadata")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -93,6 +95,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -144,6 +147,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -183,6 +187,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -232,6 +237,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
 
       for (const table of [
@@ -365,7 +371,10 @@ describe("WorkforceSqlite", () => {
           draft.updatedBy,
         );
 
-      expect(migrate(db.connection)).toEqual(["009_workflow_authoring_scopes"]);
+      expect(migrate(db.connection)).toEqual([
+        "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
+      ]);
       expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
       expect(db.workflowDrafts.get(draft.id)).toEqual(draft);
       await expect(
@@ -410,6 +419,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
       for (const table of [
         "catalog_workflows",
@@ -450,6 +460,7 @@ describe("WorkforceSqlite", () => {
         "007_runtime_profile_transport_expand",
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
+        "010_authoring_chat_metadata",
       ]);
       expect(appliedMigrations(db.connection).get("007_runtime_profile_transport_expand")).toBe(
         checksumSql(MIGRATION_007_SQL),
@@ -459,6 +470,9 @@ describe("WorkforceSqlite", () => {
       );
       expect(appliedMigrations(db.connection).get("009_workflow_authoring_scopes")).toBe(
         checksumSql(MIGRATION_009_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("010_authoring_chat_metadata")).toBe(
+        checksumSql(MIGRATION_010_SQL),
       );
 
       const transportColumn = (
