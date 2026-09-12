@@ -5,6 +5,8 @@ import type {
   LineageRelation,
   LineageSource,
   OutputBinding,
+  QuarantineRecord,
+  RetentionRecord,
   StagingRecord,
   StoredArtifactVersion,
 } from "../types.js";
@@ -50,6 +52,17 @@ function optRecord(
   }
   if (!isRecord(value)) {
     throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", `${key} must be an object`);
+  }
+  return value;
+}
+
+function optBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "boolean") {
+    throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", `${key} must be a boolean`);
   }
   return value;
 }
@@ -176,6 +189,26 @@ export function parseStoredVersion(value: unknown): StoredArtifactVersion {
   if (quarantinedAt !== undefined) {
     record.quarantinedAt = quarantinedAt;
   }
+  const quarantineReason = optString(value, "quarantineReason");
+  if (quarantineReason !== undefined) {
+    record.quarantineReason = quarantineReason;
+  }
+  const retainedAt = optString(value, "retainedAt");
+  if (retainedAt !== undefined) {
+    record.retainedAt = retainedAt;
+  }
+  const contentSummary = optString(value, "contentSummary");
+  if (contentSummary !== undefined) {
+    record.contentSummary = contentSummary;
+  }
+  const contentPurged = optBoolean(value, "contentPurged");
+  if (contentPurged !== undefined) {
+    record.contentPurged = contentPurged;
+  }
+  const retentionPolicyId = optString(value, "retentionPolicyId");
+  if (retentionPolicyId !== undefined) {
+    record.retentionPolicyId = retentionPolicyId;
+  }
   const taskId = optString(value, "taskId");
   if (taskId !== undefined) {
     record.taskId = taskId;
@@ -262,9 +295,65 @@ export function parseEvaluationRecord(value: unknown): EvaluationRecord {
   if (summary !== undefined) {
     record.summary = summary;
   }
+  const digest = optString(value, "digest");
+  if (digest !== undefined) {
+    record.digest = digest;
+  }
   return record;
 }
 
 export function parseLineageSources(value: unknown): LineageSource[] {
   return parseSources(value) ?? [];
+}
+
+export function parseQuarantineRecords(value: unknown): QuarantineRecord[] {
+  if (!Array.isArray(value)) {
+    throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", "quarantine audit must be an array");
+  }
+  const records: QuarantineRecord[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", "quarantine audit entry must be an object");
+    }
+    const record: QuarantineRecord = {
+      artifactVersionId: reqString(item, "artifactVersionId", "quarantine"),
+      digest: reqString(item, "digest", "quarantine"),
+      reason: reqString(item, "reason", "quarantine"),
+      observedAt: reqString(item, "observedAt", "quarantine"),
+    };
+    const details = optRecord(item, "details");
+    if (details !== undefined) {
+      record.details = details;
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+export function parseRetentionRecord(value: unknown): RetentionRecord {
+  if (!isRecord(value)) {
+    throw new ArtifactError("ARTIFACT_SCHEMA_INVALID", "retention record is not an object");
+  }
+  const kind = reqString(value, "kind", "retention");
+  if (!isRegistrableKind(kind)) {
+    throw new ArtifactError("ARTIFACT_KIND_UNSUPPORTED", `unsupported kind ${kind}`);
+  }
+  const record: RetentionRecord = {
+    artifactVersionId: reqString(value, "artifactVersionId", "retention"),
+    digest: reqString(value, "digest", "retention"),
+    size: reqNumber(value, "size", "retention"),
+    kind,
+    summary: reqString(value, "summary", "retention"),
+    retainedAt: reqString(value, "retainedAt", "retention"),
+    blobRemoved: optBoolean(value, "blobRemoved") ?? false,
+  };
+  const policyId = optString(value, "policyId");
+  if (policyId !== undefined) {
+    record.policyId = policyId;
+  }
+  const reason = optString(value, "reason");
+  if (reason !== undefined) {
+    record.reason = reason;
+  }
+  return record;
 }

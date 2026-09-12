@@ -228,3 +228,52 @@ export function parseTestResultPassed(body: Uint8Array): boolean {
   const parsed = verifyTestResult(body);
   return (parsed as { passed: boolean }).passed;
 }
+
+const SUMMARY_MAX = 512;
+const SUMMARY_KEYS = ["title", "summary", "verdict", "passed", "objective", "command"] as const;
+
+/**
+ * Builds an auditable content summary that never includes original body bytes.
+ */
+export function summarizeRegistrableContent(input: {
+  kind: RegistrableKind;
+  hash: string;
+  size: number;
+  name?: string;
+  metadata?: Record<string, unknown>;
+  body?: Uint8Array;
+}): string {
+  const parts: string[] = [`kind=${input.kind}`, `digest=${input.hash}`, `size=${input.size}`];
+  if (input.name !== undefined) {
+    parts.push(`name=${input.name}`);
+  }
+  const base = input.metadata?.baseSha ?? input.metadata?.baseRef;
+  if (typeof base === "string" && base.length > 0) {
+    parts.push(`base=${base}`);
+  }
+  if (input.body !== undefined) {
+    try {
+      const verified = verifyKindContent({
+        kind: input.kind,
+        body: input.body,
+        ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+      });
+      if (verified.parsed !== null && typeof verified.parsed === "object") {
+        const parsed = verified.parsed as Record<string, unknown>;
+        for (const key of SUMMARY_KEYS) {
+          const value = parsed[key];
+          if (value === undefined || value === null) {
+            continue;
+          }
+          if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            parts.push(`${key}=${String(value)}`);
+          }
+        }
+      }
+    } catch {
+      parts.push("content=unreadable");
+    }
+  }
+  const text = parts.join("; ");
+  return text.length <= SUMMARY_MAX ? text : `${text.slice(0, SUMMARY_MAX - 1)}…`;
+}

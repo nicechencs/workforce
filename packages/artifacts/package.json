@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@workforce/domain": "workspace:*",
-    "@workforce/events": "workspace:*"
+    "@workforce/events": "workspace:*",
+    "@workforce/process": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
