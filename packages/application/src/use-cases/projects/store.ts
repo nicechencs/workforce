@@ -391,6 +391,14 @@ export class MemoryWorld {
     );
   }
 
+  leaseForRun(runId: string): ExecutionLeaseRecord | undefined {
+    return [...this.executionLeases.values()].find((lease) => lease.runId === runId);
+  }
+
+  schedulingRecordForRun(runId: string): SchedulingRecord | undefined {
+    return [...this.schedulingRecords.values()].find((record) => record.runId === runId);
+  }
+
   executionSnapshotForProject(projectId: string): ProjectExecutionSnapshotRecord | undefined {
     return [...this.executionSnapshots.values()].find(
       (snapshot) => snapshot.projectId === projectId,

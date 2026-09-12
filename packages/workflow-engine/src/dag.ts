@@ -1,4 +1,10 @@
-import { nodeById, type WorkflowGraph } from "./types.js";
+import {
+  isPrerequisiteWait,
+  nodeById,
+  type PrerequisiteWait,
+  type WorkflowEdgeDefinition,
+  type WorkflowGraph,
+} from "./types.js";
 
 export type DagValidation = { ok: true; order: string[] } | { ok: false; reason: string };
 
@@ -147,4 +153,53 @@ export function validateWorkflowGraph(graph: WorkflowGraph): DagValidation {
   }
 
   return { ok: true, order };
+}
+
+/**
+ * Ordinary Task→Task prerequisites that may enter public `dependsOn`.
+ * Condition/routing/failure/cancel edges stay on the Workflow graph.
+ */
+export function isTaskPrerequisiteEdge(
+  graph: WorkflowGraph,
+  edge: WorkflowEdgeDefinition,
+): boolean {
+  const from = nodeById(graph, edge.from);
+  const to = nodeById(graph, edge.to);
+  if (!from || !to || from.kind !== "task" || to.kind !== "task") {
+    return false;
+  }
+  if (edge.conditionValue !== undefined) {
+    return false;
+  }
+  return isPrerequisiteWait(edge.waitFor);
+}
+
+export function projectTaskPrerequisiteDependencies(
+  graph: WorkflowGraph,
+  nodeToTask: ReadonlyMap<string, string>,
+): Array<{
+  taskId: string;
+  dependsOn: Array<{ taskId: string; waitFor: PrerequisiteWait }>;
+}> {
+  const dependenciesByTask = new Map<
+    string,
+    Array<{ taskId: string; waitFor: PrerequisiteWait }>
+  >();
+  for (const edge of graph.edges) {
+    if (!isTaskPrerequisiteEdge(graph, edge)) {
+      continue;
+    }
+    const fromTask = nodeToTask.get(edge.from);
+    const toTask = nodeToTask.get(edge.to);
+    if (!fromTask || !toTask) {
+      continue;
+    }
+    const waitFor: PrerequisiteWait = edge.waitFor === "completed" ? "completed" : "outputs_ready";
+    const dependencies = dependenciesByTask.get(toTask) ?? [];
+    if (!dependencies.some((dependency) => dependency.taskId === fromTask)) {
+      dependencies.push({ taskId: fromTask, waitFor });
+    }
+    dependenciesByTask.set(toTask, dependencies);
+  }
+  return [...dependenciesByTask.entries()].map(([taskId, dependsOn]) => ({ taskId, dependsOn }));
 }
