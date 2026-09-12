@@ -763,7 +763,17 @@ describe("SqliteWorldSnapshot", () => {
       reservations,
       usageKeys: [],
       workflowVersions: [workflow.graph],
-      executionSnapshots: [],
+      executionSnapshots: [
+        {
+          id: "snp_snap",
+          projectId: ids.projectId,
+          workflowVersionId: "wfv_snap",
+          teamVersionId: "tmv_1",
+          contentHash: "sha256:snp",
+          policySnapshot: { policyVersion: 1 },
+          createdAt: now,
+        },
+      ],
     };
   }
 });

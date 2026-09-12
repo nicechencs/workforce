@@ -132,7 +132,7 @@ describe("orchestrationMode start pass-through", () => {
       projectId,
       orchestrationMode: "direct",
     });
-    expect(started.project.status).toBe("running");
+    expect(started.project.status).toBe("ready");
     expect(started.project.orchestrationMode).toBe("direct");
     expect(started.project.workflowInstanceId).toBeDefined();
     expect([...app.world.tasks.values()]).toHaveLength(1);

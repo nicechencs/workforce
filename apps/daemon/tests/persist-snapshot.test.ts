@@ -271,9 +271,24 @@ describe("composition world sidecar", () => {
       ],
     });
     try {
+      const snapshot = dumpWorld({
+        world: source,
+        operations: [],
+        artifactContents: [],
+        workspaces: [],
+      });
+      snapshot.workflowAuthoringScopes = [
+        {
+          workflowId: "wf_authoring",
+          organizationId: "org_authoring",
+          projectId: "prj_authoring",
+          createdAt: now,
+          createdBy: "usr_author",
+        },
+      ];
       await dualWriteSqlite(
         sqlite,
-        dumpWorld({ world: source, operations: [], artifactContents: [], workspaces: [] }),
+        snapshot,
         { eventIds: new Set(), operationIds: new Set() },
       );
       const reloaded = await loadComposition(dir, sqlite);

@@ -501,7 +501,16 @@ describe("team draft persistence", () => {
         idempotencyKey: "idem_3",
         operationId: "op_3",
       })),
-    ).resolves.toEqual({ ok: true, published: true, versionId: "tmv_1" });
+    ).resolves.toEqual({
+      ok: true,
+      published: true,
+      versionId: "tmv_1",
+      team: expect.objectContaining({
+        id: "tm_1",
+        status: "published",
+        versionId: "tmv_1",
+      }),
+    });
   });
 });
 
@@ -571,6 +580,34 @@ function memoryTeamClient(store: Map<string, unknown>) {
     },
     publishTeamVersion: async () => {
       client.calls.push("publishTeamVersion");
+      const published = client.publishResult as
+        | {
+            id?: string;
+            status?: string;
+            immutable?: boolean;
+            version?: string;
+          }
+        | undefined;
+      if (published?.status === "published") {
+        const current = (store.get("tm_1") as Record<string, unknown> | undefined) ?? {};
+        const version = {
+          id: published.id ?? "tmv_1",
+          teamId: "tm_1",
+          version: published.version ?? "0.1.0",
+          status: "published",
+          immutable: published.immutable === true,
+          members: Array.isArray(current.members) ? current.members : [],
+        };
+        store.set("tm_1", {
+          ...current,
+          id: "tm_1",
+          status: "published",
+          version: version.version,
+          versionId: version.id,
+          activeVersionId: version.id,
+          versions: [version],
+        });
+      }
       return client.publishResult;
     },
     getTeam: async (id: string) => {

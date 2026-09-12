@@ -34,7 +34,7 @@ describe("UNTESTED_CAPTURED_PROCESS_PLATFORMS", () => {
 });
 
 describe("UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS", () => {
-  it("documents Windows captured processes as fail-closed unsupported", () => {
-    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32"]);
+  it("documents that captured processes have no fail-closed platform denylist", () => {
+    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual([]);
   });
 });

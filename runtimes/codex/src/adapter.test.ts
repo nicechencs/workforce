@@ -305,7 +305,7 @@ describe("CodexRuntimeAdapter", () => {
     expect(processPort.spawned).toHaveLength(0);
   });
 
-  it("fails closed on win32 captured Process even when inputs are present", async () => {
+  it("starts on win32 captured Process when inputs are present", async () => {
     const processPort = new FakeProcessController(() => ({ chunks: [] }));
     const adapter = new CodexRuntimeAdapter({
       detect: () => detected(),
@@ -313,15 +313,13 @@ describe("CodexRuntimeAdapter", () => {
       resolveStart: () => context(),
       platform: "win32",
     });
-    await expect(adapter.start(startRequest())).rejects.toMatchObject({
-      code: "unsupported_capability",
-      message: expect.stringContaining("win32"),
-    });
-    expect(processPort.spawned).toHaveLength(0);
+    const handle = await adapter.start(startRequest());
+    expect(handle.adapterId).toBe(CODEX_ADAPTER_ID);
+    expect(processPort.spawned).toHaveLength(1);
     const result = await adapter.validate({ adapterId: CODEX_ADAPTER_ID });
-    expect(result.valid).toBe(false);
+    expect(result.valid).toBe(true);
     expect(result.checks).toContainEqual(
-      expect.objectContaining({ name: "captured_process", ok: false }),
+      expect.objectContaining({ name: "captured_process", ok: true }),
     );
   });
 

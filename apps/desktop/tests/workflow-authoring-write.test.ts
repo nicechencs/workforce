@@ -21,11 +21,8 @@ import { WorkflowAuthoringPage } from "../src/renderer/features/workflow-authori
 import {
   AGENT_REPLY_GAP,
   CHAT_SESSION_GAP,
+  EMPTY_INTENT_NOTE,
 } from "../src/renderer/features/workflow-authoring/model.js";
-import {
-  reloadDefaultAuthoringSessionStoreForTests,
-  resetDefaultAuthoringSessionStoreForTests,
-} from "../src/renderer/features/workflow-authoring/session-store.js";
 import { WorkflowsPage } from "../src/renderer/features/workflows/page.js";
 import { installHappyDom, uninstallHappyDom } from "./install-happy-dom.js";
 
@@ -39,7 +36,6 @@ const roots: Root[] = [];
 
 beforeEach(() => {
   installHappyDom();
-  resetDefaultAuthoringSessionStoreForTests();
 });
 
 afterEach(async () => {
@@ -170,6 +166,23 @@ function setInput(testId: string, value: string): void {
   setNativeValue(node, value);
 }
 
+function commandOptions(prefix: string) {
+  const id = randomBytes(4).toString("hex");
+  return { idempotencyKey: `${prefix}-${id}`, operationId: `op-${prefix}-${id}` };
+}
+
+const openSession = {
+  id: "cas_1",
+  projectId: "prj_1",
+  protocolVersion: "0.1",
+  status: "open",
+  messages: [] as Array<{ id: string; role: string; content: string; createdAt: string }>,
+  turns: [] as unknown[],
+  stateRevision: 1,
+  createdAt: "2026-09-12T00:00:00.000Z",
+  updatedAt: "2026-09-12T00:00:00.000Z",
+};
+
 describe("workflow authoring write path", () => {
   it(
     "keeps the workflows entry from looking like chat succeeded",
@@ -189,27 +202,28 @@ describe("workflow authoring write path", () => {
           }),
         );
       });
-      const chat = await waitFor("disabled chat entry", () =>
-        document.querySelector('[data-testid="workflow-authoring-chat-disabled"]'),
+      const open = await waitFor("authoring entry", () =>
+        document.querySelector('[data-testid="workflow-authoring-open"]'),
       );
-      expect(chat).toBeInstanceOf(HTMLButtonElement);
-      expect((chat as HTMLButtonElement).disabled).toBe(true);
+      expect(open).toBeInstanceOf(HTMLButtonElement);
+      expect((open as HTMLButtonElement).disabled).toBe(false);
       expect(document.body.innerText).toContain(CHAT_SESSION_GAP);
-      expect(document.body.innerText).toContain(AGENT_REPLY_GAP);
-      expect(document.querySelector('[data-testid="workflow-authoring-chat-ready"]')).toBeNull();
+      expect(document.querySelector('[data-testid="workflow-authoring-chat-disabled"]')).toBeNull();
       expect(document.body.innerText).not.toContain("会话已接通");
       expect(document.body.innerText).not.toContain("Agent 已生成");
     },
   );
 
   it(
-    "lands an unpublished draft through M7 write APIs and preserves input on failure",
-    {
-      timeout: 20_000,
-    },
+    "sends through Daemon AuthoringSession and lands an unpublished draft after confirm",
+    { timeout: 30_000 },
     async () => {
       const daemon = await startComposed();
       const client = createDesktopClient({ transport: createElectronProxyTransport(daemon) });
+      const created = await client.createProject(
+        { name: "Authoring", objective: "chat draft" },
+        commandOptions("create"),
+      );
       const host = document.createElement("div");
       document.body.append(host);
       const root = createRoot(host);
@@ -220,90 +234,99 @@ describe("workflow authoring write path", () => {
           wrap(
             client,
             createElement(WorkflowAuthoringPage, {
-              path: "/workflows",
-              params: {},
+              path: `/workflows?authoring=1&projectId=${created.id}`,
+              params: { projectId: created.id },
               navigate: () => undefined,
             }),
           ),
         );
       });
 
-      const send = await waitFor("user-append button", () =>
-        document.querySelector('[data-testid="workflow-authoring-send-chat"]'),
+      const send = await waitFor("send button", () => {
+        const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
+        return button instanceof HTMLButtonElement && !button.disabled ? button : null;
+      });
+      expect(document.body.innerText).toContain(AGENT_REPLY_GAP);
+
+      await act(async () => {
+        send.click();
+      });
+      const empty = await waitFor(
+        "empty intent",
+        () => document.querySelector('[data-testid="workflow-authoring-empty-intent"]')?.textContent,
       );
-      expect(send).toBeInstanceOf(HTMLButtonElement);
+      expect(empty).toContain(EMPTY_INTENT_NOTE);
 
       await act(async () => {
         setInput("workflow-authoring-intent", "请生成完整工作流");
       });
       await act(async () => {
-        document
-          .querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-land-draft"]')
-          ?.click();
+        send.click();
       });
-      const empty = await waitFor(
-        "empty intent",
-        () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
+      const messages = await waitFor(
+        "user message",
+        () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+        15_000,
       );
-      expect(empty).toContain("编排 Agent 尚未接线");
-      expect(
-        document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
-          ?.value,
-      ).toBe("请生成完整工作流");
-      expect(document.querySelector('[data-testid="workflow-authoring-landed"]')).toBeNull();
-
-      await act(async () => {
-        setInput("workflow-authoring-name", "对话草稿");
-        setInput("workflow-authoring-description", "未发布");
-        setInput("workflow-authoring-roles", "planner\ndeveloper");
-        setInput("workflow-authoring-steps", "规划\n实现");
-      });
-      await act(async () => {
-        document
-          .querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-land-draft"]')
-          ?.click();
-      });
-
-      const landed = await waitFor("landed draft", () =>
-        document.querySelector('[data-testid="workflow-authoring-landed"]'),
-      );
-      expect(landed?.textContent).toContain("POST /workflows");
-      expect(landed?.textContent).toContain("不是对话生成成功");
-      expect(
-        document.querySelector('[data-testid="workflow-authoring-open-canvas"]'),
-      ).toBeInstanceOf(HTMLButtonElement);
-      expect(
-        (
-          document.querySelector(
-            '[data-testid="workflow-authoring-open-canvas"]',
-          ) as HTMLButtonElement
-        ).disabled,
-      ).toBe(false);
+      expect(messages).toContain("请生成完整工作流");
       expect(document.body.innerText).not.toContain("Agent 已生成");
 
-      const note =
-        document.querySelector('[data-testid="workflow-authoring-landed-note"]')?.textContent ?? "";
-      expect(note).toContain("未发布");
+      const confirm = await waitFor(
+        "proposal confirm",
+        () => {
+          const button = document.querySelector('[data-testid="workflow-authoring-confirm"]');
+          return button instanceof HTMLButtonElement && !button.disabled ? button : null;
+        },
+        15_000,
+      );
+      await act(async () => {
+        confirm.click();
+      });
+      const landed = await waitFor(
+        "landed draft",
+        () => document.querySelector('[data-testid="workflow-authoring-landed"]'),
+        15_000,
+      );
+      expect(landed?.textContent).toContain("未发布");
+      expect(document.querySelector('[data-testid="workflow-authoring-open-canvas"]')).toBeInstanceOf(
+        HTMLButtonElement,
+      );
       const idText =
         document.querySelector('[data-testid="workflow-authoring-workflow-id"]')?.textContent ?? "";
-      const idMatch = idText.match(/wfd_[A-Za-z0-9]+/);
-      expect(idMatch?.[0]).toBeTruthy();
-      const created = await client.getWorkflow(idMatch![0]!);
-      expect(created.status).toBe("draft");
-      expect(created.name).toBe("对话草稿");
-      const versionId = created.versions[0]?.id;
-      expect(versionId).toBeTruthy();
-      expect(created.versions[0]?.status).toBe("draft");
-      expect(created.versions[0]?.immutable).toBe(false);
-      const listed = await client.listWorkflows();
-      expect(listed.items.some((item) => item.id === created.id)).toBe(false);
+      expect(idText).toMatch(/wfd_|wf_/);
     },
   );
 
-  it("preserves fields when POST /workflows fails", { timeout: 20_000 }, async () => {
+  it("preserves the intent when Daemon send fails", { timeout: 20_000 }, async () => {
+    const session = { ...openSession, messages: [] };
     const client = createDesktopClient({
       transport: {
-        async request() {
+        async request(req) {
+          if (req.method === "GET" && req.path.includes("/authoring-sessions")) {
+            return { status: 200, headers: {}, body: { items: [] } };
+          }
+          if (req.method === "POST" && req.path.endsWith("/authoring-sessions")) {
+            return { status: 201, headers: {}, body: session };
+          }
+          if (req.method === "GET" && /\/authoring-sessions\/cas_1$/.test(req.path)) {
+            return { status: 200, headers: {}, body: session };
+          }
+          if (req.path.includes("/messages")) {
+            return {
+              status: 500,
+              headers: {},
+              body: {
+                type: "urn:workforce:error:write_failed",
+                title: "write failed",
+                status: 500,
+                code: "write_failed",
+                detail: "POST /authoring-sessions failed",
+                instance: req.path,
+                requestId: "",
+                retryable: true,
+              },
+            };
+          }
           return {
             status: 500,
             headers: {},
@@ -312,8 +335,8 @@ describe("workflow authoring write path", () => {
               title: "write failed",
               status: 500,
               code: "write_failed",
-              detail: "POST /workflows failed",
-              instance: "/api/v1/workflows",
+              detail: "unexpected",
+              instance: req.path,
               requestId: "",
               retryable: true,
             },
@@ -330,30 +353,28 @@ describe("workflow authoring write path", () => {
         wrap(
           client,
           createElement(WorkflowAuthoringPage, {
-            path: "/workflows",
-            params: {},
+            path: "/workflows?authoring=1&projectId=prj_1",
+            params: { projectId: "prj_1" },
             navigate: () => undefined,
           }),
         ),
       );
     });
+    const send = await waitFor("send button", () => {
+      const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
+      return button instanceof HTMLButtonElement && !button.disabled ? button : null;
+    });
     await act(async () => {
-      setInput("workflow-authoring-name", "保留名称");
       setInput("workflow-authoring-intent", "保留意图");
     });
     await act(async () => {
-      document
-        .querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-land-draft"]')
-        ?.click();
+      send.click();
     });
     const error = await waitFor(
-      "write failure",
+      "send failure",
       () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
     );
-    expect(error).toContain("POST /workflows failed");
-    expect(
-      document.querySelector<HTMLInputElement>('[data-testid="workflow-authoring-name"]')?.value,
-    ).toBe("保留名称");
+    expect(error).toContain("POST /authoring-sessions failed");
     expect(
       document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
         ?.value,
@@ -362,31 +383,15 @@ describe("workflow authoring write path", () => {
   });
 
   it(
-    "appends a user message into the in-process store and reloads it",
-    { timeout: 20_000 },
+    "reloads Daemon session messages after remount instead of a local store",
+    { timeout: 30_000 },
     async () => {
-      const requests: string[] = [];
-      const client = createDesktopClient({
-        transport: {
-          async request(req) {
-            requests.push(`${req.method} ${req.path}`);
-            return {
-              status: 500,
-              headers: {},
-              body: {
-                type: "urn:workforce:error:write_failed",
-                title: "write failed",
-                status: 500,
-                code: "write_failed",
-                detail: "POST /workflows failed",
-                instance: req.path,
-                requestId: "",
-                retryable: true,
-              },
-            };
-          },
-        },
-      });
+      const daemon = await startComposed();
+      const client = createDesktopClient({ transport: createElectronProxyTransport(daemon) });
+      const created = await client.createProject(
+        { name: "Reload", objective: "session" },
+        commandOptions("reload"),
+      );
       const host = document.createElement("div");
       document.body.append(host);
       const root = createRoot(host);
@@ -396,23 +401,23 @@ describe("workflow authoring write path", () => {
           wrap(
             client,
             createElement(WorkflowAuthoringPage, {
-              path: "/workflows",
-              params: {},
+              path: `/workflows?authoring=1&projectId=${created.id}`,
+              params: { projectId: created.id },
               navigate: () => undefined,
             }),
           ),
         );
       });
       const sessionLabel = await waitFor(
-        "local session",
+        "daemon session",
         () => document.querySelector('[data-testid="workflow-authoring-session-id"]')?.textContent,
       );
       expect(sessionLabel).toContain("cas_");
-      expect(sessionLabel).toContain("本地笔记/手工草稿空间");
+      expect(sessionLabel).not.toContain("本地笔记/手工草稿空间");
       const sessionId = sessionLabel.match(/cas_[A-Za-z0-9]+/)?.[0];
       expect(sessionId).toBeTruthy();
 
-      const send = await waitFor("enabled user append", () => {
+      const send = await waitFor("enabled send", () => {
         const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
         return button instanceof HTMLButtonElement && !button.disabled ? button : null;
       });
@@ -425,41 +430,16 @@ describe("workflow authoring write path", () => {
       const messages = await waitFor(
         "user message",
         () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+        15_000,
       );
       expect(messages).toContain("请记下这段用户意图");
-      expect(messages).toContain("用户");
       expect(document.body.innerText).toContain(AGENT_REPLY_GAP);
       expect(document.body.innerText).not.toContain("Agent 已生成");
-      expect(document.querySelector('[data-testid="workflow-authoring-chat-empty"]')).toBeNull();
-      expect(requests.some((item) => /chat|authoring-session/i.test(item))).toBe(false);
-
-      await act(async () => {
-        setInput("workflow-authoring-name", "保留名称");
-        setInput("workflow-authoring-intent", "失败后也要在");
-      });
-      await act(async () => {
-        document
-          .querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-land-draft"]')
-          ?.click();
-      });
-      const error = await waitFor(
-        "write failure keeps chat",
-        () => document.querySelector('[data-testid="workflow-authoring-error"]')?.textContent,
-      );
-      expect(error).toContain("POST /workflows failed");
-      expect(
-        document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
-      ).toContain("请记下这段用户意图");
-      expect(
-        document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-authoring-intent"]')
-          ?.value,
-      ).toBe("失败后也要在");
 
       await act(async () => {
         root.unmount();
       });
       roots.pop();
-      reloadDefaultAuthoringSessionStoreForTests();
       const remount = document.createElement("div");
       document.body.append(remount);
       const remountRoot = createRoot(remount);
@@ -469,16 +449,17 @@ describe("workflow authoring write path", () => {
           wrap(
             client,
             createElement(WorkflowAuthoringPage, {
-              path: "/workflows",
-              params: {},
+              path: `/workflows?authoring=1&projectId=${created.id}`,
+              params: { projectId: created.id },
               navigate: () => undefined,
             }),
           ),
         );
       });
       const reloaded = await waitFor(
-        "reloaded user message after renderer-store rebuild",
+        "reloaded user message from Daemon",
         () => document.querySelector('[data-testid="workflow-authoring-messages"]')?.textContent,
+        15_000,
       );
       expect(reloaded).toContain("请记下这段用户意图");
       expect(

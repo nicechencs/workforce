@@ -82,6 +82,7 @@ describe("ArtifactEvaluator", () => {
         "artifactVersionId",
         "createdAt",
         "criterionId",
+        "digest",
         "evidenceRefs",
         "id",
         "method",
@@ -201,14 +202,16 @@ describe("ArtifactEvaluator", () => {
       },
     };
     const processPort: ProcessPort = {
-      async spawn(req) {
+      async spawnCaptured(req) {
         spawned.push(req.argv);
-        return { pid: 4242, startIdentity: "fake:4242" };
+        return {
+          handle: { pid: 4242, startIdentity: "fake:4242" },
+          output: (async function* () {})(),
+          async wait() {
+            return { exitCode: 0, signal: null };
+          },
+        };
       },
-      async inspect(handle) {
-        return { alive: false, startIdentity: handle.startIdentity };
-      },
-      async cancel() {},
     };
     const withPorts = new ArtifactEvaluator({
       store,

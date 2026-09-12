@@ -52,8 +52,10 @@ async function inTx<T>(db: DatabaseSync, fn: (tx: StoreTx) => Promise<T>): Promi
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    if (db.isTransaction) {
+    try {
       db.exec("ROLLBACK");
+    } catch {
+      // Node 22 DatabaseSync may not expose isTransaction; ROLLBACK is idle-safe.
     }
     throw error;
   }

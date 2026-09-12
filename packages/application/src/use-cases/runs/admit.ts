@@ -294,7 +294,12 @@ async function attachIfNeeded(
   const project = requireProject(ctx, run.projectId);
   const snapshot = run.executionSnapshot;
   const lease = ctx.world.leaseForRun(run.id);
-  const placement = snapshot?.placementSnapshot;
+  const placement =
+    snapshot?.placementSnapshot ?? ctx.world.schedulingRecordForRun(run.id)?.placementSnapshot;
+  let nodeSessionId = placement?.nodeSessionId;
+  if (lease && nodeSessionId === undefined && ctx.host.ensureNodeSession) {
+    nodeSessionId = (await ctx.host.ensureNodeSession()).nodeSessionId;
+  }
   const handle = await ctx.host.start({
     operationId: input.operationId,
     idempotencyKey: input.idempotencyKey,
@@ -313,12 +318,12 @@ async function attachIfNeeded(
     runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
     snapshotRef: input.snapshotRef ?? "mock:success",
     orchestrationMode: run.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE,
-    ...(lease
+    ...(lease && nodeSessionId
       ? {
           executionLease: {
             id: lease.id,
             fencingToken: lease.fencingToken,
-            nodeSessionId: snapshot?.placementSnapshot.nodeSessionId ?? lease.id,
+            nodeSessionId,
             runId: run.id,
           },
         }

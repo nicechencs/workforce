@@ -22,6 +22,7 @@ import {
   isConstraintError,
   planWorldProjectionRepair,
   type RuntimeHandleRecord,
+  type WorkflowAuthoringScopeRecord,
   type WorldEntitySnapshot,
   WorkforceSqlite,
 } from "@workforce/database";
@@ -95,6 +96,7 @@ export interface PersistedWorld {
   schedulingRecords?: SchedulingRecord[];
   /** Optional for pre-T20-B sidecars; SQLite becomes authority once populated. */
   workflowDrafts?: WorkflowDraftDto[];
+  workflowAuthoringScopes?: WorkflowAuthoringScopeRecord[];
   teamDrafts?: TeamDraftDto[];
   authoringChangeSets?: AuthoringChangeSetDto[];
   workspaces: WorkspaceDto[];
@@ -514,6 +516,7 @@ export function loadSnapshot(stateDir: string): CompositionSnapshot | undefined 
       schedulingRecords: world.schedulingRecords ?? [],
       workflowVersions: world.workflowVersions ?? [],
       workflowDrafts: world.workflowDrafts ?? [],
+      workflowAuthoringScopes: world.workflowAuthoringScopes ?? [],
       teamDrafts: world.teamDrafts ?? [],
       authoringChangeSets: world.authoringChangeSets ?? [],
     },
@@ -546,6 +549,7 @@ function emptyWorld(): PersistedWorld {
     executionLeases: [],
     schedulingRecords: [],
     workflowDrafts: [],
+    workflowAuthoringScopes: [],
     teamDrafts: [],
     authoringChangeSets: [],
     workspaces: [],
@@ -668,6 +672,7 @@ export async function dualWriteSqlite(
         usageKeys: snapshot.usageKeys,
         executionSnapshots: snapshot.executionSnapshots ?? [],
         workflowDrafts: snapshot.workflowDrafts ?? [],
+        workflowAuthoringScopes: snapshot.workflowAuthoringScopes ?? [],
         teamDrafts: snapshot.teamDrafts ?? [],
         authoringChangeSets: snapshot.authoringChangeSets ?? [],
         idsSeq: snapshot.idsSeq,
@@ -801,6 +806,7 @@ function sidecarEntities(world: PersistedWorld): WorldEntitySnapshot {
     usageKeys: world.usageKeys,
     executionSnapshots: world.executionSnapshots ?? [],
     workflowDrafts: world.workflowDrafts ?? [],
+    workflowAuthoringScopes: world.workflowAuthoringScopes ?? [],
     teamDrafts: world.teamDrafts ?? [],
     authoringChangeSets: world.authoringChangeSets ?? [],
   };
@@ -831,6 +837,7 @@ function applyEntitySnapshot(world: PersistedWorld, snapshot: WorldEntitySnapsho
     executionSnapshots: snapshot.executionSnapshots,
     workflowVersions: snapshot.workflowVersions ?? [],
     workflowDrafts: snapshot.workflowDrafts ?? [],
+    workflowAuthoringScopes: snapshot.workflowAuthoringScopes ?? [],
     teamDrafts: snapshot.teamDrafts ?? [],
     authoringChangeSets: snapshot.authoringChangeSets ?? [],
   };
@@ -887,6 +894,7 @@ function composeAuthoritativeWorld(input: {
     executionLeases: input.entities.executionLeases ?? [],
     schedulingRecords: sidecar.schedulingRecords ?? [],
     workflowDrafts: input.entities.workflowDrafts ?? [],
+    workflowAuthoringScopes: input.entities.workflowAuthoringScopes ?? [],
     teamDrafts: input.entities.teamDrafts ?? [],
     authoringChangeSets: input.entities.authoringChangeSets ?? [],
     workspaces: sidecar.workspaces,

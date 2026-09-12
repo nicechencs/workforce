@@ -20,6 +20,10 @@ import {
   MIGRATION_008_SQL,
   MIGRATION_009_SQL,
   MIGRATION_010_SQL,
+  MIGRATION_011_SQL,
+  MIGRATION_012_SQL,
+  MIGRATION_013_SQL,
+  MIGRATION_014_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -62,6 +66,10 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("008_execution_axis_migration_audit")).toBe(true);
       expect(applied.has("009_workflow_authoring_scopes")).toBe(true);
       expect(applied.has("010_authoring_chat_metadata")).toBe(true);
+      expect(applied.has("011_execution_axes_backfill")).toBe(true);
+      expect(applied.has("012_execution_axes_switch")).toBe(true);
+      expect(applied.has("013_execution_axes_contract")).toBe(true);
+      expect(applied.has("014_projection_reconciliation")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -96,6 +104,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -148,6 +160,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -188,6 +204,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -238,6 +258,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
 
       for (const table of [
@@ -374,6 +398,10 @@ describe("WorkforceSqlite", () => {
       expect(migrate(db.connection)).toEqual([
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
       expect(db.workflowDrafts.get(draft.id)).toEqual(draft);
@@ -420,6 +448,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       for (const table of [
         "catalog_workflows",
@@ -461,6 +493,10 @@ describe("WorkforceSqlite", () => {
         "008_execution_axis_migration_audit",
         "009_workflow_authoring_scopes",
         "010_authoring_chat_metadata",
+        "011_execution_axes_backfill",
+        "012_execution_axes_switch",
+        "013_execution_axes_contract",
+        "014_projection_reconciliation",
       ]);
       expect(appliedMigrations(db.connection).get("007_runtime_profile_transport_expand")).toBe(
         checksumSql(MIGRATION_007_SQL),
@@ -473,6 +509,18 @@ describe("WorkforceSqlite", () => {
       );
       expect(appliedMigrations(db.connection).get("010_authoring_chat_metadata")).toBe(
         checksumSql(MIGRATION_010_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("011_execution_axes_backfill")).toBe(
+        checksumSql(MIGRATION_011_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("012_execution_axes_switch")).toBe(
+        checksumSql(MIGRATION_012_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("013_execution_axes_contract")).toBe(
+        checksumSql(MIGRATION_013_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("014_projection_reconciliation")).toBe(
+        checksumSql(MIGRATION_014_SQL),
       );
 
       const transportColumn = (

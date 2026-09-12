@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { WorkforceSqlite } from "./database.js";
 import type { ExecutionAxisMigrationEvidence } from "./execution-axis-migration.js";
-import { appliedMigrations, checksumSql } from "./migrate.js";
-import { MIGRATION_008_SQL } from "./schema.js";
+import { appliedMigrations, checksumSql, migrate } from "./migrate.js";
+import { MIGRATIONS, MIGRATION_008_SQL, SCHEMA_MIGRATIONS_DDL } from "./schema.js";
 
 describe("execution-axis migration audit", () => {
   const dirs: string[] = [];
@@ -63,8 +63,9 @@ describe("execution-axis migration audit", () => {
   });
 
   it("quarantines a partial persisted axis and never silently promotes prior quarantine", () => {
-    const db = openDb();
-    insertRun(db, "run_partial", { orchestrationMode: "direct" });
+    const db = openContractedAfter((opened) =>
+      insertRun(opened, "run_partial", { orchestrationMode: "direct" }),
+    );
     const evidence: ExecutionAxisMigrationEvidence = {
       runId: "run_partial",
       provenance: { source: "operator", reference: "ticket-42" },
@@ -197,11 +198,10 @@ describe("execution-axis migration audit", () => {
   });
 
   it("does not copy malformed database axis values into the audit ledger", () => {
-    const db = openDb();
-    insertRun(db, "run_malformed_database");
-    const secret = "database-secret-must-not-be-copied";
-    try {
-      db.connection
+    const db = openContractedAfter((opened) => {
+      insertRun(opened, "run_malformed_database");
+      const secret = "database-secret-must-not-be-copied";
+      opened.connection
         .prepare(
           `UPDATE runs
               SET orchestration_mode = ?, transport = ?, execution_snapshot_id = ?, placement_snapshot_json = ?
@@ -214,7 +214,9 @@ describe("execution-axis migration audit", () => {
           JSON.stringify({ token: secret, sidecar: { secret } }),
           "run_malformed_database",
         );
-
+    });
+    const secret = "database-secret-must-not-be-copied";
+    try {
       const [item] = db.executionAxisMigration.audit({ now });
       expect(item?.classification).toBe("quarantined");
       expect(JSON.stringify(item?.source)).not.toContain(secret);
@@ -228,7 +230,26 @@ describe("execution-axis migration audit", () => {
   function openDb() {
     const dir = mkdtempSync(join(tmpdir(), "wf-axis-audit-"));
     dirs.push(dir);
-    return WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    // 008 audit tests mutate historical nullable axes. Apply 001–010 first so
+    // 013's insert/update triggers are not yet present; unresolved rows stay
+    // readable after 011–014 because those triggers do not rewrite existing rows.
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+    const stop = MIGRATIONS.findIndex((item) => item.version === "010_authoring_chat_metadata");
+    for (const migration of MIGRATIONS.slice(0, stop + 1)) {
+      db.connection.exec(migration.sql);
+      db.connection
+        .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+        .run(migration.version, checksumSql(migration.sql), now);
+    }
+    return db;
+  }
+
+  function openContractedAfter(seed: (db: WorkforceSqlite) => void): WorkforceSqlite {
+    const db = openDb();
+    seed(db);
+    migrate(db.connection, now);
+    return db;
   }
 });
 

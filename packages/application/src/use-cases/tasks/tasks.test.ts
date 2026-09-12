@@ -97,13 +97,16 @@ describe("task retry", () => {
     }
     const started = await app.startRun({ operationId: "op_r", taskId: task.id });
     app.recordRunFailed(started.run.id);
+    const afterFailure = app.world.tasks.get(task.id);
+    expect(afterFailure?.attempt).toBe(2);
+    expect(afterFailure?.status).toBe("ready");
     const waiting = await app.retryTask({
       operationId: "op_retry",
       idempotencyKey: "retry",
       taskId: task.id,
       capacityAvailable: false,
     });
-    expect(waiting.attempt).toBe(1);
-    expect(waiting.status).toBe("running");
+    expect(waiting.attempt).toBe(afterFailure?.attempt);
+    expect(waiting.status).toBe("ready");
   });
 });

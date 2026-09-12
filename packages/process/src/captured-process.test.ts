@@ -378,19 +378,12 @@ describe("captured process platform support", () => {
     });
   });
 
-  it("fails closed before spawn on Windows", () => {
-    expect(() => assertCapturedProcessSupported("win32")).toThrowError(
-      expect.objectContaining({
-        name: "ProcessControllerError",
-        code: "unsupported_capability",
-        capability: "process.capture",
-        platform: "win32",
-      }),
-    );
+  it("does not fail closed before spawn on Windows", () => {
+    expect(() => assertCapturedProcessSupported("win32")).not.toThrow();
   });
 
-  it("records Windows as unsupported and macOS as untested", () => {
-    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["win32"]);
+  it("records no unsupported captured platforms and macOS as untested", () => {
+    expect(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS).toEqual([]);
     expect(UNTESTED_CAPTURED_PROCESS_PLATFORMS).toEqual(["darwin"]);
   });
 });

@@ -45,9 +45,19 @@ describe("project execution snapshot", () => {
       .prepare(
         `INSERT INTO workflow_versions (id, workflow_id, version, definition_json, content_hash,
            created_at)
-         VALUES ('wfv_1', 'wf_1', 1, '{}', 'sha256:w', ?)`,
+         VALUES ('wfv_1', 'wf_1', 1, ?, 'sha256:w', ?)`,
       )
-      .run(now);
+      .run(
+        JSON.stringify({
+          id: "wfv_1",
+          workflowId: "wf_1",
+          version: 1,
+          entryNodeIds: ["n1"],
+          nodes: [{ id: "n1", kind: "task", role: "developer" }],
+          edges: [],
+        }),
+        now,
+      );
     db.connection
       .prepare(
         `INSERT INTO team_versions (id, team_id, version, definition_json, content_hash, created_at)
