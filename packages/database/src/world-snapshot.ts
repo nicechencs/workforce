@@ -4,6 +4,7 @@ import type {
   ApprovalRecord,
   ArtifactRecord,
   BudgetRecord,
+  ExecutionLeaseRecord,
   NodeInstanceRecord,
   ProjectExecutionSnapshotRecord,
   ProjectRecord,
@@ -67,6 +68,7 @@ export interface WorldEntitySnapshot {
   approvals: ApprovalRecord[];
   artifacts: ArtifactRecord[];
   runs: AppRunRecord[];
+  executionLeases?: ExecutionLeaseRecord[];
   budgets: BudgetRecord[];
   reservations: ReservationRecord[];
   usageKeys: string[];
@@ -125,6 +127,7 @@ export class SqliteWorldSnapshot {
       approvals: this.approvals.listAll(),
       artifacts: this.artifacts.listAll(),
       runs: loadAppRuns(this.db),
+      executionLeases: loadExecutionLeases(this.db),
       budgets: this.budgets.listAll(),
       reservations: this.reservations.listActive(),
       usageKeys: this.usage.listIdempotencyKeys(),
@@ -206,6 +209,9 @@ export class SqliteWorldSnapshot {
     }
     for (const run of snapshot.runs) {
       saveAppRun(tx, this.runs, this.db, run);
+    }
+    for (const lease of snapshot.executionLeases ?? []) {
+      saveExecutionLease(tx, lease);
     }
 
     // Authoring authority is established only after Project rows are present,
@@ -624,5 +630,59 @@ function validateExecutionSnapshot(value: unknown, runId: string): RunExecutionS
     return parseRunExecutionSnapshot(value);
   } catch {
     throw new PersistenceError("constraint", `run ${runId} has an invalid execution snapshot`);
+  }
+}
+
+function loadExecutionLeases(db: DatabaseSync): ExecutionLeaseRecord[] {
+  return db
+    .prepare(
+      `SELECT id, run_id, node_id, fencing_token, acquired_at, renewed_at, expires_at
+         FROM execution_leases
+         ORDER BY acquired_at ASC, id ASC`,
+    )
+    .all()
+    .map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        id: requiredText(cell(record, "id"), "id"),
+        runId: requiredText(cell(record, "run_id"), "run_id"),
+        nodeId: requiredText(cell(record, "node_id"), "node_id"),
+        fencingToken: requiredInt(cell(record, "fencing_token"), "fencing_token"),
+        acquiredAt: requiredText(cell(record, "acquired_at"), "acquired_at"),
+        renewedAt: requiredText(cell(record, "renewed_at"), "renewed_at"),
+        expiresAt: requiredText(cell(record, "expires_at"), "expires_at"),
+      };
+    });
+}
+
+function saveExecutionLease(tx: Tx, lease: ExecutionLeaseRecord): void {
+  const db = sqliteDbOf(tx);
+  const existing = db
+    .prepare(`SELECT id, fencing_token FROM execution_leases WHERE run_id = ? OR id = ?`)
+    .get(lease.runId, lease.id) as Record<string, unknown> | undefined;
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO execution_leases (
+         id, run_id, node_id, fencing_token, acquired_at, renewed_at, expires_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      lease.id,
+      lease.runId,
+      lease.nodeId,
+      lease.fencingToken,
+      lease.acquiredAt,
+      lease.renewedAt,
+      lease.expiresAt,
+    );
+    return;
+  }
+  if (
+    requiredText(cell(existing, "id"), "id") !== lease.id ||
+    requiredInt(cell(existing, "fencing_token"), "fencing_token") !== lease.fencingToken
+  ) {
+    throw new PersistenceError(
+      "conflict",
+      `execution lease for run ${lease.runId} is immutable and cannot be replaced`,
+    );
   }
 }

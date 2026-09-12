@@ -3,10 +3,12 @@ import type { ReceiptScope } from "@workforce/protocol";
 import type { RuntimeHostStore } from "./store.js";
 import type {
   HostRuntimeEvent,
+  StoredExecutionLease,
   StoredHandle,
   StoredNodeSession,
   StoredOperation,
 } from "./types.js";
+import { normalizeStoredNodeSession } from "./types.js";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -32,6 +34,8 @@ export class MemoryRuntimeHostStore implements RuntimeHostStore {
   private readonly handles = new Map<string, StoredHandle>();
   private readonly handlesByRunId = new Map<string, string>();
   private readonly events = new Map<string, HostRuntimeEvent[]>();
+  private readonly leases = new Map<string, StoredExecutionLease>();
+  private readonly leasesByRunId = new Map<string, string>();
   private session: StoredNodeSession | undefined;
 
   async getOperation(operationId: string): Promise<StoredOperation | undefined> {
@@ -101,6 +105,29 @@ export class MemoryRuntimeHostStore implements RuntimeHostStore {
   }
 
   async putNodeSession(session: StoredNodeSession): Promise<void> {
-    this.session = clone(session);
+    this.session = clone(normalizeStoredNodeSession(session));
+  }
+
+  async getExecutionLease(id: string): Promise<StoredExecutionLease | undefined> {
+    const record = this.leases.get(id);
+    return record ? clone(record) : undefined;
+  }
+
+  async getExecutionLeaseByRunId(runId: string): Promise<StoredExecutionLease | undefined> {
+    const id = this.leasesByRunId.get(runId);
+    if (!id) {
+      return undefined;
+    }
+    return this.getExecutionLease(id);
+  }
+
+  async listExecutionLeases(): Promise<StoredExecutionLease[]> {
+    return [...this.leases.values()].map((record) => clone(record));
+  }
+
+  async putExecutionLease(lease: StoredExecutionLease): Promise<void> {
+    const stored = clone(lease);
+    this.leases.set(stored.id, stored);
+    this.leasesByRunId.set(stored.runId, stored.id);
   }
 }

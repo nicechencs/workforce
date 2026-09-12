@@ -37,6 +37,12 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）Run 级 Placement 与 ExecutionLease 与 NodeSession 分离
+
+- **决定：** NodeSession 只表示节点在线会话；每个 Run 必须有独立 ExecutionLease 与 fencing token，同一节点仍可并发多个 Agent。Project 只保存 PlacementIntent 或默认策略，Run 启动时解析 Node / RuntimeInstallation / WorkspaceInstance 并写入不可变 `RunExecutionSnapshot`。启动事务先落 Run、Placement、Lease、Event 和 dispatch/outbox，提交后再启动 Runtime，且必须幂等。Workflow Scheduler 只做 DAG 就绪；Placement Scheduler 另有 Local Node 实现。文档明确 Local / Remote Server / Distributed 三种部署，当前 `apps/daemon` 是 V0.1 本地组合，不是未来独立 Control Plane。不实现远程节点、集群通信或 GitHub 协同。
+- **文档影响：** 新增 [部署模式与边界](../architecture/deployment-modes-and-boundaries.md)；根 README 与 [文档索引](../README.md)；本页；[实现进度](03-implementation-status.md) T09 切片。
+- **状态：** 本机 Local Node / Mock 路径 **implemented**（源码与定向测试）。Remote Server / Distributed、真实远程 runner 仍 **planned**。
+
 ## 2026-09-12（Asia/Taipei）#34 T19/T21 headed 真窗 PASS 后 squash 进 `ae0f4e6`
 
 - **决定：** Test-bot 对 PR #34 head `06e6b659` 的 T19 自定义 Team 写 UI / 草稿 persist 与 T21 项目详情 `orchestrationMode` + start 记 headed Electron 真窗口 **PASS**（报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`，Test-bot workspace，未必入库）。随后 #34 squash 进 `dev` tip `ae0f4e6`。进度页只把这两张卡标 PASS，不宣称 M7/M8 完成，不宣称 T20 Agent/send；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。

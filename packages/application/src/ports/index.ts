@@ -61,6 +61,32 @@ export interface WorkspaceService {
   captureDiff(instanceId: string): Promise<DiffArtifactProposal>;
 }
 
+export interface PlacementCandidate {
+  nodeId: string;
+  runtimeInstallationId: string;
+  workspaceInstanceId: string;
+  transport: "process" | "sdk" | "http";
+}
+
+export interface PlacementDecision {
+  candidate: PlacementCandidate;
+  reason: string;
+}
+
+/**
+ * Selects Node / RuntimeInstallation / WorkspaceInstance for one Run.
+ * This is not the Workflow DAG scheduler.
+ */
+export interface PlacementScheduler {
+  resolve(input: {
+    intent: {
+      mode: "automatic" | "local_only" | "remote_only" | "specific_node";
+      nodeId?: string;
+    };
+    inventory?: Partial<PlacementCandidate>;
+  }): PlacementDecision;
+}
+
 export type ProcessCancelMode = "graceful" | "force";
 
 export interface ProcessHandle {

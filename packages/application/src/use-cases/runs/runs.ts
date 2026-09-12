@@ -1,15 +1,21 @@
 import { startIdempotencyKey } from "@workforce/domain";
-import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  parseRunExecutionSnapshot,
+  type OrchestrationMode,
+  type RunExecutionSnapshot,
+} from "@workforce/protocol";
 
 import type { AppContext } from "../projects/context.js";
 import { expectRevision, touch } from "../projects/context.js";
-import { notFound, UseCaseError, validationFailed } from "../projects/errors.js";
+import { notFound, UseCaseError } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
 import { dispatchTask, evaluateTaskAfterRun, queueTask, requireTask } from "../tasks/tasks.js";
-import type { RunRecord } from "../projects/store.js";
+import type { ExecutionLeaseRecord, RunRecord, SchedulingRecord } from "../projects/store.js";
 import { unsupportedPause } from "./host.js";
+import { DEFAULT_PLACEMENT_INTENT } from "./placement.js";
 
 export async function startRun(
   ctx: AppContext,
@@ -26,9 +32,20 @@ export async function startRun(
   const project = requireProject(ctx, task.projectId);
   const orchestrationMode =
     input.orchestrationMode ?? project.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
-  if (!project.executionNodeId || !project.runtimeInstallationId || !project.workspaceInstanceId) {
-    throw validationFailed("run start requires node, runtime, and workspace placement");
-  }
+  const intent = project.placementIntent ?? DEFAULT_PLACEMENT_INTENT;
+  const placement = ctx.placement.resolve({
+    intent: intent.nodeId ? { mode: intent.mode, nodeId: intent.nodeId } : { mode: intent.mode },
+    inventory: {
+      ...(project.executionNodeId ? { nodeId: project.executionNodeId } : {}),
+      ...(project.runtimeInstallationId
+        ? { runtimeInstallationId: project.runtimeInstallationId }
+        : {}),
+      ...(project.workspaceInstanceId ? { workspaceInstanceId: project.workspaceInstanceId } : {}),
+    },
+  });
+  const session = ctx.host.ensureNodeSession
+    ? await ctx.host.ensureNodeSession()
+    : { nodeId: placement.candidate.nodeId, nodeSessionId: ctx.world.ids.ulid("ses_") };
   const idempotencyKey =
     input.idempotencyKey ??
     startIdempotencyKey({
@@ -50,7 +67,7 @@ export async function startRun(
     dispatchTask(ctx, queued.id);
   }
 
-  return ctx.world.uow.withTransaction(async (tx) => {
+  const admitted = await ctx.world.uow.withTransaction(async (tx) => {
     return withIdempotency(
       ctx.world,
       tx,
@@ -79,7 +96,25 @@ export async function startRun(
           return { run: existingActive };
         }
         const now = ctx.world.nowIso();
+        const expiresAt = new Date(ctx.world.clock.now().getTime() + 60 * 60 * 1000).toISOString();
         const runId = ctx.world.ids.ulid("run_");
+        const leaseId = ctx.world.ids.ulid("lse_");
+        const fencingToken = ctx.world.nextFencingToken();
+        const executionSnapshot = buildRunExecutionSnapshot({
+          orchestrationMode,
+          transport: placement.candidate.transport,
+          ...(project.executionSnapshotId
+            ? { executionSnapshotId: project.executionSnapshotId }
+            : {}),
+          placementSnapshot: {
+            nodeId: placement.candidate.nodeId,
+            nodeSessionId: session.nodeSessionId,
+            runtimeInstallationId: placement.candidate.runtimeInstallationId,
+            workspaceInstanceId: placement.candidate.workspaceInstanceId,
+            executionLeaseId: leaseId,
+            fencingToken,
+          },
+        });
         const run: RunRecord = {
           id: runId,
           taskId: live.id,
@@ -93,31 +128,38 @@ export async function startRun(
           orchestrationMode,
           createdAt: now,
           updatedAt: now,
+          ...(executionSnapshot ? { executionSnapshot } : {}),
         };
         ctx.world.runs.set(run.id, run);
 
-        const handle = await ctx.host.start({
-          operationId: input.operationId,
-          idempotencyKey,
-          taskId: live.id,
-          definitionRevision: live.definitionRevision,
-          generation: live.generation,
-          attempt: live.attempt,
-          principalId: ctx.principalId,
-          clientId: ctx.clientId,
-          placement: {
-            executionNodeId: project.executionNodeId ?? "",
-            runtimeInstallationId: project.runtimeInstallationId ?? "",
-            workspaceInstanceId: project.workspaceInstanceId ?? "",
+        const lease: ExecutionLeaseRecord = {
+          id: leaseId,
+          runId,
+          nodeId: placement.candidate.nodeId,
+          fencingToken,
+          acquiredAt: now,
+          renewedAt: now,
+          expiresAt,
+        };
+        ctx.world.executionLeases.set(lease.id, lease);
+
+        const scheduling: SchedulingRecord = {
+          id: ctx.world.ids.ulid("sch_"),
+          runId,
+          placementSnapshot: {
+            nodeId: placement.candidate.nodeId,
+            nodeSessionId: session.nodeSessionId,
+            runtimeInstallationId: placement.candidate.runtimeInstallationId,
+            workspaceInstanceId: placement.candidate.workspaceInstanceId,
+            executionLeaseId: leaseId,
+            fencingToken,
           },
-          runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
-          snapshotRef: input.snapshotRef ?? "mock:success",
-          orchestrationMode,
-        });
-        run.handleId = handle.handleId;
-        run.status = ctx.engine.nextRunStatus(run.status, "begin-start");
-        run.status = ctx.engine.nextRunStatus(run.status, "attach");
-        touch(run, now);
+          state: "leased",
+          reason: placement.reason,
+          createdAt: now,
+        };
+        ctx.world.schedulingRecords.set(scheduling.id, scheduling);
+
         if (live.status === "queued") {
           dispatchTask(ctx, live.id);
         }
@@ -129,12 +171,83 @@ export async function startRun(
           taskId: live.id,
           runId: run.id,
           correlationId: input.operationId,
-          data: { to: run.status },
+          data: {
+            to: run.status,
+            orchestrationMode,
+            transport: placement.candidate.transport,
+            executionLeaseId: leaseId,
+            fencingToken,
+          },
         });
         return { run };
       },
-    ).then((result) => ({ reused: result.reused, run: result.value.run }));
+    );
   });
+
+  const run = requireRun(ctx, admitted.value.run.id);
+  if (!run.handleId) {
+    const snapshot = run.executionSnapshot;
+    const lease = [...ctx.world.executionLeases.values()].find((item) => item.runId === run.id);
+    const handle = await ctx.host.start({
+      operationId: input.operationId,
+      idempotencyKey,
+      taskId: run.taskId,
+      definitionRevision: run.definitionRevision,
+      generation: run.generation,
+      attempt: run.attempt,
+      principalId: ctx.principalId,
+      clientId: ctx.clientId,
+      placement: {
+        executionNodeId: placement.candidate.nodeId,
+        runtimeInstallationId: placement.candidate.runtimeInstallationId,
+        workspaceInstanceId: placement.candidate.workspaceInstanceId,
+      },
+      runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
+      snapshotRef: input.snapshotRef ?? "mock:success",
+      orchestrationMode,
+      ...(lease
+        ? {
+            executionLease: {
+              id: lease.id,
+              fencingToken: lease.fencingToken,
+              nodeSessionId: snapshot?.placementSnapshot.nodeSessionId ?? session.nodeSessionId,
+              runId: run.id,
+            },
+          }
+        : {}),
+    });
+    await ctx.world.uow.withTransaction(async () => {
+      run.handleId = handle.handleId;
+      run.status = ctx.engine.nextRunStatus(run.status, "begin-start");
+      run.status = ctx.engine.nextRunStatus(run.status, "attach");
+      touch(run, ctx.world.nowIso());
+    });
+  }
+  return { reused: admitted.reused, run };
+}
+
+function buildRunExecutionSnapshot(input: {
+  orchestrationMode: OrchestrationMode;
+  transport: RunExecutionSnapshot["transport"];
+  executionSnapshotId?: string;
+  placementSnapshot: RunExecutionSnapshot["placementSnapshot"];
+}): RunExecutionSnapshot | undefined {
+  const candidate =
+    input.orchestrationMode === "direct"
+      ? {
+          orchestrationMode: input.orchestrationMode,
+          transport: input.transport,
+          placementSnapshot: input.placementSnapshot,
+        }
+      : input.executionSnapshotId
+        ? {
+            orchestrationMode: input.orchestrationMode,
+            transport: input.transport,
+            executionSnapshotId: input.executionSnapshotId,
+            placementSnapshot: input.placementSnapshot,
+          }
+        : undefined;
+  return candidate ? parseRunExecutionSnapshot(candidate) : undefined;
 }
 
 export function recordRunSucceeded(ctx: AppContext, runId: string): RunRecord {

@@ -33,13 +33,16 @@ import {
   isActiveStatus,
   isTerminalStatus,
   parseHostEventCursor,
+  type AssignedExecutionLease,
   type HostRuntimeEvent,
   type PlacementSnapshot,
   type ProcessTreeKiller,
   RecordingProcessTreeKiller,
-  type StoredHandle,
   type StoredAuthoringInput,
+  type StoredExecutionLease,
+  type StoredHandle,
   type StoredNodeSession,
+  normalizeStoredNodeSession,
 } from "./types.js";
 
 export interface LocalNodeHostOptions {
@@ -106,6 +109,17 @@ export class LocalNodeHost implements RuntimeAdapter {
     return this.startInternal(request);
   }
 
+  async startWithAssignedLease(
+    request: StartRunRequest,
+    lease: AssignedExecutionLease,
+  ): Promise<RuntimeHandle> {
+    return this.startInternal(request, undefined, lease);
+  }
+
+  async ensureNodeSession(): Promise<StoredNodeSession> {
+    return this.ensureSession();
+  }
+
   /**
    * Start an authoring Runtime and deliver its raw input through the existing
    * RuntimeAdapter.sendInput channel. The input is never placed in the
@@ -114,13 +128,15 @@ export class LocalNodeHost implements RuntimeAdapter {
   async startWithInitialInput(
     request: StartRunRequest,
     initialInput: TransientInitialInput,
+    lease?: AssignedExecutionLease,
   ): Promise<RuntimeHandle> {
-    return this.startInternal(request, structuredClone(initialInput));
+    return this.startInternal(request, structuredClone(initialInput), lease);
   }
 
   private async startInternal(
     request: StartRunRequest,
     initialInput?: TransientInitialInput,
+    assignedLease?: AssignedExecutionLease,
   ): Promise<RuntimeHandle> {
     await this.ensureSession();
     const parsed = parseStartRunRequest(request);
@@ -177,8 +193,11 @@ export class LocalNodeHost implements RuntimeAdapter {
       }
     }
 
-    await this.assertLeaseAllowsMutation();
+    await this.assertSessionAllowsStart();
     await this.assertCapacity();
+
+    const session = await this.requireSession();
+    const lease = await this.acquireRunLease(parsed, session, assignedLease);
 
     const acceptedAt = this.nowIso();
     await this.store.putOperation({
@@ -207,8 +226,10 @@ export class LocalNodeHost implements RuntimeAdapter {
       throw error;
     }
 
-    const session = await this.requireSession();
-    const binding = this.bindingFor(parsed, session);
+    if (lease.runId !== handle.runId) {
+      await this.store.putExecutionLease({ ...lease, runId: handle.runId });
+    }
+    const binding = this.bindingFor(parsed, session, { ...lease, runId: handle.runId });
     const inspected = await this.adapter.inspect(handle);
     await this.store.putHandle({
       handle,
@@ -685,32 +706,102 @@ export class LocalNodeHost implements RuntimeAdapter {
     }
   }
 
-  private async assertLeaseAllowsMutation(binding?: PlacementSnapshot): Promise<StoredNodeSession> {
-    const session = await this.requireSession();
-    if (Date.parse(session.expiresAt) <= this.clock.now().getTime()) {
-      throw new RuntimeSdkError("lease_expired", "execution lease expired", {
+  private assertSessionOnline(session: StoredNodeSession): void {
+    if (session.revokedAt) {
+      throw new RuntimeSdkError("lease_expired", "node session has been revoked", {
         retryable: true,
-        details: { executionLeaseId: session.executionLeaseId },
+        details: { nodeSessionId: session.nodeSessionId },
       });
     }
-    if (
-      binding &&
-      (binding.nodeId !== session.nodeId ||
-        binding.nodeSessionId !== session.nodeSessionId ||
-        binding.executionLeaseId !== session.executionLeaseId ||
-        binding.fencingToken !== session.fencingToken)
-    ) {
+    if (session.expiresAt && Date.parse(session.expiresAt) <= this.clock.now().getTime()) {
+      throw new RuntimeSdkError("lease_expired", "node session expired", {
+        retryable: true,
+        details: { nodeSessionId: session.nodeSessionId },
+      });
+    }
+  }
+
+  private async assertSessionAllowsStart(): Promise<StoredNodeSession> {
+    const session = await this.requireSession();
+    this.assertSessionOnline(session);
+    return session;
+  }
+
+  private async assertLeaseAllowsMutation(binding?: PlacementSnapshot): Promise<StoredNodeSession> {
+    const session = await this.requireSession();
+    this.assertSessionOnline(session);
+    if (!binding) {
+      return session;
+    }
+    if (binding.nodeId !== session.nodeId || binding.nodeSessionId !== session.nodeSessionId) {
       throw new RuntimeSdkError("lease_expired", "execution lease is no longer current", {
         retryable: true,
         details: {
           executionLeaseId: binding.executionLeaseId,
           fencingToken: binding.fencingToken,
-          currentExecutionLeaseId: session.executionLeaseId,
-          currentFencingToken: session.fencingToken,
+          currentNodeSessionId: session.nodeSessionId,
         },
       });
     }
+    const lease = await this.store.getExecutionLease(binding.executionLeaseId);
+    if (!lease || lease.fencingToken !== binding.fencingToken) {
+      throw new RuntimeSdkError("lease_expired", "execution lease is no longer current", {
+        retryable: true,
+        details: {
+          executionLeaseId: binding.executionLeaseId,
+          fencingToken: binding.fencingToken,
+        },
+      });
+    }
+    if (Date.parse(lease.expiresAt) <= this.clock.now().getTime()) {
+      throw new RuntimeSdkError("lease_expired", "execution lease expired", {
+        retryable: true,
+        details: { executionLeaseId: lease.id },
+      });
+    }
     return session;
+  }
+
+  private async acquireRunLease(
+    request: StartRunRequest,
+    session: StoredNodeSession,
+    assigned?: AssignedExecutionLease,
+    runId = assigned?.runId ?? request.operationId,
+  ): Promise<StoredExecutionLease> {
+    if (assigned && assigned.nodeSessionId !== session.nodeSessionId) {
+      throw new RuntimeSdkError(
+        "lease_expired",
+        "assigned execution lease belongs to a previous node session",
+        {
+          retryable: true,
+          details: {
+            executionLeaseId: assigned.id,
+            nodeSessionId: assigned.nodeSessionId,
+            currentNodeSessionId: session.nodeSessionId,
+          },
+        },
+      );
+    }
+    const fencingToken = assigned?.fencingToken ?? session.nextFencingToken;
+    const nextFencingToken = Math.max(session.nextFencingToken, fencingToken + 1);
+    if (nextFencingToken !== session.nextFencingToken) {
+      const nextSession = { ...session, nextFencingToken };
+      await this.store.putNodeSession(nextSession);
+      session.nextFencingToken = nextFencingToken;
+    }
+    const now = this.clock.now();
+    const lease: StoredExecutionLease = {
+      id: assigned?.id ?? this.ids.ulid("lse_"),
+      runId,
+      nodeId: session.nodeId,
+      nodeSessionId: session.nodeSessionId,
+      fencingToken,
+      acquiredAt: now.toISOString(),
+      renewedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + this.leaseDurationMs).toISOString(),
+    };
+    await this.store.putExecutionLease(lease);
+    return lease;
   }
 
   private assertProtocol(request: StartRunRequest): void {
@@ -747,13 +838,17 @@ export class LocalNodeHost implements RuntimeAdapter {
     }
   }
 
-  private bindingFor(request: StartRunRequest, session: StoredNodeSession): PlacementSnapshot {
+  private bindingFor(
+    request: StartRunRequest,
+    session: StoredNodeSession,
+    lease: StoredExecutionLease,
+  ): PlacementSnapshot {
     return {
       nodeId: request.placement.executionNodeId,
       nodeSessionId: session.nodeSessionId,
       runtimeInstallationId: request.placement.runtimeInstallationId,
-      executionLeaseId: session.executionLeaseId,
-      fencingToken: session.fencingToken,
+      executionLeaseId: lease.id,
+      fencingToken: lease.fencingToken,
       workspaceInstanceId: request.placement.workspaceInstanceId,
     };
   }
@@ -911,29 +1006,27 @@ export class LocalNodeHost implements RuntimeAdapter {
     if (!session) {
       return this.ensureSession();
     }
-    return session;
+    return normalizeStoredNodeSession(session);
   }
 
   private isBindingCurrent(binding: PlacementSnapshot, session: StoredNodeSession): boolean {
-    return (
-      binding.nodeId === session.nodeId &&
-      binding.nodeSessionId === session.nodeSessionId &&
-      binding.executionLeaseId === session.executionLeaseId &&
-      binding.fencingToken === session.fencingToken
-    );
+    return binding.nodeId === session.nodeId && binding.nodeSessionId === session.nodeSessionId;
   }
 
   private async openSession(): Promise<StoredNodeSession> {
-    const existing = await this.store.getNodeSession();
+    const existingRaw = await this.store.getNodeSession();
+    const existing = existingRaw ? normalizeStoredNodeSession(existingRaw) : undefined;
     const now = this.clock.now();
+    let nodeSessionId = this.ids.ulid("ses_");
+    while (existing && nodeSessionId === existing.nodeSessionId) {
+      nodeSessionId = this.ids.ulid("ses_");
+    }
     const session: StoredNodeSession = {
       nodeId: this.nodeId,
-      nodeSessionId: this.ids.ulid("ses_"),
-      executionLeaseId: this.ids.ulid("lse_"),
-      fencingToken: (existing?.fencingToken ?? 0) + 1,
-      acquiredAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + this.leaseDurationMs).toISOString(),
+      nodeSessionId,
+      startedAt: now.toISOString(),
       maxConcurrentRuns: this.maxConcurrentRuns,
+      nextFencingToken: existing?.nextFencingToken ?? 1,
     };
     await this.store.putNodeSession(session);
     if (existing) {

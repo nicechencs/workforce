@@ -1,7 +1,9 @@
+import type { PlacementScheduler } from "../../ports/index.js";
 import type { EnginePort } from "./engine-port.js";
 import { MemoryWorld } from "./store.js";
 import type { AppContext } from "./context.js";
 import { FakeRuntimeHost, type RuntimeHostPort } from "../runs/host.js";
+import { LocalNodePlacementScheduler } from "../runs/placement.js";
 import {
   cancelProject,
   confirmPlan,
@@ -42,6 +44,7 @@ import {
 export interface WorkforceAppOptions {
   engine: EnginePort;
   host?: RuntimeHostPort;
+  placement?: PlacementScheduler;
   principalId?: string;
   clientId?: string;
 }
@@ -60,6 +63,7 @@ export class WorkforceApp {
       world: this.world,
       engine: options.engine,
       host: options.host ?? new FakeRuntimeHost(),
+      placement: options.placement ?? new LocalNodePlacementScheduler(),
       principalId: options.principalId ?? "usr_local",
       clientId: options.clientId ?? "cli_local",
     };

@@ -123,7 +123,7 @@ flowchart TD
 | `T04-PROJECTION-RECONCILIATION` | T04（T16 故障注入验收） | 使 world/SQLite 投影失败可阻断或可查询对账；重启不得静默选陈旧投影，约束失败、CAS 冲突与部分投影均有恢复证据。 | `T04-MIG`；早于 D17/D18 contract 收紧。 |
 | `T02-PROTOCOL-SCHEMA-GENERATION` | T02 | 从 `packages/protocol` 权威定义生成或校验版本化 JSON Schema/fixtures，并在本地门禁发现手写 schema 漂移。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T02-RUN-WIRE-CONTRACT`。 |
 | `T11-RENDERER-CLIENT-CANONICALIZATION` | T11（T18/T19/T20 配合迁移调用） | 确定唯一生产 typed client/context 装配；隔离重复 fallback，真实 preload 与测试注入走同一行为，禁止新增第三套 client。 | 当前 Desktop shell；先于后续 M7 页面扩展。 |
-| `T09-PLACEMENT-LEASE-WIRING` | T09（T04 repository、T16 恢复验收） | 受管 Run 创建 scheduling record/fencing lease；重复启动不获第二 lease，续租/过期/取消/重启可恢复，未验证 placement 不得写成已绑定。 | `T04-RUN-AXIS`、`T02-RUN-WIRE-CONTRACT`、T05 binding。 |
+| `T09-PLACEMENT-LEASE-WIRING` | T09（T04 repository、T16 恢复验收） | **本机切片已实现：** NodeSession 与 per-run ExecutionLease 分离；Project 只保留 PlacementIntent/本机库存，Run 启动解析并写入不可变 `RunExecutionSnapshot`；事务提交后再 spawn，相同 operation 幂等重试；Workflow Scheduler 只做 DAG，Local Node Placement Scheduler 选本机节点。续租/过期跨进程恢复、远程 placement 与 T16 故障注入仍待。 | `T04-RUN-AXIS`、`T02-RUN-WIRE-CONTRACT`、T05 binding。 |
 
 `T04-MIG`、`T14-AUTH`、`T20-SEND`、`T09-DIRECT`、`T04-RUN-AXIS`、`T16-UPGRADE`、`T15-LIVE`、`T18-HEADED` 与 `T17-PACK` 已在本任务的先前审计中列为同样受限的父卡子任务；不重复造 T22/T23 一类平行大任务。远程 enrollment、生产远程 runner、容器编排、大文件 GC 和完整 OS sandbox 仍属当前 V0.1 范围外，不得借本表默认扩项。
 

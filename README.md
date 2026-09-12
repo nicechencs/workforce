@@ -49,7 +49,7 @@ WORKFORCE_DESKTOP_SMOKE_HEADED=1 pnpm --filter @workforce/desktop smoke
 
 ```text
 apps/desktop                 Electron + Vite + React shell and P0 pages
-apps/daemon                  Loopback Fastify; production uses composed Mock services
+apps/daemon                  V0.1 local composition: loopback Fastify + Application + SQLite + Local Node Host. This is not a future standalone Control Plane.
 packages/*                   Shared libraries (protocol, application, database, ui, …)
 runtimes/mock                Mock runtime adapter (wired in daemon composition)
 runtimes/codex               Detect/validate + injected Process start/stream/cancel; live exec not claimed

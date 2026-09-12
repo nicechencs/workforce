@@ -10,6 +10,8 @@ import type {
 import type {
   AuthoringChangeSetDto,
   OrchestrationMode,
+  PlacementIntent,
+  PlacementSnapshot,
   RunExecutionSnapshot,
   TeamDraftDto,
   WorkflowDraftDto,
@@ -45,6 +47,8 @@ export interface ProjectRecord {
   executionNodeId?: string;
   runtimeInstallationId?: string;
   workspaceInstanceId?: string;
+  /** Request-side preference or default strategy. Not a resolved Run binding. */
+  placementIntent?: PlacementIntent;
   workflowInstanceId?: string;
   workflowVersionId?: string;
   planArtifactVersionId?: string;
@@ -172,6 +176,25 @@ export interface NodeInstanceRecord {
 export interface BudgetRecord extends BudgetState {
   id: string;
   projectId: string;
+}
+
+export interface ExecutionLeaseRecord {
+  id: string;
+  runId: string;
+  nodeId: string;
+  fencingToken: number;
+  acquiredAt: string;
+  renewedAt: string;
+  expiresAt: string;
+}
+
+export interface SchedulingRecord {
+  id: string;
+  runId: string;
+  placementSnapshot: PlacementSnapshot;
+  state: string;
+  reason?: string;
+  createdAt: string;
 }
 
 export interface ReservationRecord {
@@ -325,7 +348,10 @@ export class MemoryWorld {
   readonly executionSnapshots = new Map<string, ProjectExecutionSnapshotRecord>();
   readonly usageKeys = new Set<string>();
   readonly reservations = new Map<string, ReservationRecord>();
+  readonly executionLeases = new Map<string, ExecutionLeaseRecord>();
+  readonly schedulingRecords = new Map<string, SchedulingRecord>();
   readonly unknownStatuses = new Set<string>();
+  private fencingSeq = 0;
   readonly clock: MemoryClock;
   readonly ids: MemoryIds;
   readonly uow: MemoryUnitOfWork;
@@ -342,6 +368,11 @@ export class MemoryWorld {
 
   nowIso(): string {
     return this.clock.now().toISOString();
+  }
+
+  nextFencingToken(): number {
+    this.fencingSeq += 1;
+    return this.fencingSeq;
   }
 
   tasksForProject(projectId: string): TaskRecord[] {

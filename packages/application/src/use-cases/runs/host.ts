@@ -20,6 +20,13 @@ export interface StartRunHostRequest {
   snapshotRef: string;
   /** Echoed host metadata. Not added to protocol StartRunRequest. */
   orchestrationMode?: OrchestrationMode;
+  /** Control-plane lease assigned before Runtime start. */
+  executionLease?: {
+    id: string;
+    fencingToken: number;
+    nodeSessionId: string;
+    runId?: string;
+  };
 }
 
 /**
@@ -30,6 +37,7 @@ export interface RuntimeHostPort {
   pause(handleId: string): Promise<{ accepted: boolean }>;
   cancel(handleId: string, reason?: string): Promise<{ accepted: boolean }>;
   inspect(handleId: string): Promise<{ status: string }>;
+  ensureNodeSession?(): Promise<{ nodeId: string; nodeSessionId: string }>;
 }
 
 export class HostCapabilityError extends Error {
@@ -43,6 +51,11 @@ export class HostCapabilityError extends Error {
 
 export class FakeRuntimeHost implements RuntimeHostPort {
   readonly started = new Map<string, StartRunHostRequest>();
+  private session = { nodeId: "ndl_local", nodeSessionId: "ses_fake" };
+
+  async ensureNodeSession(): Promise<{ nodeId: string; nodeSessionId: string }> {
+    return this.session;
+  }
 
   async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
     this.started.set(request.operationId, request);

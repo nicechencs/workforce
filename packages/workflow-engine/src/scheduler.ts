@@ -9,6 +9,11 @@ import {
 } from "./eligibility.js";
 import { NODE_TERMINAL, nodeById, type WorkflowGraph } from "./types.js";
 
+/**
+ * DAG readiness only. This function does not select an ExecutionNode, acquire
+ * an ExecutionLease, or assemble PlacementSnapshot. `capacityAvailable` is a
+ * ready-queue throttle, not placement.
+ */
 export type ScheduleAction =
   | { type: "make-ready"; nodeId: string }
   | { type: "skip"; nodeId: string }

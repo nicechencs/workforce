@@ -1,4 +1,5 @@
 import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
+import { DEFAULT_PLACEMENT_INTENT } from "../runs/placement.js";
 
 import type { AppContext } from "./context.js";
 import { expectRevision, touch } from "./context.js";
@@ -91,6 +92,7 @@ export async function createProject(
           objective: input.objective,
           status: "draft",
           stateRevision: 1,
+          placementIntent: DEFAULT_PLACEMENT_INTENT,
           createdAt: now,
           updatedAt: now,
         };
@@ -151,6 +153,7 @@ export async function startPlanning(
         project.executionNodeId = input.executionNodeId;
         project.runtimeInstallationId = input.runtimeInstallationId;
         project.workspaceInstanceId = input.workspaceInstanceId;
+        project.placementIntent = project.placementIntent ?? DEFAULT_PLACEMENT_INTENT;
         project.status = next;
         touch(project, now);
 

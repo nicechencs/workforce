@@ -22,9 +22,11 @@ export {
   type BudgetRecord,
   type ReservationRecord,
   type NodeInstanceRecord,
+  type ExecutionLeaseRecord,
   type ProjectExecutionSnapshotRecord,
   type ProjectRecord,
   type RunRecord,
+  type SchedulingRecord,
   type TaskRecord,
   type WorkflowInstanceRecord,
 } from "./store.js";

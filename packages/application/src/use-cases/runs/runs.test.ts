@@ -21,7 +21,7 @@ import {
 import type { EnginePort } from "../projects/engine-port.js";
 import { createWorkforceApp } from "../projects/service.js";
 import { UseCaseError } from "../projects/errors.js";
-import type { RuntimeHostPort, StartRunHostRequest } from "./host.js";
+import { FakeRuntimeHost, type RuntimeHostPort, type StartRunHostRequest } from "./host.js";
 import { recordRunTimedOut, settleRunCancel } from "./runs.js";
 
 function engine(): EnginePort {
@@ -42,6 +42,34 @@ function engine(): EnginePort {
     raiseBudget,
     nextBackoffMs,
   };
+}
+
+class FlakyStartHost implements RuntimeHostPort {
+  starts = 0;
+
+  async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
+    this.starts += 1;
+    if (this.starts === 1) {
+      throw new Error("runtime unavailable");
+    }
+    return { handleId: `hdl_${request.operationId}`, runId: `host_${request.operationId}` };
+  }
+
+  async pause(_handleId: string): Promise<{ accepted: boolean }> {
+    void _handleId;
+    return { accepted: true };
+  }
+
+  async cancel(_handleId: string, _reason?: string): Promise<{ accepted: boolean }> {
+    void _handleId;
+    void _reason;
+    return { accepted: true };
+  }
+
+  async inspect(_handleId: string): Promise<{ status: string }> {
+    void _handleId;
+    return { status: "running" };
+  }
 }
 
 class RecordingRuntimeHost implements RuntimeHostPort {
@@ -387,5 +415,78 @@ describe("run pause on Mock", () => {
       code: "unsupported_capability",
     });
     expect(app.world.runs.get(started.run.id)?.status).toBe("running");
+  });
+});
+
+describe("run placement and start boundary", () => {
+  it("persists an immutable RunExecutionSnapshot and lease before Runtime start", async () => {
+    const host = new FakeRuntimeHost();
+    const { app, run } = await startRunningRun(host);
+    expect(run.executionSnapshot?.placementSnapshot.executionLeaseId).toMatch(/^lse_/);
+    expect(run.executionSnapshot?.placementSnapshot.fencingToken).toBe(1);
+    expect(run.executionSnapshot?.transport).toBe("sdk");
+    expect([...app.world.executionLeases.values()]).toHaveLength(1);
+    expect(host.started.get("op_run")?.executionLease?.id).toBe(
+      run.executionSnapshot?.placementSnapshot.executionLeaseId,
+    );
+    expect(app.world.projects.get(run.projectId)?.placementIntent).toEqual({ mode: "local_only" });
+  });
+
+  it("retries Runtime start without creating a second Run after a failed spawn", async () => {
+    const host = new FlakyStartHost();
+    const app = createWorkforceApp({ engine: engine(), host });
+    const created = await app.createProject({
+      operationId: "op_create",
+      idempotencyKey: "create",
+      organizationId: "org",
+      name: "n",
+      objective: "o",
+    });
+    const planning = await app.startPlanning({
+      operationId: "op_plan",
+      idempotencyKey: "plan",
+      projectId: created.project.id,
+      workspaceId: "wsp",
+      teamVersionId: "tmv",
+      runtimeId: "mock",
+      budgetId: "bdg",
+      executionNodeId: "ndl_local",
+      runtimeInstallationId: "rtm",
+      workspaceInstanceId: "wsi",
+      planDigest: "digest",
+    });
+    await app.confirmPlan({
+      operationId: "op_confirm",
+      idempotencyKey: "confirm",
+      projectId: created.project.id,
+      approvalId: planning.approvalId,
+      graph: {
+        id: "wfv",
+        workflowId: "wf",
+        version: 1,
+        entryNodeIds: ["solo"],
+        nodes: [{ id: "solo", kind: "task", role: "developer", expectedOutputIds: ["out"] }],
+        edges: [],
+      },
+    });
+    await app.start({
+      operationId: "op_start",
+      idempotencyKey: "start",
+      projectId: created.project.id,
+    });
+    const task = [...app.world.tasks.values()][0];
+    if (!task) {
+      throw new Error("missing task");
+    }
+    await expect(app.startRun({ operationId: "op_run", taskId: task.id })).rejects.toThrow(
+      "runtime unavailable",
+    );
+    expect([...app.world.runs.values()]).toHaveLength(1);
+    expect([...app.world.runs.values()][0]?.handleId).toBeUndefined();
+    const retried = await app.startRun({ operationId: "op_run", taskId: task.id });
+    expect(retried.reused).toBe(true);
+    expect(retried.run.handleId).toBe("hdl_op_run");
+    expect([...app.world.runs.values()]).toHaveLength(1);
+    expect(host.starts).toBe(2);
   });
 });

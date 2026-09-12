@@ -70,6 +70,11 @@ export class ComposedMockHost implements RuntimeHostPort {
     this.onAuthoringProposal = options.onAuthoringProposal;
   }
 
+  async ensureNodeSession(): Promise<{ nodeId: string; nodeSessionId: string }> {
+    const session = await this.host.ensureNodeSession();
+    return { nodeId: session.nodeId, nodeSessionId: session.nodeSessionId };
+  }
+
   async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
     const parsed = parseStartRunRequest({
       operationId: request.operationId,
@@ -90,8 +95,10 @@ export class ComposedMockHost implements RuntimeHostPort {
     const initialInput = this.initialInputs.get(parsed.operationId);
     this.initialInputs.delete(parsed.operationId);
     const handle = initialInput
-      ? await this.host.startWithInitialInput(parsed, initialInput)
-      : await this.host.start(parsed);
+      ? await this.host.startWithInitialInput(parsed, initialInput, request.executionLease)
+      : request.executionLease
+        ? await this.host.startWithAssignedLease(parsed, request.executionLease)
+        : await this.host.start(parsed);
     this.handles.set(handle.handleId, handle);
     this.watch(handle);
     return { handleId: handle.handleId, runId: handle.runId };

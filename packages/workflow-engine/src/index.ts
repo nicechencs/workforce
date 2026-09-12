@@ -28,6 +28,7 @@ export {
   type NodeRuntimeState,
 } from "./eligibility.js";
 export { compareReady, schedule, type ScheduleAction, type ScheduleInput } from "./scheduler.js";
+export { LOCAL_PLACEMENT_SCHEDULER, type PlacementSchedulerPort } from "./placement.js";
 export {
   decideRecovery,
   nextBackoffMs,

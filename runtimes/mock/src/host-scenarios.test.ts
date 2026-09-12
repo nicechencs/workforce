@@ -373,16 +373,16 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect(binding.executionLeaseId).toMatch(/^lse_/);
 
     await scheduler.advance(1_001);
-    await expect(
-      host.start(
-        createStartRunRequest({
-          operationId: "op_lease_2",
-          attempt: 2,
-          snapshotRef: "mock:waiting_input",
-        }),
-      ),
-    ).rejects.toSatisfy(
-      (error: unknown) => isRuntimeSdkError(error) && error.code === "lease_expired",
+    const next = await host.start(
+      createStartRunRequest({
+        operationId: "op_lease_2",
+        attempt: 2,
+        snapshotRef: "mock:waiting_input",
+      }),
+    );
+    expect((await host.getBinding(next.handleId)).fencingToken).toBe(2);
+    expect((await host.getBinding(next.handleId)).executionLeaseId).not.toBe(
+      binding.executionLeaseId,
     );
     await expect(
       host.sendInput(handle, { operationId: "op_late_input", text: "nope" }),
@@ -392,6 +392,35 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
 
     expect((await host.inspect(handle)).status).toBe("waiting_input");
     expect((await host.cancel(handle)).accepted).toBe(true);
+  });
+
+  it("gives concurrent runs on one node independent leases and fencing tokens", async () => {
+    const { host } = await createMockRuntime();
+    const first = await host.start(
+      createStartRunRequest({
+        operationId: "op_concurrent_a",
+        snapshotRef: "mock:waiting_input",
+      }),
+    );
+    const second = await host.start(
+      createStartRunRequest({
+        operationId: "op_concurrent_b",
+        attempt: 2,
+        snapshotRef: "mock:waiting_input",
+      }),
+    );
+    const left = await host.getBinding(first.handleId);
+    const right = await host.getBinding(second.handleId);
+    expect(left.nodeSessionId).toBe(right.nodeSessionId);
+    expect(left.executionLeaseId).not.toBe(right.executionLeaseId);
+    expect(left.fencingToken).toBe(1);
+    expect(right.fencingToken).toBe(2);
+    await expect(
+      host.sendInput(first, { operationId: "op_concurrent_a_in", text: "a" }),
+    ).resolves.toMatchObject({ accepted: true });
+    await expect(
+      host.sendInput(second, { operationId: "op_concurrent_b_in", text: "b" }),
+    ).resolves.toMatchObject({ accepted: true });
   });
 
   it("accepts only its configured remote Mock node and isolates an old binding after replacement", async () => {
@@ -441,7 +470,7 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
         status: expect.objectContaining({ status: "waiting_input" }),
       }),
     ]);
-    expect((await second.store.getNodeSession())?.fencingToken).toBe(2);
+    expect((await second.store.getNodeSession())?.nextFencingToken).toBe(2);
     const iterator = second.host.stream(handle)[Symbol.asyncIterator]();
     await iterator.next();
 

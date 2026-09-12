@@ -41,14 +41,63 @@ export interface StoredHandle {
   eventGap?: boolean;
 }
 
+/**
+ * Online identity of one Execution Node process. This is not a Run lease and
+ * must not carry a fencing token: one node session hosts many concurrent Runs.
+ */
 export interface StoredNodeSession {
   nodeId: string;
   nodeSessionId: string;
-  executionLeaseId: string;
+  startedAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+  maxConcurrentRuns: number;
+  /** Monotonic counter used to mint unique per-run fencing tokens. */
+  nextFencingToken: number;
+}
+
+/** Control-plane / Host copy of the exclusive execution right for one Run. */
+export interface StoredExecutionLease {
+  id: string;
+  runId: string;
+  nodeId: string;
+  nodeSessionId: string;
   fencingToken: number;
   acquiredAt: string;
+  renewedAt: string;
   expiresAt: string;
-  maxConcurrentRuns: number;
+}
+
+/** Lease identity assigned by Application before Runtime start. */
+export interface AssignedExecutionLease {
+  id: string;
+  fencingToken: number;
+  nodeSessionId: string;
+  runId?: string;
+}
+
+export function normalizeStoredNodeSession(value: StoredNodeSession): StoredNodeSession {
+  const legacy = value as StoredNodeSession & {
+    acquiredAt?: string;
+    fencingToken?: number;
+  };
+  const nextFencingToken =
+    value.nextFencingToken ??
+    (typeof legacy.fencingToken === "number" ? legacy.fencingToken + 1 : 1);
+  const session: StoredNodeSession = {
+    nodeId: value.nodeId,
+    nodeSessionId: value.nodeSessionId,
+    startedAt: value.startedAt ?? legacy.acquiredAt ?? new Date(0).toISOString(),
+    maxConcurrentRuns: value.maxConcurrentRuns,
+    nextFencingToken,
+  };
+  if (value.expiresAt !== undefined) {
+    session.expiresAt = value.expiresAt;
+  }
+  if (value.revokedAt !== undefined) {
+    session.revokedAt = value.revokedAt;
+  }
+  return session;
 }
 
 export interface HostRuntimeEvent {

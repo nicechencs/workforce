@@ -2,6 +2,7 @@ import type { ReceiptScope } from "@workforce/protocol";
 
 import type {
   HostRuntimeEvent,
+  StoredExecutionLease,
   StoredHandle,
   StoredNodeSession,
   StoredOperation,
@@ -30,4 +31,9 @@ export interface RuntimeHostStore {
 
   getNodeSession(): Promise<StoredNodeSession | undefined>;
   putNodeSession(session: StoredNodeSession): Promise<void>;
+
+  getExecutionLease(id: string): Promise<StoredExecutionLease | undefined>;
+  getExecutionLeaseByRunId(runId: string): Promise<StoredExecutionLease | undefined>;
+  listExecutionLeases(): Promise<StoredExecutionLease[]>;
+  putExecutionLease(lease: StoredExecutionLease): Promise<void>;
 }

@@ -5,11 +5,13 @@ import type {
   ApprovalRecord,
   ArtifactRecord,
   BudgetRecord,
+  ExecutionLeaseRecord,
   MemoryWorld,
   NodeInstanceRecord,
   ProjectExecutionSnapshotRecord,
   ProjectRecord,
   RunRecord,
+  SchedulingRecord,
   TaskRecord,
   WorkflowGraph,
   WorkflowInstanceRecord,
@@ -23,12 +25,14 @@ import type {
   WorkforceEvent,
   WorkflowDraftDto,
 } from "@workforce/protocol";
-import type { RuntimeHostStore } from "@workforce/runtime-sdk";
-import type {
-  HostRuntimeEvent,
-  StoredHandle,
-  StoredNodeSession,
-  StoredOperation,
+import {
+  normalizeStoredNodeSession,
+  type HostRuntimeEvent,
+  type RuntimeHostStore,
+  type StoredExecutionLease,
+  type StoredHandle,
+  type StoredNodeSession,
+  type StoredOperation,
 } from "@workforce/runtime-sdk";
 
 import { writeJsonAtomic } from "../bootstrap/state-file.js";
@@ -79,6 +83,8 @@ export interface PersistedWorld {
   operations: CommandReceipt[];
   artifactContents: ArtifactContentRecord[];
   executionSnapshots: ProjectExecutionSnapshotRecord[];
+  executionLeases?: ExecutionLeaseRecord[];
+  schedulingRecords?: SchedulingRecord[];
   /** Optional for pre-T20-B sidecars; SQLite becomes authority once populated. */
   workflowDrafts?: WorkflowDraftDto[];
   teamDrafts?: TeamDraftDto[];
@@ -92,6 +98,7 @@ export interface PersistedHostStore {
   handles: StoredHandle[];
   events: HostRuntimeEvent[];
   session?: StoredNodeSession;
+  leases?: StoredExecutionLease[];
 }
 
 function clone<T>(value: T): T {
@@ -135,6 +142,8 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
   private readonly handles = new Map<string, StoredHandle>();
   private readonly handlesByRunId = new Map<string, string>();
   private readonly events = new Map<string, HostRuntimeEvent[]>();
+  private readonly leases = new Map<string, StoredExecutionLease>();
+  private readonly leasesByRunId = new Map<string, string>();
   private session: StoredNodeSession | undefined;
 
   constructor(private readonly persistHandle?: (record: StoredHandle) => Promise<void>) {}
@@ -145,6 +154,8 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
     this.handles.clear();
     this.handlesByRunId.clear();
     this.events.clear();
+    this.leases.clear();
+    this.leasesByRunId.clear();
     this.session = undefined;
     if (!snapshot) {
       return;
@@ -164,7 +175,36 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
       list.push(clone(event));
       this.events.set(event.handleId, list);
     }
-    this.session = snapshot.session ? clone(snapshot.session) : undefined;
+    this.session = snapshot.session
+      ? clone(normalizeStoredNodeSession(snapshot.session))
+      : undefined;
+    for (const lease of snapshot.leases ?? []) {
+      const stored = clone(lease);
+      this.leases.set(stored.id, stored);
+      this.leasesByRunId.set(stored.runId, stored.id);
+    }
+    if (this.leases.size === 0) {
+      for (const handle of this.handles.values()) {
+        const binding = handle.binding;
+        if (this.leases.has(binding.executionLeaseId)) {
+          continue;
+        }
+        const lease: StoredExecutionLease = {
+          id: binding.executionLeaseId,
+          runId: handle.handle.runId,
+          nodeId: binding.nodeId,
+          nodeSessionId: binding.nodeSessionId,
+          fencingToken: binding.fencingToken,
+          acquiredAt: handle.handle.createdAt,
+          renewedAt: handle.handle.createdAt,
+          expiresAt:
+            this.session?.expiresAt ??
+            new Date(Date.parse(handle.handle.createdAt) + 60 * 60 * 1000).toISOString(),
+        };
+        this.leases.set(lease.id, lease);
+        this.leasesByRunId.set(lease.runId, lease.id);
+      }
+    }
   }
 
   dump(): PersistedHostStore {
@@ -176,6 +216,9 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
     };
     if (this.session) {
       snapshot.session = clone(this.session);
+    }
+    if (this.leases.size > 0) {
+      snapshot.leases = [...this.leases.values()].map((record) => clone(record));
     }
     return snapshot;
   }
@@ -248,7 +291,30 @@ export class JsonRuntimeHostStore implements RuntimeHostStore {
   }
 
   async putNodeSession(session: StoredNodeSession): Promise<void> {
-    this.session = clone(session);
+    this.session = clone(normalizeStoredNodeSession(session));
+  }
+
+  async getExecutionLease(id: string): Promise<StoredExecutionLease | undefined> {
+    const record = this.leases.get(id);
+    return record ? clone(record) : undefined;
+  }
+
+  async getExecutionLeaseByRunId(runId: string): Promise<StoredExecutionLease | undefined> {
+    const id = this.leasesByRunId.get(runId);
+    if (!id) {
+      return undefined;
+    }
+    return this.getExecutionLease(id);
+  }
+
+  async listExecutionLeases(): Promise<StoredExecutionLease[]> {
+    return [...this.leases.values()].map((record) => clone(record));
+  }
+
+  async putExecutionLease(lease: StoredExecutionLease): Promise<void> {
+    const stored = clone(lease);
+    this.leases.set(stored.id, stored);
+    this.leasesByRunId.set(stored.runId, stored.id);
   }
 }
 
@@ -319,6 +385,8 @@ export function dumpWorld(input: {
     operations: input.operations.map((receipt) => clone(receipt)),
     artifactContents: input.artifactContents.map((record) => clone(sidecarArtifact(record))),
     executionSnapshots: [...input.world.executionSnapshots.values()].map((record) => clone(record)),
+    executionLeases: [...input.world.executionLeases.values()].map((record) => clone(record)),
+    schedulingRecords: [...input.world.schedulingRecords.values()].map((record) => clone(record)),
     workflowDrafts: [...input.world.workflowDrafts.values()].map((record) => clone(record)),
     teamDrafts: [...input.world.teamDrafts.values()].map((record) => clone(record)),
     authoringChangeSets: [...input.world.authoringChangeSets.values()].map((record) =>
@@ -351,6 +419,8 @@ export async function hydrateWorld(
   replaceMap(world.nodes, snapshot.nodes, (record) => record.id);
   replaceMap(world.budgets, snapshot.budgets, (record) => record.id);
   replaceMap(world.executionSnapshots, snapshot.executionSnapshots ?? [], (record) => record.id);
+  replaceMap(world.executionLeases, snapshot.executionLeases ?? [], (record) => record.id);
+  replaceMap(world.schedulingRecords, snapshot.schedulingRecords ?? [], (record) => record.id);
   replaceMap(world.workflowDrafts, snapshot.workflowDrafts ?? [], (record) => record.id);
   replaceMap(world.teamDrafts, snapshot.teamDrafts ?? [], (record) => record.id);
   replaceMap(world.authoringChangeSets, snapshot.authoringChangeSets ?? [], (record) => record.id);
@@ -432,6 +502,8 @@ export function loadSnapshot(stateDir: string): CompositionSnapshot | undefined 
     world: {
       ...world,
       executionSnapshots: world.executionSnapshots ?? [],
+      executionLeases: world.executionLeases ?? [],
+      schedulingRecords: world.schedulingRecords ?? [],
       workflowVersions: world.workflowVersions ?? [],
       workflowDrafts: world.workflowDrafts ?? [],
       teamDrafts: world.teamDrafts ?? [],
@@ -463,6 +535,8 @@ function emptyWorld(): PersistedWorld {
     operations: [],
     artifactContents: [],
     executionSnapshots: [],
+    executionLeases: [],
+    schedulingRecords: [],
     workflowDrafts: [],
     teamDrafts: [],
     authoringChangeSets: [],
@@ -529,6 +603,10 @@ export async function loadComposition(
         : (base.workflowVersions ?? []),
     nodes: entities.nodes,
     executionSnapshots: entities.executionSnapshots,
+    executionLeases:
+      entities.executionLeases && entities.executionLeases.length > 0
+        ? entities.executionLeases
+        : (base.executionLeases ?? []),
     workflowDrafts:
       entities.workflowDrafts && entities.workflowDrafts.length > 0
         ? entities.workflowDrafts
@@ -588,6 +666,7 @@ export async function dualWriteSqlite(
         approvals: snapshot.approvals,
         artifacts: snapshot.artifacts,
         runs: snapshot.runs,
+        executionLeases: snapshot.executionLeases ?? [],
         budgets: snapshot.budgets,
         reservations: snapshot.reservations.map(([id, value]) => ({
           id,

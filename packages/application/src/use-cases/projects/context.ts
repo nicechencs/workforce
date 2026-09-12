@@ -1,3 +1,4 @@
+import type { PlacementScheduler } from "../../ports/index.js";
 import type { EnginePort } from "./engine-port.js";
 import type { MemoryWorld } from "./store.js";
 import type { RuntimeHostPort } from "../runs/host.js";
@@ -7,6 +8,7 @@ export interface AppContext {
   world: MemoryWorld;
   engine: EnginePort;
   host: RuntimeHostPort;
+  placement: PlacementScheduler;
   principalId: string;
   clientId: string;
 }

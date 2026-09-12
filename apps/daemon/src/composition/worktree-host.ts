@@ -209,7 +209,7 @@ export function bindWorktreesToHost(input: {
   worktrees: CompositionWorktreeHost;
   resolveTask: (taskId: string) => TaskRecord | undefined;
 }): RuntimeHostPort {
-  return {
+  const port: RuntimeHostPort = {
     async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
       const task = input.resolveTask(request.taskId);
       if (task && isWorktreeRole(task.role)) {
@@ -227,4 +227,8 @@ export function bindWorktreesToHost(input: {
     cancel: (handleId, reason) => input.inner.cancel(handleId, reason),
     inspect: (handleId) => input.inner.inspect(handleId),
   };
+  if (input.inner.ensureNodeSession) {
+    port.ensureNodeSession = () => input.inner.ensureNodeSession!();
+  }
+  return port;
 }

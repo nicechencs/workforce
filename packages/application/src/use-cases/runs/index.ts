@@ -15,3 +15,8 @@ export {
   settleRunCancel,
   startRun,
 } from "./runs.js";
+export {
+  DEFAULT_LOCAL_PLACEMENT,
+  DEFAULT_PLACEMENT_INTENT,
+  LocalNodePlacementScheduler,
+} from "./placement.js";
