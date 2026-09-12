@@ -110,7 +110,7 @@ flowchart TD
 | `T04-AUTHORING-REPOSITORIES` | T04（repository）→ T20-B（Application staged apply） | **持久化切片已实现：** Workflow/Team Draft 按父对象 revision append-only CAS；ChangeSet 与全量 step 原子写入，source Run 必须属于同一 Project/organization；ChangeSet 与 step 的推进均要求当前 status CAS。它不定义状态转移规则、不产出 proposal、不应用 patch，也不替代恢复策略。 | `T02-CANONICAL-GRAPH-CONTRACT`；解除 T20-B 的 SQLite 写入阻塞。 |
 | `T20-B-STAGED-APPLY` | T20-B（Application） | **M3 切片已实现：** 只接受 `validating` 的结构化 ChangeSet；在写入前完整校验 Project/organization、source Run、所有 Workflow/Team target、draft revision 和 step 的 pending 状态，随后原子落新 Draft revision、applied step 和审计事件。草稿/ChangeSet 经 SQLite world snapshot、Daemon dual-write 与 composition reload 跨重启恢复。不发布、不启动 Workflow；Task patch、Runtime proposal、部分失败恢复与 Daemon/Renderer send 仍未实现。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T04-AUTHORING-REPOSITORIES`。 |
 | `T20-B-PROPOSAL-LIFECYCLE` | T20-B（Application；Runtime 输出接口归 T15/T05） | **M3 切片已实现：** `authoring.start` 创建受治理 Task/Run，复用既有 placement/Runtime Host；结构化 Proposal 仅含摘要和 Artifact 引用，经 source Run/Project 边界校验后创建 `proposed` ChangeSet，显式 validate 才进入 `validating`。intent 不持久化。Runtime 实际 Proposal 输出接口、Task patch、失败/取消/重试与 send 仍未实现。 | `T20-B-STAGED-APPLY`；T05/T15 输出接口后才能接 Agent。 |
-| `T05-AUTHORING-PROPOSAL-OUTPUT` | T05 Runtime Host；T15/Codex 实现适配 | **Runtime/Mock/Daemon 切片已实现：** SPI 声明唯一 `runtime.authoring.proposal`，Mock 可重复产出严格 `AuthoringProposal`，`LocalNodeHost` 在持久化前以 protocol parser 清洗，只保留 proposal、cursor 与 adapter sequence；非法对象转为拒绝事件，原始字段不会进入 Host Store。Daemon 从已绑定 handle 反查 Application Run/Project 后提交 ChangeSet，且 intent 不落事件。Codex 的真实/unsupported 映射、Task patch、重试和 Renderer send 仍未实现；禁止 Daemon/Renderer 从通用 message 文本猜测 Proposal。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T20-B-PROPOSAL-LIFECYCLE`、T05 event/handle recovery。 |
+| `T05-AUTHORING-PROPOSAL-OUTPUT` | T05 Runtime Host；T15/Codex 实现适配 | **Runtime/Mock/Daemon 切片已实现：** SPI 声明唯一 `runtime.authoring.proposal`，Mock 可重复产出严格 `AuthoringProposal`，`LocalNodeHost` 在持久化前以 protocol parser 清洗，丢弃 adapter 提供的摘要文本；非法对象转为拒绝事件。Daemon 只消费非 audit-only、Host request 明确为 `authoring:proposal` 的事件，并从绑定 handle 反查 Application Run/Project 后提交 ChangeSet；未绑定或回调失败会重放。ChangeSet/Event 的 SQLite 投影成功后，才用既有 `inbox_receipts` 写入 per-event ACK，重放先查该 ACK。Codex 已显式声明 `authoring.proposal` unsupported（无可信 JSONL item，禁止文本推断）；真实映射、Task patch、重试和 Renderer send 仍未实现。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T20-B-PROPOSAL-LIFECYCLE`、T05 event/handle recovery。 |
 | `T09-D02-SNAPSHOT-START` | T09 | **M3 snapshot/start 切片已实现：** `confirm-plan` 只创建一次 `ProjectExecutionSnapshot` 并进入 `ready`；`:start` 从 snapshot 创建实例，再实例化 Node/Task。canonical graph 会先落 SQLite/world 后供 snapshot 引用。已覆盖 ready 无实例和幂等重放；失败恢复、Project/租户强校验、真实 policy snapshot、published catalog 图源和 T16 场景仍待完成。 | `T04-D15-PUBLISH` repository 切片；T10 审批边界、T16 场景仍待接线。 |
 | `T10-EVENT-REPLAY-SSE` | T10 | `/events` 与 SSE 从持久 Event Store 补拉，cursor/high-water/retention 跨重启有效；断线、重复、缺口、过滤变化和 `410 event_cursor_expired` 有契约/集成测试。 | T04 Event Store，T16 验收。 |
 | `T08-M5-EVALUATION-RETENTION` | T08 | Evaluation 绑定精确 ArtifactVersion/digest；缺产物、完整性或测试失败不得 completed；quarantine 可审计且不被消费；retention 清理原文而保留摘要。 | T04、T06、T07、T09。 |
@@ -427,7 +427,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol；Desktop-local session store + 仅用户 append + renderer `localStorage` 已接线。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** Agent/send / chat HTTP。不得把壳写成对话编排完成或 M7 完成。
+**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol；Desktop-local session store + 仅用户 append + renderer `localStorage` 已接线。页面可从 query/hash 绑定真实 Project，否则明确是本地笔记/手工草稿空间；已有 proposal 只显示为本地结构化预览，绝非 Agent 输出。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** Agent/send / chat HTTP。不得把壳写成对话编排完成或 M7 完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
@@ -440,6 +440,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 **工作：**
 
 - 校验 Project 边界、DAG、引用、Policy、Capability、预算和 CredentialRef（仅引用）。
+- `T20-B-PROMPT-HANDOFF`：为原始 intent 建立受保护、短生命周期的 Runtime 交接。不得把 prompt 放进会被 Host Store / handle / Event / ChangeSet 持久化的 `StartRunRequest`、`snapshotRef` 或 command receipt；Runtime 启动前必须能够按受信引用解析，重启后无法安全恢复时必须 fail-closed 并让会话诚实显示失败。仅完成 `authoring.start` 建 Task/Run 而 Runtime 实际未接收 intent，不得作为 send/Agent 完成。
 - 为每个 Team/Task/Workflow 目标保存独立 `expectedRevision`；以目标顺序做 CAS 原子应用；跨聚合无法同事务时使用持久化 staged steps，逐项保存 pending/applying/applied/failed/cancelled/expired，崩溃后可恢复并诚实报告部分失败。
 - 保存脱敏会话引用、proposal/change-set 摘要和 authoring Events；支持 usage/budget、cancel/retry/failure/expired；按 Project retention/redaction 管理上下文，不保存 Secret/原始不必要 Prompt。
 - 应用成功只更新 draft revision；发布、WorkflowInstance 和 Runtime 启动仍走 D15/D02/T09。

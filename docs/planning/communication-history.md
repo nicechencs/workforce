@@ -461,3 +461,51 @@ updated: 2026-09-12
 - **决定：** Daemon 不信任 Runtime 事件内自报的 Project/Run 归属；它仅接受已被 Host 清洗的结构化字段，再从已绑定 handle 反查持久 Application Run 与 Project，构造幂等 `recordAuthoringProposal` 调用。这个边界禁止普通文本消息或未绑定 handle 产出 ChangeSet。
 - **文档影响：** [开发任务清单](02-development-task-backlog.md)、[实现进度](03-implementation-status.md) 与 [D17/D18 落地方案](05-d17-d18-landing-plan.md) 将 T05/T20-B 的 Runtime→Daemon→Application Proposal 链标为已实现；Codex、Task patch、失败恢复和 Renderer send 继续保留未完成状态。
 - **状态：** **implemented（T05 Daemon consumer slice）**。Windows 实跑 Daemon typecheck；新增 composition 端到端场景通过，确认 Proposal 落为 `proposed` ChangeSet 且 intent 不进入事件。完整 composition 套件另有一项临时目录 `EPERM` 清理失败，和新增场景无关。
+
+---
+
+## 2026-09-12（Asia/Taipei）T05 Proposal 消费可靠性与边界修复
+
+- **决定：** Proposal consumer 只接受非 audit-only、Host request 明确为 `authoring:proposal` 的已清洗事件；adapter 提供的摘要文本不持久化。未绑定 Run 或回调失败不得吞掉事件，改为重放；启动恢复重新挂 Host watcher。Application 幂等键仍防重复，且 per-event consumer ACK 已写入 `inbox_receipts`，只在 ChangeSet/Event 投影提交后才落库。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 增加 fencing、purpose、摘要和重放边界，并记录 ACK 的投影后写入顺序。
+- **状态：** **implemented（边界修复）**。Windows 实跑 Runtime SDK/Mock/Daemon typecheck；摘要脱敏、恢复重放/普通 Run 拒绝、端到端 Proposal 消费 3 个定向场景通过。
+
+---
+
+## 2026-09-12（Asia/Taipei）T05 Proposal durable consumer ACK
+
+- **决定：** Proposal 复用 SQLite 既有 `inbox_receipts` 作为 per-event consumer ACK，键为受信 handle 与 Host cursor。ACK 只能在 Authoring ChangeSet/Event 已完成 SQLite 投影后写入；重放先检查 ACK，若投影已存在但尚无 ACK，则以同一 event correlationId 和 ChangeSet subject 确认后补写 ACK。不得仅按 Proposal ID 判重，避免不同 cursor 的有效 Proposal 被静默吞掉。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 将 per-event ACK 从剩余工作转为已实现，并保留 Codex 映射、Task patch、失败恢复和 Renderer send。
+- **状态：** **implemented（durable ACK）**。Windows 实跑 Daemon typecheck 和 composition 定向端到端测试，测试直接验证 `inbox_receipts` 已写入 Proposal ACK。
+
+---
+
+## 2026-09-12（Asia/Taipei）T15 Codex Authoring Proposal capability
+
+- **决定：** 现有 Codex JSONL 仅有脱敏的通用 message/command/usage 事件，缺少可验证的结构化 Authoring Proposal item。因此 Adapter 显式声明 `authoring.proposal` unavailable，且 `textInference=false`；不得从 agent 文本、命令输出或 raw metadata 推断 Proposal。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 将 Codex Proposal 状态从未明确改为显式 unsupported，Mock/Daemon 是当前唯一已测的 Proposal producer/consumer 链。
+- **状态：** **implemented（unsupported capability）**。待 Codex CLI 给出带版本化 schema 的显式 JSONL item 后，再实施真实映射与 live 验证。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20-B Authoring intent 安全交接
+
+- **决定：** `startAuthoring` 当前只用 raw intent 做校验与幂等摘要，随后传给 Runtime 的 `StartRunRequest` 会由 Host Store 持久化，不能直接承载 prompt；现有调用也没有独立的受保护解析通道。因此新增 `T20-B-PROMPT-HANDOFF`：先设计短生命周期、受信引用的 Runtime input 交接与重启 fail-closed 行为，之后才可暴露 send/启动入口。禁止把 intent 偷塞到 `snapshotRef`、handle、Event、ChangeSet 或 command receipt。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 和 [实现进度](03-implementation-status.md) 明确记录该前置，避免把“已建 Task/Run”误报成 Agent 已收到输入或对话 send 已完成。
+- **状态：** **planned**。这次仅登记安全实现任务；没有新增 HTTP/chat endpoint，也没有修改 Runtime 持久化格式。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20 本地作者草稿可见性
+
+- **决定：** `prj_desktop_local` 明确只代表 renderer-only 本地笔记/手工草稿空间，不得被写成 Daemon Project 或 Agent send target。作者页可从 query/hash 读取真实 Project 标识以归属本地会话；已有结构化 proposal 会被展示，但必须标示为「本地结构化预览，非 Agent 输出」。手工落未发布草稿与进入画布路径保持不变。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 将 T20 更新为已完成的本地可见性切片，并继续保留 prompt handoff、typed send 和实际 Agent draft 为后续任务。
+- **状态：** **implemented（T20 local visibility slice）**。Windows 实跑 workflow-authoring 21/21、Desktop typecheck 和 diff check 通过；未新增 chat HTTP、未运行 headed Electron，也不宣称 Agent/send 或 M7 完成。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20 作者会话项目隔离
+
+- **决定：** 作者页以完整 URL hash 作为挂载边界；切换真实 Project 时重建本地作者会话，hydration 完成前不显示旧消息、Proposal 或已落地卡片，也禁止追加和结构化草稿提交。异步手工落稿仍绑定发起时的原项目会话，不能附着到切换后的项目。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 的 T20 本地可见性结论保持不变，并补充其项目隔离实现依据；prompt handoff、typed send 和实际 Agent draft 仍未完成。
+- **状态：** **implemented（T20 project isolation fix）**。Windows 实跑 workflow-authoring 22/22、workflow-authoring + workflows 28/28、Desktop typecheck、`pnpm check:docs` 与 `git diff --check` 通过；未运行 headed Electron，不宣称 Agent/send 或 M7 完成。
