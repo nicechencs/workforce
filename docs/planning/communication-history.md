@@ -37,6 +37,14 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）#34 T19/T21 headed 真窗 PASS 后 squash 进 `ae0f4e6`
+
+- **决定：** Test-bot 对 PR #34 head `06e6b659` 的 T19 自定义 Team 写 UI / 草稿 persist 与 T21 项目详情 `orchestrationMode` + start 记 headed Electron 真窗口 **PASS**（报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`，Test-bot workspace，未必入库）。随后 #34 squash 进 `dev` tip `ae0f4e6`。进度页只把这两张卡标 PASS，不宣称 M7/M8 完成，不宣称 T20 Agent/send；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T19/T21 与 §4/§5；[02-development-task-backlog.md](02-development-task-backlog.md) T19/T21 当前切片去掉「headed 未跑」。
+- **状态：** T19/T21 headed 真窗 **implemented**（PASS，证据在该报告）。M7/M8 完成、T20 Agent/send、T18 画布 headed 仍 **planned**。
+
+---
+
 ## 2026-09-12（Asia/Taipei）把 main 隔夜剩余缺口迁到 `dev`（不并进 `main`）
 
 - **决定：** 日常线是 `dev`。在 tip `122600d`（#32 + #33）之上补迁 main 仍多出来的隔夜工作：T19 完整自定义 Team 写 UI + 草稿 persist（#21）；T21 项目详情挂载 orchestrationMode 控件（#26）；composed `orchestrationMode` 传入 `app.start()` / Run / host 记录（#28 深度，**不**重开 C5–C9，不把该字段写入 `StartRunRequest`）；#20 Placement 文档（本机默认，远程与容器为一等产品能力，实现未完成）。不 merge 到 `main`，不删除 `main`。不宣称 M7/M8 完成、headed PASS、`direct` 调度、生产 Codex direct，或远程/容器 runner 已实现。

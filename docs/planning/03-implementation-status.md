@@ -10,6 +10,8 @@ updated: 2026-09-12
 
 日期：2026-09-12  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
+修订：2026-09-12 — Test-bot headed 真窗口对 PR #34 head `06e6b659` 的 T19（自定义 Team 写 UI / 草稿 persist）与 T21（项目详情 `orchestrationMode` + start）记 **PASS**。报告路径 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`（Test-bot workspace，未必入库）。#34 已 squash 进本 `dev` tip `ae0f4e6`。**不**宣称 M7/M8 完成，**不**宣称 T20 Agent/send；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。T18 画布 headed 仍未在本 tip 复验。
+
 修订：2026-09-12 — 把 main 隔夜剩余缺口迁到本 `dev` tip（`122600d` 之上）：T19 自定义 Team 写 UI + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload；T21 项目详情挂载 orchestrationMode 控件；composed `startProject` → `app.start` / Run / host 记录回传 `orchestrationMode`（**不**写入 `StartRunRequest`）；#20 Placement 文档（本机默认，远程/容器为一等产品能力，实现未完成）。**不**宣称 M7/M8 完成、headed PASS、`direct` 调度或生产 Codex direct。
 
 修订：2026-09-12 — 从 main #31（`43f281e4`）把 Desktop-local authoring session store + 仅用户 append + renderer `localStorage` 快照迁到本 `dev` tip。`CHAT_SESSION_PROTOCOL_FROZEN` **仍为 false**；无 Agent/send、无 chat HTTP。**不**宣称 M7 完成，也**不**照搬 #30/#31 在 main 上的 headed PASS。其余 T18/T19/T21 边界不变。
@@ -30,7 +32,7 @@ updated: 2026-09-12
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
-M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完成**。2026-09-12 起仓库里**已有**部分 M7/M8 切片代码（见 T18–T21），不得再写「都还没有代码」。M7 完成仍需 T20 send/Agent、T20-B change-set、自定义 Team 发布/绑定闭环与 headed 验收；M8 完成仍需 `direct` 调度与 Run 轴双写到 `runs.orchestration_mode` 列。D17/D18 前置：T02 已冻结执行三轴（`packages/protocol/src/execution.ts`），T04 已落地 `005_execution_axes_expand` 与 **`006_catalog_definitions`**（catalog_workflows / catalog_teams 四表），S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、新 Run 双写三轴到 `runs.orchestration_mode` 列、`authoring_change_sets` 写入方、T16 current-M3 upgrade fixture。
+M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完成**。2026-09-12 起仓库里**已有**部分 M7/M8 切片代码（见 T18–T21），不得再写「都还没有代码」。M7 完成仍需 T20 send/Agent、T20-B change-set、自定义 Team 发布/绑定闭环；T19 写 UI headed 已 PASS，不等于 M7 完成。M8 完成仍需 `direct` 调度与 Run 轴双写到 `runs.orchestration_mode` 列。T21 项目详情 start headed 已 PASS，不等于 M8 完成。D17/D18 前置：T02 已冻结执行三轴（`packages/protocol/src/execution.ts`），T04 已落地 `005_execution_axes_expand` 与 **`006_catalog_definitions`**（catalog_workflows / catalog_teams 四表），S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、新 Run 双写三轴到 `runs.orchestration_mode` 列、`authoring_change_sets` 写入方、T16 current-M3 upgrade fixture。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
@@ -55,10 +57,10 @@ M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完�
 | T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client；桌面 happy-dom（非真窗口）。current-M3 upgrade fixture 未跑。执行三轴协议已冻结；DB 有 005 expand + 006 catalog。`:start` 可回显 `orchestrationMode` 并传入 `app.start()` / Run 记录（不进 `StartRunRequest`）。无 headed PASS |
 | T17 | 未开始 | 打包/签名 |
 | T18 | 部分 M7 UI：画布 + 草稿写 API 已有，未完成、未 headed | 画布页 + `write-client` + catalog 写路由（`POST/PATCH /workflows`、`/versions`、`:publish`）+ IPC 写 allowlist。列表「新建画布」。happy-dom / 包测已跑。**未** headed 验收。未发布图仍不可被 Runtime 执行。皮肤用 `features/projects/ui.ts` inline，未重贴设计系统。**不**宣称 M7 完成 |
-| T19 | 写 UI + 草稿 persist 已接线；M7 未完成 | 换掉只读 `rejectCustomTeamSave()` 桩。列表/详情走 `GET /teams` + `GET /teams?status=draft` + `GET /teams/{id}`；保存走已有 `POST/PATCH /teams` 与 versions。发布按钮诚实：无假 publish/bind 成功。项目 Settings 可选手动绑定已发布自定义 TeamVersion（须服务端回传 `teamVersionId`）。**未** headed 验收。**不**宣称 M7 完成 |
+| T19 | 写 UI + 草稿 persist 已接线；headed 真窗 **PASS**；M7 未完成 | 换掉只读 `rejectCustomTeamSave()` 桩。列表/详情走 `GET /teams` + `GET /teams?status=draft` + `GET /teams/{id}`；保存走已有 `POST/PATCH /teams` 与 versions。发布按钮诚实：无假 publish/bind 成功。项目 Settings 可选手动绑定已发布自定义 TeamVersion（须服务端回传 `teamVersionId`）。headed 真窗口 **PASS**（PR #34 head `06e6b659`，报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`；已 squash 进 `dev` `ae0f4e6`）。**不**宣称 M7 完成 |
 | T20 | 作者壳 + Desktop-local session store 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；无 Agent/send | `workflow-authoring` 由工作流页 `?authoring=1` 挂入；`packages/protocol` authoring session/draft DTO 已在。本机 `InProcessAuthoringSessionStore` 只追加 `role=user`，快照写入 renderer `localStorage`，Ctrl+R reload 可恢复。旗标 `CHAT_SESSION_PROTOCOL_FROZEN` 为 **false**；「发送给编排 Agent」仍禁用。V0.1 传输约定 Desktop-local，**无** chat HTTP path。禁止假 Agent 成功。**不**宣称对话编排完成或 M7 完成。T20-B 未做 |
 | T20-B | 已规划，未实现 | 无 Application authoring use case、proposal/change-set、CAS/staged apply |
-| T21 | 项目详情已挂 mode 控件；composed passthrough 已加厚；M8 未完成 | `GET /capabilities.orchestration`；`:start` 可选 `orchestrationMode`；`direct` 无 probe → 422。项目「开始执行」把控件选中的 mode 传入 `startProject`。composed `startProject` 把 mode 传入 `app.start()`，写入 ProjectRecord / RunRecord / `StartRunHostRequest` 并回显 DTO。**不**写入 protocol `StartRunRequest`，也**不**双写 `runs.orchestration_mode` 列。无 headed PASS、无 Codex direct、无 `direct` 调度、**不**宣称 M8 完成 |
+| T21 | 项目详情已挂 mode 控件；composed passthrough 已加厚；headed 真窗 **PASS**；M8 未完成 | `GET /capabilities.orchestration`；`:start` 可选 `orchestrationMode`；`direct` 无 probe → 422。项目「开始执行」把控件选中的 mode 传入 `startProject`。composed `startProject` 把 mode 传入 `app.start()`，写入 ProjectRecord / RunRecord / `StartRunHostRequest` 并回显 DTO。**不**写入 protocol `StartRunRequest`，也**不**双写 `runs.orchestration_mode` 列。headed 真窗口 **PASS**（同一报告 / tip `06e6b659` / 合入 tip `ae0f4e6`）。无 Codex direct、无 `direct` 调度、**不**宣称 M8 完成 |
 
 ## 3. 实际验证
 
@@ -130,7 +132,8 @@ pnpm lint                                     # 退出 0
    `apps/desktop` unit tests 覆盖 IPC 白名单、hash 路由、feature glob、SSE 解析、页面 view-model（412 保留表单、取消中、未知成本非 0、pause 隐藏）。  
    **项目详情标签：** 对照修订后的 IA §4.3.1–§4.3.4：页头保留项目命令与只读摘要；六标签为 概览 / Tasks / Runs / Artifacts / Activity / Settings。WorkspaceBinding 写入只在 Settings（`project-bind-workspace`）；概览只有进度计数（DAG 边在 Tasks 标签，不在概览）。Tasks / Runs / Artifacts / Activity 复用 `listTasks` / `listRuns` / `listArtifacts` / `listEvents`。composed API 的公开 Task DTO **始终**带 `dependsOn`；Tasks 展示真实依赖边（无依赖写「依赖：无」）。「依赖：未返回」只是旧客户端/夹具缺字段时的 UI 回退，不表示现行协议仍是内部-only。深链 `#/projects/:id?tab=` 由项目页读取（壳路由仍只解析 path）。  
    **Headless page driver：** `apps/desktop/tests/main-path.smoke.test.ts` 在 happy-dom 里点项目页，对 composed Mock daemon 走创建 → Settings 绑定工作区（测试 preload 假 picker）→ 页头开始规划 → 确认计划 → 开始执行 → Tasks 核对 `dev_alpha` / `dev_bravo` 及依赖文案（`outputs_ready` 或「依赖：无」）。这是 DOM driver，不是真窗口。默认 `pnpm test` 会跑。  
-   **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
+   **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。  
+   **T19 / T21 headed 真窗：** Test-bot 对 PR #34 head `06e6b659` **PASS**（`/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`：自定义 Team 写 UI / 草稿 persist；项目详情 `orchestrationMode` + start）。#34 已 squash 进 `dev` `ae0f4e6`。只覆盖这两张卡，不是完整 headed 套件，也不是 T18 画布或 T20 Agent/send。
 
 5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist + `apps/desktop/tests/workflows-catalog-proxy.test.ts`）  
    生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET。2026-09-12 起 IPC 另放行 catalog **写** path（`POST/PATCH /workflows`、`/versions`、`:publish` 及对应 teams）。只读目录仍必须列出已发布 `software-development-team.feature-delivery`；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。写接口接通 **不等于** 画布 headed 可用，也不表示 Mock/Codex Runtime 可执行未发布定义；本切片**未**宣称 headed Electron 已复验。
@@ -169,17 +172,17 @@ Approval(gate=artifact)                     ✅
 Mock 产物权威                                ✅ LocalArtifactStore；可删 world.json，content 仍可读
 ```
 
-壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」。**当前代码**：只读目录仍接通；另有画布壳、catalog 写 API、自定义 Team 写 UI、作者壳、项目详情 orchestrationMode 控件与 composed passthrough（见 T18–T21）。不得宣称 Mock/Codex Runtime 可执行未发布定义，不得宣称 headed PASS、M7/M8 完成、Agent send 或 `direct` 调度。远程/容器 Placement 是产品冻结，runner **未实现**。
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」。**当前代码**：只读目录仍接通；另有画布壳、catalog 写 API、自定义 Team 写 UI、作者壳、项目详情 orchestrationMode 控件与 composed passthrough（见 T18–T21）。T19/T21 headed 真窗已 **PASS**（#34 / `06e6b659` → `ae0f4e6`），不得把该 PASS 写成 M7/M8 完成、T18 画布 headed、T20 Agent/send 或 `direct` 调度。不得宣称 Mock/Codex Runtime 可执行未发布定义。远程/容器 Placement 是产品冻结，runner **未实现**。
 
 ## 5. 剩余工作
 
-1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
+1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。T19 写 UI / 草稿 persist 与 T21 项目详情 `orchestrationMode` + start 已有 headed **PASS**（#34 head `06e6b659` / 合入 `ae0f4e6`，报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`），不代替目录对话框、SSE、Run 控制台、T18 画布或 T20 作者壳。  
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
 4. **T18 剩余**：headed 真窗扫画布保存/刷新；把画布页重贴 `components/ui.tsx`；未发布图仍不得被 `:start` / Runtime 执行。画布 + 写 API **不等于** M7 完成。  
-5. **T19 剩余**：写 UI + 草稿 persist 已在本 tip。headed 真窗未跑；发布/绑定不得假成功；未发布草稿仍不可开始规划。不等于 M7 完成。  
+5. **T19 剩余**：写 UI + 草稿 persist 已在本 tip。headed 真窗 **PASS**（`06e6b659` / `ae0f4e6`，同上报告）。发布/绑定不得假成功；未发布草稿仍不可开始规划。不等于 M7 完成。  
 6. **T20/T20-B 剩余**：session store / 仅用户 append / `localStorage` 已在本 tip。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false；无 chat send、无编排 Agent、无 Application authoring use case / change-set。作者壳不得假成功，也不得写成对话编排完成或 M7 完成。无 headed PASS。  
-7. **T21 剩余**：控件已挂项目详情；composed passthrough 已把 mode 传入 `app.start()` / Run / host 记录。`direct` 调度与 `runs.orchestration_mode` 列双写未做。**禁止**把 mode 写入 `StartRunRequest`。无 headed PASS、无 Codex direct。  
+7. **T21 剩余**：控件已挂项目详情；composed passthrough 已把 mode 传入 `app.start()` / Run / host 记录。headed 真窗 **PASS**（同上报告）。`direct` 调度与 `runs.orchestration_mode` 列双写未做。**禁止**把 mode 写入 `StartRunRequest`。无 Codex direct。**不**宣称 M8 完成。  
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；远程/容器是 D19 产品冻结，runner **未实现**。UI 只读说明，未伪造已接入。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。
