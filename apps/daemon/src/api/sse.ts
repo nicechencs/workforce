@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { EventCursorExpired, cursorFilterDigest } from "@workforce/events/subscriptions";
-import { encodeSseCursor, decodeSseCursor, type WorkforceEvent } from "@workforce/protocol";
+import {
+  EventCursorExpired,
+  cursorFilterDigest,
+  decodeSubscriptionCursor,
+} from "@workforce/events/subscriptions";
+import { encodeSseCursor, type WorkforceEvent } from "@workforce/protocol";
 
 import { AppError } from "../modules/errors.js";
 import type { AppServices } from "../modules/index.js";
@@ -37,14 +41,10 @@ export function registerSse(
     let after = 0;
     if (rawCursor !== undefined) {
       try {
-        const cursor = decodeSseCursor(rawCursor);
-        if (cursor.filterDigest !== digest) {
-          throw new EventCursorExpired("SSE cursor filter does not match the subscription");
-        }
-        if (cursor.ingestionPosition < services.trimHorizon()) {
+        after = decodeSubscriptionCursor(rawCursor, filter);
+        if (after < services.trimHorizon()) {
           throw new EventCursorExpired("SSE cursor is older than retained events");
         }
-        after = cursor.ingestionPosition;
       } catch (error) {
         if (error instanceof EventCursorExpired || error instanceof AppError) {
           throw error instanceof AppError
@@ -74,7 +74,12 @@ export function registerSse(
       after = position;
     };
 
+    let flushing = false;
     const flush = (): void => {
+      if (flushing) {
+        return;
+      }
+      flushing = true;
       const eventQuery: Parameters<AppServices["listEvents"]>[0] = {
         limit: parseLimit(query.limit, 200),
         afterIngestionPosition: after,
@@ -83,10 +88,16 @@ export function registerSse(
       if (runId !== undefined) eventQuery.runId = runId;
       if (filter.types !== undefined) eventQuery.types = filter.types;
       if (filter.stream !== undefined) eventQuery.stream = filter.stream;
-      const page = services.listEvents(eventQuery);
-      for (const event of page.items) {
-        send(event);
-      }
+      void Promise.resolve(services.listEvents(eventQuery))
+        .then((page) => {
+          for (const event of page.items) {
+            send(event);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          flushing = false;
+        });
     };
 
     flush();

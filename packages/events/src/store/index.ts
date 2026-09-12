@@ -17,6 +17,7 @@ export interface EventReadQuery {
   afterIngestionPosition?: number;
   types?: string[];
   projectId?: string;
+  runId?: string;
   limit: number;
 }
 
@@ -79,6 +80,10 @@ export class SqliteEventStore {
       clauses.push("project_id = ?");
       params.push(query.projectId);
     }
+    if (query.runId !== undefined) {
+      clauses.push("run_id = ?");
+      params.push(query.runId);
+    }
     if (query.types !== undefined && query.types.length > 0) {
       clauses.push(`event_type IN (${query.types.map(() => "?").join(", ")})`);
       params.push(...query.types);
@@ -117,4 +122,22 @@ export function nextStreamSequence(db: SqliteQueryable, stream: string): number 
 export function highWaterMark(db: SqliteQueryable): number {
   const row = db.prepare("SELECT COALESCE(MAX(ingestion_position), 0) AS hw FROM events").get();
   return row ? Number(row.hw) : 0;
+}
+
+/**
+ * Last ingestion position that is no longer retained.
+ * Derived from the durable events table (and sqlite_sequence after a full trim)
+ * so expiry survives Daemon restart. Catch-up only; never used to replay effects.
+ */
+export function trimHorizon(db: SqliteQueryable): number {
+  const minRow = db.prepare("SELECT MIN(ingestion_position) AS min_pos FROM events").get();
+  const minPos = minRow?.min_pos;
+  if (minPos !== null && minPos !== undefined) {
+    return Math.max(0, Number(minPos) - 1);
+  }
+  const seqRow = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get("events");
+  if (!seqRow || seqRow.seq === null || seqRow.seq === undefined) {
+    return 0;
+  }
+  return Number(seqRow.seq);
 }
