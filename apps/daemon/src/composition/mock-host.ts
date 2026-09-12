@@ -190,12 +190,12 @@ export class ComposedMockHost implements RuntimeHostPort {
               (item) => item.sourceCursor === event.sourceCursor,
             );
             const storedHandle = await this.store.getHandle(handle.handleId);
-            if (
-              !storedEvent ||
-              storedEvent.auditOnly ||
-              storedHandle?.request.snapshotRef !== "authoring:proposal"
-            ) {
+            if (storedHandle?.request.snapshotRef !== "authoring:proposal") {
               continue;
+            }
+            if (!storedEvent || storedEvent.auditOnly) {
+              this.scheduleReplay(handle);
+              return;
             }
             const consumed = await this.onAuthoringProposal({
               handleId: handle.handleId,

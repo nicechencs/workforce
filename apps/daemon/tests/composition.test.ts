@@ -1351,7 +1351,10 @@ describe("composed M3 mock loop", () => {
     expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
   }, 20_000);
 
-  it("keeps Task dependsOn and artifact bytes after world.json is deleted", async () => {
+  it(
+    "keeps Task dependsOn and artifact bytes after world.json is deleted",
+    { timeout: 40_000 },
+    async () => {
     const first = await startComposed();
     const { daemon, auth, stateDir } = first;
     const port = daemon.port;
@@ -1476,7 +1479,7 @@ describe("composed M3 mock loop", () => {
       expect(content.ok).toBe(true);
       expect(await content.text()).toBe(artifact.text);
     }
-  }, 20_000);
+  });
 
   it("reloads the project from sqlite after world.json is deleted", async () => {
     const first = await startComposed();

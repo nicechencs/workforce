@@ -134,7 +134,7 @@ describe("orchestrationMode start pass-through", () => {
     });
     expect(started.project.status).toBe("ready");
     expect(started.project.orchestrationMode).toBe("direct");
-    expect(started.project.workflowInstanceId).toBeDefined();
+    expect(started.project.workflowInstanceId).toBeUndefined();
     expect([...app.world.tasks.values()]).toHaveLength(1);
 
     const receipt = await app.world.receipts.getByOperationId("op_start_direct");

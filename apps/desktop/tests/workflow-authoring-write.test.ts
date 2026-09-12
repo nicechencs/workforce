@@ -163,7 +163,21 @@ function setInput(testId: string, value: string): void {
   if (!(node instanceof HTMLInputElement) && !(node instanceof HTMLTextAreaElement)) {
     throw new Error(`missing field ${testId}`);
   }
+  node.focus();
   setNativeValue(node, value);
+}
+
+async function typeIntent(value: string): Promise<void> {
+  await act(async () => {
+    setInput("workflow-authoring-intent", value);
+  });
+  const node = document.querySelector('[data-testid="workflow-authoring-intent"]');
+  if (!(node instanceof HTMLTextAreaElement) && !(node instanceof HTMLInputElement)) {
+    throw new Error("missing intent field after typing");
+  }
+  if (node.value !== value) {
+    throw new Error(`intent field stayed ${JSON.stringify(node.value)}`);
+  }
 }
 
 function commandOptions(prefix: string) {
@@ -257,11 +271,10 @@ describe("workflow authoring write path", () => {
       );
       expect(empty).toContain(EMPTY_INTENT_NOTE);
 
+      await typeIntent("请生成完整工作流");
       await act(async () => {
-        setInput("workflow-authoring-intent", "请生成完整工作流");
-      });
-      await act(async () => {
-        send.click();
+        document.querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-send-chat"]')
+          ?.click();
       });
       const messages = await waitFor(
         "user message",
@@ -364,11 +377,10 @@ describe("workflow authoring write path", () => {
       const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
       return button instanceof HTMLButtonElement && !button.disabled ? button : null;
     });
+    await typeIntent("保留意图");
     await act(async () => {
-      setInput("workflow-authoring-intent", "保留意图");
-    });
-    await act(async () => {
-      send.click();
+      document.querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-send-chat"]')
+        ?.click();
     });
     const error = await waitFor(
       "send failure",
@@ -421,11 +433,10 @@ describe("workflow authoring write path", () => {
         const button = document.querySelector('[data-testid="workflow-authoring-send-chat"]');
         return button instanceof HTMLButtonElement && !button.disabled ? button : null;
       });
+      await typeIntent("请记下这段用户意图");
       await act(async () => {
-        setInput("workflow-authoring-intent", "请记下这段用户意图");
-      });
-      await act(async () => {
-        send.click();
+        document.querySelector<HTMLButtonElement>('[data-testid="workflow-authoring-send-chat"]')
+          ?.click();
       });
       const messages = await waitFor(
         "user message",

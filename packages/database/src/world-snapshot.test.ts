@@ -508,6 +508,7 @@ describe("SqliteWorldSnapshot", () => {
     const snapshot = sampleSnapshot();
     snapshot.runs = snapshot.runs.map((run) => ({
       ...run,
+      orchestrationMode: "workflow_bound" as const,
       executionSnapshot: {
         orchestrationMode: "workflow_bound",
         transport: "process",
@@ -579,10 +580,11 @@ describe("SqliteWorldSnapshot", () => {
         }),
       ).rejects.toMatchObject({ code: "conflict" });
 
-      db.connection
-        .prepare("UPDATE runs SET orchestration_mode = NULL WHERE id = ?")
-        .run("run_snap");
-      expect(() => db.worldSnapshot.load()).toThrow(/partially populated/);
+      expect(() =>
+        db.connection
+          .prepare("UPDATE runs SET orchestration_mode = NULL WHERE id = ?")
+          .run("run_snap"),
+      ).toThrow(/execution-axis/);
     } finally {
       db.close();
     }
