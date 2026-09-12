@@ -128,7 +128,7 @@ describe("team write probe", () => {
         patchTeamVersion: async () => undefined,
         publishTeamVersion: async () => undefined,
         getTeam: async () => undefined,
-        patchProject: () => undefined,
+        patchProject: async () => undefined,
         listTeams: async () => ({ items: [PRESET_TEAM] }),
       }),
     ).resolves.toMatchObject({ create: false, publish: false, bind: false, versionRead: false });
@@ -144,7 +144,7 @@ describe("team write probe", () => {
         getTeamVersion: async () => {
           throw problemFrom({ code: "not_found", status: 404, detail: "missing route" });
         },
-        patchProject: () => undefined,
+        patchProject: async () => undefined,
         listTeams: async () => ({ items: [{ id: "tm_software_development", version: "0.1.0" }] }),
       }),
     ).resolves.toMatchObject({ create: false, versionRead: false });
@@ -171,7 +171,7 @@ describe("team write probe", () => {
           members: [],
         };
       },
-      patchProject: () => undefined,
+      patchProject: async () => undefined,
       listTeams: async () => ({ items: [] }),
     });
     expect(support).toEqual({
