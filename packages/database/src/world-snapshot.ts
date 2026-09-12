@@ -156,6 +156,11 @@ export class SqliteWorldSnapshot {
         }
       });
     }
+    // Snapshot-only switch: WorkflowInstance version columns are populated from
+    // ProjectExecutionSnapshot, so the snapshot row must exist before the instance.
+    for (const executionSnapshot of snapshot.executionSnapshots) {
+      this.executionSnapshots.insert(tx, executionSnapshot);
+    }
     for (const workflow of snapshot.workflows) {
       putWithCas(this.workflows.get(workflow.id), workflow, (expected) => {
         if (expected === undefined) {
@@ -164,13 +169,6 @@ export class SqliteWorldSnapshot {
           this.workflows.update(tx, workflow, expected, at);
         }
       });
-    }
-    // Insert-once: an existing snapshot with the same content is a no-op. This runs after the
-    // project and workflow-version loops because project_execution_snapshots has foreign keys to
-    // projects / workflow_versions / team_versions. A snapshot referencing a project or version
-    // absent from this same snapshot still fails the foreign key check and rolls back the whole save.
-    for (const executionSnapshot of snapshot.executionSnapshots) {
-      this.executionSnapshots.insert(tx, executionSnapshot);
     }
     for (const task of snapshot.tasks) {
       putWithCas(this.tasks.get(task.id), task, (expected) => {

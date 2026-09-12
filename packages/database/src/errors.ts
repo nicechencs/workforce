@@ -19,6 +19,10 @@ export function sqliteErrcode(error: unknown): number | undefined {
   return undefined;
 }
 
+/** SQLITE_CONSTRAINT */
+export const SQLITE_CONSTRAINT = 19;
+/** SQLITE_CONSTRAINT_CHECK */
+export const SQLITE_CONSTRAINT_CHECK = 275;
 /** SQLITE_CONSTRAINT_UNIQUE */
 export const SQLITE_CONSTRAINT_UNIQUE = 2067;
 /** SQLITE_CONSTRAINT_PRIMARYKEY */
@@ -29,6 +33,18 @@ export const SQLITE_BUSY = 5;
 export function isConstraintError(error: unknown): boolean {
   const code = sqliteErrcode(error);
   return code === SQLITE_CONSTRAINT_UNIQUE || code === SQLITE_CONSTRAINT_PRIMARYKEY;
+}
+
+export function isCheckConstraintError(error: unknown): boolean {
+  const code = sqliteErrcode(error);
+  if (code === SQLITE_CONSTRAINT_CHECK) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("execution-axis contract") ||
+    message.includes("execution-axis snapshot is immutable")
+  );
 }
 
 export function mapWriteError(error: unknown, conflictMessage: string): never {

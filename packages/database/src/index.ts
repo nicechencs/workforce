@@ -53,6 +53,9 @@ export {
   MIGRATION_008_SQL,
   MIGRATION_009_SQL,
   MIGRATION_010_SQL,
+  MIGRATION_011_SQL,
+  MIGRATION_012_SQL,
+  MIGRATION_013_SQL,
 } from "./schema.js";
 export {
   EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
@@ -62,6 +65,13 @@ export {
   type ExecutionAxisMigrationEvidence,
   type ExecutionAxisMigrationItem,
 } from "./execution-axis-migration.js";
+export {
+  applyExecutionAxisBackfill,
+  LEGACY_PLACEMENT_SCHEMA_VERSION,
+  EXECUTION_AXIS_BACKFILL_ACTIONS,
+  type ExecutionAxisBackfillAction,
+  type ExecutionAxisBackfillResult,
+} from "./execution-axis-backfill.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 export {
   SqliteAuthoringChatPatchRepository,
