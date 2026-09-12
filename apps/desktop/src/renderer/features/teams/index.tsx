@@ -8,3 +8,8 @@ export const feature: WorkforceFeatureModule = {
 };
 
 export { ProjectTeamBindingField, TeamsPage } from "./page.js";
+export {
+  bindProjectToPublishedTeamVersion,
+  isTeamReadyForPlanning,
+  loadPublishedTeamCatalog,
+} from "./model.js";
