@@ -47,8 +47,9 @@ export class SqliteWorkflowInstanceRepository {
 
   insert(tx: Tx, record: WorkflowInstanceRecord, at: string): void {
     const db = sqliteDbOf(tx);
-    const organizationId = organizationIdOfProject(db, record.projectId);
-    const graph = publishAndReadCanonicalGraph(db, record, at);
+    const persisted = snapshotOwnedWorkflow(db, record);
+    const organizationId = organizationIdOfProject(db, persisted.projectId);
+    const graph = publishAndReadCanonicalGraph(db, persisted, at);
     try {
       db.prepare(
         `INSERT INTO workflow_instances (
@@ -56,18 +57,18 @@ export class SqliteWorkflowInstanceRepository {
            state_revision, started_at, created_at, updated_at, graph_json, cancel_requested_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
-        record.id,
+        persisted.id,
         organizationId,
-        record.projectId,
-        record.workflowVersionId,
-        record.executionSnapshotId ?? null,
-        record.status,
-        record.stateRevision,
-        record.status === "created" ? null : at,
+        persisted.projectId,
+        persisted.workflowVersionId,
+        persisted.executionSnapshotId ?? null,
+        persisted.status,
+        persisted.stateRevision,
+        persisted.status === "created" ? null : at,
         at,
         at,
         asJsonText(graph),
-        record.cancelRequestedAt ?? null,
+        persisted.cancelRequestedAt ?? null,
       );
     } catch (error) {
       if (isConstraintError(error)) {
@@ -79,7 +80,8 @@ export class SqliteWorkflowInstanceRepository {
 
   update(tx: Tx, record: WorkflowInstanceRecord, expectedStateRevision: number, at: string): void {
     const db = sqliteDbOf(tx);
-    const graph = publishAndReadCanonicalGraph(db, record, at);
+    const persisted = snapshotOwnedWorkflow(db, record);
+    const graph = publishAndReadCanonicalGraph(db, persisted, at);
     const result = db
       .prepare(
         `UPDATE workflow_instances
@@ -97,16 +99,16 @@ export class SqliteWorkflowInstanceRepository {
           WHERE id = ? AND state_revision = ?`,
       )
       .run(
-        record.workflowVersionId,
-        record.executionSnapshotId ?? null,
-        record.status,
-        record.stateRevision,
+        persisted.workflowVersionId,
+        persisted.executionSnapshotId ?? null,
+        persisted.status,
+        persisted.stateRevision,
         asJsonText(graph),
-        record.cancelRequestedAt ?? null,
+        persisted.cancelRequestedAt ?? null,
         at,
-        record.status,
+        persisted.status,
         at,
-        record.id,
+        persisted.id,
         expectedStateRevision,
       );
     assertCas(result.changes, "workflow instance", record.id);
@@ -145,8 +147,56 @@ export function listPublishedWorkflowGraphs(db: DatabaseSync): WorkflowGraph[] {
     });
 }
 
+function snapshotOwnedWorkflow(
+  db: DatabaseSync,
+  record: WorkflowInstanceRecord,
+): WorkflowInstanceRecord {
+  if (!record.executionSnapshotId) {
+    return record;
+  }
+  const snapshot = readSnapshot(db, record.executionSnapshotId);
+  if (!snapshot) {
+    return record;
+  }
+  if (record.workflowVersionId !== snapshot.workflowVersionId) {
+    throw new PersistenceError(
+      "conflict",
+      `workflow instance ${record.id} workflowVersionId conflicts with execution snapshot ${snapshot.id}`,
+    );
+  }
+  return {
+    ...record,
+    workflowVersionId: snapshot.workflowVersionId,
+    executionSnapshotId: snapshot.id,
+  };
+}
+
+function readSnapshot(
+  db: DatabaseSync,
+  id: string,
+): { id: string; workflowVersionId: string } | null {
+  const row = db
+    .prepare("SELECT id, workflow_version_id FROM project_execution_snapshots WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    id: requiredText(cell(row, "id"), "id"),
+    workflowVersionId: requiredText(cell(row, "workflow_version_id"), "workflow_version_id"),
+  };
+}
+
 function rowToWorkflow(db: DatabaseSync, row: Record<string, unknown>): WorkflowInstanceRecord {
-  const workflowVersionId = requiredText(cell(row, "workflow_version_id"), "workflow_version_id");
+  const snapshotId = optionalText(cell(row, "execution_snapshot_id"));
+  const snapshot = snapshotId === null ? null : readSnapshot(db, snapshotId);
+  if (snapshotId !== null && snapshot === null) {
+    throw new PersistenceError(
+      "not_found",
+      `project execution snapshot ${snapshotId} is missing; instance version columns are not an authority`,
+    );
+  }
+  const workflowVersionId =
+    snapshot?.workflowVersionId ??
+    requiredText(cell(row, "workflow_version_id"), "workflow_version_id");
   return {
     id: requiredText(cell(row, "id"), "id"),
     projectId: requiredText(cell(row, "project_id"), "project_id"),
@@ -154,7 +204,7 @@ function rowToWorkflow(db: DatabaseSync, row: Record<string, unknown>): Workflow
     graph: parseGraph(readPublishedWorkflowVersion(db, workflowVersionId)),
     status: requiredText(cell(row, "status"), "status") as WorkflowInstanceRecord["status"],
     stateRevision: requiredInt(cell(row, "state_revision"), "state_revision"),
-    ...ifPresent("executionSnapshotId", optionalText(cell(row, "execution_snapshot_id"))),
+    ...ifPresent("executionSnapshotId", snapshotId),
     ...ifPresent("cancelRequestedAt", optionalText(cell(row, "cancel_requested_at"))),
   };
 }

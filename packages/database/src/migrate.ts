@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { applyExecutionAxisBackfill, stampExecutionAxisSwitch } from "./execution-axis-backfill.js";
 import { MIGRATIONS, SCHEMA_MIGRATIONS_DDL } from "./schema.js";
 import { cell, requiredText } from "./sql.js";
+
+const MIGRATION_APPLY: Partial<Record<string, (db: DatabaseSync, now: string) => void>> = {
+  "011_execution_axes_backfill": applyExecutionAxisBackfill,
+  "012_execution_axes_switch": stampExecutionAxisSwitch,
+};
 
 export function checksumSql(sql: string): string {
   return createHash("sha256").update(sql).digest("hex");
@@ -43,6 +49,7 @@ export function migrate(db: DatabaseSync, now: string = new Date().toISOString()
     }
     try {
       db.exec(migration.sql);
+      MIGRATION_APPLY[migration.version]?.(db, now);
       db.prepare(
         "INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)",
       ).run(migration.version, checksum, now);

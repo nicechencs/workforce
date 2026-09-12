@@ -940,6 +940,149 @@ CREATE INDEX idx_authoring_proposal_targets_patch
   ON authoring_proposal_targets(patch_ref, proposal_id);
 `;
 
+/**
+ * T04-MIG S3 backfill ledger. Forward-only: do not rewrite 001–010.
+ *
+ * 005 only expanded nullable axis columns. This migration does not treat that
+ * target DDL as executed: it records backfill / repair / quarantine outcomes so
+ * the TypeScript backfill in the same transaction can fill historical Runs from
+ * verified Local Node / Workspace / RuntimeProfile facts, or leave them
+ * unresolved. It does not add NOT NULL or mutex CHECK.
+ */
+export const MIGRATION_011_SQL = `
+CREATE TABLE execution_axis_backfill_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN (
+    'already_canonical', 'filled', 'repair_required', 'quarantined', 'skipped_direct'
+  )),
+  reason TEXT NOT NULL,
+  snapshot_id TEXT,
+  source_digest TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  UNIQUE (run_id, source_digest)
+);
+
+CREATE INDEX idx_execution_axis_backfill_unresolved
+  ON execution_axis_backfill_results(action, id, run_id)
+  WHERE action IN ('repair_required', 'quarantined');
+
+CREATE TABLE project_execution_snapshot_conflicts (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  reason TEXT NOT NULL,
+  quarantined_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_project_execution_snapshot_conflicts_project
+  ON project_execution_snapshot_conflicts(project_id, snapshot_id);
+`;
+
+/**
+ * T04-MIG S3 switch: one ProjectExecutionSnapshot per Project, snapshot-only
+ * version authority. Forward-only: do not rewrite 001–011.
+ */
+export const MIGRATION_012_SQL = `
+CREATE TABLE execution_axis_authority (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  read_source TEXT NOT NULL CHECK (read_source = 'project_execution_snapshot'),
+  switched_at TEXT NOT NULL
+);
+
+INSERT INTO execution_axis_authority (id, read_source, switched_at)
+VALUES (1, 'project_execution_snapshot', '1970-01-01T00:00:00.000Z');
+
+CREATE UNIQUE INDEX idx_project_execution_snapshots_one_per_project
+  ON project_execution_snapshots(project_id);
+`;
+
+/**
+ * T04-MIG S5 contract. Forward-only: do not rewrite 001–012 or treat 005's
+ * nullable expand as the target DDL.
+ *
+ * SQLite cannot ADD CHECK / NOT NULL to existing `runs` columns inside a
+ * foreign-key transaction, and unresolved historical rows must remain in
+ * `runs` (events / artifacts / receipts still reference them). The target
+ * enum + mutex contract is therefore applied with triggers:
+ * all-NULL unrepaired rows stay readable; any populated row must be a
+ * complete workflow_bound or direct snapshot; once filled, axes are immutable.
+ */
+export const MIGRATION_013_SQL = `
+CREATE TRIGGER runs_execution_axis_contract_insert
+BEFORE INSERT ON runs
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'runs execution-axis contract violated')
+  WHERE NOT (
+    (
+      NEW.orchestration_mode IS NULL
+      AND NEW.transport IS NULL
+      AND NEW.execution_snapshot_id IS NULL
+      AND NEW.placement_snapshot_json IS NULL
+    )
+    OR (
+      NEW.orchestration_mode = 'workflow_bound'
+      AND NEW.transport IN ('process', 'sdk', 'http')
+      AND NEW.execution_snapshot_id IS NOT NULL
+      AND NEW.placement_snapshot_json IS NOT NULL
+      AND json_valid(NEW.placement_snapshot_json)
+    )
+    OR (
+      NEW.orchestration_mode = 'direct'
+      AND NEW.transport IN ('process', 'sdk', 'http')
+      AND NEW.execution_snapshot_id IS NULL
+      AND NEW.placement_snapshot_json IS NOT NULL
+      AND json_valid(NEW.placement_snapshot_json)
+    )
+  );
+END;
+
+CREATE TRIGGER runs_execution_axis_contract_update
+BEFORE UPDATE ON runs
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'runs execution-axis contract violated')
+  WHERE NOT (
+    (
+      NEW.orchestration_mode IS NULL
+      AND NEW.transport IS NULL
+      AND NEW.execution_snapshot_id IS NULL
+      AND NEW.placement_snapshot_json IS NULL
+    )
+    OR (
+      NEW.orchestration_mode = 'workflow_bound'
+      AND NEW.transport IN ('process', 'sdk', 'http')
+      AND NEW.execution_snapshot_id IS NOT NULL
+      AND NEW.placement_snapshot_json IS NOT NULL
+      AND json_valid(NEW.placement_snapshot_json)
+    )
+    OR (
+      NEW.orchestration_mode = 'direct'
+      AND NEW.transport IN ('process', 'sdk', 'http')
+      AND NEW.execution_snapshot_id IS NULL
+      AND NEW.placement_snapshot_json IS NOT NULL
+      AND json_valid(NEW.placement_snapshot_json)
+    )
+  );
+  SELECT RAISE(ABORT, 'runs execution-axis snapshot is immutable')
+  WHERE NOT (
+      OLD.orchestration_mode IS NULL
+      AND OLD.transport IS NULL
+      AND OLD.execution_snapshot_id IS NULL
+      AND OLD.placement_snapshot_json IS NULL
+    )
+    AND (
+      NEW.orchestration_mode IS NOT OLD.orchestration_mode
+      OR NEW.transport IS NOT OLD.transport
+      OR NEW.execution_snapshot_id IS NOT OLD.execution_snapshot_id
+      OR NEW.placement_snapshot_json IS NOT OLD.placement_snapshot_json
+    );
+END;
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -951,4 +1094,7 @@ export const MIGRATIONS = [
   { version: "008_execution_axis_migration_audit", sql: MIGRATION_008_SQL },
   { version: "009_workflow_authoring_scopes", sql: MIGRATION_009_SQL },
   { version: "010_authoring_chat_metadata", sql: MIGRATION_010_SQL },
+  { version: "011_execution_axes_backfill", sql: MIGRATION_011_SQL },
+  { version: "012_execution_axes_switch", sql: MIGRATION_012_SQL },
+  { version: "013_execution_axes_contract", sql: MIGRATION_013_SQL },
 ] as const;

@@ -83,6 +83,16 @@ export class SqliteProjectExecutionSnapshotRepository {
       }
       return;
     }
+    const byProject = this.findByProject(record.projectId);
+    if (byProject && byProject.id !== record.id) {
+      if (byProject.contentHash !== record.contentHash) {
+        throw new PersistenceError(
+          "conflict",
+          `project ${record.projectId} already has execution snapshot ${byProject.id}`,
+        );
+      }
+      return;
+    }
 
     try {
       db.prepare(

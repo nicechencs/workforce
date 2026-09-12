@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Tx } from "@workforce/application";
 import { parseRunExecutionSnapshot, type RunExecutionSnapshot } from "@workforce/protocol";
 
-import { PersistenceError, isConstraintError } from "./errors.js";
+import { PersistenceError, isCheckConstraintError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
 import { cell, optionalText, requiredInt, requiredText } from "./sql.js";
 
@@ -100,31 +100,39 @@ export class SqliteRunRepository {
   setExecutionSnapshot(tx: Tx, runId: string, snapshot: RunExecutionSnapshot): void {
     const db = sqliteDbOf(tx);
     const executionSnapshot = validateExecutionSnapshot(snapshot, runId);
-    const result = db
-      .prepare(
-        `UPDATE runs
-            SET orchestration_mode = ?,
-                transport = ?,
-                execution_snapshot_id = ?,
-                placement_snapshot_json = ?
-          WHERE id = ?
-            AND orchestration_mode IS NULL
-            AND transport IS NULL
-            AND execution_snapshot_id IS NULL
-            AND placement_snapshot_json IS NULL`,
-      )
-      .run(
-        executionSnapshot.orchestrationMode,
-        executionSnapshot.transport,
-        executionSnapshot.executionSnapshotId ?? null,
-        JSON.stringify(executionSnapshot.placementSnapshot),
-        runId,
-      );
-    if (Number(result.changes) === 0) {
-      throw new PersistenceError(
-        "conflict",
-        `run ${runId} execution snapshot already exists or is partially populated`,
-      );
+    try {
+      const result = db
+        .prepare(
+          `UPDATE runs
+              SET orchestration_mode = ?,
+                  transport = ?,
+                  execution_snapshot_id = ?,
+                  placement_snapshot_json = ?
+            WHERE id = ?
+              AND orchestration_mode IS NULL
+              AND transport IS NULL
+              AND execution_snapshot_id IS NULL
+              AND placement_snapshot_json IS NULL`,
+        )
+        .run(
+          executionSnapshot.orchestrationMode,
+          executionSnapshot.transport,
+          executionSnapshot.executionSnapshotId ?? null,
+          JSON.stringify(executionSnapshot.placementSnapshot),
+          runId,
+        );
+      if (Number(result.changes) === 0) {
+        throw new PersistenceError(
+          "conflict",
+          `run ${runId} execution snapshot already exists or is partially populated`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof PersistenceError) throw error;
+      if (isCheckConstraintError(error)) {
+        throw new PersistenceError("constraint", `run ${runId} execution-axis contract violated`);
+      }
+      throw error;
     }
   }
 
@@ -172,6 +180,12 @@ export class SqliteRunRepository {
         throw new PersistenceError(
           "conflict",
           "run already exists or task already has an active run",
+        );
+      }
+      if (isCheckConstraintError(error)) {
+        throw new PersistenceError(
+          "constraint",
+          `run ${input.runId} execution-axis contract violated`,
         );
       }
       throw error;
@@ -232,6 +246,12 @@ export class SqliteRunRepository {
         throw new PersistenceError(
           "conflict",
           "run already exists or task already has an active run",
+        );
+      }
+      if (isCheckConstraintError(error)) {
+        throw new PersistenceError(
+          "constraint",
+          `run ${input.runId} execution-axis contract violated`,
         );
       }
       throw error;

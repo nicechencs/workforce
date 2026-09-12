@@ -105,4 +105,28 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     recovery:
       "audit historical runs into already_canonical / eligible / repair_required / quarantined; never update runs or infer missing axes",
   },
+  {
+    record: "Execution-axis backfill result",
+    location: "execution_axis_backfill_results (append-only; snapshot_id + source_digest only)",
+    uniqueness: "id PRIMARY KEY; UNIQUE (run_id, source_digest); unresolved partial index",
+    recovery:
+      "011 apply fills eligible historical Runs as workflow_bound + legacy PlacementSnapshot; repair_required / quarantined rows stay all-NULL and are not consumed",
+  },
+  {
+    record: "ProjectExecutionSnapshot uniqueness / conflicts",
+    location:
+      "project_execution_snapshots UNIQUE(project_id); extras in project_execution_snapshot_conflicts",
+    uniqueness: "one snapshot per project after 012; conflict table PK id",
+    recovery:
+      "switch reads WorkflowVersion/TeamVersion only from the unique snapshot; conflicting extras are quarantined and not consumed",
+  },
+  {
+    record: "Execution-axis contract",
+    location:
+      "runs_execution_axis_contract_insert/update triggers; execution_axis_authority.read_source",
+    uniqueness:
+      "populated runs must be workflow_bound+snapshot or direct+null snapshot; axes immutable once filled",
+    recovery:
+      "all-NULL unrepaired historical rows remain readable; contract rejects partial/invalid axis writes without rewriting 005",
+  },
 ];
