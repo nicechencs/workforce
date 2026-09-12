@@ -1,4 +1,9 @@
-import { useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type {
+  AuthoringSessionViewDto,
+  AuthoringTurnDto,
+  ProjectDto,
+} from "@workforce/desktop-client";
 
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
@@ -16,162 +21,249 @@ import {
 } from "../projects/ui.js";
 import {
   AGENT_REPLY_GAP,
-  AGENT_SEND_UNAVAILABLE_NOTE,
   AUTHORING_PROPOSAL_PREVIEW_NOTE,
-  canAppendUserMessage,
-  emptyAuthoringModel,
+  AUTHORING_ROUTE_GAP,
+  DRAFT_NOT_RUNTIME_NOTE,
+  activeAuthoringTurn,
+  canCancelAuthoringTurn,
+  canCloseAuthoringTurn,
+  canRetryAuthoringTurn,
+  errorMessage,
   isAuthoringSessionBoundToProject,
-  landedDraftProjection,
-  landUnpublishedDraft,
-  proposalDraftFromForm,
+  isUnavailableMessage,
+  projectLabel,
   resolveAuthoringProjectBinding,
-  reduceAuthoring,
-  type AuthoringDraftDto,
-  type AuthoringFormField,
-  type AuthoringSessionMessageDto,
-  type LandedDraft,
+  sessionStatusLabel,
+  turnStatusLabel,
+  writeCommandOptions,
 } from "./model.js";
-import { getDefaultAuthoringSessionStore, resolveAuthoringProjectId } from "./session-store.js";
+
+type BusyAction =
+  "loading" | "sending" | "confirming" | "cancelling" | "retrying" | "closing" | null;
 
 export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   const client = useWorkforceClient();
-  const [model, dispatch] = useReducer(reduceAuthoring, undefined, emptyAuthoringModel);
-  const store = getDefaultAuthoringSessionStore();
-  const projectBinding = resolveAuthoringProjectBinding(
-    props.params,
-    props.path,
-    typeof window === "undefined" ? "" : window.location.hash,
-  );
-  const projectId = resolveAuthoringProjectId(projectBinding.projectId);
-  const bindingProjectIdRef = useRef(projectId);
-  bindingProjectIdRef.current = projectId;
-  const [hydratedProjectId, setHydratedProjectId] = useState<string | null>(null);
-  const sessionReady =
-    hydratedProjectId === projectId &&
-    model.chat.sessionId !== null &&
-    isAuthoringSessionBoundToProject(model.chat, projectId);
+  const binding = resolveAuthoringProjectBinding(props.params, props.path, currentHash());
+  const routeProjectId = binding.projectId;
+  const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [projectId, setProjectId] = useState(routeProjectId ?? "");
+  const [projectsLoading, setProjectsLoading] = useState(!routeProjectId);
+  const [session, setSession] = useState<AuthoringSessionViewDto | null>(null);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState<BusyAction>(null);
+  const [error, setError] = useState<string | null>(null);
+  const boundProjectRef = useRef(projectId);
+
+  boundProjectRef.current = projectId;
 
   useEffect(() => {
-    setHydratedProjectId(null);
-    const existing = store
-      .list()
-      .find((session) => session.projectId === projectId && session.status === "open");
-    const session = existing ?? store.create({ projectId });
-    dispatch({
-      type: "sessionHydrated",
-      session,
-    });
-    setHydratedProjectId(projectId);
-  }, [projectId, store]);
-
-  function isCurrentSession(sessionId: string | null): boolean {
-    if (!sessionId || bindingProjectIdRef.current !== projectId) {
-      return false;
-    }
-    return isAuthoringSessionBoundToProject(store.load(sessionId), bindingProjectIdRef.current);
-  }
-
-  function persistDraftProjection(sessionId: string, form: typeof model.form): void {
-    const current = store.load(sessionId);
-    if (
-      !current ||
-      !isAuthoringSessionBoundToProject(current, bindingProjectIdRef.current) ||
-      current.draft?.kind === "landed"
-    ) {
+    if (routeProjectId) {
+      setProjectId(routeProjectId);
+      setProjectsLoading(false);
       return;
     }
-    const proposal = proposalDraftFromForm(form);
-    if (!proposal) {
-      return;
-    }
-    dispatch({ type: "sessionUpdated", session: store.attachDraft(sessionId, proposal) });
-  }
-
-  function onAppendUser(): void {
-    // The hash can change before React commits the hydration effect. Keep the
-    // old session visible but fail closed until the new project is hydrated.
-    if (!sessionReady || !isCurrentSession(model.chat.sessionId)) {
-      return;
-    }
-    const intentEl = document.getElementById("wf-authoring-intent");
-    const intentText =
-      intentEl instanceof HTMLTextAreaElement ? intentEl.value : model.form.intentText;
-    const hydrated = reduceAuthoring(model, {
-      type: "hydrate",
-      form: { ...model.form, intentText },
-    });
-    dispatch({ type: "hydrate", form: { ...model.form, intentText } });
-    const submitted = reduceAuthoring(hydrated, { type: "submitChat" });
-    dispatch({ type: "submitChat" });
-    const appended = canAppendUserMessage(submitted);
-    if (!appended.ok) {
-      return;
-    }
-    try {
-      if (!isCurrentSession(appended.sessionId)) {
-        return;
-      }
-      const session = store.appendUserMessage({
-        sessionId: appended.sessionId,
-        role: "user",
-        content: appended.content,
+    let cancelled = false;
+    setProjectsLoading(true);
+    void client
+      .listProjects({ limit: 100 })
+      .then((page) => {
+        if (cancelled) {
+          return;
+        }
+        setProjects(page.items);
+        setProjectId((current) => current || page.items[0]?.id || "");
+        setProjectsLoading(false);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setProjectsLoading(false);
+          setError(errorMessage(reason));
+        }
       });
-      if (!isAuthoringSessionBoundToProject(session, bindingProjectIdRef.current)) {
+    return () => {
+      cancelled = true;
+    };
+  }, [client, routeProjectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setSession(null);
+      setBusy(null);
+      return;
+    }
+    let cancelled = false;
+    setSession(null);
+    setError(null);
+    setBusy("loading");
+    void loadOrCreateSession(client, projectId)
+      .then((loaded) => {
+        if (cancelled || !isAuthoringSessionBoundToProject(loaded, projectId)) {
+          return;
+        }
+        setSession(loaded);
+        setBusy(null);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setBusy(null);
+          setError(errorMessage(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, projectId]);
+
+  async function refreshUntilSettled(
+    sessionId: string,
+    turnId: string,
+    isDone: (status: AuthoringTurnDto["status"]) => boolean = isSettledTurn,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const next = await client.getAuthoringSession(sessionId);
+      if (!isAuthoringSessionBoundToProject(next, boundProjectRef.current)) {
+        throw new Error("Daemon 返回了不属于当前项目的作者会话，已拒绝显示。");
+      }
+      setSession(next);
+      const turn = next.turns.find((item) => item.id === turnId);
+      if (turn && isDone(turn.status)) {
         return;
       }
-      dispatch({ type: "sessionUpdated", session, clearIntent: true });
-      persistDraftProjection(session.id, { ...model.form, intentText });
-    } catch (error) {
-      dispatch({ type: "appendFailed", error });
+      await wait(250);
     }
   }
 
-  async function onLandDraft(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const intentEl = event.currentTarget.ownerDocument.getElementById("wf-authoring-intent");
-    const intentText =
-      intentEl instanceof HTMLTextAreaElement ? intentEl.value : model.form.intentText;
-    const form = {
-      ...model.form,
-      name: String(data.get("name") ?? model.form.name),
-      description: String(data.get("description") ?? model.form.description),
-      rolesText: String(data.get("roles") ?? model.form.rolesText),
-      stepsText: String(data.get("steps") ?? model.form.stepsText),
-      teamName: String(data.get("teamName") ?? model.form.teamName),
-      intentText,
-    };
-    const submitted = reduceAuthoring(reduceAuthoring(model, { type: "hydrate", form }), {
-      type: "submitDraft",
-    });
-    dispatch({ type: "hydrate", form });
-    dispatch({ type: "submitDraft" });
-    if (submitted.phase !== "submitting") {
+  async function onSend(): Promise<void> {
+    const current = session;
+    const content = input.trim();
+    if (!current || current.status !== "open" || !content || busy !== null) {
       return;
     }
-    const expectedProjectId = projectId;
+    setBusy("sending");
+    setError(null);
     try {
-      const draft = await landUnpublishedDraft(client, submitted.form);
-      // A route/hash switch may complete while the write request is in flight.
-      // Do not attach the result to the session from the previous project.
-      if (bindingProjectIdRef.current !== expectedProjectId) {
-        return;
-      }
-      const existing = model.chat.sessionId ? store.load(model.chat.sessionId) : undefined;
-      if (existing && !isAuthoringSessionBoundToProject(existing, expectedProjectId)) {
-        return;
-      }
-      const sessionId = existing?.id ?? store.create({ projectId: expectedProjectId }).id;
-      const session = store.attachDraft(sessionId, landedDraftProjection(draft));
-      if (!isAuthoringSessionBoundToProject(session, bindingProjectIdRef.current)) {
-        return;
-      }
-      dispatch({ type: "sessionUpdated", session });
-      dispatch({ type: "landed", draft });
-    } catch (error) {
-      dispatch({ type: "failure", error });
+      const accepted = await client.sendAuthoringMessage(
+        current.id,
+        content,
+        writeCommandOptions(current.stateRevision),
+      );
+      setInput("");
+      await refreshUntilSettled(current.id, accepted.turnId);
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      setError(errorMessage(reason));
     }
   }
+
+  async function onConfirm(): Promise<void> {
+    const current = session;
+    const turn = activeAuthoringTurn(current);
+    if (!current || !turn || turn.status !== "awaiting_confirmation" || busy !== null) {
+      return;
+    }
+    setBusy("confirming");
+    setError(null);
+    try {
+      const accepted = await client.confirmAuthoringTurn(
+        current.id,
+        turn.id,
+        writeCommandOptions(turn.revision),
+      );
+      await refreshUntilSettled(current.id, accepted.turnId);
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      setError(errorMessage(reason));
+    }
+  }
+
+  async function onCancel(): Promise<void> {
+    const current = session;
+    const turn = activeAuthoringTurn(current);
+    if (!current || !turn || !canCancelAuthoringTurn(turn.status) || busy !== null) {
+      return;
+    }
+    setBusy("cancelling");
+    setError(null);
+    try {
+      const accepted = await client.cancelAuthoringTurn(
+        current.id,
+        turn.id,
+        writeCommandOptions(turn.revision),
+      );
+      await refreshUntilSettled(
+        current.id,
+        accepted.turnId,
+        (status) => status === "cancelled" || status === "failed",
+      );
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      setError(errorMessage(reason));
+    }
+  }
+
+  async function onRetry(): Promise<void> {
+    const current = session;
+    const turn = activeAuthoringTurn(current);
+    if (!current || !turn || !canRetryAuthoringTurn(turn.status) || busy !== null) {
+      return;
+    }
+    setBusy("retrying");
+    setError(null);
+    try {
+      const accepted = await client.retryAuthoringTurn(
+        current.id,
+        turn.id,
+        writeCommandOptions(turn.revision),
+      );
+      await refreshUntilSettled(current.id, accepted.turnId);
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      setError(errorMessage(reason));
+    }
+  }
+
+  async function onClose(): Promise<void> {
+    const current = session;
+    const turn = activeAuthoringTurn(current);
+    if (!current || !turn || !canCloseAuthoringTurn(turn.status) || busy !== null) {
+      return;
+    }
+    setBusy("closing");
+    setError(null);
+    try {
+      const accepted = await client.closeAuthoringTurn(
+        current.id,
+        turn.id,
+        writeCommandOptions(turn.revision),
+      );
+      await refreshUntilSettled(current.id, accepted.turnId, (status) => status === "closed");
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      setError(errorMessage(reason));
+    }
+  }
+
+  function onProjectChange(nextProjectId: string): void {
+    if (nextProjectId === projectId) {
+      return;
+    }
+    setProjectId(nextProjectId);
+    setSession(null);
+    setInput("");
+    setError(null);
+  }
+
+  const turn = activeAuthoringTurn(session);
+  const sessionReady = session !== null && isAuthoringSessionBoundToProject(session, projectId);
+  const sendDisabled =
+    !sessionReady || session.status !== "open" || busy !== null || input.trim().length === 0;
+  const confirmDisabled =
+    !sessionReady || turn?.status !== "awaiting_confirmation" || busy !== null;
 
   return (
     <main style={pageStyle} data-testid="workflow-authoring-page">
@@ -185,133 +277,223 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
         </button>
       </p>
       <h1 style={titleStyle}>对话生成工作流</h1>
-      <p style={mutedStyle}>{model.note}</p>
-      <p style={mutedStyle} data-testid="workflow-authoring-route-gap">
-        {model.routeGap}
+      <p style={mutedStyle}>{AUTHORING_ROUTE_GAP}</p>
+      <ProjectPicker
+        projects={projects}
+        selectedProjectId={projectId}
+        {...(routeProjectId ? { routeProjectId } : {})}
+        loading={projectsLoading}
+        onChange={onProjectChange}
+      />
+      {sessionReady ? (
+        <>
+          <SessionSummary
+            session={session}
+            turn={turn}
+            busy={busy}
+            onCancel={onCancel}
+            onRetry={onRetry}
+            onClose={onClose}
+          />
+          <ConversationPanel
+            session={session}
+            input={input}
+            disabled={sendDisabled}
+            busy={busy}
+            onChange={setInput}
+            onSend={onSend}
+          />
+          {session.draft?.kind === "proposal" && turn?.status === "awaiting_confirmation" ? (
+            <ProposalDraftPreview
+              draft={session.draft}
+              turn={turn}
+              onConfirm={onConfirm}
+              disabled={confirmDisabled}
+            />
+          ) : null}
+          {session.draft?.kind === "landed" ? <LandedDraftCard draft={session.draft} /> : null}
+        </>
+      ) : (
+        <section style={cardStyle} data-testid="workflow-authoring-session-loading">
+          <p style={mutedStyle}>
+            {projectId
+              ? busy === "loading"
+                ? "正在加载项目作者会话…"
+                : "尚未建立项目作者会话。"
+              : "请选择项目后开始聊天。"}
+          </p>
+        </section>
+      )}
+      <p style={mutedStyle} data-testid="workflow-authoring-chat-note">
+        {AGENT_REPLY_GAP}
       </p>
-      <ConversationPanel
-        explanation={model.chat.explanation}
-        intentText={model.form.intentText}
-        submitting={model.phase === "submitting"}
-        submitEnabled={sessionReady && model.phase !== "submitting"}
-        sessionId={sessionReady ? model.chat.sessionId : null}
-        projectId={sessionReady ? model.chat.projectId : projectId}
-        projectSource={projectBinding.source}
-        messages={sessionReady ? model.chat.messages : []}
-        onIntentChange={(value) => dispatch({ type: "change", field: "intentText", value })}
-        onAppendUser={onAppendUser}
-      />
-      {sessionReady && model.chat.draft?.kind === "proposal" ? (
-        <ProposalDraftPreview draft={model.chat.draft} />
-      ) : null}
-      <StructuredDraftForm
-        model={model}
-        available={sessionReady}
-        onChange={(field, value) => dispatch({ type: "change", field, value })}
-        onSubmit={onLandDraft}
-      />
-      {model.error ? (
-        <div
-          style={model.phase === "empty_intent" ? warningStyle : errorStyle}
-          data-testid="workflow-authoring-error"
-        >
-          {model.error}
+      {error ? (
+        <div style={errorStyle} data-testid="workflow-authoring-error">
+          {error}
         </div>
-      ) : null}
-      {sessionReady && model.draft ? (
-        <LandedDraftCard draft={model.draft} navigate={props.navigate} />
       ) : null}
     </main>
   );
 }
 
-function ConversationPanel(props: {
-  explanation: string;
-  intentText: string;
-  submitting: boolean;
-  submitEnabled: boolean;
-  sessionId: string | null;
-  projectId: string;
-  projectSource: "route" | "desktop-local";
-  messages: readonly AuthoringSessionMessageDto[];
-  onIntentChange: (value: string) => void;
-  onAppendUser: () => void;
+function ProjectPicker(props: {
+  projects: readonly ProjectDto[];
+  selectedProjectId: string;
+  routeProjectId?: string;
+  loading: boolean;
+  onChange: (projectId: string) => void;
 }): ReactNode {
-  const appendDisabled = props.submitting || !props.submitEnabled || !props.sessionId;
+  if (props.routeProjectId) {
+    return (
+      <section style={cardStyle} data-testid="workflow-authoring-project">
+        <span style={badgeStyle("muted")}>项目范围</span>
+        <p style={mutedStyle}>当前项目：{props.routeProjectId}</p>
+      </section>
+    );
+  }
+  return (
+    <section style={cardStyle} data-testid="workflow-authoring-project-picker">
+      <label style={labelStyle} htmlFor="workflow-authoring-project">
+        选择项目
+      </label>
+      {props.loading ? <p style={mutedStyle}>正在加载项目…</p> : null}
+      {!props.loading && props.projects.length === 0 ? (
+        <p style={warningStyle}>没有可用项目。请先创建项目，再打开工作流作者面。</p>
+      ) : null}
+      {!props.loading && props.projects.length > 0 ? (
+        <select
+          id="workflow-authoring-project"
+          data-testid="workflow-authoring-project-select"
+          style={inputStyle}
+          value={props.selectedProjectId}
+          onChange={(event) => props.onChange(event.target.value)}
+        >
+          {props.projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {projectLabel(project)}
+            </option>
+          ))}
+        </select>
+      ) : null}
+    </section>
+  );
+}
+
+function SessionSummary(props: {
+  session: AuthoringSessionViewDto;
+  turn: AuthoringTurnDto | undefined;
+  busy: BusyAction;
+  onCancel: () => void;
+  onRetry: () => void;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <section style={cardStyle} data-testid="workflow-authoring-session-status">
+      <div style={{ display: "flex", gap: "var(--wf-space-sm, 8px)", alignItems: "center" }}>
+        <span style={badgeStyle(props.session.status === "open" ? "health" : "warning")}>
+          会话 {sessionStatusLabel(props.session.status)}
+        </span>
+        {props.turn ? (
+          <span
+            style={badgeStyle(props.turn.status === "awaiting_confirmation" ? "warning" : "muted")}
+          >
+            Turn {turnStatusLabel(props.turn.status)}
+          </span>
+        ) : null}
+        {props.busy ? <span style={mutedStyle}>{busyLabel(props.busy)}</span> : null}
+      </div>
+      <p style={mutedStyle} data-testid="workflow-authoring-session-id">
+        会话 {props.session.id} · 项目 {props.session.projectId} · revision{" "}
+        {props.session.stateRevision}
+      </p>
+      {props.turn ? (
+        <div
+          style={{ display: "flex", gap: "var(--wf-space-sm, 8px)", flexWrap: "wrap" }}
+          data-testid="workflow-authoring-turn-actions"
+        >
+          {canCancelAuthoringTurn(props.turn.status) ? (
+            <button
+              type="button"
+              data-testid="workflow-authoring-cancel"
+              style={buttonStyle("secondary", props.busy !== null)}
+              disabled={props.busy !== null}
+              onClick={props.onCancel}
+            >
+              {props.busy === "cancelling" ? "取消中…" : "取消生成"}
+            </button>
+          ) : null}
+          {canRetryAuthoringTurn(props.turn.status) ? (
+            <button
+              type="button"
+              data-testid="workflow-authoring-retry"
+              style={buttonStyle("secondary", props.busy !== null)}
+              disabled={props.busy !== null}
+              onClick={props.onRetry}
+            >
+              {props.busy === "retrying" ? "重试中…" : "重试生成"}
+            </button>
+          ) : null}
+          {canCloseAuthoringTurn(props.turn.status) ? (
+            <button
+              type="button"
+              data-testid="workflow-authoring-close"
+              style={buttonStyle("secondary", props.busy !== null)}
+              disabled={props.busy !== null}
+              onClick={props.onClose}
+            >
+              {props.busy === "closing" ? "关闭中…" : "关闭当前会话"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ConversationPanel(props: {
+  session: AuthoringSessionViewDto;
+  input: string;
+  disabled: boolean;
+  busy: BusyAction;
+  onChange: (value: string) => void;
+  onSend: () => void;
+}): ReactNode {
   return (
     <section style={cardStyle} data-testid="workflow-authoring-chat">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>编排对话</h2>
-      <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-        <span style={badgeStyle("muted")}>本机会话 · 仅用户</span>
-      </div>
-      <p style={mutedStyle}>{props.explanation}</p>
-      <p style={mutedStyle} data-testid="workflow-authoring-session-id">
-        {props.sessionId
-          ? `会话 ${props.sessionId} · ${projectBindingLabel(props.projectId, props.projectSource)}`
-          : projectBindingLabel(props.projectId, props.projectSource)}
-      </p>
-      <MessageList messages={props.messages} />
+      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>工作流编排对话</h2>
+      <MessageList messages={props.session.messages} />
       <label style={labelStyle} htmlFor="wf-authoring-intent">
-        用户消息（只写入本机会话，不调用编排 Agent）
+        发送消息
       </label>
       <textarea
         id="wf-authoring-intent"
         data-testid="workflow-authoring-intent"
         style={{ ...inputStyle, minHeight: "96px" }}
-        value={props.intentText}
-        onChange={(event) => props.onIntentChange(event.target.value)}
-        placeholder="例如：创建 planner 与 developer，跑功能交付，审查后再验收。"
+        value={props.input}
+        disabled={props.disabled && props.busy !== null}
+        onChange={(event) => props.onChange(event.target.value)}
+        placeholder="例如：创建一个包含规划、实现和审查的工作流。"
       />
       <button
         type="button"
         data-testid="workflow-authoring-send-chat"
-        style={buttonStyle("primary", appendDisabled)}
-        disabled={appendDisabled}
-        onClick={props.onAppendUser}
+        style={buttonStyle("primary", props.disabled)}
+        disabled={props.disabled}
+        onClick={props.onSend}
       >
-        追加用户消息
+        {props.busy === "sending" ? "发送中…" : "发送消息"}
       </button>
-      <p style={mutedStyle} data-testid="workflow-authoring-agent-gap">
-        {AGENT_REPLY_GAP} {AGENT_SEND_UNAVAILABLE_NOTE}
-      </p>
     </section>
   );
 }
 
-function projectBindingLabel(projectId: string, source: "route" | "desktop-local"): string {
-  return source === "route"
-    ? `已绑定项目 ${projectId}（仅用于本地会话/草稿归属，Agent send 不可用）`
-    : `本地笔记/手工草稿空间 ${projectId}（不代表 Daemon 项目，Agent send 不可用）`;
-}
-
-export function ProposalDraftPreview(props: {
-  draft: Extract<AuthoringDraftDto, { kind: "proposal" }>;
+function MessageList(props: {
+  messages: readonly AuthoringSessionViewDto["messages"][number][];
 }): ReactNode {
-  const workflow = props.draft.workflow;
-  const graph = workflow?.graph;
-  const nodeCount = graph?.nodes?.length ?? graph?.steps?.length ?? 0;
-  return (
-    <section style={cardStyle} data-testid="workflow-authoring-proposal-preview">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>
-        本地 proposal 草稿预览
-      </h2>
-      <p style={mutedStyle} data-testid="workflow-authoring-proposal-preview-note">
-        {AUTHORING_PROPOSAL_PREVIEW_NOTE} 当前仍未发布，也不是 Task/Run。
-      </p>
-      <p data-testid="workflow-authoring-proposal-name">工作流：{workflow?.name ?? "未命名"}</p>
-      {workflow?.description ? <p style={mutedStyle}>{workflow.description}</p> : null}
-      <p style={mutedStyle} data-testid="workflow-authoring-proposal-graph">
-        结构化节点：{nodeCount}
-      </p>
-    </section>
-  );
-}
-
-function MessageList(props: { messages: readonly AuthoringSessionMessageDto[] }): ReactNode {
   if (props.messages.length === 0) {
     return (
       <p style={mutedStyle} data-testid="workflow-authoring-chat-empty">
-        还没有用户消息。编排 Agent 回复仍 planned，这里不会出现生成成功的对话气泡。
+        还没有消息。
       </p>
     );
   }
@@ -324,173 +506,126 @@ function MessageList(props: { messages: readonly AuthoringSessionMessageDto[] })
         <li
           key={message.id}
           data-testid={`workflow-authoring-message-${message.role}`}
-          data-role={message.role}
           style={{
             ...cardStyle,
             marginBottom: "var(--wf-space-sm, 8px)",
             background: "var(--wf-color-page, #e8edf2)",
           }}
         >
-          <strong>{messageRoleLabel(message.role)}</strong>
-          <p style={{ margin: "var(--wf-space-xs, 4px) 0 0" }}>{message.content}</p>
+          <strong>
+            {message.role === "user" ? "用户" : message.role === "system" ? "系统" : "编排 Agent"}
+          </strong>
+          {isUnavailableMessage(message.content) ? (
+            <p style={warningStyle}>消息正文在 Daemon 重启后不可恢复，仅保留引用。</p>
+          ) : (
+            <p style={{ margin: "var(--wf-space-xs, 4px) 0 0" }}>{message.content}</p>
+          )}
         </li>
       ))}
     </ul>
   );
 }
 
-function messageRoleLabel(role: AuthoringSessionMessageDto["role"]): string {
-  if (role === "user") {
-    return "用户";
-  }
-  if (role === "system") {
-    return "系统（不是生成成功）";
-  }
-  return "编排 Agent 角色已预留（不是生成成功）";
-}
-
-function StructuredDraftForm(props: {
-  model: ReturnType<typeof emptyAuthoringModel>;
-  available: boolean;
-  onChange: (field: AuthoringFormField, value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+function ProposalDraftPreview(props: {
+  draft: Extract<AuthoringSessionViewDto["draft"], { kind: "proposal" }>;
+  turn: AuthoringTurnDto;
+  onConfirm: () => void;
+  disabled: boolean;
 }): ReactNode {
-  const disabled = props.model.phase === "submitting" || !props.available;
+  const graph = props.draft.workflow?.graph;
+  const nodeCount = graph?.nodes?.length ?? graph?.steps?.length ?? 0;
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-structured">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>结构化落草稿</h2>
-      <p style={mutedStyle}>
-        以下字段直接映射到已接通的 M7 写接口，不经过对话
-        endpoint。写入后仍是草稿，不会发布，也不会开始规划。
+    <section style={cardStyle} data-testid="workflow-authoring-proposal-preview">
+      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>结构化提案待确认</h2>
+      <p style={mutedStyle} data-testid="workflow-authoring-proposal-preview-note">
+        {AUTHORING_PROPOSAL_PREVIEW_NOTE}
       </p>
-      <form onSubmit={props.onSubmit}>
-        <label style={labelStyle} htmlFor="wf-authoring-name">
-          工作流名称
-        </label>
-        <input
-          id="wf-authoring-name"
-          data-testid="workflow-authoring-name"
-          name="name"
-          style={inputStyle}
-          value={props.model.form.name}
-          disabled={disabled}
-          onChange={(event) => props.onChange("name", event.target.value)}
-        />
-        <label style={labelStyle} htmlFor="wf-authoring-description">
-          说明
-        </label>
-        <textarea
-          id="wf-authoring-description"
-          data-testid="workflow-authoring-description"
-          name="description"
-          style={{ ...inputStyle, minHeight: "64px" }}
-          value={props.model.form.description}
-          disabled={disabled}
-          onChange={(event) => props.onChange("description", event.target.value)}
-        />
-        <label style={labelStyle} htmlFor="wf-authoring-roles">
-          角色（每行一个，可选）
-        </label>
-        <textarea
-          id="wf-authoring-roles"
-          data-testid="workflow-authoring-roles"
-          name="roles"
-          style={{ ...inputStyle, minHeight: "64px" }}
-          value={props.model.form.rolesText}
-          disabled={disabled}
-          placeholder={"planner\ndeveloper"}
-          onChange={(event) => props.onChange("rolesText", event.target.value)}
-        />
-        <label style={labelStyle} htmlFor="wf-authoring-steps">
-          步骤（每行一个，可选）
-        </label>
-        <textarea
-          id="wf-authoring-steps"
-          data-testid="workflow-authoring-steps"
-          name="steps"
-          style={{ ...inputStyle, minHeight: "64px" }}
-          value={props.model.form.stepsText}
-          disabled={disabled}
-          placeholder={"规划\n实现"}
-          onChange={(event) => props.onChange("stepsText", event.target.value)}
-        />
-        <label style={labelStyle} htmlFor="wf-authoring-team">
-          可选 Team 名称（只创建未发布 Team 定义，不编造 runtimeProfile）
-        </label>
-        <input
-          id="wf-authoring-team"
-          data-testid="workflow-authoring-team"
-          name="teamName"
-          style={inputStyle}
-          value={props.model.form.teamName}
-          disabled={disabled}
-          onChange={(event) => props.onChange("teamName", event.target.value)}
-        />
-        <button
-          type="submit"
-          data-testid="workflow-authoring-land-draft"
-          style={buttonStyle("secondary", disabled)}
-          disabled={disabled}
-        >
-          {disabled ? "正在写入未发布草稿…" : "写入未发布草稿"}
-        </button>
-      </form>
+      <p data-testid="workflow-authoring-proposal-name">
+        工作流：{props.draft.workflow?.name ?? "服务端提案（详情引用由 Daemon 管理）"}
+      </p>
+      {props.draft.workflow?.description ? (
+        <p style={mutedStyle}>{props.draft.workflow.description}</p>
+      ) : null}
+      <p style={mutedStyle} data-testid="workflow-authoring-proposal-graph">
+        结构化节点：{nodeCount}
+      </p>
+      <button
+        type="button"
+        data-testid="workflow-authoring-confirm"
+        style={buttonStyle("primary", props.disabled)}
+        disabled={props.disabled}
+        onClick={props.onConfirm}
+      >
+        {props.disabled ? "确认中…" : "确认并创建未发布草稿"}
+      </button>
+      <p style={mutedStyle}>
+        Turn {props.turn.id} · revision {props.turn.revision}
+      </p>
     </section>
   );
 }
 
 function LandedDraftCard(props: {
-  draft: LandedDraft;
-  navigate: (path: string) => void;
+  draft: Extract<AuthoringSessionViewDto["draft"], { kind: "landed" }>;
 }): ReactNode {
   return (
     <section style={cardStyle} data-testid="workflow-authoring-landed">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>未发布草稿已写入</h2>
-      <p data-testid="workflow-authoring-landed-note">
-        已用 <code>POST /workflows</code> 与 version 写接口保存<strong>未发布</strong>
-        草稿。这不是对话生成成功，也不是 Task/Run 完成，更不能执行。
-      </p>
+      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>未发布草稿已创建</h2>
+      <p data-testid="workflow-authoring-landed-note">{DRAFT_NOT_RUNTIME_NOTE}</p>
       <p style={mutedStyle} data-testid="workflow-authoring-workflow-id">
-        {props.draft.workflowName} · {props.draft.workflowId} · 版本 {props.draft.versionId} ·{" "}
-        {props.draft.status}
-      </p>
-      {props.draft.teamId ? (
-        <p style={mutedStyle} data-testid="workflow-authoring-team-id">
-          可选 Team 草稿 {props.draft.teamId}（未发布，不能 bind 开始规划）
-        </p>
-      ) : null}
-      {props.draft.teamWarning ? (
-        <p style={warningStyle} data-testid="workflow-authoring-team-warning">
-          {props.draft.teamWarning}
-        </p>
-      ) : null}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--wf-space-sm, 8px)" }}>
-        <button
-          type="button"
-          data-testid="workflow-authoring-open-catalog"
-          style={buttonStyle("primary")}
-          onClick={() => props.navigate(props.draft.catalogHref)}
-        >
-          查看目录中的草稿
-        </button>
-        <button
-          type="button"
-          data-testid="workflow-authoring-open-canvas"
-          style={buttonStyle("secondary", !props.draft.canvas.available)}
-          disabled={!props.draft.canvas.available}
-          title={props.draft.canvas.reason}
-          onClick={() => {
-            if (props.draft.canvas.available) {
-              props.navigate(props.draft.canvas.href);
-            }
-          }}
-        >
-          在画布中编辑
-        </button>
-      </div>
-      <p style={mutedStyle} data-testid="workflow-authoring-canvas-gap">
-        {props.draft.canvas.reason}
+        草稿 {props.draft.workflowDraftId}
+        {props.draft.workflowId ? ` · 工作流 ${props.draft.workflowId}` : ""}
+        {props.draft.revision ? ` · revision ${props.draft.revision}` : ""}
       </p>
     </section>
   );
+}
+
+async function loadOrCreateSession(
+  client: ReturnType<typeof useWorkforceClient>,
+  projectId: string,
+): Promise<AuthoringSessionViewDto> {
+  const page = await client.listAuthoringSessions({ projectId, limit: 20 });
+  const existing = page.items.find(
+    (item) => item.projectId === projectId && item.status === "open",
+  );
+  if (existing) {
+    return client.getAuthoringSession(existing.id);
+  }
+  return client.createAuthoringSession(projectId, writeCommandOptions());
+}
+
+function currentHash(): string {
+  return typeof window === "undefined" ? "" : window.location.hash;
+}
+
+function isSettledTurn(status: AuthoringTurnDto["status"]): boolean {
+  return (
+    status === "awaiting_confirmation" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "closed"
+  );
+}
+
+function busyLabel(action: Exclude<BusyAction, null>): string {
+  switch (action) {
+    case "loading":
+      return "加载中…";
+    case "sending":
+      return "消息处理中…";
+    case "confirming":
+      return "确认处理中…";
+    case "cancelling":
+      return "取消处理中…";
+    case "retrying":
+      return "重试处理中…";
+    case "closing":
+      return "关闭处理中…";
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
