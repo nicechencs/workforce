@@ -30,7 +30,7 @@ describe("workflow pages", () => {
     expect(model.workflows).toEqual([]);
     expect(model.note).not.toContain("不得发明 endpoint");
     expect(rejectWorkflowCanvas().ok).toBe(false);
-    expect(rejectWorkflowCanvas().reason).toContain("结构化步骤");
+    expect(rejectWorkflowCanvas().reason).toContain("已发布版本");
   });
 
   it("keeps live catalog rows read-only and drops the fixture-only banner", () => {
@@ -104,12 +104,11 @@ describe("workflow pages", () => {
       }),
     );
     expect(html).toContain("工作流");
-    expect(html).toContain("画布编辑器尚未实现");
+    expect(html).toContain("workflow-new-canvas");
     expect(html).toContain("workflow-loading");
     expect(html).not.toContain("workflow-empty");
     expect(html).not.toContain("不得发明 endpoint");
     expect(html).not.toContain("可视化编辑器已可用");
-    expect(html.toLowerCase()).not.toContain("canvas");
   });
 
   it("renders version detail as structured steps, not a graph editor", () => {

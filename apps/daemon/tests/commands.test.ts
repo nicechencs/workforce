@@ -285,4 +285,76 @@ describe("daemon resource commands", () => {
     expect(retried.status).toBe(200);
     expect(retried.body).toMatchObject({ task: { attempt: 2, status: "running" } });
   });
+
+  it("accepts workflow_bound on existing :start and refuses unsupported direct", async () => {
+    const harness = await startTestDaemon();
+    daemons.push(harness);
+    const { daemon, auth } = harness;
+    const caps = await json(daemon.port, "/api/v1/capabilities", { headers: auth });
+    expect(caps.status).toBe(200);
+    expect(caps.body).toMatchObject({ orchestration: { workflowBound: true, direct: false } });
+
+    const created = await json(daemon.port, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-create"),
+      body: JSON.stringify({ name: "Orch", objective: "Mode" }),
+    });
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await json(daemon.port, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-plan", project.stateRevision),
+      body: "{}",
+    });
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await json(daemon.port, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-confirm", planning.stateRevision),
+      body: JSON.stringify({ planArtifactVersionId: planning.planArtifactVersionId }),
+    });
+    const ready = confirmed.body as { stateRevision: number };
+
+    const rejectedName = await json(daemon.port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-old-name", ready.stateRevision),
+      body: JSON.stringify({ executionMode: "direct" }),
+    });
+    expect(rejectedName.status).toBe(400);
+    expect(rejectedName.body).toMatchObject({ code: "validation_failed" });
+
+    const refused = await json(daemon.port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-direct", ready.stateRevision),
+      body: JSON.stringify({ orchestrationMode: "direct" }),
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body).toMatchObject({ code: "unsupported_capability" });
+
+    const started = await json(daemon.port, `/api/v1/projects/${project.id}:start`, {
+      method: "POST",
+      headers: commandHeaders(auth, "orch-bound", ready.stateRevision),
+      body: JSON.stringify({
+        orchestrationMode: "workflow_bound",
+        operationId: "op_orch_bound",
+      }),
+    });
+    expect(started.status).toBe(200);
+    expect(started.body).toMatchObject({
+      status: "running",
+      orchestrationMode: "workflow_bound",
+    });
+
+    const listed = await json(daemon.port, `/api/v1/runs?projectId=${project.id}`, {
+      headers: auth,
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject({
+      items: [{ orchestrationMode: "workflow_bound" }],
+    });
+
+    const receipt = await json(daemon.port, "/api/v1/operations/op_orch_bound", { headers: auth });
+    expect(receipt.status).toBe(200);
+    expect(receipt.body).toMatchObject({
+      result: { orchestrationMode: "workflow_bound" },
+    });
+  });
 });

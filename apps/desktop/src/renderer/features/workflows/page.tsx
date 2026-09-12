@@ -5,6 +5,13 @@ import { Badge, Button, Card, List, ListRow, Muted, Page } from "../../component
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
 import {
+  WorkflowAuthoringEntry,
+  WorkflowAuthoringPage,
+  isWorkflowAuthoringHash,
+} from "../workflow-authoring/index.js";
+import { WorkflowCanvasPage, shouldOpenCanvas } from "./canvas/page.js";
+import { canvasCreatePath } from "./canvas/model.js";
+import {
   asWorkflowView,
   catalogListCard,
   rejectWorkflowCanvas,
@@ -24,9 +31,31 @@ export function WorkflowsPage(props: FeaturePageProps) {
   const [workflows, setWorkflows] = useState<WorkflowTemplateView[]>(initial.workflows);
   const [note, setNote] = useState(initial.note);
   const [source, setSource] = useState<WorkflowCatalogSource>(initial.source);
+  const [authoring, setAuthoring] = useState(() =>
+    typeof window === "undefined" ? false : isWorkflowAuthoringHash(window.location.hash),
+  );
+
+  useEffect(() => {
+    const sync = (): void => {
+      setAuthoring(isWorkflowAuthoringHash(window.location.hash));
+    };
+    window.addEventListener("hashchange", sync);
+    sync();
+    return () => {
+      window.removeEventListener("hashchange", sync);
+    };
+  }, []);
+
+  const openCanvas = shouldOpenCanvas({
+    workflowId: props.params.workflowId,
+    versionId: props.params.versionId,
+  });
 
   useEffect(() => {
     let cancelled = false;
+    if (props.params.workflowId === "new") {
+      return;
+    }
     void (async () => {
       try {
         if (props.params.workflowId) {
@@ -69,6 +98,19 @@ export function WorkflowsPage(props: FeaturePageProps) {
     };
   }, [client, props.params.workflowId]);
 
+  if (authoring) {
+    return <WorkflowAuthoringPage {...props} />;
+  }
+  if (openCanvas) {
+    return (
+      <WorkflowCanvasPage
+        workflowId={props.params.workflowId ?? "new"}
+        versionId={props.params.versionId}
+        navigate={props.navigate}
+      />
+    );
+  }
+
   const workflowId = props.params.workflowId;
   if (workflowId) {
     const workflow = workflowById(workflows, workflowId);
@@ -84,8 +126,20 @@ export function WorkflowsPage(props: FeaturePageProps) {
   }
 
   return (
-    <Page title="工作流" subtitle="模板、版本和结构化步骤（只读目录）。画布编辑器尚未实现。">
+    <Page
+      title="工作流"
+      subtitle="模板、版本和结构化步骤。已发布版本只读；未发布草稿走画布。"
+      actions={
+        <Button
+          testId="workflow-new-canvas"
+          onClick={() => props.navigate(canvasCreatePath())}
+        >
+          新建画布
+        </Button>
+      }
+    >
       <Muted>{note}</Muted>
+      <WorkflowAuthoringEntry navigate={props.navigate} />
       <Card>
         {workflows.length === 0 ? (
           <CatalogListStatus source={source} />

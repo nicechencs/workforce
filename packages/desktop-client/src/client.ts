@@ -13,6 +13,10 @@ import type {
   CommandOptions,
   ConfirmPlanInput,
   CreateProjectInput,
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
   CreateWorkspaceInput,
   EventListQuery,
   ExportBundleDto,
@@ -22,6 +26,10 @@ import type {
   OperationDto,
   PageDto,
   PatchProjectInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
   ProblemDetails,
   ProjectBudgetDto,
   ProjectDto,
@@ -34,6 +42,7 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  TeamVersionDto,
   VersionDto,
   WorkflowDto,
   WorkflowVersionDto,
@@ -139,6 +148,53 @@ export class DesktopClient {
     return this.get(paths.team(id));
   }
 
+  getTeamVersion(id: string, versionId: string): Promise<TeamVersionDto> {
+    return this.get(paths.teamVersion(id, versionId));
+  }
+
+  createTeam(input: CreateTeamInput, options: CommandOptions): Promise<TeamDto> {
+    return this.send("POST", paths.teams(), options, withOperation(input, options));
+  }
+
+  patchTeam(id: string, input: PatchTeamInput, options: CommandOptions): Promise<TeamDto> {
+    return this.send("PATCH", paths.team(id), options, withOperation(input, options));
+  }
+
+  createTeamVersion(
+    id: string,
+    input: CreateTeamVersionInput,
+    options: CommandOptions,
+  ): Promise<TeamVersionDto> {
+    return this.send("POST", paths.teamVersions(id), options, withOperation(input, options));
+  }
+
+  patchTeamVersion(
+    id: string,
+    versionId: string,
+    input: PatchTeamVersionInput,
+    options: CommandOptions,
+  ): Promise<TeamVersionDto> {
+    return this.send(
+      "PATCH",
+      paths.teamVersion(id, versionId),
+      options,
+      withOperation(input, options),
+    );
+  }
+
+  publishTeamVersion(
+    id: string,
+    versionId: string,
+    options: CommandOptions,
+  ): Promise<TeamVersionDto> {
+    return this.send(
+      "POST",
+      paths.teamVersionPublish(id, versionId),
+      options,
+      withOperation({}, options),
+    );
+  }
+
   listWorkflows(query?: ListQuery): Promise<PageDto<WorkflowDto>> {
     return this.get(paths.workflows(query));
   }
@@ -149,6 +205,53 @@ export class DesktopClient {
 
   getWorkflowVersion(id: string, versionId: string): Promise<WorkflowVersionDto> {
     return this.get(paths.workflowVersion(id, versionId));
+  }
+
+  createWorkflow(input: CreateWorkflowInput, options: CommandOptions): Promise<WorkflowDto> {
+    return this.send("POST", paths.workflows(), options, withOperation(input, options));
+  }
+
+  patchWorkflow(
+    id: string,
+    input: PatchWorkflowInput,
+    options: CommandOptions,
+  ): Promise<WorkflowDto> {
+    return this.send("PATCH", paths.workflow(id), options, withOperation(input, options));
+  }
+
+  createWorkflowVersion(
+    id: string,
+    input: CreateWorkflowVersionInput,
+    options: CommandOptions,
+  ): Promise<WorkflowVersionDto> {
+    return this.send("POST", paths.workflowVersions(id), options, withOperation(input, options));
+  }
+
+  patchWorkflowVersion(
+    id: string,
+    versionId: string,
+    input: PatchWorkflowVersionInput,
+    options: CommandOptions,
+  ): Promise<WorkflowVersionDto> {
+    return this.send(
+      "PATCH",
+      paths.workflowVersion(id, versionId),
+      options,
+      withOperation(input, options),
+    );
+  }
+
+  publishWorkflowVersion(
+    id: string,
+    versionId: string,
+    options: CommandOptions,
+  ): Promise<WorkflowVersionDto> {
+    return this.send(
+      "POST",
+      paths.workflowVersionPublish(id, versionId),
+      options,
+      withOperation({}, options),
+    );
   }
 
   listNodes(query?: ListQuery): Promise<PageDto<NodeDto>> {

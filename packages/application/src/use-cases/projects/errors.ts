@@ -31,3 +31,10 @@ export function revisionConflict(id: string, expected: number, actual: number): 
 export function validationFailed(message: string, details?: Record<string, unknown>): UseCaseError {
   return new UseCaseError("validation_failed", message, details ? { details } : undefined);
 }
+
+export function invalidTransition(
+  message: string,
+  details?: Record<string, unknown>,
+): UseCaseError {
+  return new UseCaseError("invalid_transition", message, details ? { details } : undefined);
+}

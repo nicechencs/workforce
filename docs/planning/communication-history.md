@@ -3,7 +3,7 @@ title: 产品沟通历史
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # 产品沟通历史
@@ -34,6 +34,14 @@ updated: 2026-09-11
 ```
 
 同一自然日可有多条；后写的条目不得假装改写先写的决定，只能追加澄清。
+
+---
+
+## 2026-09-12（Asia/Taipei）把 main 上的 M7 写 API 迁回 dev，保留 C5–C9 契约
+
+- **决定：** 日常集成分支是 `dev`。`main` 上 15c058f 起的 M7 catalog 写 API、D17 authoring DTO、T18–T21 功能要迁回 `dev`，但不得覆盖 `dev` 已裁决的 C5–C9：`StartRunRequest` 不承载 `orchestrationMode`；migration `005_execution_axes_expand` 不改号；catalog 四张表使用 `006_catalog_definitions`。UI 重贴 `dev` 设计系统另切片。
+- **文档影响：** [protocols/README.md](../protocols/README.md) 增加 team / authoring-session / orchestration-mode schema 索引；`orchestration-mode.schema.json` 写明权威在 `execution.ts` 而非 `StartRunRequest`。
+- **状态：** 写 API + protocol DTO + 006 迁移 **implemented**（源码与测试）。T18/T19/T20 页面重贴与 T21 UI **planned**。
 
 ---
 

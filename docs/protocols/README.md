@@ -17,7 +17,7 @@
 
 ## V0.1 标识前缀（仅可读，不参与判断）
 
-`org_` `prj_` `tsk_` `run_` `wfi_` `wfn_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `snp_` `usr_` `cli_`
+`org_` `prj_` `tsk_` `run_` `wfd_` `wfv_` `wfi_` `wfn_` `tm_` `tmv_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `snp_` `usr_` `cli_`
 
 ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须拒绝。
 
@@ -26,7 +26,10 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/event-envelope.schema.json` — Event 权威 envelope
 - `v0.1/money.schema.json` — `costMinor` + `currency`
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
-- `v0.1/workflow-catalog.schema.json` — P1 只读已发布工作流目录（模板 / 版本 / 结构化步骤）
+- `v0.1/workflow-catalog.schema.json` — WorkflowDefinition / WorkflowVersion 目录；GET 列表仍只返回 published
+- `v0.1/team.schema.json` — Team / TeamVersion 写契约（draft | published）
+- `v0.1/authoring-session.schema.json` — D17 会话 / 草稿 DTO；V0.1 传输为 Desktop-local，无 chat HTTP path
+- `v0.1/orchestration-mode.schema.json` — D18 `orchestrationMode` 枚举；权威在 `packages/protocol/src/execution.ts`
 - `v0.1/task.schema.json` — 公开 `TaskDto`，含已发布 DAG 的 `dependsOn`
 - `v0.1/run.schema.json` — 公开 `RunDto`；三轴字段可选，直至 Application 写入已解析快照
 - `v0.1/project-execution-snapshot.schema.json` — 公开 `ProjectExecutionSnapshotDto`；不含 policy/budget 载荷

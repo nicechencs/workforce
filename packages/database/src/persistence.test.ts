@@ -13,6 +13,8 @@ import {
   MIGRATION_002_SQL,
   MIGRATION_003_SQL,
   MIGRATION_004_SQL,
+  MIGRATION_005_SQL,
+  MIGRATION_006_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -81,6 +83,7 @@ describe("WorkforceSqlite", () => {
         "003_budget_alignment",
         "004_policy_grants",
         "005_execution_axes_expand",
+        "006_catalog_definitions",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -128,6 +131,7 @@ describe("WorkforceSqlite", () => {
         "003_budget_alignment",
         "004_policy_grants",
         "005_execution_axes_expand",
+        "006_catalog_definitions",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -160,7 +164,11 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("003_budget_alignment", checksumSql(MIGRATION_003_SQL), now);
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["004_policy_grants", "005_execution_axes_expand"]);
+      expect(ran).toEqual([
+        "004_policy_grants",
+        "005_execution_axes_expand",
+        "006_catalog_definitions",
+      ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
       expect(applied.get("002_entity_alignment")).toBe(checksumSql(MIGRATION_002_SQL));
@@ -203,7 +211,7 @@ describe("WorkforceSqlite", () => {
         .run(ids.organizationId, ids.taskId, now);
 
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["005_execution_axes_expand"]);
+      expect(ran).toEqual(["005_execution_axes_expand", "006_catalog_definitions"]);
 
       for (const table of [
         "team_drafts",
@@ -266,6 +274,43 @@ describe("WorkforceSqlite", () => {
         .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
         .run("001_init", checksumSql(`${MIGRATION_001_SQL}-- tampered`), now);
       expect(() => migrate(db.connection)).toThrow(/checksum mismatch/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("applies catalog definitions on a database that already has 001-005", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      db.connection.exec(MIGRATION_001_SQL);
+      db.connection.exec(MIGRATION_002_SQL);
+      db.connection.exec(MIGRATION_003_SQL);
+      db.connection.exec(MIGRATION_004_SQL);
+      db.connection.exec(MIGRATION_005_SQL);
+      for (const [version, sql] of [
+        ["001_init", MIGRATION_001_SQL],
+        ["002_entity_alignment", MIGRATION_002_SQL],
+        ["003_budget_alignment", MIGRATION_003_SQL],
+        ["004_policy_grants", MIGRATION_004_SQL],
+        ["005_execution_axes_expand", MIGRATION_005_SQL],
+      ] as const) {
+        db.connection
+          .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+          .run(version, checksumSql(sql), now);
+      }
+      const ran = migrate(db.connection);
+      expect(ran).toEqual(["006_catalog_definitions"]);
+      for (const table of [
+        "catalog_workflows",
+        "catalog_workflow_versions",
+        "catalog_teams",
+        "catalog_team_versions",
+      ]) {
+        expect(tableExists(db.connection, table)).toBe(true);
+      }
     } finally {
       db.close();
     }

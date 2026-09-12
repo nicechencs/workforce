@@ -30,15 +30,29 @@ export interface CapabilitiesDto {
     resume: boolean;
     archive: boolean;
   };
+  /** D18 probe. Missing or `direct: false` means the UI must disable direct. */
+  orchestration?: {
+    workflowBound?: boolean;
+    direct?: boolean;
+  };
 }
 
 export type {
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
   ProjectDto,
   RunDto,
   TaskDependency,
   TaskDto,
   TeamDto,
   TeamRoleDto,
+  TeamVersionDto,
 } from "@workforce/protocol";
 
 export interface PageDto<T> {
@@ -126,6 +140,7 @@ export interface CreateProjectInput {
 export interface PatchProjectInput {
   name?: string;
   objective?: string;
+  teamVersionId?: string;
 }
 
 export interface ConfirmPlanInput {
@@ -134,6 +149,7 @@ export interface ConfirmPlanInput {
 
 export interface StartProjectInput {
   budgetHardLimitMinor?: number;
+  orchestrationMode?: "workflow_bound" | "direct";
 }
 
 export interface CancelInput {
@@ -160,7 +176,13 @@ export interface CommandContext {
   ifMatch?: number;
 }
 
-export type { WorkflowDto, WorkflowStepDto, WorkflowVersionDto } from "@workforce/protocol";
+export type {
+  WorkflowDto,
+  WorkflowGraphEdgeDto,
+  WorkflowGraphNodeDto,
+  WorkflowStepDto,
+  WorkflowVersionDto,
+} from "@workforce/protocol";
 
 export interface NodeDto {
   id: string;
