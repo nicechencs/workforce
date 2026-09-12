@@ -1,0 +1,37 @@
+appId: com.workforce.desktop
+productName: Workforce
+# Declarative pack config for electron-builder once T01 adds it.
+# tooling/release/pack.mjs is the lockfile-free packer and does not invoke this file.
+# start.cmd and pnpm --filter @workforce/desktop dev are not installers.
+directories:
+  output: ../../out/pack/electron-builder
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: ../../out/pack/stage/daemon
+    to: daemon
+asar: false
+win:
+  target:
+    - zip
+    - nsis
+  signAndEditExecutable: false
+nsis:
+  deleteAppDataOnUninstall: false
+  include: ../../tooling/release/nsis/uninstall-retain-data.nsh
+mac:
+  target:
+    - zip
+    - dir
+  identity: null
+  notarize: false
+linux:
+  target:
+    - tar.gz
+    - dir
+  category: Development
+extraMetadata:
+  name: workforce
+  main: dist/main/electron-main.js

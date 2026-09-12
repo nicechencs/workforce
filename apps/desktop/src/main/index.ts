@@ -25,7 +25,16 @@ export {
 } from "./ipc/index.js";
 export { requiredCoordinatorDependencies } from "./required-dependencies.js";
 export { assertSecureWebPreferences, createRendererWebPreferences } from "./security.js";
-export { decideDaemonUpgrade } from "./updater/index.js";
+export {
+  createStateBackup,
+  decideDaemonUpgrade,
+  prepareDaemonUpgrade,
+  probeNonTerminalRuns,
+  readPackagingMarker,
+  restoreStateBackup,
+  rollbackUpgradeBackup,
+  UPGRADE_ACTIVE_RUN_POLICY,
+} from "./updater/index.js";
 export { createMainWindowSpec } from "./windows/index.js";
 export {
   applyLastWindowClose,

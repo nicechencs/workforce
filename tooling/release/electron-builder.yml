@@ -1,0 +1,3 @@
+# Same contract as apps/desktop/electron-builder.yml. Packer of record is pack.mjs.
+# electron-builder is not in the lockfile; do not treat this as a published pipeline.
+extends: ../../apps/desktop/electron-builder.yml

@@ -20,7 +20,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "dev": "node ./scripts/dev.mjs",
     "start": "pnpm run build && electron ./dist/main/electron-main.js",
-    "smoke": "node ./scripts/smoke.mjs"
+    "smoke": "node ./scripts/smoke.mjs",
+    "pack": "node ../../tooling/release/pack.mjs",
+    "backup": "node ../../tooling/release/backup.mjs"
   },
   "dependencies": {
     "@workforce/desktop-client": "workspace:*",
