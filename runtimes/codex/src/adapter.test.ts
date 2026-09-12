@@ -192,6 +192,15 @@ describe("CodexRuntimeAdapter", () => {
       available: false,
       constraints: { monetaryCost: "unknown" },
     });
+    expect(
+      descriptor.capabilities.find((item) => item.name === "authoring.proposal"),
+    ).toMatchObject({
+      available: false,
+      constraints: {
+        reason: "no_explicit_structured_authoring_proposal_jsonl_item",
+        textInference: false,
+      },
+    });
   });
 
   it("validate is false when the executable is missing", async () => {

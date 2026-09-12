@@ -686,7 +686,9 @@ function sanitizeRuntimeEvent(event: RuntimeEvent): RuntimeEvent {
       time: event.time,
       ...(event.sourceCursor ? { sourceCursor: event.sourceCursor } : {}),
       data: {
-        proposal,
+        // Proposal summaries originate from an adapter. The Host retains the
+        // structured references but never persists adapter-provided prose.
+        proposal: { ...proposal, summary: "Structured authoring proposal" },
         ...(adapterSequence === undefined ? {} : { adapterSequence }),
       },
     };

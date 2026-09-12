@@ -112,6 +112,7 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
         id: expect.stringMatching(/^apr_/),
         projectId: "prj_mock_authoring",
         sourceRunId: "run_mock_authoring",
+        summary: "Structured authoring proposal",
         targets: [
           {
             targetType: "workflow",
@@ -145,6 +146,20 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect(JSON.stringify(await store.listEvents(invalidHandle.handleId))).not.toContain(
       "must-not-reach-host-storage",
     );
+
+    const secretSummaryHandle = await host.start(
+      createStartRunRequest({
+        operationId: "op_authoring_proposal_secret_summary",
+        attempt: 3,
+        snapshotRef: "mock:authoring_proposal_secret_summary",
+      }),
+    );
+    await settle(scheduler);
+    const secretSummaryEvents = await collectEvents(host.stream(secretSummaryHandle));
+    expect(JSON.stringify(secretSummaryEvents)).not.toContain("must-not-reach-host-storage");
+    expect(
+      secretSummaryEvents.find((event) => event.type === "runtime.authoring.proposal")?.data,
+    ).toMatchObject({ proposal: { summary: "Structured authoring proposal" } });
   });
 
   it("returns the same handle for the same operation and conflicts on payload reuse", async () => {

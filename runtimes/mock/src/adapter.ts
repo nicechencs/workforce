@@ -35,6 +35,7 @@ export type MockScenarioName =
   | "waiting_input"
   | "timeout"
   | "authoring_proposal"
+  | "authoring_proposal_secret_summary"
   | "authoring_proposal_invalid";
 
 export function parseMockScenario(snapshotRef: string): MockScenarioName {
@@ -51,6 +52,7 @@ export function parseMockScenario(snapshotRef: string): MockScenarioName {
     name === "waiting_input" ||
     name === "timeout" ||
     name === "authoring_proposal" ||
+    name === "authoring_proposal_secret_summary" ||
     name === "authoring_proposal_invalid"
   ) {
     return name;
@@ -313,6 +315,7 @@ class MockExecution {
     switch (this.scenario) {
       case "success":
       case "authoring_proposal":
+      case "authoring_proposal_secret_summary":
       case "authoring_proposal_invalid":
         this.scheduler.schedule(this.completeAfterMs, () => this.succeed());
         break;
@@ -385,6 +388,24 @@ class MockExecution {
           projectId: "prj_mock_authoring",
           sourceRunId: "run_mock_authoring",
           summary: "Mock authoring proposal",
+          targets: [
+            {
+              targetType: "workflow",
+              targetId: "wf_mock_authoring",
+              expectedRevision: 1,
+              patchRef: "arv_mock_authoring_patch",
+            },
+          ],
+        },
+      });
+    }
+    if (this.scenario === "authoring_proposal_secret_summary") {
+      this.emit("runtime.authoring.proposal", {
+        proposal: {
+          id: `apr_${this.handle.handleId}`,
+          projectId: "prj_mock_authoring",
+          sourceRunId: "run_mock_authoring",
+          summary: "secret: must-not-reach-host-storage",
           targets: [
             {
               targetType: "workflow",

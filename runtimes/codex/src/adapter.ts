@@ -129,6 +129,15 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
             liveExec: "untested",
           },
         },
+        {
+          name: "authoring.proposal",
+          version: "0.1",
+          available: false,
+          constraints: {
+            reason: "no_explicit_structured_authoring_proposal_jsonl_item",
+            textInference: false,
+          },
+        },
       ],
     };
   }
