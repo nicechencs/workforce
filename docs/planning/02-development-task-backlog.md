@@ -377,7 +377,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
 
-**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload 已接线。无假 publish/bind。headed 未跑。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
+**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload 已接线。无假 publish/bind。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
@@ -435,7 +435,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 
-**当前切片（见 03）：** 项目详情已挂 mode 控件；`:start` capability gating 已有；composed `startProject` 把 mode 传入 `app.start()` / Run / host 记录。公共权威是 `execution.ts`。**禁止**写入 `StartRunRequest`。无 headed PASS、无 Codex direct、无 direct 调度、无 `runs.orchestration_mode` 列双写。**不**宣称 M8 完成。
+**当前切片（见 03）：** 项目详情已挂 mode 控件；`:start` capability gating 已有；composed `startProject` 把 mode 传入 `app.start()` / Run / host 记录。公共权威是 `execution.ts`。**禁止**写入 `StartRunRequest`。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。无 Codex direct、无 direct 调度、无 `runs.orchestration_mode` 列双写。**不**宣称 M8 完成。
 
 **集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 
