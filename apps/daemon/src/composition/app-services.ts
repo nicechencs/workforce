@@ -26,7 +26,11 @@ import {
 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
-import { DEFAULT_ORCHESTRATION_MODE, type CommandReceipt, type WorkforceEvent } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  type CommandReceipt,
+  type WorkforceEvent,
+} from "@workforce/protocol";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";

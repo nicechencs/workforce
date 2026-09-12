@@ -1,7 +1,4 @@
-import {
-  DEFAULT_ORCHESTRATION_MODE,
-  type OrchestrationMode,
-} from "@workforce/protocol";
+import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
 
 import type { AppContext } from "./context.js";
 import { expectRevision, touch } from "./context.js";
