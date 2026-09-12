@@ -20,6 +20,7 @@ import { ComposedAppServices, createComposedAppServices } from "../src/compositi
 import {
   dualWriteSqlite,
   hostStorePath,
+  loadSnapshot,
   sqlitePath,
   worldPath,
 } from "../src/composition/persist.js";
@@ -595,8 +596,10 @@ describe("composed M3 mock loop", () => {
     });
     const afterIds = (after.body as { items: Array<{ id: string }> }).items.map((item) => item.id);
     expect(afterIds.sort()).toEqual(beforeIds.sort());
+    // The replacement session fences the resolved binding: it reports the last
+    // trusted status instead of re-dispatching or re-inspecting the old Run.
     await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
-      status: "unknown",
+      status: "running",
     });
   });
 
@@ -667,13 +670,20 @@ describe("composed M3 mock loop", () => {
       await expect(second.services.host.inspect(handleId!)).resolves.toMatchObject({
         status: "running",
       });
-      expect(inspectedHandle).toMatchObject({
-        handleId,
-        process: {
-          pid: durable.pid,
-          startIdentity: durable.startIdentity,
-        },
-      });
+      if (sidecarState === "stale") {
+        // This sidecar carries no node session, so the replacement session fences
+        // the resolved binding and inspect answers from the stored status instead
+        // of asking the runtime adapter. The durable identity is proven by cancel.
+        expect(inspectedHandle).toBeUndefined();
+      } else {
+        expect(inspectedHandle).toMatchObject({
+          handleId,
+          process: {
+            pid: durable.pid,
+            startIdentity: durable.startIdentity,
+          },
+        });
+      }
 
       let cancelledHandle: RuntimeHandle | undefined;
       second.services.host.adapter.cancel = async (handle) => {
@@ -741,6 +751,10 @@ describe("composed M3 mock loop", () => {
       .load()
       .runs.find((item) => item.id === run.id);
     expect(afterFailure?.cancelRequestedAt).toBeUndefined();
+    expect(
+      loadSnapshot(harness.stateDir)?.world.runs.find((item) => item.id === run.id)
+        ?.cancelRequestedAt,
+    ).toBeUndefined();
     const retryState = await injectJson(harness, `/api/v1/runs/${run.id}`, {
       headers: harness.auth,
     });

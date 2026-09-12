@@ -1632,10 +1632,13 @@ export class ComposedAppServices implements AppServices {
       workspaces: [...this.workspaces.values()],
     });
     const host = this.hostStore.dump();
-    persistSnapshot(this.stateDir, { world, host });
-    const committed = this.sqliteWrite.then(() =>
-      this.sqliteWriter(this.sqlite, world, this.synced, host.handles),
-    );
+    const committed = this.sqliteWrite.then(async () => {
+      await this.sqliteWriter(this.sqlite, world, this.synced, host.handles);
+      // SQLite entity tables are the restart authority. Publishing the sidecar
+      // only after that transaction commits prevents a failed projection from
+      // leaving world.json ahead of its authoritative state.
+      persistSnapshot(this.stateDir, { world, host });
+    });
     this.sqliteWrite = committed.catch(() => undefined);
     return committed;
   }

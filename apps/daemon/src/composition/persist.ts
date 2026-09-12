@@ -13,12 +13,7 @@ import type {
   TaskRecord,
   WorkflowInstanceRecord,
 } from "@workforce/application";
-import {
-  isConstraintError,
-  PersistenceError,
-  type RuntimeHandleRecord,
-  WorkforceSqlite,
-} from "@workforce/database";
+import { isConstraintError, type RuntimeHandleRecord, WorkforceSqlite } from "@workforce/database";
 import type { CommandReceipt, ReceiptScope, WorkforceEvent } from "@workforce/protocol";
 import type { RuntimeHostStore } from "@workforce/runtime-sdk";
 import type {
@@ -527,99 +522,75 @@ export async function dualWriteSqlite(
   const pendingReceipts = snapshot.receipts.filter(
     (receipt) => !synced.operationIds.has(receipt.operationId),
   );
-  try {
-    await sqlite.uow.withTransaction(async (tx) => {
-      try {
-        sqlite.worldSnapshot.save(
-          tx,
-          {
-            projects: snapshot.projects,
-            tasks: snapshot.tasks,
-            workflows: snapshot.workflows,
-            nodes: snapshot.nodes,
-            approvals: snapshot.approvals,
-            artifacts: snapshot.artifacts,
-            runs: snapshot.runs,
-            budgets: snapshot.budgets,
-            reservations: snapshot.reservations.map(([id, value]) => ({
-              id,
-              budgetId: value.budgetId,
-              amountMinor: value.amountMinor,
-              ...(value.runId !== undefined ? { runId: value.runId } : {}),
-            })),
-            usageKeys: snapshot.usageKeys,
-            executionSnapshots: snapshot.executionSnapshots ?? [],
-          },
-          snapshot.clock,
+  await sqlite.uow.withTransaction(async (tx) => {
+    sqlite.worldSnapshot.save(
+      tx,
+      {
+        projects: snapshot.projects,
+        tasks: snapshot.tasks,
+        workflows: snapshot.workflows,
+        nodes: snapshot.nodes,
+        approvals: snapshot.approvals,
+        artifacts: snapshot.artifacts,
+        runs: snapshot.runs,
+        budgets: snapshot.budgets,
+        reservations: snapshot.reservations.map(([id, value]) => ({
+          id,
+          budgetId: value.budgetId,
+          amountMinor: value.amountMinor,
+          ...(value.runId !== undefined ? { runId: value.runId } : {}),
+        })),
+        usageKeys: snapshot.usageKeys,
+        executionSnapshots: snapshot.executionSnapshots ?? [],
+      },
+      snapshot.clock,
+    );
+    for (const handle of handles) {
+      const run = snapshot.runs.find((record) => record.operationId === handle.request.operationId);
+      if (!run) {
+        throw new Error(
+          `runtime handle ${handle.handle.handleId} has no Application Run for operation ${handle.request.operationId}`,
         );
-        for (const handle of handles) {
-          const run = snapshot.runs.find(
-            (record) => record.operationId === handle.request.operationId,
-          );
-          if (!run) {
-            throw new Error(
-              `runtime handle ${handle.handle.handleId} has no Application Run for operation ${handle.request.operationId}`,
-            );
-          }
-          sqlite.handles.put(tx, {
-            runId: run.id,
-            ...runtimeHandleValues(handle, snapshot.clock),
-          });
-        }
+      }
+      sqlite.handles.put(tx, {
+        runId: run.id,
+        ...runtimeHandleValues(handle, snapshot.clock),
+      });
+    }
+    for (const event of pendingEvents) {
+      try {
+        await sqlite.events.append(tx, event);
+        synced.eventIds.add(event.id);
       } catch (error) {
-        if (!(error instanceof PersistenceError) || error.code !== "revision_conflict") {
+        if (!isConstraintError(error)) {
           throw error;
         }
+        synced.eventIds.add(event.id);
       }
-      for (const event of pendingEvents) {
-        try {
-          await sqlite.events.append(tx, event);
-          synced.eventIds.add(event.id);
-        } catch (error) {
-          if (!isConstraintError(error)) {
-            throw error;
-          }
-          synced.eventIds.add(event.id);
-        }
-      }
-      for (const receipt of pendingReceipts) {
-        const existing = await sqlite.receipts.getByOperationId(receipt.operationId);
-        if (existing) {
-          synced.operationIds.add(receipt.operationId);
-          continue;
-        }
-        await sqlite.receipts.putPending(tx, { ...receipt, status: "pending" });
-        if (receipt.status === "committed") {
-          await sqlite.receipts.complete(tx, receipt.operationId, receipt.result ?? {});
-        } else if (receipt.status === "failed") {
-          await sqlite.receipts.fail(
-            tx,
-            receipt.operationId,
-            (receipt.result as Parameters<WorkforceSqlite["receipts"]["fail"]>[2]) ?? {
-              code: "conflict",
-              message: "command failed",
-              retryable: false,
-            },
-          );
-        }
-        synced.operationIds.add(receipt.operationId);
-      }
-    });
-  } catch (error) {
-    if (!isConstraintError(error)) {
-      throw error;
     }
-    // Defensive branch: the entity repositories used by save() already map UNIQUE/PRIMARY KEY
-    // (2067/1555) into PersistenceError("conflict") and rethrow, but the unmapped update paths
-    // (node_instances.update, runs.updateStatus) and the receipt writer can still emit a raw
-    // constraint error here. Discarding it would let SQLite fall behind world.json with no
-    // signal (the divergence D04 forbids), so report instead of swallowing.
-    console.error(
-      "[workforce] SQLite projection hit a constraint failure and was skipped; " +
-        "world.json is now ahead of the entity tables",
-      error,
-    );
-  }
+    for (const receipt of pendingReceipts) {
+      const existing = await sqlite.receipts.getByOperationId(receipt.operationId);
+      if (existing) {
+        synced.operationIds.add(receipt.operationId);
+        continue;
+      }
+      await sqlite.receipts.putPending(tx, { ...receipt, status: "pending" });
+      if (receipt.status === "committed") {
+        await sqlite.receipts.complete(tx, receipt.operationId, receipt.result ?? {});
+      } else if (receipt.status === "failed") {
+        await sqlite.receipts.fail(
+          tx,
+          receipt.operationId,
+          (receipt.result as Parameters<WorkforceSqlite["receipts"]["fail"]>[2]) ?? {
+            code: "conflict",
+            message: "command failed",
+            retryable: false,
+          },
+        );
+      }
+      synced.operationIds.add(receipt.operationId);
+    }
+  });
 }
 
 export async function persistRuntimeHandle(

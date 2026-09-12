@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { WorkforceSqlite } from "@workforce/database";
+import { PersistenceError, WorkforceSqlite } from "@workforce/database";
 
 import type { PersistedHostStore, PersistedWorld } from "../src/composition/persist.js";
 import {
@@ -85,7 +85,7 @@ describe("composition world sidecar", () => {
     expect(loadSnapshot(dir)?.world.executionSnapshots).toEqual([record]);
   });
 
-  it("reports a raw constraint failure from the projection instead of discarding it", async () => {
+  it("propagates a raw constraint failure from the projection", async () => {
     const dir = stateDir();
     const sqlite = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
     const constraint = Object.assign(new Error("UNIQUE constraint failed: runs.id"), {
@@ -94,7 +94,6 @@ describe("composition world sidecar", () => {
     const save = vi.spyOn(sqlite.worldSnapshot, "save").mockImplementation(() => {
       throw constraint;
     });
-    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       await expect(
         dualWriteSqlite(
@@ -102,14 +101,8 @@ describe("composition world sidecar", () => {
           { ...legacyWorld(), executionSnapshots: [] },
           { eventIds: new Set<string>(), operationIds: new Set<string>() },
         ),
-      ).resolves.toBeUndefined();
-
-      expect(report).toHaveBeenCalledWith(
-        expect.stringContaining("constraint failure"),
-        constraint,
-      );
+      ).rejects.toThrow(constraint);
     } finally {
-      report.mockRestore();
       save.mockRestore();
       sqlite.close();
     }
@@ -130,6 +123,27 @@ describe("composition world sidecar", () => {
           { eventIds: new Set<string>(), operationIds: new Set<string>() },
         ),
       ).rejects.toThrow(failure);
+    } finally {
+      save.mockRestore();
+      sqlite.close();
+    }
+  });
+
+  it("propagates a projection CAS conflict instead of accepting a stale authority", async () => {
+    const dir = stateDir();
+    const sqlite = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const conflict = new PersistenceError("revision_conflict", "project prj_1 revision mismatch");
+    const save = vi.spyOn(sqlite.worldSnapshot, "save").mockImplementation(() => {
+      throw conflict;
+    });
+    try {
+      await expect(
+        dualWriteSqlite(
+          sqlite,
+          { ...legacyWorld(), executionSnapshots: [] },
+          { eventIds: new Set<string>(), operationIds: new Set<string>() },
+        ),
+      ).rejects.toThrow(conflict);
     } finally {
       save.mockRestore();
       sqlite.close();
