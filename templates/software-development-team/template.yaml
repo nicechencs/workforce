@@ -4,9 +4,10 @@ status: published
 protocolVersion: "0.1"
 name: Software Development Team
 description: >
-  Versioned Planner, Developer, and Reviewer team for M3 mock delivery.
-  Planner produces an immutable Plan Artifact. Developers emit isolated patches.
-  Reviewer and human artifact approval bind the same integrated content digest.
+  Versioned Planner, Developer, and Reviewer team. Planner is a governed Task/Run
+  via Runtime SPI (never a direct Adapter call) and produces an immutable Plan Artifact.
+  Developers emit isolated patches. Reviewer and human artifact approval bind the same
+  integrated content digest. Re-integration supersedes prior artifact approvals.
 runtime:
   adapterId: mock
   protocolVersion: "0.1"
@@ -29,3 +30,6 @@ constraints:
   developerCompletesWithoutReviewer: true
   autoPush: false
   autoPullRequest: false
+  unboundedSplit: deny
+  plannerVia: task_run
+  silentOverwrite: deny

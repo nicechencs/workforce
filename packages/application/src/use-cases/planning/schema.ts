@@ -10,6 +10,8 @@ import {
   HARD_MAX_TASKS,
   PLAN_PROTOCOL,
   PLAN_PROTOCOL_VERSION,
+  SOFTWARE_DEVELOPMENT_TEAM_BOUNDS,
+  SOFTWARE_DEVELOPMENT_TEAM_TEMPLATE_ID,
   type OnUpstream,
   type PlanApprovalNode,
   type PlanArtifact,
@@ -77,6 +79,37 @@ function parseBounds(value: unknown): PlanBounds | string {
     return `bounds.maxDepth ${maxDepth} exceeds hard cap ${HARD_MAX_DEPTH}`;
   }
   return { maxDepth, maxTasks, maxAttempts, maxReworkCycles };
+}
+
+function templateBoundError(
+  templateId: string,
+  bounds: PlanBounds,
+  nodeCount: number,
+  depth: number,
+): string | undefined {
+  if (templateId !== SOFTWARE_DEVELOPMENT_TEAM_TEMPLATE_ID) {
+    return undefined;
+  }
+  const cap = SOFTWARE_DEVELOPMENT_TEAM_BOUNDS;
+  if (bounds.maxTasks > cap.maxTasks) {
+    return `template ${templateId} maxTasks ${bounds.maxTasks} exceeds cap ${cap.maxTasks}`;
+  }
+  if (bounds.maxDepth > cap.maxDepth) {
+    return `template ${templateId} maxDepth ${bounds.maxDepth} exceeds cap ${cap.maxDepth}`;
+  }
+  if (bounds.maxAttempts > cap.maxAttempts) {
+    return `template ${templateId} maxAttempts ${bounds.maxAttempts} exceeds cap ${cap.maxAttempts}`;
+  }
+  if (bounds.maxReworkCycles > cap.maxReworkCycles) {
+    return `template ${templateId} maxReworkCycles ${bounds.maxReworkCycles} exceeds cap ${cap.maxReworkCycles}`;
+  }
+  if (nodeCount > cap.maxTasks) {
+    return `plan exceeds template maxTasks ${cap.maxTasks}`;
+  }
+  if (depth > cap.maxDepth) {
+    return `plan exceeds template maxDepth ${cap.maxDepth}`;
+  }
+  return undefined;
 }
 
 function parseTaskNode(value: Record<string, unknown>, id: string): PlanTaskNode | string {
@@ -425,11 +458,27 @@ export function parsePlanArtifact(input: unknown): ParsePlanResult {
   if (depth > bounds.maxDepth) {
     return fail("plan exceeds bounds.maxDepth", { depth, maxDepth: bounds.maxDepth });
   }
+  const templateError = templateBoundError(templateId, bounds, nodes.length, depth);
+  if (templateError) {
+    return fail(templateError, {
+      templateId,
+      nodeCount: nodes.length,
+      depth,
+      bounds,
+    });
+  }
   const developers = nodes.filter((node) => node.kind === "task" && node.role === "developer");
   const reviewers = nodes.filter((node) => node.kind === "task" && node.role === "reviewer");
+  const planners = nodes.filter((node) => node.kind === "task" && node.role === "planner");
   const artifactApprovals = nodes.filter(
     (node) => node.kind === "approval" && node.gate === "artifact",
   );
+  if (planners.length > 0) {
+    return fail(
+      "execution plan must not include planner tasks; planner runs via Task/Run before confirm",
+      { plannerNodeIds: planners.map((node) => node.id) },
+    );
+  }
   if (developers.length < 2) {
     return fail("software-development-team plans must include at least two developer tasks");
   }

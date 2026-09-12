@@ -44,6 +44,12 @@ executionPolicy:
 bounds:
   maxDepth: 4
   maxTasks: 8
+unboundedSplit: deny
+via: task_run
+runtimeCommand: run.start
+bypassTaskRun: false
 notes: >
-  Planner is an ordinary Task/Run. It must not mutate an active execution graph.
-  M3 uses fixtures/mock-plan.json. A later slice may replace Mock with a live Planner.
+  Planner is an ordinary Task/Run started through Runtime SPI Host (run.start).
+  It must not call RuntimeAdapter directly and must not mutate an active execution graph.
+  Plan Artifact is schema-validated (finite DAG, template caps) before confirm.
+  fixtures/mock-plan.json is the sample shape, not the production source.

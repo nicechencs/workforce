@@ -1,7 +1,7 @@
 import { parsePlanArtifact } from "./schema.js";
 import type { PlanArtifact } from "./types.js";
 
-/** Fixed M3 Mock Plan: two developer tasks, one reviewer, one human artifact approval. */
+/** Fixed sample Plan Artifact shape. Production planning uses startPlanner → Run output. */
 export const MOCK_PLAN_DOCUMENT = {
   protocol: "workforce.plan",
   protocolVersion: "0.1",
