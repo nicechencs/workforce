@@ -68,10 +68,17 @@ export interface DaemonLaunchSpec {
   args: readonly string[];
 }
 
+export interface DaemonExitObservation {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+}
+
 export interface SpawnedDaemon {
   pid: number | undefined;
   unref: () => void;
   kill: (signal?: NodeJS.Signals) => boolean;
+  exitSnapshot?: () => DaemonExitObservation | null;
+  spawnErrorMessage?: () => string | null;
 }
 
 export interface SupervisorDeps {
@@ -88,6 +95,14 @@ export interface SupervisorDeps {
   spawn(spec: DaemonLaunchSpec): SpawnedDaemon;
   wait(ms: number): Promise<void>;
   probeLockHeld(): Promise<boolean>;
+  probePortBusy?(port: number): Promise<boolean>;
+  readLaunchStderr?(): string;
+  recordLaunchDiagnostic?(diagnostic: {
+    kind: string;
+    generatedAt: string;
+    code: string;
+    message: string;
+  }): void;
   spawnTimeoutMs?: number;
   spawnPollMs?: number;
 }
