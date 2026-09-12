@@ -1,6 +1,6 @@
 # V0.1 协作与评审流程
 
-日期：2026-09-11  
+日期：2026-09-12  
 目的：固定**命名 bot** 的仓库 PR 管道，以及对照冻结决策的评审红线。本文不改写决策；冲突以决策登记为准。
 
 通用仓库约定不在此重复：
@@ -77,4 +77,4 @@ review-bot 对每个 PR 核对下列**决策登记**红线；任一项回归则 
 1. **Codex live exec**（T15：Process 已接线；本机无 live `codex exec`。需已安装 CLI 的机器跑授权 `codex exec`）
 2. **T17 打包 / 签名 / 三平台发布**
 3. **项目制循环上的画布 / 自定义 Team 写接口**（M7 / T18–T19：给 Project 编排 Team 与 Workflow，不是外挂。未领取前不要在普通 PR 里顺便做）
-4. **对话生成工作流 / 双执行模式**（M7–M8 / T20–T21：D17/D18 已冻结为 planned，**未实现**。未领取且 T02 未冻结会话/mode 字段前，不要顺便做 chat 入口或假 mode 按钮）
+4. **对话生成工作流 / 双执行模式的剩余工作**（M7–M8 / T20–T21：D17/D18 产品完成态仍 **planned**。协议会话/mode 字段已冻结；Daemon AuthoringSession HTTP、typed send、项目详情 mode 控件已有切片。未领取剩余卡前，不要在普通 PR 里顺便做 allowlist、假 Agent 完成或假 `direct` 按钮）

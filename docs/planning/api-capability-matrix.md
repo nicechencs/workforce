@@ -12,6 +12,8 @@ updated: 2026-09-12
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+修订：2026-09-12 — T00-DOC-ALIGN：对照 `dev` tip 源码。`CHAT_SESSION_PROTOCOL_FROZEN=true`；Daemon AuthoringSession HTTP 与 typed send 已接线；Electron allowlist **仍缺**该 path。`RunDto`/`ProjectDto` 在 `packages/protocol`。受管 Run 启动现构造 `RunExecutionSnapshot`。**不**发明泛用 Chat API 或 `:direct` path。**不**宣称 M7/M8 完成或 T20 headed PASS。
+
 修订：2026-09-12 — 本 tip 补上 T19 写 UI、T21 项目详情挂载与 composed passthrough；D19 Placement（本机默认，远程/容器为一等能力，runner 未实现）。`StartRunRequest` 仍不加 `orchestrationMode`。**不**宣称 M7/M8 完成或 headed PASS。
 
 修订：2026-09-12 — T20 Desktop-local session store + 仅用户 append 已接线（renderer `localStorage`）；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false，无 Agent/send、无 chat HTTP。**不**宣称 M7 完成或 headed PASS。
@@ -27,7 +29,7 @@ updated: 2026-09-12
 - **M4**：真实 Codex 接入后
 - **M5**：治理全链路
 - **M7**：补齐项目制循环上的画布、自定义 Team 与对话生成草稿（产品必达；M3 之后领取，见 D15/D16/D17）
-- **M8**：按 Agent 双执行模式（workflow-bound / direct；产品必达；见 D18）。**完成态未实现**；本分支只有 `:start` 回显 + gating，不发明 path
+- **M8**：按 Agent 双执行模式（workflow-bound / direct；产品必达；见 D18）。**完成态未实现**；本分支有 `:start` 回显、gating、项目详情控件与受管 Run 快照投影，不发明 `:direct` path
 - **later**：V0.1 后或不做（**不含**画布、自定义 Team、对话生成、双执行模式）
 - **readonly**：可展示，不可改（M3 过渡深度）
 - **unsupported**：探测后禁用
@@ -56,17 +58,17 @@ P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-
 | 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
 | 工作流目录 / 画布 / 对话生成 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口 + 对话生成草稿（D15/D17）。目录不是可执行 Runtime |
 
-M7 必达——补齐项目制循环（**完成态未实现**；本分支已有画布/写 API/作者壳切片，见 03。未领取剩余卡前不要塞进随机 PR）：
+M7 必达——补齐项目制循环（**完成态未实现**；本分支已有画布/写 API/Daemon 会话作者页切片，见 03。未领取剩余卡前不要塞进随机 PR）：
 
 | 页面/动作 | 处理 |
 |---|---|
 | 可视化工作流画布编辑器 | 为项目编排 Workflow；与只读目录共用「工作流」入口 |
-| 对话生成工作流草稿 | M7 planned（D17）。用户对话生成 bot/角色/流程/任务草稿，再进画布编辑。无冻结 chat endpoint；不得假成功 |
+| 对话生成工作流草稿 | M7 planned（D17）。用户对话生成 bot/角色/流程/任务草稿，再进画布编辑。专用 AuthoringSession HTTP 已接线，**不是**泛用 Chat API；Electron allowlist 未放行前不得宣称真窗口可用 |
 | 自定义 Team 编排 | 为项目配团队；M3 只读预设仍必须可用 |
 
 D17 后端 owner：T14 的 Application authoring use case 负责 `AuthoringProposal` / `ChangeSet` 的 schema、Project/Team/Task/Workflow 边界、CAS/staged apply、Policy/Budget/CredentialRef、Event、cancel/retry、retention/redaction；T20 只负责 Renderer 会话面，T18 负责画布。未冻结的会话 DTO 不进入本矩阵的 endpoint 清单。
 
-M8 必达——双执行模式（**完成态未实现**；本分支只有 start 回显 / gating / 未挂入的控件模块。未领取剩余卡前不要塞进随机 PR）：
+M8 必达——双执行模式（**完成态未实现**；本分支有 start 回显 / gating / 已挂入项目详情的控件。未领取剩余卡前不要塞进随机 PR）：
 
 | 页面/动作 | 处理 |
 |---|---|
@@ -206,7 +208,24 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 | PATCH | `/workflows/{id}/drafts/{draftId}` | M7 | 画布以 If-Match/CAS 保存未发布图 |
 | POST | `/workflows/{id}/drafts/{draftId}:publish` | M7 | 发布不可变 WorkflowVersion；失败不得假装已发布 |
 
-对话生成（D17）与双执行模式（D18）**不在本表发明 path**。当前实现复用 `GET /capabilities` 与现有 `:start`，加可选 `orchestrationMode`；**没有** chat 或 `:direct` 资源。表中 `/drafts` 行仍是更长周期形状；2026-09-12 切片走 `.../versions` + `:publish`，不要把两条 path 写成已经是同一个。`transport`、`placement`、`orchestrationMode` 三轴分开表达；旧 `executionMode` 不作为公共字段。`orchestrationMode` 权威在 `packages/protocol/src/execution.ts`，不进入 `StartRunRequest`。
+对话生成（D17）**不发明泛用 Chat API**。现行实现是受鉴权、Project-scoped 的 AuthoringSession / Message / Turn 资源（见下表）；**没有** `:direct` 资源。表中 `/drafts` 行仍是更长周期形状；2026-09-12 切片走 `.../versions` + `:publish`，不要把两条 path 写成已经是同一个。`transport`、`placement`、`orchestrationMode` 三轴分开表达；旧 `executionMode` 不作为公共字段。`orchestrationMode` 权威在 `packages/protocol/src/execution.ts`，不进入 `StartRunRequest`。
+
+### Authoring sessions（D17）
+
+不是泛用 Chat。正文在 Daemon 进程内暂存；SQLite 只存 ref/hash/脱敏 preview。Electron allowlist 当前 **零条** 下列模板，真窗口 IPC 会拒路。
+
+| Method | Path | 阶段 | 说明 |
+|---|---|---|---|
+| POST | `/projects/{id}/authoring-sessions` | M7 | 创建项目范围会话。已在 Daemon 注册 |
+| GET | `/authoring-sessions` | M7 | 按 `projectId` 列出 |
+| GET | `/authoring-sessions/{id}` | M7 | 会话视图（含 turns） |
+| POST | `/authoring-sessions/{id}/messages` | M7 | 发送用户消息；创建 Turn + 受治理 authoring Run；走 transient handoff |
+| GET | `/authoring-sessions/{sessionId}/turns/{turnId}` | M7 | 读取 Turn |
+| GET | `/authoring-sessions/{sessionId}/proposals/{proposalId}` | M7 | 读取结构化提案 |
+| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:confirm` | M7 | 确认提案；当前只落 Workflow 草稿 |
+| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:cancel` | M7 | 取消 Turn |
+| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:retry` | M7 | Daemon 现返回 `unsupported_capability` |
+| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:close` | M7 | 关闭 Turn |
 
 ## 3. 错误与并发（T02 生成）
 
@@ -243,9 +262,9 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 | 选择仓库 | 项目详情 Settings → 原生 dialog → `POST .../workspaces` | draft |
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
-| 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话 DTO 已冻结，Desktop-local session store 只追加用户消息；`CHAT_SESSION_PROTOCOL_FROZEN=false` | M7 planned（D17）。作者壳 + 本机会话已有，**无** Agent/send，**无** chat path。**不**宣称对话编排完成 |
+| 对话生成工作流草稿 | 上列 AuthoringSession 写接口 + 复用 M7 workflow 写接口落草稿；`CHAT_SESSION_PROTOCOL_FROZEN=true` | M7 planned（D17）。Daemon HTTP + typed send 已有，**Electron allowlist 未放行**。无 Codex 编排 Agent。**不**宣称对话编排完成 |
 | 发布工作流版本 | `/workflows/{id}/drafts/{draftId}:publish` | M7；有限 DAG 校验通过 |
-| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。项目详情已挂控件；composed 回传到 `app.start()` / Run 记录。无 `direct` 调度。**不**宣称 M8 完成 |
+| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。项目详情已挂控件；composed 回传；受管 Run 现写执行快照。无 `POST /tasks/{id}/runs`，无 ad-hoc `direct` 调度。**不**宣称 M8 完成 |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿 list/reload 走 `GET /teams?status=draft` + `GET /teams/{id}`。草稿不得 `:start-planning`。无假 publish/bind |
 | 发布 Team 版本 | `/teams/{id}/drafts/{draftId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
@@ -267,4 +286,4 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
 - T18/T19：画布 + catalog 写 path + 自定义 Team 写 UI 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；无假 publish/bind
-- T20/T21：作者壳、Desktop-local session store（仅用户 append）、项目详情 mode 控件与 composed passthrough 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；不得实现假 Agent send 或假 `direct` 成功；**禁止**把 mode 写入 `StartRunRequest`
+- T20/T21：作者壳走 Daemon 会话与 typed send、项目详情 mode 控件与 composed passthrough 已有；`CHAT_SESSION_PROTOCOL_FROZEN=true`；allowlist 未放行作者 path 前不得宣称真窗口 send；不得实现假 Agent 完成或假 `direct` 成功；**禁止**把 mode 写入 `StartRunRequest`

@@ -3,14 +3,16 @@ title: D15–D18 落地方案（实现前检查点）
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # D15–D18 落地方案（实现前检查点）
 
-本页把最近三轮文档改动（`39990b9`、`cb339fe`、`c613609`）冻结的语义翻译成**可领取的实现序列**。它不发明契约、不改状态机、不宣称任何能力已实现。冻结规则以 [decision-register.md](decision-register.md) 与 [state-matrix.md](state-matrix.md) 为准；本文只回答「按什么顺序、由谁、动哪些文件、怎么证明」。
+本页把最近三轮文档改动（`39990b9`、`cb339fe`、`c613609`）冻结的语义翻译成**可领取的实现序列**。它不发明契约、不改状态机。冻结规则以 [decision-register.md](decision-register.md) 与 [state-matrix.md](state-matrix.md) 为准；本文只回答「按什么顺序、由谁、动哪些文件、怎么证明」。
 
-基线：`c613609`（`dev`）。代码事实以本轮实际读取的源码为准，验证环境限制见 §8。
+**历史 vs 现行：** §2 基线表是 **`c613609` 时点**的代码事实，保留以说明当时为何这样排序。现行源码事实以 [03-implementation-status.md](03-implementation-status.md) 与本节顶部对照为准，不要把历史表里的「14 个 schema / RunDto 不在 protocol / 无 chat HTTP」当成当前 `dev`。
+
+基线：`c613609`（`dev`，历史）。现行对照分支是当前 `dev`。验证环境限制见 §8。
 
 ## 1. 结论摘要
 
@@ -21,17 +23,21 @@ updated: 2026-09-11
 2. **映射必须显式，而当前 Run 的 placement 语义是倒的。** `StartRunRequest` 现在要求调用方**先给出** `executionNodeId` / `runtimeInstallationId` / `workspaceInstanceId`；文档冻结的顺序是先解析 placement intent，再选 Node/Runtime、拿 Lease、建 WorkspaceInstance，**最后**组装唯一 `PlacementSnapshot`。wire 契约与执行顺序互相矛盾，必须先解决再写调度。另外 `runs.snapshot_ref` 现在的取值是 Mock 场景名字面量（`"mock:success"`），与 `execution_snapshot_id` **不是同一个概念**，不能复用。
 3. **`ProjectExecutionSnapshot` 的写入时机已完成 M3 拆分，图源仍要收口。** confirm-plan 现只创建 snapshot 并进入 `ready`，`workflow.start` 才创建 `WorkflowInstance`；SQLite/world 先恢复 canonical graph 再恢复 snapshot。这是已落地的 M3 主路径改动。现有 confirm 图仍来自既有输入，尚未切为已发布 catalog 的唯一来源，真实 policy snapshot 与 upgrade/recovery 验收也未完成。
 
-另外一个仍会直接决定 D15–D18 正确性的事实：`task_dependencies` 已由世界快照在所有 Task 行落库后同步普通 `dependsOn` 边，但 confirm-plan 仍不是从已发布 canonical graph 取图。`workflow_versions` 的 repository 覆写缺陷已修复：真实版本为稳定 SHA-256 的 insert-once，实例读回也以版本表为准；只有历史空 FK placeholder 能一次提升。Application 发布与图源切换仍未完成。D15/D18 要新增字段的 `RunDto`/`ProjectDto`/`TeamDto` **不在 `packages/protocol`**，而是 daemon 与 desktop-client 两处手写副本。这些不是措辞问题，而是实现路径上的硬约束，见 §3.5 与 §4。
+另外一个仍会直接决定 D15–D18 正确性的事实：`task_dependencies` 已由世界快照在所有 Task 行落库后同步普通 `dependsOn` 边，但 confirm-plan 仍不是从已发布 canonical graph 取图。`workflow_versions` 的 repository 覆写缺陷已修复：真实版本为稳定 SHA-256 的 insert-once，实例读回也以版本表为准；只有历史空 FK placeholder 能一次提升。Application 发布与图源切换仍未完成。**现行（已超越 `c613609`）：** `RunDto`/`ProjectDto`/`TeamDto` 已迁入 `packages/protocol`（daemon `modules/dto.ts` 再导出）；JSON Schema 现为 31 个；AuthoringSession HTTP 已注册。这些不是措辞问题，见 §2 顶部对照、§3.5 与 §4。
 
 ## 2. 基线事实（已实际读取）
 
-> **历史记录：** 本节是 **`c613609` 基线时点**的代码事实（本页创建时实际读取）。它不作为当前事实使用，保留以说明后续切片为何这样排序。自该时点以后已发生三件事：
+> **历史记录：** 本节是 **`c613609` 基线时点**的代码事实（本页创建时实际读取）。它不作为当前事实使用，保留以说明后续切片为何这样排序。自该时点以后已发生：
 >
 > 1. **T02 已冻结执行三轴公共契约**：`packages/protocol/src/execution.ts` 现导出 `orchestrationModes`（`workflow_bound` / `direct`）、`runtimeTransports`、`placementIntentModes`、`placementSnapshotSchema` 与 `runExecutionSnapshotSchema`（含 `superRefine`），并有 `execution.test.ts`。因此下文 2.1 中「协议与 domain 均无、grep 全库 0 命中」的描述只适用于 `c613609`。
-> 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。
+> 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。后续另有 `006`–`009`。
 > 3. **S2a 与 D02 M3 拆分已落地。** `SqliteProjectExecutionSnapshotRepository` 为 insert-once；`MemoryWorld.executionSnapshots`、canonical graph map 与 Daemon world/SQLite 投影均可恢复。confirm-plan 不再直接创建 WorkflowInstance，`:start` 才创建。已发布 catalog 图源、真实 policy snapshot、backfill/contract 与 T16 upgrade 仍未实现。
+> 4. **C13 已落地：** `RunDto`/`ProjectDto`/`TeamDto` 在 `packages/protocol/src/dto.ts`（及 `team.ts`）；daemon `modules/dto.ts` 再导出。下文 2.1 / 3.5c「两处手写副本」只适用于 `c613609`。
+> 5. **JSON Schema 现为 31 个**（`docs/protocols/v0.1/*.schema.json`），不是下文的 14。含 AuthoringSession / send / `startDirectTaskRun*` / `run.schema.json`。
+> 6. **D17 HTTP 与 handoff：** Daemon 已注册 AuthoringSession 路由；Host 一次性 transient prompt handoff；`CHAT_SESSION_PROTOCOL_FROZEN=true`。Electron allowlist 仍缺 authoring-sessions。`POST /tasks/{id}/runs` 协议已冻，Daemon 无路由。
+> 7. **品牌 ID：** `ExecutionSnapshotId` / `SnapshotRef` 已有；`WorkflowId` / `TeamId` 等仍缺（见 T02-DOMAIN-IDS）。
 >
-> 仍成立的行为结论：2.4 的 `confirmPlan` 语义。2.6 的 `workflow_versions` 覆写与恒定 `sha256:empty` 已由后续 T04 repository 切片修复：真实版本使用稳定 SHA-256 insert-once，实例读图从版本表取得；只有历史空 FK placeholder 允许一次升级。Application 发布/图源 switch 尚未完成。2.3 中「投影失败被吞掉」已被后续 T04 对账切片修复：`dualWriteSqlite` 向上传播原始约束错误和 CAS conflict，sidecar 仅在 SQLite commit 后发布。本页 §6 的「投影失败可见性」已升级为新的写入可阻断；旧 sidecar 的恢复对账、完整 authority switch 和 T16 故障注入仍 planned。见 [03-implementation-status.md](03-implementation-status.md)；SQLite 实体表仍是 restart authority。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
+> 仍成立的行为结论：2.4 的「图仍来自 confirm 请求体」在后续拆分后仍成立（`confirmPlan` 仍读 `input.graph`，不是已发布 catalog 唯一来源）。2.6 的 `workflow_versions` 覆写与恒定 `sha256:empty` 已由后续 T04 repository 切片修复。2.3 中「投影失败被吞掉」已被后续 T04 对账切片修复。见 [03-implementation-status.md](03-implementation-status.md)。
 
 ### 2.1 公共契约现状
 
@@ -49,7 +55,7 @@ updated: 2026-09-11
 | 图定义（protocol + engine） | `WorkflowGraphDefinition` 已是画布/作者/发布的公开严格 DAG，覆盖重复 ID、端点、入口和环；引擎 `validateWorkflowGraph` 仍负责运行时 join、binding 与 condition 语义。 | `packages/protocol/src/workflow.ts`；`packages/workflow-engine/src/dag.ts` |
 | JSON Schema 生成 | 当前 14 个 V0.1 公开 schema 由显式 Zod registry 生成；`protocol:schema:check` 检查缺失、额外和内容漂移。JSON Schema 不替代 `superRefine` 等运行时语义测试 | `packages/protocol/src/json-schema-registry.ts`；`tooling/protocol/generate-schemas.mjs`；根 `package.json` |
 
-结论：**canonical graph 已提升为独立 protocol DTO，目录投影仍不是执行图。** `WorkflowGraphDefinition` 供画布、作者和发布复用；`WorkflowDto` 保持严格的目录投影，不能把草稿或运行态字段塞回 catalog。Application 尚未把该对象作为 published 版本的唯一执行图源，也尚未实现 ChangeSet staged apply，因此 D15/T14/T09 仍有后续接线工作。
+结论：**canonical graph 已提升为独立 protocol DTO，目录投影仍不是执行图。** `WorkflowGraphDefinition` 供画布、作者和发布复用；`WorkflowDto` 保持严格的目录投影。**现行：** ChangeSet staged-apply 已落地；Application 仍未把 published catalog 版本作为唯一执行图源，D15/T09 图源切换仍待接线。
 
 ### 2.2 持久化现状
 
@@ -160,7 +166,7 @@ D18 的 direct 与 workflow-bound 在文档里共用同一条治理链，只在�
 
 **(b) repository 写入侧已收紧，发布路径仍未接线。** `SqliteWorkflowInstanceRepository` 现以稳定 JSON SHA-256 将版本 insert-once；同内容只能重用、不同图为 conflict，实例读图也从 `workflow_versions` 获取。为兼容旧 M3 Project 的 FK 预建行，唯一可变例外是 `sha256:empty` / `{}` placeholder 的一次提升；真实版本绝不更新。D15 发布流程仍必须以此 repository 作为唯一写入方，并让 Application 从 published graph 而非请求体取得图。
 
-**(c) 公开 DTO 有两个手写来源。** `RunDto`/`ProjectDto`/`TeamDto` 不在 `packages/protocol`，而是 `apps/daemon/src/modules/dto.ts` 与 `packages/desktop-client/src/types.ts` 各一份。D18 要给 Run 加 `orchestrationMode`/`transport`/`executionSnapshotId`，就必须同时改两处并且无法被 schema 单测发现漂移。**[AGENTS.md](../../AGENTS.md) 禁止「绕过 `packages/protocol` 复制第二套规则」**，所以这三个 DTO 的归属必须在 S0 里一并裁决：要么迁入 `packages/protocol`，要么明确写出它们的权威方与校验方式。不裁决就直接加字段，等于把 D18 的字段冻结在两个不受检查器约束的地方。
+**(c) 公开 DTO 曾有两个手写来源（已收口）。** `c613609` 时 `RunDto`/`ProjectDto`/`TeamDto` 不在 `packages/protocol`。**现行：** 三者已迁入 protocol，daemon 再导出；D18 轴字段加在 protocol schema 上。未裁决前不加字段的风险对 C13 已解除。
 
 ### 3.6 SQLite 还不是权威，migration 的「switch/contract」缺一个前提
 
@@ -199,7 +205,7 @@ D18 的 direct 与 workflow-bound 在文档里共用同一条治理链，只在�
 | C10 | `WorkflowInstance.executionSnapshotId`（替代直接 `workflowVersionId`） | 实例直接存 version + graph | 需迁移 | 10 §4.3、state-matrix §3 |
 | C11 | `dependsOn` 投影规则与落库约定（普通 prerequisite 边 vs 路由边） | 普通 `dependsOn` 已同步入库；图源仍是现有实例图，routing/condition 分离仍缺跨模块 contract test | 改已有契约（配 contract test） | 08 §2.3、api-capability-matrix §2 |
 | C12 | 能力探针输出（哪些 mode 可选）与 `unsupported_capability` 的判定点 | `GET /capabilities` 存在但是硬编码静态对象（`app-services.ts:279-295`），无 mode 维度 | 纯新增 | decision-register D18.3 |
-| C13 | `RunDto`/`ProjectDto`/`TeamDto` 的归属与单一来源 | daemon 与 desktop-client 各手写一份；protocol 只有 `TaskDto`/`WorkflowDto` | 改已有契约（结构性问题） | §3.5c、AGENTS.md 红线 |
+| C13 | `RunDto`/`ProjectDto`/`TeamDto` 的归属与单一来源 | **已迁入 `packages/protocol`**；daemon 再导出。历史：daemon 与 desktop-client 各手写一份 | 改已有契约（结构性问题；**已落地**） | §3.5c、AGENTS.md 红线 |
 
 建议 T02 的产出顺序：**C5/C6/C8/C9 先冻结**（它们阻塞迁移与调度），再冻结 C1–C4（阻塞作者面），然后 C13（否则 C6/C7 的字段会落在两个不受检查器约束的副本里），最后处理 C10/C11/C12 的兼容细节。理由是前四项一旦不定，T04 的 migration 就没有目标列名。
 
@@ -238,7 +244,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 
 **取舍记录：** 原计划的 A 方案（把 `StartRunRequest.placement` 降级为可选 intent）经读码后放弃——它会波及 `packages/runtime-sdk` 的 `assertNode`/`bindingFor`、mock/codex 两个 adapter 与 5 个测试文件，属于顺手重写运行时而非冻结契约。改为**加法式**：`StartRunRequest` 定位为 **Adapter SPI 边界请求**（必须带已解析绑定，键集合由回归测试锁定），三轴走独立协议对象。因此 §3.4 的 A/B 二选一**只剩一件事待定**：是否新增一条 wire 入口在请求里携带 `placementIntent`（HTTP 层），还是让 mode/intent 从 Task/Project 配置推导、`POST /tasks/{id}/runs` 不带这些字段。见 §9.1。
 
-已冻结：C1–C4（作者面图、草稿、Proposal/ChangeSet DTO）。仍待接线或冻结：C10（`WorkflowInstance.executionSnapshotId` 的唯一图源切换）、C11（`dependsOn` 的 published-graph 投影）、C12（mode 维度 probe）、C13（`RunDto`/`ProjectDto`/`TeamDto` 归属）。
+已冻结：C1–C4（作者面图、草稿、Proposal/ChangeSet DTO）、C13（`RunDto`/`ProjectDto`/`TeamDto` 归属）。仍待接线或冻结：C10（`WorkflowInstance.executionSnapshotId` 的唯一图源切换）、C11（`dependsOn` 的 published-graph 投影）、C12（mode 维度 probe 的完整能力面）。
 
 **本切片验证**：`tsc -p packages/protocol/tsconfig.json --noEmit` 退出 0；含新测试文件的定向 typecheck 退出 0；`node tooling/docs/check-docs.mjs` 通过（50 文件）；14 条断言以纯 Node 复算全部通过。**vitest 未跑**（本环境 Node→子进程 spawn 全部 EPERM）；`turbo run typecheck` 的 2 个 `TS2307` 经 `git stash` 复测确认为基线既有。
 
@@ -279,7 +285,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 - `SqliteWorldSnapshot` 增加 `executionSnapshots` 成员与 `WorldEntitySnapshot.executionSnapshots` 字段，`load` 一并读回。`save` 的插入顺序经 2026-09-11 修复：`project_execution_snapshots` 对 projects / workflow_versions / team_versions 有外键，必须先写这些父行再写快照；S2a 最初实现写成「先写快照」，任何非空快照都会 `FOREIGN KEY constraint failed` 并回滚整个事务（回归测试见 `packages/database/src/world-snapshot.test.ts`）。
 - `SqliteProjectRepository` 与 `SqliteWorkflowInstanceRepository` 补 `execution_snapshot_id` 列的读写（两个 repository 本来就 import `@workforce/application`，在该包内已可运行）。
 
-**仍未做（下一步）**：`confirmPlan` 改为创建 snapshot 并进入 `ready`（不建实例）、`startExecution` 改为创建引用 snapshot 的实例、执行图来源改为 snapshot 引用的已发布 `WorkflowVersion`、`task_dependencies` 落库、以及 `:confirm-plan` 的事务边界决策（§3.7a）。
+**仍未做（下一步，相对 S2a 数据面）：** 执行图来源改为 snapshot 引用的已发布 `WorkflowVersion`、`task_dependencies` 从已发布 canonical graph 投影、以及 `:confirm-plan` 的事务边界决策（§3.7a）。**现行已做（后续切片）：** `confirmPlan` 改为创建 snapshot 并进入 `ready`（不建实例）、`startExecution` 改为创建引用 snapshot 的实例。
 
 **本切片验证**（Node 24.19.0，真实执行）：12 条探针全部通过——快照 insert/读回、同内容幂等、不同 hash 冲突、budget 快照 JSON 往返、缺失 budget 不产生 `null` 字段、`findByProject`、FK 约束、畸形 JSON 读取守卫；`ProjectRecord.executionSnapshotId` 的 insert/update 往返；`WorkflowInstanceRecord.executionSnapshotId` 往返且不影响 M3 无快照实例；4 张表的 SQL 占位符与实参数量一致（20/19/12/11）。`tsc -p packages/database` 仍受 §8 store 缺口阻塞。
 
@@ -320,7 +326,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 | `/workflows` 与 `/teams` 草稿/发布写接口 | T10（契约 T02、校验 T09） | 已发布不可改；未发布不可执行 |
 | 画布（`renderer/features/workflows`） | T18 | 复用 canonical graph；未发布图明确提示「Runtime 不会执行此图」；发布失败保留画布内容 |
 | 可写 Team（`renderer/features/teams`） | T19 | 与 T12 不共改文件；预设保留 |
-| 对话生成（`renderer/features/workflow-authoring`） | T20 | 无冻结会话协议前入口不得假成功；会话回复不写成 Task/Run 完成 |
+| 对话生成（`renderer/features/workflow-authoring`） | T20 | 会话协议已冻结；Electron allowlist 未放行前真窗口不得假成功；会话回复不写成 Task/Run 完成 |
 | 双执行模式选择面 | T21 | 靠 probe 显隐；无能力 disabled；UI 不得预置可点击 `direct` |
 | `capabilities` 扩展与启动字段 | T10 | `unsupported_capability` 在启动前返回 |
 
@@ -372,7 +378,7 @@ Renderer 侧目前有**两套并行的 client 装配**（`features/_t13_client.t
 
 `docs/blueprint/08-workflow-state-machine.md` §19 的九条验收标准与 `docs/blueprint/10-database-schema.md` §14 的七条同样适用；本表只补 D15–D18 新增部分，不复制既有条目。
 
-现状提醒：Electron allowlist（66 条，`apps/desktop/src/main/ipc/allowlist.ts:5-72`）是 daemon 已注册路由（53 条）的**超集**，其中 17 条 daemon 未实现、命中返回 404；反向有 4 条 daemon 路由未放行。新增写路径时两侧都要动，且 `ipc-whitelist.test.ts:65-77` 目前**断言 workflows 写路径被拒**——那条断言必须随功能落地一起改，否则功能会被测试锁死。
+现状提醒：Electron allowlist（77 条，`apps/desktop/src/main/ipc/allowlist.ts`）与 Daemon 已注册路由不对齐：allowlist **零条** authoring-sessions 模板，而 Daemon 已注册该资源；反向仍有 allowlist 超集（含 `POST /tasks/{id}/runs`）在 Daemon 无 handler 时命中 404。新增写路径时两侧都要动。
 
 ## 7. 风险登记
 
@@ -388,7 +394,7 @@ Renderer 侧目前有**两套并行的 client 装配**（`features/_t13_client.t
 | 目录 / fixture / 执行图三者不一致 | 画布编辑的对象与真正执行的图不是同一个 | S2a 先收敛为「已发布 `WorkflowVersion` 是唯一执行图来源」，再做画布 |
 | SQLite 收紧 CHECK 需要重建表 | 迁移时间长；重建期间「一 Task 一活动 Run」部分唯一索引短暂消失 | 按 D04 分批回填；启动先备份并校验 checksum；重建期间禁止并发启动 |
 | 双执行模式出现两条准入路径 | direct 少走守卫，治理被绕过 | §3.2 的单一准入不变量 + 共用契约测试 |
-| 公开 DTO 双份手写（`RunDto` 等） | 新字段落在两个不受检查器约束的副本里，漂移不可发现 | C13 先裁决归属；未裁决前不加 D18 字段 |
+| 公开 DTO 双份手写（`RunDto` 等） | 新字段落在两个不受检查器约束的副本里，漂移不可发现 | **C13 已迁入 protocol**；禁止再在 daemon/desktop-client 复制第二套 |
 | Renderer 两套 client 装配并存 | 新增页面出现第三套装配 | S4 前裁决接哪一套 |
 
 ## 8. 本轮验证与环境限制
@@ -433,12 +439,12 @@ node -e "child_process.execFileSync(process.execPath, ...)"
 
 ## 9. 未决问题与已定事项
 
-### 9.1 仍需决策（阻塞 S0）
+### 9.1 仍需决策（不再阻塞 S0 的 C6/C13）
 
-1. **wire 契约策略**：§3.4 的 A（保持 `0.1`，`placement` 降级为 intent + `orchestrationMode` 可选归一化）还是 B（升协议版本，引入显式 `placementIntent`）。这是 S0 的第一个动作，不定就无法冻结 C6/C8/C9。
-2. **`RunDto`/`ProjectDto`/`TeamDto` 的归属**（C13）：迁入 `packages/protocol`，还是明确指定权威方与校验方式。不定就直接加 D18 字段，等于把字段冻结在两个不受检查器约束的副本里。
-3. **实施范围**：只做 S0+S1（契约冻结 + expand 迁移），还是同时启动 S2a/S2b。
-4. **`current-M3 upgrade fixture` 与 headed Electron 验收由谁执行**：本会话环境无法运行测试（§8），需要指定可运行测试的机器或授权。
+1. **wire 契约策略（HTTP 入口）**：§3.4 的 A/B 在 Adapter SPI 侧已用加法式收口（`StartRunRequest` 不变）。仍待定的是 HTTP `POST /tasks/{id}/runs` 是否携带 `placementIntent`，还是从 Task/Project 配置推导。协议 schema 已有，Daemon 路由未实现。
+2. **`RunDto`/`ProjectDto`/`TeamDto` 的归属**（C13）：**已迁入 `packages/protocol`**。本项不再阻塞加 D18 字段。
+3. **实施范围**：expand / S2a 行为拆分 / 作者 HTTP 已有切片；S2b direct 调度、S3 backfill、S5 contract 仍未做。
+4. **`current-M3 upgrade fixture` 与 headed Electron 验收由谁执行**：T19/T21 已有 headed PASS 报告；T18/T20 headed 与 T16 upgrade fixture 仍待指定可运行环境。
 
 ### 9.2 本轮已定
 
@@ -448,7 +454,7 @@ node -e "child_process.execFileSync(process.execPath, ...)"
 
 ### 9.3 已知不一致（本文不改，仅登记）
 
-1. `.github/workflows/pull-request.yml` 仍为 `push.branches: [main]`，而 [04-collab-and-review.md](04-collab-and-review.md) §0 已把 `dev` 定为唯一集成分支；远程默认分支仍是 `origin/main`。改 CI 触发分支属仓库配置改动，推送与改远程默认分支需要明确授权。影响：合入 `dev` 后不触发 post-merge push 流水线，只有 PR 流水线生效。
+1. `.github/workflows/pull-request.yml` 的 `push.branches` **现行已是 `[dev]`**。下文「仍为 `main`」只适用于本页创建时的仓库配置；`main` 已重命名为 `dev`。远程默认分支以当前 GitHub 设置为准。
 2. **pnpm store 与 `package.json` 声明不一致**（§8）：`packages/database` 缺 `@workforce/domain`、`@workforce/policy` 链接；`packages/process` 缺 `@workforce/application` 链接。这不是文档问题，是环境/依赖安装问题，需要一次 `pnpm install` 修复；未修复前 `pnpm typecheck` 不会全绿，且"按包独立 typecheck"不可用。
 
 ## 10. 关联文档

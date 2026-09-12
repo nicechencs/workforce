@@ -37,6 +37,12 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）T00-DOC-ALIGN：规划文档对齐到当前 `dev` 源码
+
+- **决定：** 不改任何产品决策。只把规划页里落后于 `dev` tip `79528a0` 的实现事实改成与源码一致：`CHAT_SESSION_PROTOCOL_FROZEN=true`；Daemon AuthoringSession HTTP 与 typed send 已接线；Host 一次性 transient prompt handoff（磁盘只存 digest）；Codex authoring input fail-closed；JSON Schema 31 个；`RunDto`/`ProjectDto` 在 `packages/protocol`；受管 `startRun` 现构造 `RunExecutionSnapshot`。Electron allowlist **仍缺** authoring-sessions；Daemon **无** `POST /tasks/{id}/runs`。`packages/protocol/src/authoring.ts` 过时文件头不在本项范围。不宣称 M7/M8 完成、T20 headed 或 ad-hoc `direct` 调度。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T02/T04/T05/T10/T20/T20-B/T21 与 §5；[02-development-task-backlog.md](02-development-task-backlog.md) T18–T21/T20-B 当前切片；[api-capability-matrix.md](api-capability-matrix.md) 作者 HTTP 与旗标；[05-d17-d18-landing-plan.md](05-d17-d18-landing-plan.md) 标明历史基线 vs 现行事实；[04-collab-and-review.md](04-collab-and-review.md) 去掉「D17/D18 未实现」绝对句。
+- **状态：** 文档对齐 **implemented**。M7/M8 产品完成、T20 真窗口、Codex 编排 Agent、`direct` 调度仍 **planned**。本轮不改源码、不跑测试。
+
 ## 2026-09-12（Asia/Taipei）Run 级 Placement 与 ExecutionLease 与 NodeSession 分离
 
 - **决定：** NodeSession 只表示节点在线会话；每个 Run 必须有独立 ExecutionLease 与 fencing token，同一节点仍可并发多个 Agent。Project 只保存 PlacementIntent 或默认策略，Run 启动时解析 Node / RuntimeInstallation / WorkspaceInstance 并写入不可变 `RunExecutionSnapshot`。启动事务先落 Run、Placement、Lease、Event 和 dispatch/outbox，提交后再启动 Runtime，且必须幂等。Workflow Scheduler 只做 DAG 就绪；Placement Scheduler 另有 Local Node 实现。文档明确 Local / Remote Server / Distributed 三种部署，当前 `apps/daemon` 是 V0.1 本地组合，不是未来独立 Control Plane。不实现远程节点、集群通信或 GitHub 协同。
