@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Button, Cluster, Muted, Tooltip } from "../../../components/ui.js";
 import { CANVAS_NODE_KINDS, type CanvasNodeKind } from "../graph/types.js";
-import { buttonStyle, mutedStyle, rowStyle } from "../../projects/ui.js";
 import {
   canMutateCanvas,
   publishButtonState,
@@ -29,23 +29,23 @@ export function WorkflowCanvasToolbar(props: {
   const publish = publishButtonState(props.session);
   return (
     <div data-testid="workflow-canvas-toolbar">
-      <div style={rowStyle}>
+      <Cluster>
         {CANVAS_NODE_KINDS.map((kind) => (
-          <button
+          <Button
             key={kind}
-            type="button"
-            data-testid={`workflow-canvas-add-${kind}`}
-            style={buttonStyle("secondary", !mutable)}
+            variant="outline"
+            size="sm"
+            testId={`workflow-canvas-add-${kind}`}
             disabled={!mutable}
             onClick={() => props.dispatch({ type: "addNode", kind })}
           >
             添加{KIND_LABEL[kind]}
-          </button>
+          </Button>
         ))}
-        <button
-          type="button"
-          data-testid="workflow-canvas-connect"
-          style={buttonStyle("secondary", !mutable || !props.session.selectedNodeId)}
+        <Button
+          variant="outline"
+          size="sm"
+          testId="workflow-canvas-connect"
           disabled={!mutable || !props.session.selectedNodeId}
           onClick={() => {
             if (props.session.selectedNodeId) {
@@ -54,51 +54,49 @@ export function WorkflowCanvasToolbar(props: {
           }}
         >
           {props.session.connectFrom ? "选择目标节点…" : "连接"}
-        </button>
-        <button
-          type="button"
-          data-testid="workflow-canvas-delete"
-          style={buttonStyle(
-            "danger",
-            !mutable || (!props.session.selectedNodeId && !props.session.selectedEdgeId),
-          )}
+        </Button>
+        <Button
+          variant="dangerOutline"
+          size="sm"
+          testId="workflow-canvas-delete"
           disabled={!mutable || (!props.session.selectedNodeId && !props.session.selectedEdgeId)}
           onClick={() => props.dispatch({ type: "removeSelected" })}
         >
           删除
-        </button>
-      </div>
-      <div style={rowStyle}>
-        <button
-          type="button"
-          data-testid="workflow-canvas-save"
-          style={buttonStyle("secondary", save.disabled)}
-          disabled={save.disabled}
-          title={save.reason ?? "保存未发布草稿"}
-          onClick={props.onSave}
-        >
-          保存草稿
-        </button>
-        <button
-          type="button"
-          data-testid="workflow-canvas-publish"
-          style={buttonStyle("primary", publish.disabled)}
-          disabled={publish.disabled}
-          title={publish.reason ?? "发布不可变版本"}
-          onClick={props.onPublish}
-        >
-          发布
-        </button>
-      </div>
+        </Button>
+      </Cluster>
+      <Cluster>
+        <Tooltip content={save.reason ?? "保存未发布草稿"}>
+          <Button
+            testId="workflow-canvas-save"
+            disabled={save.disabled}
+            title={save.reason ?? "保存未发布草稿"}
+            onClick={props.onSave}
+          >
+            保存草稿
+          </Button>
+        </Tooltip>
+        <Tooltip content={publish.reason ?? "发布不可变版本"}>
+          <Button
+            variant="primary"
+            testId="workflow-canvas-publish"
+            disabled={publish.disabled}
+            title={publish.reason ?? "发布不可变版本"}
+            onClick={props.onPublish}
+          >
+            发布
+          </Button>
+        </Tooltip>
+      </Cluster>
       {save.reason ? (
-        <p style={mutedStyle} data-testid="workflow-canvas-save-reason">
-          {save.reason}
-        </p>
+        <Muted>
+          <span data-testid="workflow-canvas-save-reason">{save.reason}</span>
+        </Muted>
       ) : null}
       {publish.reason && publish.reason !== save.reason ? (
-        <p style={mutedStyle} data-testid="workflow-canvas-publish-reason">
-          {publish.reason}
-        </p>
+        <Muted>
+          <span data-testid="workflow-canvas-publish-reason">{publish.reason}</span>
+        </Muted>
       ) : null}
     </div>
   );

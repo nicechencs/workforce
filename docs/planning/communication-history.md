@@ -537,3 +537,11 @@ updated: 2026-09-12
 - **决定：** Chat Proposal 的确认由 Application 用例在单一事务内完成：严格解析受信 proposal，解析 session/turn/Run 授权后写入 identity、authority、revision 1 draft 与 committed receipt；重放只接受严格解析的 committed receipt，pending/failed 不算成功，key/digest 冲突、跨 scope proof 与 stale CAS 一律拒绝，事件 append 失败回滚全部领域写入并记录诚实失败。SQLite 侧新增 `009_workflow_authoring_scopes`：catalog workflow 必须显式绑定唯一 organization/project 才能被 chat authoring 写入，ChangeSet 状态不授予授权，draft 的 CAS 读取与 append 与授权检查同事务，world snapshot 在 Project 之后、draft 读写之前建立 scope；缺授权的 pre-009 draft fail closed。
 - **文档影响：** [实现进度](03-implementation-status.md) 新增两条修订；本文件追加本条。会话/Turn 持久化、受保护 prompt handoff、typed HTTP、Renderer send 与画布深链仍未实现，不宣称聊天发送或 Agent 生成可用。
 - **状态：** **implemented（Application confirm-chat 用例、`MIGRATION_009_SQL` 与授权/draft repository 切片）**；验证：`pnpm lint`、`pnpm typecheck` 24/24、`pnpm exec vitest run packages/application`（75 passed）、`pnpm protocol:schema:check`（29 files）、`pnpm check:docs`。**已知缺口：** Daemon composition 尚未持久化/创建 `workflowAuthoringScopes`，`apps/daemon/tests/persist-snapshot.test.ts` 的 authoring 恢复用例失败，待消费者接线。
+
+---
+
+## 2026-09-12（Asia/Taipei）T11 设计系统收口画布/Team
+
+- **决定：** 画布与 Team 写页去掉第二套 inline 皮肤，改组合 T11 共享组件；`features/projects/ui.ts` 不得再持有独立 hex / `--wf-color-*`，只作为作者壳与 orchestration 对 `--wf-*` 的兼容再导出。按需补 Dialog / Dropdown / Tooltip / Toast / Table / Skeleton，不在 features 内新增全局 CSS 变量。作者壳与 orchestration 页面文件本轮不改（T20/T21 稍后）。
+- **文档影响：** [UI 设计系统](../product-ui/04-design-system.md) §3/§7 登记复合组件；[实现进度](03-implementation-status.md) 的 T11 行、§3 第 7 条与 §5 第 4 条同步为画布/Team 已组合、第二套色值已删除。
+- **状态：** **implemented**（共享层复合组件 + 画布/Team 组合 + ui.ts 再导出）。未跑 Vitest / headed；未改 `workflow-authoring`、`orchestration`、`apps/desktop/src/main`、protocol、Daemon 或测试文件。

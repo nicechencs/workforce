@@ -1,17 +1,17 @@
-import { useEffect, useReducer, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useReducer, type ReactNode } from "react";
 import type { WorkflowDto, WorkflowVersionDto } from "@workforce/desktop-client";
 
 import {
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  inputStyle,
-  labelStyle,
-  mutedStyle,
-  pageStyle,
-  titleStyle,
-  warningStyle,
-} from "../../projects/ui.js";
+  Button,
+  Card,
+  ErrorText,
+  Field,
+  Input,
+  Muted,
+  Notice,
+  Page,
+  Textarea,
+} from "../../../components/ui.js";
 import { useWorkforceClient } from "../../hooks.js";
 import { toGraphPayload } from "../graph/types.js";
 import { asVersionView, asWorkflowView, versionById, type WorkflowTemplateView } from "../model.js";
@@ -38,13 +38,6 @@ import {
 } from "./model.js";
 import { canvasDraftSteps } from "./model.js";
 import { WorkflowCanvasToolbar } from "./toolbar.js";
-
-const layout: CSSProperties = {
-  display: "flex",
-  gap: "var(--wf-space-lg, 16px)",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-};
 
 export function WorkflowCanvasPage(props: {
   workflowId: string;
@@ -154,11 +147,11 @@ export function WorkflowCanvasPage(props: {
   const frozen = session.mode === "readonly-frozen";
 
   return (
-    <main style={pageStyle} data-testid="workflow-canvas-page">
-      <p>
-        <button
-          type="button"
-          style={buttonStyle("secondary")}
+    <Page
+      title={title}
+      testId="workflow-canvas-page"
+      actions={
+        <Button
           onClick={() =>
             props.navigate(
               session.draft.workflowId && session.draft.workflowId !== CANVAS_NEW_WORKFLOW_ID
@@ -168,59 +161,57 @@ export function WorkflowCanvasPage(props: {
           }
         >
           返回工作流
-        </button>
-      </p>
-      <section style={cardStyle}>
-        <h1 style={titleStyle}>{title}</h1>
-        <p style={mutedStyle} data-testid="workflow-canvas-loop-note">
-          {PROJECT_LOOP_NOTE}
-        </p>
-        <p style={warningStyle} data-testid="workflow-unpublished-note">
-          {frozen ? session.banner : UNPUBLISHED_RUNTIME_NOTE}
-        </p>
-        <p style={mutedStyle}>{SAVE_PRESERVE_NOTE}</p>
-        <p style={mutedStyle} data-testid="workflow-canvas-write-note">
-          {session.write.note}
-        </p>
-        <p style={mutedStyle} data-testid="workflow-canvas-persist">
-          {persistStatusLabel(session.persist)}
-        </p>
+        </Button>
+      }
+    >
+      <Card>
+        <Muted>
+          <span data-testid="workflow-canvas-loop-note">{PROJECT_LOOP_NOTE}</span>
+        </Muted>
+        <Notice tone="warning">
+          <span data-testid="workflow-unpublished-note">
+            {frozen ? session.banner : UNPUBLISHED_RUNTIME_NOTE}
+          </span>
+        </Notice>
+        <Muted>{SAVE_PRESERVE_NOTE}</Muted>
+        <Muted>
+          <span data-testid="workflow-canvas-write-note">{session.write.note}</span>
+        </Muted>
+        <Muted>
+          <span data-testid="workflow-canvas-persist">{persistStatusLabel(session.persist)}</span>
+        </Muted>
         {session.persistError ? (
-          <div style={errorStyle} data-testid="workflow-canvas-error">
-            {session.persistError}
+          <div data-testid="workflow-canvas-error">
+            <ErrorText>{session.persistError}</ErrorText>
           </div>
         ) : null}
         {session.connectError ? (
-          <div style={errorStyle} data-testid="workflow-canvas-connect-error">
-            {session.connectError}
+          <div data-testid="workflow-canvas-connect-error">
+            <ErrorText>{session.connectError}</ErrorText>
           </div>
         ) : null}
-        <label style={labelStyle} htmlFor="wf-canvas-name">
-          名称
-        </label>
-        <input
-          id="wf-canvas-name"
-          data-testid="workflow-canvas-name"
-          style={inputStyle}
-          disabled={frozen}
-          value={session.draft.name}
-          onChange={(event) =>
-            dispatch({ type: "setMeta", field: "name", value: event.target.value })
-          }
-        />
-        <label style={labelStyle} htmlFor="wf-canvas-description">
-          说明
-        </label>
-        <textarea
-          id="wf-canvas-description"
-          data-testid="workflow-canvas-description"
-          style={{ ...inputStyle, minHeight: 72 }}
-          disabled={frozen}
-          value={session.draft.description}
-          onChange={(event) =>
-            dispatch({ type: "setMeta", field: "description", value: event.target.value })
-          }
-        />
+        <Field label="名称" htmlFor="wf-canvas-name">
+          <Input
+            id="wf-canvas-name"
+            testId="workflow-canvas-name"
+            disabled={frozen}
+            value={session.draft.name}
+            onChange={(event) =>
+              dispatch({ type: "setMeta", field: "name", value: event.target.value })
+            }
+          />
+        </Field>
+        <Field label="说明" htmlFor="wf-canvas-description">
+          <Textarea
+            id="wf-canvas-description"
+            testId="workflow-canvas-description"
+            disabled={frozen}
+            value={session.draft.description}
+            onChange={(event) =>
+              dispatch({ type: "setMeta", field: "description", value: event.target.value })
+            }
+          />
+        </Field>
         <WorkflowCanvasToolbar
           session={session}
           dispatch={dispatch}
@@ -232,38 +223,35 @@ export function WorkflowCanvasPage(props: {
           }}
         />
         {!session.validation.ok ? (
-          <ul
-            data-testid="workflow-canvas-validation"
-            style={{ color: "var(--wf-color-danger, #b91c1c)" }}
-          >
+          <ul data-testid="workflow-canvas-validation" className="wf-validation-list">
             {session.validation.reasons.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
         ) : (
-          <p style={mutedStyle} data-testid="workflow-canvas-validation-ok">
-            有限 DAG 校验通过（发布仍以服务端 T09 为准）。
-          </p>
+          <Muted>
+            <span data-testid="workflow-canvas-validation-ok">
+              有限 DAG 校验通过（发布仍以服务端 T09 为准）。
+            </span>
+          </Muted>
         )}
-        <div style={layout}>
-          <div style={{ flex: "1 1 520px" }}>
-            <WorkflowCanvasEditor
-              session={session}
-              onSelectNode={(nodeId) => dispatch({ type: "selectNode", nodeId })}
-              onSelectEdge={(edgeId) => dispatch({ type: "selectEdge", edgeId })}
-              onNodeClick={(nodeId) => {
-                if (session.connectFrom && session.connectFrom !== nodeId) {
-                  dispatch({ type: "completeConnect", nodeId });
-                  return;
-                }
-                dispatch({ type: "selectNode", nodeId });
-              }}
-            />
-          </div>
+        <div className="wf-split">
+          <WorkflowCanvasEditor
+            session={session}
+            onSelectNode={(nodeId) => dispatch({ type: "selectNode", nodeId })}
+            onSelectEdge={(edgeId) => dispatch({ type: "selectEdge", edgeId })}
+            onNodeClick={(nodeId) => {
+              if (session.connectFrom && session.connectFrom !== nodeId) {
+                dispatch({ type: "completeConnect", nodeId });
+                return;
+              }
+              dispatch({ type: "selectNode", nodeId });
+            }}
+          />
           <WorkflowCanvasInspector session={session} dispatch={dispatch} />
         </div>
-      </section>
-    </main>
+      </Card>
+    </Page>
   );
 }
 

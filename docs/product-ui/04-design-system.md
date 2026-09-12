@@ -3,14 +3,14 @@ title: Workforce UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # Workforce UI 设计系统
 
 **范围：** 本页是 Workforce 桌面客户端（`apps/desktop/src/renderer`）视觉语言的当前权威来源，规定 token 语义、字号、圆角、间距、表面、组件选择与状态呈现。页面组合与信息架构仍以 [01-information-architecture.md](01-information-architecture.md) 和 [03-p0-wireframes.md](03-p0-wireframes.md) 为准；本页不发明 API、状态值或页面能力。
 
-**日期：** 2026-09-11
+**日期：** 2026-09-12
 
 **对齐基线：** AgentHub（`D:\demo\chen\2026\AgentHub`）的 `src/styles/tokens.ts` 与 `docs/ui/design-system.md`。Workforce 采用**同一套语义角色与几何阶梯**，不复制其实现栈。差异清单见 §7。
 
@@ -94,8 +94,13 @@ updated: 2026-09-11
 | 状态 | `Badge` / `Dot` / `StatusText` | `StatusText` = 圆点 + 文字，避免只靠颜色 |
 | Agent 身份 | `AgentDot` | 颜色只来自 `--wf-agent-*`，不在页面写 hex |
 | 提示 | `Notice` | 页级条件与可行动提示，`tone` 取 info / warning / danger |
-| 空态与加载 | `EmptyState` / `LoadingText` / `ErrorText` | 覆盖 loading / empty / error；`ErrorText` 用 `role="alert"` |
+| 空态与加载 | `EmptyState` / `LoadingText` / `ErrorText` / `Skeleton` | 覆盖 loading / empty / error；`ErrorText` 用 `role="alert"`；稳定区域替换用 `Skeleton` |
 | 详情键值 | `.wf-detail-grid` | `dt` 用 meta 档浅色，`dd` 用正文色 |
+| 确认与覆盖 | `Dialog` | 焦点陷阱 + Escape / 点遮罩关闭；确认动作放 `actions`，一页仍最多一个 `primary` |
+| 溢出命令 | `DropdownMenu` | 工具栏溢出项；危险项用 `danger`，不用页面内私有菜单色 |
+| 悬停说明 | `Tooltip` | 可访问名称仍在控件上；`title` 只作补充，不替代 `aria-label` |
+| 瞬时反馈 | `Toast` / `ToastRegion` | 短时状态，不替代页内 `Notice` / `ErrorText` |
+| 行列数据 | `Table` / `THead` / `TBody` / `TR` / `TH` / `TD` | 表头用 meta 档、`bg-subtle`；不要在 feature 里自绘网格线 |
 
 ### 3.1 动作层级
 
@@ -181,7 +186,9 @@ updated: 2026-09-11
 | 页面导航 | react-router | hash 路由（`app/hash-router.ts`） | 桌面壳既有约定，不属于视觉对齐范围 |
 | 文案 | 中英双语字典 | 中文优先 | 与 Workforce 现有产品语言一致 |
 
-**未对齐、仍为后续项：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 等复合组件；无障碍树与焦点陷阱的自动化测试；`prefers-reduced-motion` 之外的动效规范。这些在 T11 领取时按需补齐，不在页面内各自实现。
+**已补的复合组件：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 由 `renderer/components/` 导出，样式只引用 `--wf-*`。画布与 Team 写页已改组合这些组件；作者壳与 orchestration 控件仍经 `features/projects/ui.ts` 再导出消费同一套 token，不保留第二套 hex。
+
+**仍为后续项：** 无障碍树与焦点陷阱的自动化测试；`prefers-reduced-motion` 之外的动效规范；作者壳 / orchestration 页面改为直接组合组件（不再走兼容再导出）。
 
 ## 8. 变更要求
 
