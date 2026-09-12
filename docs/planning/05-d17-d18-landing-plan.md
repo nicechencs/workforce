@@ -19,7 +19,7 @@ updated: 2026-09-11
 0. **SQLite 尚未承载全部业务不变量，但新的投影已不可静默失败。** 现写入链先将内存 world 投影进 SQLite；只有事务提交后才发布 `world.json` sidecar。原始约束错误和 `revision_conflict` 都会向调用方传播，故失败不会产生新的超前 sidecar。migration 的 expand → backfill → switch → contract 仍需完成「谁负责不变量」的架构切换；旧 sidecar 不会被本切片自动修复，任何 NOT NULL/CHECK 收紧前仍需 T16 恢复证据——见 §3.6。
 1. **迁移是公共前置，不是 D18 的收尾工作。** 文档把 `orchestration_mode`、`transport`、`placement_snapshot_json`、`execution_snapshot_id` 的目标形态定义为 `NOT NULL` + 互斥 `CHECK`，同时要求「现行 M3 Run 先 nullable」。这意味着 expand 阶段必须**先于**任何会写 Run 的 D17/D18 代码——否则新代码要么写不进库，要么必须写一个立刻要拆掉的临时分支。
 2. **映射必须显式，而当前 Run 的 placement 语义是倒的。** `StartRunRequest` 现在要求调用方**先给出** `executionNodeId` / `runtimeInstallationId` / `workspaceInstanceId`；文档冻结的顺序是先解析 placement intent，再选 Node/Runtime、拿 Lease、建 WorkspaceInstance，**最后**组装唯一 `PlacementSnapshot`。wire 契约与执行顺序互相矛盾，必须先解决再写调度。另外 `runs.snapshot_ref` 现在的取值是 Mock 场景名字面量（`"mock:success"`），与 `execution_snapshot_id` **不是同一个概念**，不能复用。
-3. **`ProjectExecutionSnapshot` 的写入时机和归属都要挪。** 文档要求计划确认只创建 snapshot 并进入 `ready`，`workflow.start` 才创建 `WorkflowInstance`；当前 `confirmPlan` 直接创建 `WorkflowInstance` 并把 `project.workflowInstanceId` 写死。这是 M3 主路径的真实行为改动，牵动 daemon、typed client、桌面页 driver 与集成测试。
+3. **`ProjectExecutionSnapshot` 的写入时机已完成 M3 拆分，图源仍要收口。** confirm-plan 现只创建 snapshot 并进入 `ready`，`workflow.start` 才创建 `WorkflowInstance`；SQLite/world 先恢复 canonical graph 再恢复 snapshot。这是已落地的 M3 主路径改动。现有 confirm 图仍来自既有输入，尚未切为已发布 catalog 的唯一来源，真实 policy snapshot 与 upgrade/recovery 验收也未完成。
 
 另外一个仍会直接决定 D15–D18 正确性的事实：`task_dependencies` 已由世界快照在所有 Task 行落库后同步普通 `dependsOn` 边，但 confirm-plan 仍不是从已发布 canonical graph 取图。`workflow_versions` 的 repository 覆写缺陷已修复：真实版本为稳定 SHA-256 的 insert-once，实例读回也以版本表为准；只有历史空 FK placeholder 能一次提升。Application 发布与图源切换仍未完成。D15/D18 要新增字段的 `RunDto`/`ProjectDto`/`TeamDto` **不在 `packages/protocol`**，而是 daemon 与 desktop-client 两处手写副本。这些不是措辞问题，而是实现路径上的硬约束，见 §3.5 与 §4。
 
@@ -29,7 +29,7 @@ updated: 2026-09-11
 >
 > 1. **T02 已冻结执行三轴公共契约**：`packages/protocol/src/execution.ts` 现导出 `orchestrationModes`（`workflow_bound` / `direct`）、`runtimeTransports`、`placementIntentModes`、`placementSnapshotSchema` 与 `runExecutionSnapshotSchema`（含 `superRefine`），并有 `execution.test.ts`。因此下文 2.1 中「协议与 domain 均无、grep 全库 0 命中」的描述只适用于 `c613609`。
 > 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。
-> 3. **S2a 已落地 `SqliteProjectExecutionSnapshotRepository`**（insert-once，无 update）与 `MemoryWorld.executionSnapshots`。但 `confirmPlan` 仍直接创建 `WorkflowInstance`，D02「确认时只写 snapshot、启动时才建实例」**未实现**。
+> 3. **S2a 与 D02 M3 拆分已落地。** `SqliteProjectExecutionSnapshotRepository` 为 insert-once；`MemoryWorld.executionSnapshots`、canonical graph map 与 Daemon world/SQLite 投影均可恢复。confirm-plan 不再直接创建 WorkflowInstance，`:start` 才创建。已发布 catalog 图源、真实 policy snapshot、backfill/contract 与 T16 upgrade 仍未实现。
 >
 > 仍成立的行为结论：2.4 的 `confirmPlan` 语义。2.6 的 `workflow_versions` 覆写与恒定 `sha256:empty` 已由后续 T04 repository 切片修复：真实版本使用稳定 SHA-256 insert-once，实例读图从版本表取得；只有历史空 FK placeholder 允许一次升级。Application 发布/图源 switch 尚未完成。2.3 中「投影失败被吞掉」已被后续 T04 对账切片修复：`dualWriteSqlite` 向上传播原始约束错误和 CAS conflict，sidecar 仅在 SQLite commit 后发布。本页 §6 的「投影失败可见性」已升级为新的写入可阻断；旧 sidecar 的恢复对账、完整 authority switch 和 T16 故障注入仍 planned。见 [03-implementation-status.md](03-implementation-status.md)；SQLite 实体表仍是 restart authority。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
@@ -43,7 +43,7 @@ updated: 2026-09-11
 | `RunDto` / `ProjectDto` / `TeamDto` | **不在 `packages/protocol`**：daemon 与 desktop-client 各手写一份（同一事实两个来源） | `apps/daemon/src/modules/dto.ts:42-74,196-203`；`packages/desktop-client/src/types.ts:42,56,215` |
 | `ProjectDto` 的 team 绑定 | 既无 `teamId` 也无 `teamVersionId`（内部 `ProjectRecord.teamVersionId` 存在但不出公开面） | `dto.ts:42-54`；`packages/application/src/use-cases/projects/store.ts:34` |
 | `orchestrationMode` / `transport` / `placementSnapshot` / `executionSnapshotId` | 协议与 domain 均无；grep 全库 0 命中 | `packages/protocol/src/index.ts:4-11` |
-| `WorkflowDraft` / `TeamDraft` / `AuthoringChangeSet` / `ProjectExecutionSnapshot` | `packages/protocol` 已有 Draft / ChangeSet DTO，SQLite 005 已有对应表；Application repository 与 staged-apply use case 尚无。`ProjectExecutionSnapshot` 公开 DTO 与 SQLite 投影已另有切片。 | `packages/protocol/src/authoring.ts`；`packages/database/src/schema.ts`；`packages/protocol/src/execution-snapshot.ts` |
+| `WorkflowDraft` / `TeamDraft` / `AuthoringChangeSet` / `ProjectExecutionSnapshot` | `packages/protocol` 已有 Draft / ChangeSet DTO；SQLite repository 已实现 Draft revision-CAS、ChangeSet/step 原子写入及 status CAS；Application 已有 Workflow/Team staged-apply M3 use case，且 SQLite world snapshot / Daemon composition 可恢复，部分失败恢复尚无。Runtime SPI/Mock 的唯一 Proposal 事件会在 Host 入库前按 DTO 清洗，再由 Daemon 的 handle 绑定反查 Application Run/Project 后消费。`ProjectExecutionSnapshot` 公开 DTO 与 SQLite 投影已另有切片。 | `packages/protocol/src/authoring.ts`；`packages/database/src/authoring.ts`；`packages/application/src/use-cases/authoring/authoring.ts`；`packages/runtime-sdk/src/host.ts`；`apps/daemon/src/composition/mock-host.ts`；`packages/protocol/src/execution-snapshot.ts` |
 | 品牌 ID | `packages/domain/src/ids.ts` 有 17 个 Id，**缺** `WorkflowId`/`WorkflowVersionId`/`WorkflowDraftId`/`TeamId`/`TeamVersionId`/`TeamDraftId`/`ExecutionSnapshotId`/`SnapshotRef` | `packages/domain/src/ids.ts:21-39` |
 | `NodeInstanceStatus` | **重复定义两处** | `packages/workflow-engine/src/types.ts:3-14`；`packages/application/src/use-cases/projects/engine-port.ts:9-20` |
 | 图定义（protocol + engine） | `WorkflowGraphDefinition` 已是画布/作者/发布的公开严格 DAG，覆盖重复 ID、端点、入口和环；引擎 `validateWorkflowGraph` 仍负责运行时 join、binding 与 condition 语义。 | `packages/protocol/src/workflow.ts`；`packages/workflow-engine/src/dag.ts` |
@@ -138,7 +138,7 @@ D18 的 direct 与 workflow-bound 在文档里共用同一条治理链，只在�
 
 ### 3.3 计划确认与工作流启动必须拆开
 
-按 [state-matrix.md](state-matrix.md) §2/§3，`:confirm-plan` 只应创建 `ProjectExecutionSnapshot` 并让 Project 进入 `ready`；`workflow.start` 才创建引用该 snapshot 的 `WorkflowInstance`。当前实现把两件事合并在 `confirmPlan` 里。
+按 [state-matrix.md](state-matrix.md) §2/§3，`:confirm-plan` 只创建 `ProjectExecutionSnapshot` 并让 Project 进入 `ready`；`workflow.start` 才创建引用该 snapshot 的 `WorkflowInstance`。当前 M3 Application/Daemon 已按此拆分；后续要将 snapshot 的图源切至已发布 catalog 版本，并补真实 policy 和 upgrade/recovery 验收。
 
 这是一个**跨模块行为变更**，不是重构：它同时改动用例事务边界、Project 状态矩阵的执行点、`project.workflowInstanceId` 的生命周期、typed client 的调用序列，以及桌面页 driver 的点击序列（`apps/desktop/tests/main-path.smoke.test.ts` 与 `tests/integration` 的 M3 场景都按「确认计划 → 开始执行」两步走，需要确认第二步的语义变化不会破坏既有断言）。
 

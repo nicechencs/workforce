@@ -397,3 +397,67 @@ updated: 2026-09-12
 - **决定：** `workflow_versions` 的真实执行图以稳定 JSON SHA-256 insert-once 持久化；实例只引用并从版本表读取图，不再能通过 instance 更新改写历史版本。为兼容历史 M3 的 FK 预建行，只有 `sha256:empty` 与 `{}` 的 placeholder 可在首次真实引用时升级一次；一旦为真实版本即不能改变。
 - **文档影响：** [开发任务清单](02-development-task-backlog.md)、[实现进度](03-implementation-status.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将 D15 repository 收口与尚未完成的 Application 发布、图源切换、backfill/contract 分开记录。
 - **状态：** **implemented（T04 repository slice）**。`pnpm --filter @workforce/database typecheck` 与 `pnpm exec vitest run packages/database/src/entities.test.ts packages/database/src/world-snapshot.test.ts`（17 passed）通过。D02 confirm/start 拆分、Application published-graph 图源、历史回填与 T16 升级恢复验收仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T09 D02 snapshot/start M3 拆分
+
+- **决定：** confirm-plan 只冻结 `ProjectExecutionSnapshot`，Project 进入 `ready` 时不产生 WorkflowInstance、Node 或 Task；`:start` 从该 snapshot 指向的 canonical graph 创建实例并实例化任务。SQLite/world/Daemon 必须先持久化和恢复 graph，再持久化和恢复 snapshot。
+- **文档影响：** [实现进度](03-implementation-status.md)、[开发任务清单](02-development-task-backlog.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 更新为 D02 M3 slice 已实现，并明确已发布 catalog 图源、真实 policy snapshot、backfill/contract 和 T16 upgrade 尚未完成。
+- **状态：** **implemented（T09 D02 M3 slice）**。Application typecheck、M3 定向 8 passed、Database/Daemon typecheck、SQLite/sidecar 16 passed 与 Daemon HTTP confirm/start 场景通过。当前 policy snapshot 显式为空 M3 事实，不把它写成授权决定；direct 调度不在本切片。
+
+---
+
+## 2026-09-12（Asia/Taipei）T04 authoring 持久化切片
+
+- **决定：** 为已冻结的 WorkflowDraft、TeamDraft 与 AuthoringChangeSet 协议补齐 SQLite repository：草稿仅可按父对象 revision 追加并使用 CAS；ChangeSet 和全部 staged steps 同一事务写入；source Run 必须属于相同 Project/organization；ChangeSet/step status 写入均带当前状态 CAS。Repository 只保障持久化并发语义，不自行解释状态转移、不生成 proposal，亦不把 apply 当作 publish 或执行。
+- **文档影响：** [实现进度](03-implementation-status.md)、[开发任务清单](02-development-task-backlog.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将 authoring SQLite 写入从“待实现”更新为持久化切片完成，保留 T20-B Application staged apply/recovery、Runtime proposal 与 Daemon/Renderer send 为未完成。
+- **状态：** **implemented（T04 repository slice）**。Windows 实跑 `pnpm --filter @workforce/database typecheck` 通过；`pnpm exec vitest run packages/database/src/authoring.test.ts --reporter=verbose` 为 3 passed。未执行 Runtime、Application authoring、Daemon 或 headed Desktop 验收。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20-B Application staged apply M3 切片
+
+- **决定：** Application 只将已经结构化、处于 `validating` 的 ChangeSet 应用于已有 Workflow/Team Draft。它在写入前校验 Project/organization、source Run、每个 target、全部 revision CAS 和 pending step，成功后一次性写入新 Draft revision、applied step 与 `workflow.authoring.applied` 事件；不发布、不启动生成的 Workflow。首次 Draft 创建继续属于独立草稿路径，因 ChangeSet 的 `expectedRevision` 合法值从 1 开始，不能伪造 revision 0。
+- **文档影响：** [实现进度](03-implementation-status.md)、[开发任务清单](02-development-task-backlog.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将 T20-B 从无 Application use case 更新为 Workflow/Team 内存 staged-apply 切片；Runtime proposal、Task patch、SQLite composition/restart、部分失败恢复和 Daemon/Renderer send 仍为未完成。
+- **状态：** **implemented（T20-B Application M3 slice）**。Windows 实跑 `pnpm --filter @workforce/application typecheck` 通过；`pnpm exec vitest run packages/application/src/use-cases/authoring/authoring.test.ts --reporter=verbose` 为 2 passed。未执行 SQLite composition、Runtime、Daemon 或 headed Desktop 验收。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20-B authoring 跨重启持久化
+
+- **决定：** 将 WorkflowDraft、TeamDraft、AuthoringChangeSet 接入 `WorldEntitySnapshot`、Daemon `PersistedWorld`、SQLite dual-write 与 `loadComposition`。保存时 Draft 按 revision 排序后 append-only 写入；同 ID 的不同持久化内容拒绝，避免 world snapshot 覆盖不可变草稿或 ChangeSet。ChangeSet 必须等 source Run 已写入，满足外键后再入库。
+- **文档影响：** [实现进度](03-implementation-status.md)、[开发任务清单](02-development-task-backlog.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 更新 T20-B 的 durable composition/restart 已实现；Runtime proposal、Task patch、部分失败恢复以及 Daemon/Renderer send 保持未完成。
+- **状态：** **implemented（T20-B persistence/reload slice）**。Windows 实跑 Database/Daemon typecheck；Database authoring + world snapshot 定向 14 passed；Daemon `persist-snapshot` 为 8 passed，含 `dualWriteSqlite → loadComposition` 跨层恢复。未执行 Runtime 或 headed Desktop 验收。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20-B Authoring Proposal 生命周期
+
+- **决定：** 新增 Application `authoring.start`、Proposal 回调消费和 ChangeSet validate 边界。启动只创建正常治理链中的 Task/Run；Runtime 输出必须是 `AuthoringProposal` 的结构化摘要/Artifact 引用，Application 校验其 source Run 与 Project 后生成 `proposed` ChangeSet，显式 validate 才可变为 `validating`。原始 intent 只作短暂 Runtime 输入，禁止写入 Event、Draft 或 ChangeSet。
+- **文档影响：** [实现进度](03-implementation-status.md) 与 [开发任务清单](02-development-task-backlog.md) 将 T20-B 更新为受治理 Proposal 生命周期切片，新增 `T20-B-PROPOSAL-LIFECYCLE`；Runtime 实际输出接口仍归 T05/T15，Task patch、失败恢复与 send 均未完成。
+- **状态：** **implemented（T20-B Application Proposal slice）**。Windows 实跑 Application typecheck 与 `packages/application/src/use-cases/authoring/authoring.test.ts` 3 passed。未提供实际 Agent/Runtime 输出实现，未执行 Daemon/Renderer 或 headed Desktop 验收。
+
+---
+
+## 2026-09-12（Asia/Taipei）T05 Authoring Proposal 输出契约任务
+
+- **决定：** Runtime SDK 虽可流式转发通用 `RuntimeEvent`，但当前 Runtime Host/Application 没有可信的结构化 Proposal 输出，Mock 也只产生普通文本消息。新增 `T05-AUTHORING-PROPOSAL-OUTPUT`，要求唯一输出携带 Handle/cursor/fencing 关联、严格 `AuthoringProposal` 与 Artifact 引用，禁止从普通 message 文本推断 Proposal。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) 将该缺口归属 T05/T15；[实现进度](03-implementation-status.md) 明确它是 T20-B 下一依赖，不把 Application 回调入口写成已接 Agent。
+- **状态：** **planned**。本条是 Runtime/Host 结构缺口登记，未改 Runtime SPI、Mock、Daemon 或 Renderer。
+
+---
+
+## 2026-09-12（Asia/Taipei）T05 Authoring Proposal Runtime/Mock 输出切片
+
+- **决定：** `runtime.authoring.proposal` 是 Runtime 唯一可携带 Authoring Proposal 的事件；`LocalNodeHost` 必须在 Host Store 写入前用 `parseAuthoringProposal` 丢弃未登记字段，解析失败改记为拒绝事件。Mock 用固定结构化 fixture 覆盖这一边界；普通 `runtime.message` 绝不作为 Proposal 来源。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md)、[实现进度](03-implementation-status.md) 与 [D17/D18 落地方案](05-d17-d18-landing-plan.md) 将 T05 标记为 Runtime/Mock 已实现、Daemon Application 消费与 Codex 映射待接线。
+- **状态：** **implemented（T05 Runtime/Mock slice）**。Windows 实跑 Runtime SPI/SDK/Mock typecheck 与 Mock Adapter/Host 场景 17 passed；未执行 Daemon/Renderer、Codex 或 headed Desktop 验收。
+
+---
+
+## 2026-09-12（Asia/Taipei）T05 Host-bound Proposal Daemon 消费
+
+- **决定：** Daemon 不信任 Runtime 事件内自报的 Project/Run 归属；它仅接受已被 Host 清洗的结构化字段，再从已绑定 handle 反查持久 Application Run 与 Project，构造幂等 `recordAuthoringProposal` 调用。这个边界禁止普通文本消息或未绑定 handle 产出 ChangeSet。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md)、[实现进度](03-implementation-status.md) 与 [D17/D18 落地方案](05-d17-d18-landing-plan.md) 将 T05/T20-B 的 Runtime→Daemon→Application Proposal 链标为已实现；Codex、Task patch、失败恢复和 Renderer send 继续保留未完成状态。
+- **状态：** **implemented（T05 Daemon consumer slice）**。Windows 实跑 Daemon typecheck；新增 composition 端到端场景通过，确认 Proposal 落为 `proposed` ChangeSet 且 intent 不进入事件。完整 composition 套件另有一项临时目录 `EPERM` 清理失败，和新增场景无关。
