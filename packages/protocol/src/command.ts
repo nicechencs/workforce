@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { orchestrationModeSchema, placementIntentSchema } from "./execution.js";
+
 export const commandReceiptStatusSchema = z.enum(["pending", "committed", "failed"]);
 
 export const receiptScopeSchema = z
@@ -58,4 +60,19 @@ export type StartRunRequest = z.infer<typeof startRunRequestSchema>;
 
 export function parseStartRunRequest(input: unknown): StartRunRequest {
   return startRunRequestSchema.parse(input);
+}
+
+/** Request body for POST /tasks/{taskId}/runs. */
+export const startTaskRunInputSchema = z
+  .object({
+    operationId: z.string().min(1),
+    orchestrationMode: orchestrationModeSchema.optional(),
+    placementIntent: placementIntentSchema.optional(),
+  })
+  .strict();
+
+export type StartTaskRunInput = z.infer<typeof startTaskRunInputSchema>;
+
+export function parseStartTaskRunInput(input: unknown): StartTaskRunInput {
+  return startTaskRunInputSchema.parse(input);
 }

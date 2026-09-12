@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { parseTaskDependsOn, parseTaskDto, taskDtoSchema } from "./task.js";
+import { parseCreateTaskInput, parseTaskDependsOn, parseTaskDto, taskDtoSchema } from "./task.js";
 
 const fixtures = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -47,5 +47,59 @@ describe("public TaskDto dependsOn", () => {
       }),
     ).toThrow();
     expect(() => parseTaskDependsOn([{ taskId: "tsk_1", waitFor: "started" }])).toThrow();
+  });
+
+  it("parses the HTTP create-task body and excludes server-owned fields", () => {
+    expect(
+      parseCreateTaskInput({
+        protocol: "workforce.task",
+        protocolVersion: "0.1",
+        title: "Implement health endpoint",
+        objective: "Expose a tested readiness endpoint.",
+        priority: 50,
+        context: { include: [], maxBytes: 524288 },
+        budget: {},
+        acceptanceCriteria: [
+          {
+            id: "ac_review",
+            type: "review",
+            description: "Reviewer approves the changes",
+            reviewerRole: "code_reviewer",
+            required: true,
+          },
+        ],
+        expectedOutputs: [{ id: "out_code", kind: "code", required: true }],
+      }),
+    ).toMatchObject({ title: "Implement health endpoint", priority: 50 });
+
+    expect(() =>
+      parseCreateTaskInput({
+        title: "Invalid",
+        objective: "Contains a server-owned id",
+        id: "tsk_server_owned",
+      }),
+    ).toThrow(/unrecognized_keys/);
+  });
+
+  it("rejects a missing data input value", () => {
+    expect(() =>
+      parseCreateTaskInput({
+        title: "Invalid data input",
+        objective: "The input must carry a value",
+        inputs: [{ id: "data", name: "Data", required: true, type: "data" }],
+      }),
+    ).toThrow(/value/);
+  });
+
+  it("rejects an undefined inline input value", () => {
+    expect(() =>
+      parseCreateTaskInput({
+        title: "Invalid inline input",
+        objective: "The input must carry a value",
+        inputs: [
+          { id: "inline", name: "Inline", required: true, type: "inline", value: undefined },
+        ],
+      }),
+    ).toThrow(/value/);
   });
 });

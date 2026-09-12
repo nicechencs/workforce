@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { parseStartRunRequest } from "./command.js";
+import { parseStartRunRequest, parseStartTaskRunInput } from "./command.js";
 import { parseRunStatus } from "./run.js";
 
 const fixtures = resolve(
@@ -27,5 +27,26 @@ describe("RunStatus", () => {
     const command = parseStartRunRequest(raw);
     expect(command.placement.executionNodeId).toMatch(/^ndl_/);
     expect(command.attempt).toBe(1);
+  });
+
+  it("parses the HTTP start-task-run body using only request-side axes", () => {
+    expect(
+      parseStartTaskRunInput({
+        operationId: "op_direct_1",
+        orchestrationMode: "direct",
+        placementIntent: { mode: "local_only" },
+      }),
+    ).toEqual({
+      operationId: "op_direct_1",
+      orchestrationMode: "direct",
+      placementIntent: { mode: "local_only" },
+    });
+
+    expect(() =>
+      parseStartTaskRunInput({
+        operationId: "op_direct_1",
+        transport: "sdk",
+      }),
+    ).toThrow(/unrecognized_keys/);
   });
 });
