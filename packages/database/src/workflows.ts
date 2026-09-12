@@ -113,6 +113,38 @@ export class SqliteWorkflowInstanceRepository {
   }
 }
 
+/** Persist canonical graphs before any ProjectExecutionSnapshot can reference them. */
+export function persistPublishedWorkflowGraph(tx: Tx, graph: WorkflowGraph, at: string): void {
+  const db = sqliteDbOf(tx);
+  publishWorkflowVersion(
+    db,
+    {
+      id: graph.id,
+      workflowId: graph.workflowId,
+      version: graph.version,
+      definition: graph,
+    },
+    at,
+  );
+}
+
+/** SQLite is the restart authority for the canonical execution graph map. */
+export function listPublishedWorkflowGraphs(db: DatabaseSync): WorkflowGraph[] {
+  return db
+    .prepare(
+      "SELECT id FROM workflow_versions WHERE content_hash <> ? ORDER BY created_at ASC, id ASC",
+    )
+    .all("sha256:empty")
+    .map((row) => {
+      const id = requiredText(cell(row as Record<string, unknown>, "id"), "id");
+      const graph = parseGraph(readPublishedWorkflowVersion(db, id));
+      if (graph.id !== id) {
+        throw new PersistenceError("conflict", `workflow version ${id} definition id mismatch`);
+      }
+      return graph;
+    });
+}
+
 function rowToWorkflow(db: DatabaseSync, row: Record<string, unknown>): WorkflowInstanceRecord {
   const workflowVersionId = requiredText(cell(row, "workflow_version_id"), "workflow_version_id");
   return {

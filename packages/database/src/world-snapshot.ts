@@ -10,14 +10,25 @@ import type {
   ReservationRecord,
   RunRecord as AppRunRecord,
   TaskRecord,
+  WorkflowGraph,
   Tx,
   WorkflowInstanceRecord,
 } from "@workforce/application";
-import { parseRunExecutionSnapshot } from "@workforce/protocol";
+import {
+  parseRunExecutionSnapshot,
+  type AuthoringChangeSetDto,
+  type TeamDraftDto,
+  type WorkflowDraftDto,
+} from "@workforce/protocol";
 
 type RunExecutionSnapshot = NonNullable<AppRunRecord["executionSnapshot"]>;
 
 import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
+import {
+  SqliteAuthoringChangeSetRepository,
+  SqliteTeamDraftRepository,
+  SqliteWorkflowDraftRepository,
+} from "./authoring.js";
 import { organizationIdOfProject } from "./ensure.js";
 import { PersistenceError } from "./errors.js";
 import { SqliteProjectExecutionSnapshotRepository } from "./execution-snapshots.js";
@@ -32,13 +43,19 @@ import { SqliteRunRepository } from "./runs.js";
 import { sqliteDbOf } from "./session.js";
 import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";
 import { SqliteTaskRepository } from "./tasks.js";
-import { SqliteWorkflowInstanceRepository } from "./workflows.js";
+import {
+  listPublishedWorkflowGraphs,
+  persistPublishedWorkflowGraph,
+  SqliteWorkflowInstanceRepository,
+} from "./workflows.js";
 
 /**
  * Entity snapshot that can reconstruct MemoryWorld maps after daemon restart.
  * Events stay in SqliteEventStore — this is not a second event envelope.
  */
 export interface WorldEntitySnapshot {
+  /** Canonical published graph source; absent only in pre-D02 callers. */
+  workflowVersions?: WorkflowGraph[];
   projects: ProjectRecord[];
   tasks: TaskRecord[];
   workflows: WorkflowInstanceRecord[];
@@ -50,6 +67,10 @@ export interface WorldEntitySnapshot {
   reservations: ReservationRecord[];
   usageKeys: string[];
   executionSnapshots: ProjectExecutionSnapshotRecord[];
+  /** T20-B authoring data is independent of executable workflow instances. */
+  workflowDrafts?: WorkflowDraftDto[];
+  teamDrafts?: TeamDraftDto[];
+  authoringChangeSets?: AuthoringChangeSetDto[];
 }
 
 export class SqliteWorldSnapshot {
@@ -64,6 +85,9 @@ export class SqliteWorldSnapshot {
   readonly reservations: SqliteReservationRepository;
   readonly usage: SqliteUsageRepository;
   readonly executionSnapshots: SqliteProjectExecutionSnapshotRepository;
+  readonly workflowDrafts: SqliteWorkflowDraftRepository;
+  readonly teamDrafts: SqliteTeamDraftRepository;
+  readonly authoringChangeSets: SqliteAuthoringChangeSetRepository;
 
   constructor(private readonly db: DatabaseSync) {
     this.projects = new SqliteProjectRepository(db);
@@ -77,10 +101,14 @@ export class SqliteWorldSnapshot {
     this.reservations = new SqliteReservationRepository(db);
     this.usage = new SqliteUsageRepository(db);
     this.executionSnapshots = new SqliteProjectExecutionSnapshotRepository(db);
+    this.workflowDrafts = new SqliteWorkflowDraftRepository(db);
+    this.teamDrafts = new SqliteTeamDraftRepository(db);
+    this.authoringChangeSets = new SqliteAuthoringChangeSetRepository(db);
   }
 
   load(): WorldEntitySnapshot {
     return {
+      workflowVersions: listPublishedWorkflowGraphs(this.db),
       projects: this.projects.listAll(),
       tasks: this.tasks.listAll(),
       workflows: this.workflows.listAll(),
@@ -92,6 +120,9 @@ export class SqliteWorldSnapshot {
       reservations: this.reservations.listActive(),
       usageKeys: this.usage.listIdempotencyKeys(),
       executionSnapshots: this.executionSnapshots.listAll(),
+      workflowDrafts: this.workflowDrafts.listAll(),
+      teamDrafts: this.teamDrafts.listAll(),
+      authoringChangeSets: this.authoringChangeSets.listAll(),
     };
   }
 
@@ -100,6 +131,9 @@ export class SqliteWorldSnapshot {
    * in the same transaction when mutating live state.
    */
   save(tx: Tx, snapshot: WorldEntitySnapshot, at: string): void {
+    for (const graph of snapshot.workflowVersions ?? []) {
+      persistPublishedWorkflowGraph(tx, graph, at);
+    }
     for (const project of snapshot.projects) {
       putWithCas(this.projects.get(project.id), project, (expected) => {
         if (expected === undefined) {
@@ -119,10 +153,9 @@ export class SqliteWorldSnapshot {
       });
     }
     // Insert-once: an existing snapshot with the same content is a no-op. This runs after the
-    // project and workflow loops because project_execution_snapshots has foreign keys to
-    // projects / workflow_versions / team_versions, which those loops create for the ids they
-    // carry. A snapshot referencing a project or version absent from this same snapshot still
-    // fails the foreign key check and rolls back the whole save.
+    // project and workflow-version loops because project_execution_snapshots has foreign keys to
+    // projects / workflow_versions / team_versions. A snapshot referencing a project or version
+    // absent from this same snapshot still fails the foreign key check and rolls back the whole save.
     for (const executionSnapshot of snapshot.executionSnapshots) {
       this.executionSnapshots.insert(tx, executionSnapshot);
     }
@@ -164,6 +197,24 @@ export class SqliteWorldSnapshot {
     for (const run of snapshot.runs) {
       saveAppRun(tx, this.runs, this.db, run);
     }
+    for (const draft of sortWorkflowDrafts(snapshot.workflowDrafts ?? [])) {
+      persistWorkflowDraft(tx, this.workflowDrafts, draft);
+    }
+    for (const draft of sortTeamDrafts(snapshot.teamDrafts ?? [])) {
+      persistTeamDraft(tx, this.teamDrafts, draft);
+    }
+    // Source Run is an FK, so ChangeSets are intentionally written after runs.
+    for (const changeSet of snapshot.authoringChangeSets ?? []) {
+      const existing = this.authoringChangeSets.get(changeSet.id);
+      if (!existing) {
+        this.authoringChangeSets.insert(tx, changeSet);
+      } else if (!sameJson(existing, changeSet)) {
+        throw new PersistenceError(
+          "conflict",
+          `authoring change set ${changeSet.id} differs from the durable record`,
+        );
+      }
+    }
     for (const budget of snapshot.budgets) {
       this.budgets.upsert(tx, budget, at);
     }
@@ -182,6 +233,61 @@ export class SqliteWorldSnapshot {
       });
     }
   }
+}
+
+function persistWorkflowDraft(
+  tx: Tx,
+  repository: SqliteWorkflowDraftRepository,
+  draft: WorkflowDraftDto,
+): void {
+  const existing = repository.get(draft.id);
+  if (existing) {
+    if (!sameJson(existing, draft)) {
+      throw new PersistenceError(
+        "conflict",
+        `workflow draft ${draft.id} differs from the durable record`,
+      );
+    }
+    return;
+  }
+  const current = repository.listByWorkflow(draft.workflowId).at(-1)?.revision ?? 0;
+  repository.append(tx, draft, current);
+}
+
+function persistTeamDraft(
+  tx: Tx,
+  repository: SqliteTeamDraftRepository,
+  draft: TeamDraftDto,
+): void {
+  const existing = repository.get(draft.id);
+  if (existing) {
+    if (!sameJson(existing, draft)) {
+      throw new PersistenceError(
+        "conflict",
+        `team draft ${draft.id} differs from the durable record`,
+      );
+    }
+    return;
+  }
+  const current = repository.listByTeam(draft.teamId).at(-1)?.revision ?? 0;
+  repository.append(tx, draft, current);
+}
+
+function sortWorkflowDrafts(drafts: readonly WorkflowDraftDto[]): WorkflowDraftDto[] {
+  return [...drafts].sort(
+    (left, right) =>
+      left.workflowId.localeCompare(right.workflowId) || left.revision - right.revision,
+  );
+}
+
+function sortTeamDrafts(drafts: readonly TeamDraftDto[]): TeamDraftDto[] {
+  return [...drafts].sort(
+    (left, right) => left.teamId.localeCompare(right.teamId) || left.revision - right.revision,
+  );
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function putWithCas<T extends { id: string; stateRevision: number }>(

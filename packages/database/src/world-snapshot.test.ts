@@ -69,6 +69,7 @@ describe("SqliteWorldSnapshot", () => {
       expect(loaded.reservations).toEqual(snapshot.reservations);
       expect(loaded.usageKeys).toEqual(snapshot.usageKeys);
       expect(loaded.executionSnapshots).toEqual(snapshot.executionSnapshots);
+      expect(loaded.workflowVersions).toEqual(snapshot.workflowVersions);
       expect(reopened.projects.get(ids.projectId)?.workspaceId).toBe("ws_1");
       expect(reopened.projects.get(ids.projectId)?.runtimeId).toBe("rt_mock");
       expect(reopened.projects.get(ids.projectId)?.budgetId).toBe("bdg_1");
@@ -98,6 +99,7 @@ describe("SqliteWorldSnapshot", () => {
         createdAt: now,
       },
     ];
+    snapshot.workflowVersions = [snapshot.workflows[0]!.graph];
     await db.uow.withTransaction(async (tx) => {
       db.worldSnapshot.save(tx, snapshot, now);
     });
@@ -106,6 +108,87 @@ describe("SqliteWorldSnapshot", () => {
     expect(loaded.executionSnapshots[0]?.workflowVersionId).toBe("wfv_snap");
     expect(loaded.executionSnapshots[0]?.teamVersionId).toBe("tmv_1");
     db.close();
+  });
+
+  it("reloads authoring drafts and an applied ChangeSet after reopen", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-authoring-snap-"));
+    dirs.push(dir);
+    const path = join(dir, "workforce.sqlite");
+    const db = WorkforceSqlite.open(path);
+    const snapshot = sampleSnapshot();
+    snapshot.workflowDrafts = [
+      {
+        id: "wfd_snap",
+        workflowId: "wf_authoring",
+        revision: 1,
+        status: "draft",
+        graph: {
+          entryNodeIds: ["draft_node"],
+          nodes: [{ id: "draft_node", kind: "task", role: "developer" }],
+          edges: [],
+          failurePolicy: { default: "fail" },
+          concurrencyPolicy: { runWorktree: "isolated", integrationWorktree: "dedicated" },
+        },
+        contentHash: "sha256:wfd_snap",
+        updatedAt: now,
+        updatedBy: "usr_author",
+      },
+    ];
+    snapshot.teamDrafts = [
+      {
+        id: "tmd_snap",
+        teamId: "team_authoring",
+        revision: 1,
+        status: "draft",
+        members: [{ role: "developer", runtimeProfileId: "rp_authoring", quantity: 1 }],
+        contentHash: "sha256:tmd_snap",
+        updatedAt: now,
+        updatedBy: "usr_author",
+      },
+    ];
+    snapshot.authoringChangeSets = [
+      {
+        id: "acs_snap",
+        organizationId: ids.organizationId,
+        projectId: ids.projectId,
+        workflowId: "wf_authoring",
+        sourceRunId: "run_snap",
+        status: "applied",
+        proposalRef: "arv_proposal",
+        steps: [
+          {
+            id: "acst_snap",
+            ordinal: 1,
+            targetType: "workflow",
+            targetId: "wf_authoring",
+            expectedRevision: 1,
+            status: "applied",
+            patchRef: "arv_patch",
+            resultRevision: 1,
+            completedAt: now,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+    await db.uow.withTransaction(async (tx) => {
+      db.worldSnapshot.save(tx, snapshot, now);
+    });
+    await db.uow.withTransaction(async (tx) => {
+      db.worldSnapshot.save(tx, snapshot, now);
+    });
+    db.close();
+
+    const reopened = WorkforceSqlite.open(path);
+    try {
+      const loaded = reopened.worldSnapshot.load();
+      expect(loaded.workflowDrafts).toEqual(snapshot.workflowDrafts);
+      expect(loaded.teamDrafts).toEqual(snapshot.teamDrafts);
+      expect(loaded.authoringChangeSets).toEqual(snapshot.authoringChangeSets);
+    } finally {
+      reopened.close();
+    }
   });
 
   it("projects task dependencies after every Task row exists and replaces stale edges", async () => {
@@ -552,6 +635,7 @@ describe("SqliteWorldSnapshot", () => {
       budgets: [budget],
       reservations,
       usageKeys: [],
+      workflowVersions: [workflow.graph],
       executionSnapshots: [],
     };
   }

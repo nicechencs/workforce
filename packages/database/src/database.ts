@@ -26,6 +26,11 @@ import { SqliteWorkflowInstanceRepository } from "./workflows.js";
 import { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 import { SqliteWorldSnapshot } from "./world-snapshot.js";
 import { SqliteExecutionAxisMigrationRepository } from "./execution-axis-migration.js";
+import {
+  SqliteAuthoringChangeSetRepository,
+  SqliteTeamDraftRepository,
+  SqliteWorkflowDraftRepository,
+} from "./authoring.js";
 
 export interface OpenWorkforceDbOptions extends OpenSqliteOptions {
   migrate?: boolean;
@@ -54,6 +59,9 @@ export class WorkforceSqlite {
   readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
   readonly catalogTeams: SqliteTeamCatalogRepository;
   readonly executionAxisMigration: SqliteExecutionAxisMigrationRepository;
+  readonly workflowDrafts: SqliteWorkflowDraftRepository;
+  readonly teamDrafts: SqliteTeamDraftRepository;
+  readonly authoringChangeSets: SqliteAuthoringChangeSetRepository;
 
   private constructor(
     readonly path: string,
@@ -81,6 +89,9 @@ export class WorkforceSqlite {
     this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
     this.catalogTeams = new SqliteTeamCatalogRepository(connection);
     this.executionAxisMigration = new SqliteExecutionAxisMigrationRepository(connection);
+    this.workflowDrafts = new SqliteWorkflowDraftRepository(connection);
+    this.teamDrafts = new SqliteTeamDraftRepository(connection);
+    this.authoringChangeSets = new SqliteAuthoringChangeSetRepository(connection);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {

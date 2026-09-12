@@ -61,6 +61,12 @@ export {
   type ExecutionAxisMigrationItem,
 } from "./execution-axis-migration.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
+export {
+  SqliteAuthoringChangeSetRepository,
+  SqliteTeamDraftRepository,
+  SqliteWorkflowDraftRepository,
+  type AuthoringStepUpdate,
+} from "./authoring.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
 export { SqliteWorldSnapshot, type WorldEntitySnapshot } from "./world-snapshot.js";
