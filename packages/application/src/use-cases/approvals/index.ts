@@ -1,1 +1,6 @@
-export { createApproval, decideApproval, maybeCompleteProject } from "./approvals.js";
+export {
+  createApproval,
+  decideApproval,
+  expireDueApprovals,
+  maybeCompleteProject,
+} from "./approvals.js";

@@ -41,6 +41,12 @@ export async function queueTask(
         if (!dependenciesSatisfied(ctx, task)) {
           throw validationFailed("task dependencies are not outputs_ready");
         }
+        if (
+          ctx.engine.retryIsDue &&
+          !ctx.engine.retryIsDue(ctx.world.nowIso(), task.nextAttemptAt)
+        ) {
+          throw validationFailed("task retry backoff has not elapsed");
+        }
         task.status = ctx.engine.nextTaskStatus(task.status, "queue");
         touch(task, ctx.world.nowIso());
         activateNode(ctx, task, "activate");
@@ -96,7 +102,8 @@ export function evaluateTaskAfterRun(ctx: AppContext, taskId: string): TaskRecor
   if (!succeeded) {
     return task;
   }
-  if (!ctx.world.requiredOutputsReady(task)) {
+  const barrier = completionBarrierFor(ctx, task);
+  if (!barrier.ok) {
     return task;
   }
   if (task.requiresReview) {
@@ -107,8 +114,70 @@ export function evaluateTaskAfterRun(ctx: AppContext, taskId: string): TaskRecor
     activateNode(ctx, task, "complete");
   }
   touch(task, ctx.world.nowIso());
-  refreshDownstream(ctx, task.projectId);
+  if (task.workflowInstanceId) {
+    refreshDownstream(ctx, task.projectId);
+  }
   return task;
+}
+
+export function evaluateTaskAfterFailure(ctx: AppContext, taskId: string): TaskRecord {
+  const task = requireTask(ctx, taskId);
+  if (task.status !== "running") {
+    return task;
+  }
+  const decision = ctx.engine.decideRecovery({
+    kind: "retry",
+    attempt: task.attempt,
+    maxAttempts: task.maxAttempts,
+    generation: task.generation,
+    maxReworkCycles: task.maxReworkCycles,
+    capacityAvailable: true,
+    nowIso: ctx.world.nowIso(),
+    ...(task.nextAttemptAt !== undefined ? { nextAttemptAt: task.nextAttemptAt } : {}),
+  });
+  if (decision.action === "wait-capacity") {
+    return task;
+  }
+  if (decision.action === "fail") {
+    task.status = ctx.engine.nextTaskStatus(task.status, "fail");
+    touch(task, ctx.world.nowIso());
+    activateNode(ctx, task, "fail");
+    return task;
+  }
+  if (decision.action === "retry") {
+    task.status = ctx.engine.nextTaskStatus(task.status, "retry-ready");
+    task.attempt = decision.nextAttempt;
+    task.nextAttemptAt = new Date(
+      ctx.world.clock.now().getTime() + decision.backoffMs,
+    ).toISOString();
+    touch(task, ctx.world.nowIso());
+  }
+  return task;
+}
+
+function completionBarrierFor(
+  ctx: AppContext,
+  task: TaskRecord,
+): { ok: true } | { ok: false; reason: string } {
+  const artifacts = ctx.world.artifactsForTask(task);
+  const evaluations = ctx.world.evaluationsForTask(task);
+  if (ctx.engine.taskCompletionBarrier) {
+    return ctx.engine.taskCompletionBarrier({
+      requiredOutputsBound: ctx.world.requiredOutputsReady(task),
+      artifacts,
+      evaluations,
+    });
+  }
+  if (!ctx.world.requiredOutputsReady(task)) {
+    return { ok: false, reason: "missing_artifact" };
+  }
+  if (artifacts.some((item) => item.status === "quarantined" || item.status === "staging")) {
+    return { ok: false, reason: "integrity" };
+  }
+  if (evaluations.some((item) => item.verdict === "fail")) {
+    return { ok: false, reason: "evaluation_failed" };
+  }
+  return { ok: true };
 }
 
 export async function retryTask(
@@ -128,6 +197,8 @@ export async function retryTask(
     generation: task.generation,
     maxReworkCycles: task.maxReworkCycles,
     capacityAvailable: input.capacityAvailable !== false,
+    nowIso: ctx.world.nowIso(),
+    ...(task.nextAttemptAt !== undefined ? { nextAttemptAt: task.nextAttemptAt } : {}),
   });
   if (decision.action === "wait-capacity") {
     return task;
@@ -183,9 +254,29 @@ export async function cancelTask(
     run.cancelRequestedAt = ctx.world.nowIso();
     return { accepted: true, status: task.status };
   }
+  if (task.status === "queued" || task.status === "running") {
+    task.status = ctx.engine.nextTaskStatus(task.status, "cancel");
+    touch(task, ctx.world.nowIso());
+    activateNode(ctx, task, "cancel");
+    return { accepted: true, status: task.status };
+  }
   task.status = ctx.engine.nextTaskStatus(task.status, "cancel");
   touch(task, ctx.world.nowIso());
   return { accepted: true, status: task.status };
+}
+
+export function settleTaskCancel(ctx: AppContext, taskId: string): TaskRecord {
+  const task = requireTask(ctx, taskId);
+  const run = ctx.world.activeRunForTask(task.id);
+  if (run) {
+    return task;
+  }
+  if (task.status === "queued" || task.status === "running") {
+    task.status = ctx.engine.nextTaskStatus(task.status, "cancel");
+    touch(task, ctx.world.nowIso());
+    activateNode(ctx, task, "cancel");
+  }
+  return task;
 }
 
 export function requireTask(ctx: AppContext, taskId: string): TaskRecord {

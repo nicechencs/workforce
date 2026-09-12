@@ -671,6 +671,31 @@ export class FakeAppServices implements AppServices {
     return this.tasks.get(id)?.dto ?? null;
   }
 
+  startTaskRun(
+    ctx: CommandContext,
+    id: string,
+    input: {
+      operationId: string;
+      orchestrationMode?: "workflow_bound" | "direct";
+      placementIntent?: import("@workforce/protocol").PlacementIntent;
+    },
+  ): CommandResult<RunDto> {
+    const record = this.requireTask(id);
+    this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
+    const orchestrationMode = input.orchestrationMode ?? "workflow_bound";
+    assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
+    const project = this.projects.get(record.dto.projectId)?.dto;
+    const run = this.insertRun(record.dto, ctx, "waiting_input", orchestrationMode);
+    this.appendEvent("run.started", "run", run.id, record.dto.projectId, {
+      correlationId: ctx.operationId,
+      taskId: record.dto.id,
+      runId: run.id,
+      data: { to: run.status, orchestrationMode, placementIntent: input.placementIntent ?? null },
+    });
+    void project;
+    return { status: 201, body: run, revision: record.dto.stateRevision };
+  }
+
   retryTask(ctx: CommandContext, id: string): CommandResult<{ task: TaskDto; run: RunDto }> {
     const record = this.requireTask(id);
     this.assertMatch(record.dto.stateRevision, ctx.ifMatch);

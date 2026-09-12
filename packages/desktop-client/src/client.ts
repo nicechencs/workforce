@@ -47,6 +47,7 @@ import type {
   SessionDto,
   SendAuthoringMessageAcceptedDto,
   StartProjectInput,
+  StartTaskRunInput,
   TaskDto,
   TeamDto,
   TeamVersionDto,
@@ -303,6 +304,14 @@ export class DesktopClient {
 
   retryTask(id: string, options: CommandOptions): Promise<{ task: TaskDto; run: RunDto }> {
     return this.send("POST", paths.taskRetry(id), options, withOperation({}, options));
+  }
+
+  startTaskRun(
+    id: string,
+    options: CommandOptions,
+    input: StartTaskRunInput = {},
+  ): Promise<RunDto> {
+    return this.send("POST", paths.taskRuns(id), options, withOperation(input, options));
   }
 
   cancelTask(

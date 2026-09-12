@@ -1,6 +1,7 @@
 import type { AppContext } from "../projects/context.js";
 import { requireProject } from "../projects/projects.js";
 import { settleRunCancel } from "../runs/runs.js";
+import { settleTaskCancel } from "../tasks/tasks.js";
 import type { ProjectRecord, RunRecord } from "../projects/store.js";
 
 export interface ReconcileResult {
@@ -51,6 +52,7 @@ export async function reconcile(ctx: AppContext, projectId: string): Promise<Rec
       const recoveredCancelAt = run.cancelRequestedAt ?? ctx.world.nowIso();
       settleRunCancel(ctx, run.id);
       run.cancelRequestedAt ??= recoveredCancelAt;
+      settleTaskCancel(ctx, run.taskId);
       ctx.world.unknownStatuses.delete(run.id);
       cancelled.push(run.id);
       continue;

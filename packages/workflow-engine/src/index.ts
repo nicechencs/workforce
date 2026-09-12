@@ -45,6 +45,13 @@ export {
   type RecoveryKind,
 } from "./retry.js";
 export {
+  retryIsDue,
+  runTimeoutDue,
+  taskCompletionBarrier,
+  type CompletionBarrier,
+  type CompletionBarrierReason,
+} from "./completion.js";
+export {
   availableMinor,
   raiseBudget,
   releaseReservation,
@@ -73,3 +80,9 @@ export {
   type WorkflowGraph,
   type WorkflowNodeDefinition,
 } from "./types.js";
+export {
+  checkExecutionBinding,
+  cloneWorkflowGraph,
+  requirePublishedWorkflowGraph,
+  type AdmissionCheck,
+} from "./admission.js";

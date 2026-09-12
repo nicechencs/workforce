@@ -923,6 +923,40 @@ export class ComposedAppServices implements AppServices {
     return task ? this.taskDto(task) : null;
   }
 
+  startTaskRun(
+    ctx: CommandContext,
+    id: string,
+    input: {
+      operationId: string;
+      orchestrationMode?: "workflow_bound" | "direct";
+      placementIntent?: import("@workforce/protocol").PlacementIntent;
+    },
+  ): Promise<CommandResult<RunDto>> {
+    return this.exclusive(async () => {
+      const task = this.requireTask(id);
+      this.assertMatch(task.stateRevision, ctx.ifMatch);
+      const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
+      assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
+      await this.assertRuntimeStartAllowed(this.requireProject(task.projectId));
+      const started = await this.app.startTaskRun({
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        taskId: id,
+        orchestrationMode,
+        snapshotRef: "mock:success",
+        requireWorkflowBinding: true,
+        ...optionalRevision(ctx.ifMatch),
+        ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
+      });
+      this.persist();
+      return {
+        status: started.reused ? 200 : 201,
+        body: this.runDto(started.run),
+        revision: this.requireTask(id).stateRevision,
+      };
+    });
+  }
+
   retryTask(
     ctx: CommandContext,
     id: string,

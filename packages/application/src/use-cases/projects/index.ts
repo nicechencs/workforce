@@ -29,6 +29,7 @@ export {
   type SchedulingRecord,
   type TaskRecord,
   type WorkflowInstanceRecord,
+  type EvaluationEvidenceRecord,
 } from "./store.js";
 export { createWorkforceApp, WorkforceApp, type WorkforceAppOptions } from "./service.js";
 export {
@@ -36,6 +37,7 @@ export {
   confirmPlan,
   createProject,
   pauseProject,
+  resumeProject,
   startExecution,
   startPlanning,
   type CancelProjectInput,
@@ -44,4 +46,17 @@ export {
   type StartExecutionInput,
   type StartPlanningInput,
 } from "./projects.js";
+export {
+  absorbDirectArtifact,
+  createAdHocTask,
+  findAdHocTask,
+  insertAdHocTask,
+  type CreateAdHocTaskInput,
+} from "./direct-task.js";
 export type { AppContext } from "./context.js";
+export {
+  captureProjectPolicySnapshot,
+  APPLICATION_POLICY_VERSION,
+  POLICY_SNAPSHOT_SCHEMA,
+  type ProjectPolicySnapshot,
+} from "./policy-snapshot.js";

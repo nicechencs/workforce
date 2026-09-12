@@ -168,6 +168,11 @@ export interface AppServices {
     ctx: CommandContext,
     id: string,
   ): MaybeAsync<CommandResult<{ task: TaskDto; run: RunDto }>>;
+  startTaskRun(
+    ctx: CommandContext,
+    id: string,
+    input: import("@workforce/protocol").StartTaskRunInput,
+  ): MaybeAsync<CommandResult<RunDto>>;
   cancelTask(
     ctx: CommandContext,
     id: string,

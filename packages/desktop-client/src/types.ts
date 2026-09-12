@@ -193,6 +193,17 @@ export interface StartProjectInput {
   orchestrationMode?: "workflow_bound" | "direct";
 }
 
+export interface StartTaskRunInput {
+  orchestrationMode?: "workflow_bound" | "direct";
+  placementIntent?: {
+    mode: "automatic" | "local_only" | "remote_only" | "specific_node";
+    nodeId?: string;
+    requiredLabels?: Record<string, string>;
+    preferredLabels?: Record<string, string>;
+    dataLocality?: "workspace_local" | "replicated" | "remote_access";
+  };
+}
+
 export interface CancelInput {
   reason?: string;
   mode?: string;

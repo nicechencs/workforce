@@ -32,6 +32,7 @@ import type {
 } from "@workforce/protocol";
 
 import type { BudgetState, NodeInstanceStatus, WorkflowGraph } from "./engine-port.js";
+import type { ProjectPolicySnapshot } from "./policy-snapshot.js";
 
 export interface ProjectRecord {
   id: string;
@@ -73,7 +74,7 @@ export interface ProjectExecutionSnapshotRecord {
   workflowVersionId: string;
   teamVersionId: string;
   contentHash: string;
-  policySnapshot: Record<string, unknown>;
+  policySnapshot: ProjectPolicySnapshot | Record<string, unknown>;
   budgetSnapshot?: Record<string, unknown>;
   createdAt: string;
 }
@@ -124,6 +125,7 @@ export interface RunRecord {
    * M3 rows intentionally have no execution facts and must remain all-null.
    */
   executionSnapshot?: RunExecutionSnapshot;
+  deadlineAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -149,6 +151,13 @@ export interface ArtifactRecord {
   slotId?: string;
   digest: string;
   status: ArtifactVersionStatus;
+}
+
+/** T08 evidence consumed by T09 completion. Not a second evaluation engine. */
+export interface EvaluationEvidenceRecord {
+  id: string;
+  artifactVersionId: string;
+  verdict: "pass" | "fail" | "inconclusive";
 }
 
 export interface WorkflowInstanceRecord {
@@ -350,6 +359,7 @@ export class MemoryWorld {
   readonly reservations = new Map<string, ReservationRecord>();
   readonly executionLeases = new Map<string, ExecutionLeaseRecord>();
   readonly schedulingRecords = new Map<string, SchedulingRecord>();
+  readonly evaluations = new Map<string, EvaluationEvidenceRecord>();
   readonly unknownStatuses = new Set<string>();
   private fencingSeq = 0;
   readonly clock: MemoryClock;
@@ -410,4 +420,127 @@ export class MemoryWorld {
       .filter((output) => output.required)
       .every((output) => task.outputBindings[output.id] !== undefined);
   }
+
+  artifactsForTask(task: TaskRecord): ArtifactRecord[] {
+    return Object.values(task.outputBindings)
+      .map((id) => this.artifacts.get(id))
+      .filter((record): record is ArtifactRecord => record !== undefined);
+  }
+
+  evaluationsForArtifact(artifactVersionId: string): EvaluationEvidenceRecord[] {
+    return [...this.evaluations.values()].filter(
+      (record) => record.artifactVersionId === artifactVersionId,
+    );
+  }
+
+  evaluationsForTask(task: TaskRecord): EvaluationEvidenceRecord[] {
+    const ids = new Set(Object.values(task.outputBindings));
+    return [...this.evaluations.values()].filter((record) => ids.has(record.artifactVersionId));
+  }
+
+  /**
+   * Memory UoW does not roll back. Confirm/start/Run admission restore this
+   * checkpoint on failure so a thrown command cannot leave a half instance.
+   */
+  captureDomain(): DomainCheckpoint {
+    return {
+      projects: cloneMap(this.projects),
+      tasks: cloneMap(this.tasks),
+      runs: cloneMap(this.runs),
+      approvals: cloneMap(this.approvals),
+      artifacts: cloneMap(this.artifacts),
+      workflows: cloneMap(this.workflows),
+      workflowVersions: cloneMap(this.workflowVersions),
+      workflowDrafts: cloneMap(this.workflowDrafts),
+      teamDrafts: cloneMap(this.teamDrafts),
+      authoringChangeSets: cloneMap(this.authoringChangeSets),
+      nodes: cloneMap(this.nodes),
+      budgets: cloneMap(this.budgets),
+      executionSnapshots: cloneMap(this.executionSnapshots),
+      reservations: cloneMap(this.reservations),
+      executionLeases: cloneMap(this.executionLeases),
+      schedulingRecords: cloneMap(this.schedulingRecords),
+      evaluations: cloneMap(this.evaluations),
+      usageKeys: new Set(this.usageKeys),
+      unknownStatuses: new Set(this.unknownStatuses),
+      eventsLength: this.events.events.length,
+    };
+  }
+
+  restoreDomain(checkpoint: DomainCheckpoint): void {
+    replaceMap(this.projects, checkpoint.projects);
+    replaceMap(this.tasks, checkpoint.tasks);
+    replaceMap(this.runs, checkpoint.runs);
+    replaceMap(this.approvals, checkpoint.approvals);
+    replaceMap(this.artifacts, checkpoint.artifacts);
+    replaceMap(this.workflows, checkpoint.workflows);
+    replaceMap(this.workflowVersions, checkpoint.workflowVersions);
+    replaceMap(this.workflowDrafts, checkpoint.workflowDrafts);
+    replaceMap(this.teamDrafts, checkpoint.teamDrafts);
+    replaceMap(this.authoringChangeSets, checkpoint.authoringChangeSets);
+    replaceMap(this.nodes, checkpoint.nodes);
+    replaceMap(this.budgets, checkpoint.budgets);
+    replaceMap(this.executionSnapshots, checkpoint.executionSnapshots);
+    replaceMap(this.reservations, checkpoint.reservations);
+    replaceMap(this.executionLeases, checkpoint.executionLeases);
+    replaceMap(this.schedulingRecords, checkpoint.schedulingRecords);
+    replaceMap(this.evaluations, checkpoint.evaluations);
+    this.usageKeys.clear();
+    for (const key of checkpoint.usageKeys) {
+      this.usageKeys.add(key);
+    }
+    this.unknownStatuses.clear();
+    for (const status of checkpoint.unknownStatuses) {
+      this.unknownStatuses.add(status);
+    }
+    this.events.events.length = checkpoint.eventsLength;
+  }
+
+  async withDomainRollback<T>(fn: () => Promise<T>): Promise<T> {
+    const checkpoint = this.captureDomain();
+    try {
+      return await fn();
+    } catch (error) {
+      this.restoreDomain(checkpoint);
+      throw error;
+    }
+  }
+}
+
+export interface DomainCheckpoint {
+  projects: Map<string, ProjectRecord>;
+  tasks: Map<string, TaskRecord>;
+  runs: Map<string, RunRecord>;
+  approvals: Map<string, ApprovalRecord>;
+  artifacts: Map<string, ArtifactRecord>;
+  workflows: Map<string, WorkflowInstanceRecord>;
+  workflowVersions: Map<string, WorkflowGraph>;
+  workflowDrafts: Map<string, WorkflowDraftDto>;
+  teamDrafts: Map<string, TeamDraftDto>;
+  authoringChangeSets: Map<string, AuthoringChangeSetDto>;
+  nodes: Map<string, NodeInstanceRecord>;
+  budgets: Map<string, BudgetRecord>;
+  executionSnapshots: Map<string, ProjectExecutionSnapshotRecord>;
+  reservations: Map<string, ReservationRecord>;
+  executionLeases: Map<string, ExecutionLeaseRecord>;
+  schedulingRecords: Map<string, SchedulingRecord>;
+  evaluations: Map<string, EvaluationEvidenceRecord>;
+  usageKeys: Set<string>;
+  unknownStatuses: Set<string>;
+  eventsLength: number;
+}
+
+function replaceMap<T>(target: Map<string, T>, source: Map<string, T>): void {
+  target.clear();
+  for (const [id, record] of source) {
+    target.set(id, record);
+  }
+}
+
+function cloneMap<T>(map: Map<string, T>): Map<string, T> {
+  const next = new Map<string, T>();
+  for (const [id, record] of map) {
+    next.set(id, JSON.parse(JSON.stringify(record)) as T);
+  }
+  return next;
 }
