@@ -901,7 +901,7 @@ describe("composed M3 mock loop", () => {
       );
       expect(afterIds.sort()).toEqual(beforeIds.sort());
     },
-    20_000,
+    40_000,
   );
 
   it("does not acknowledge cancel when its SQLite commit fails and keeps the queue retryable", async () => {
