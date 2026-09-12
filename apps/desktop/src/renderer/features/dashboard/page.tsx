@@ -88,15 +88,17 @@ export function DashboardView(props: {
         <Kpi label="待审批" value={String(props.approvals.length)} testId="dash-pending" />
         <Kpi label="运行中" value={String(props.runs.length)} testId="dash-runs" />
         <Kpi label="活跃项目" value={String(props.projects.length)} testId="dash-projects" />
-        <Card testId="dash-local-node">
-          <Muted>执行节点</Muted>
-          <p className="wf-list-row-title">本机 / Mock</p>
-          <Muted>{localNodeSubtitle()}</Muted>
-          <Button size="sm" onClick={props.onNodes}>
-            查看本机节点
-          </Button>
-        </Card>
       </MetricGrid>
+
+      <Card title="执行节点" testId="dash-local-node">
+        <List>
+          <ListRow
+            title="本机 / Mock"
+            meta={localNodeSubtitle()}
+            onClick={props.onNodes}
+          />
+        </List>
+      </Card>
 
       <Card title="需要处理" testId="dash-approvals">
         {props.approvals.length === 0 ? (

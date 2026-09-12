@@ -14,11 +14,18 @@ html.dark {
   color-scheme: dark;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -366,6 +373,7 @@ a {
 .wf-scroll {
   min-height: 0;
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -600,9 +608,6 @@ a {
   display: grid;
   gap: var(--wf-space-12);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  /* 指标格子里可以混入内容更高的卡片（如执行节点）；默认 stretch 会把只有
-     标签 + 数值的 Kpi 拉成同样高度、底部留一大片空白。 */
-  align-items: start;
 }
 
 .wf-split {
@@ -1195,7 +1200,9 @@ a {
 .wf-main {
   position: relative;
   min-height: 0;
+  min-width: 0;
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
