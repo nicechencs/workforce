@@ -5,37 +5,55 @@ import type {
   ProjectDto,
 } from "@workforce/desktop-client";
 
+import {
+  Badge,
+  Button,
+  Card,
+  Cluster,
+  EmptyState,
+  ErrorText,
+  Field,
+  LoadingText,
+  Muted,
+  Notice,
+  Page,
+  Select,
+  StatusText,
+  Textarea,
+} from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
-import {
-  badgeStyle,
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  inputStyle,
-  labelStyle,
-  mutedStyle,
-  pageStyle,
-  titleStyle,
-  warningStyle,
-} from "../projects/ui.js";
 import {
   AGENT_REPLY_GAP,
   AUTHORING_PROPOSAL_PREVIEW_NOTE,
   AUTHORING_ROUTE_GAP,
+  AUTHORING_RUN_NOT_COMPLETE_NOTE,
+  DRAFT_CANVAS_NOTE,
+  DRAFT_CANVAS_UNAVAILABLE_NOTE,
   DRAFT_NOT_RUNTIME_NOTE,
+  EMPTY_INTENT_NOTE,
   activeAuthoringTurn,
+  authoringTurnRefsNote,
   canCancelAuthoringTurn,
   canCloseAuthoringTurn,
   canRetryAuthoringTurn,
   errorMessage,
   isAuthoringSessionBoundToProject,
+  isEmptyAuthoringIntent,
   isUnavailableMessage,
+  landedDraftCanvasPath,
   projectLabel,
+  proposalGraphNodeCount,
+  proposalTeamSummary,
+  proposalWorkflowName,
   resolveAuthoringProjectBinding,
   sessionStatusLabel,
+  sessionStatusTone,
   turnStatusLabel,
+  turnStatusTone,
   writeCommandOptions,
+  type LandedAuthoringDraft,
+  type ProposalAuthoringDraft,
 } from "./model.js";
 
 type BusyAction =
@@ -52,6 +70,7 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emptyIntent, setEmptyIntent] = useState(false);
   const boundProjectRef = useRef(projectId);
 
   boundProjectRef.current = projectId;
@@ -92,7 +111,9 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
       return;
     }
     let cancelled = false;
-    setSession(null);
+    setSession((current) =>
+      isAuthoringSessionBoundToProject(current, projectId) ? current : null,
+    );
     setError(null);
     setBusy("loading");
     void loadOrCreateSession(client, projectId)
@@ -107,6 +128,9 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
         if (!cancelled) {
           setBusy(null);
           setError(errorMessage(reason));
+          setSession((current) =>
+            isAuthoringSessionBoundToProject(current, projectId) ? current : null,
+          );
         }
       });
     return () => {
@@ -135,20 +159,25 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
 
   async function onSend(): Promise<void> {
     const current = session;
-    const content = input.trim();
-    if (!current || current.status !== "open" || !content || busy !== null) {
+    if (!current || current.status !== "open" || busy !== null) {
       return;
     }
+    if (isEmptyAuthoringIntent(input)) {
+      setEmptyIntent(true);
+      return;
+    }
+    const content = input.trim();
     setBusy("sending");
     setError(null);
+    setEmptyIntent(false);
     try {
       const accepted = await client.sendAuthoringMessage(
         current.id,
         content,
         writeCommandOptions(current.stateRevision),
       );
-      setInput("");
       await refreshUntilSettled(current.id, accepted.turnId);
+      setInput("");
       setBusy(null);
     } catch (reason: unknown) {
       setBusy(null);
@@ -256,28 +285,30 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
     setSession(null);
     setInput("");
     setError(null);
+    setEmptyIntent(false);
   }
 
   const turn = activeAuthoringTurn(session);
   const sessionReady = session !== null && isAuthoringSessionBoundToProject(session, projectId);
-  const sendDisabled =
-    !sessionReady || session.status !== "open" || busy !== null || input.trim().length === 0;
-  const confirmDisabled =
-    !sessionReady || turn?.status !== "awaiting_confirmation" || busy !== null;
+  const awaitingConfirm =
+    sessionReady && session.draft?.kind === "proposal" && turn?.status === "awaiting_confirmation";
+  const landedDraft =
+    sessionReady && session.draft?.kind === "landed" ? session.draft : null;
+  const sendDisabled = !sessionReady || session.status !== "open" || busy !== null;
+  const confirmDisabled = !awaitingConfirm || busy !== null;
+  const sendVariant = awaitingConfirm || landedDraft ? "secondary" : "primary";
 
   return (
-    <main style={pageStyle} data-testid="workflow-authoring-page">
-      <p>
-        <button
-          type="button"
-          style={buttonStyle("secondary")}
-          onClick={() => props.navigate("/workflows")}
-        >
+    <Page
+      title="对话生成工作流"
+      subtitle={AUTHORING_ROUTE_GAP}
+      testId="workflow-authoring-page"
+      actions={
+        <Button variant="outline" onClick={() => props.navigate("/workflows")}>
           返回工作流目录
-        </button>
-      </p>
-      <h1 style={titleStyle}>对话生成工作流</h1>
-      <p style={mutedStyle}>{AUTHORING_ROUTE_GAP}</p>
+        </Button>
+      }
+    >
       <ProjectPicker
         projects={projects}
         selectedProjectId={projectId}
@@ -300,39 +331,57 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
             input={input}
             disabled={sendDisabled}
             busy={busy}
-            onChange={setInput}
+            sendVariant={sendVariant}
+            onChange={(value) => {
+              setInput(value);
+              if (!isEmptyAuthoringIntent(value)) {
+                setEmptyIntent(false);
+              }
+            }}
             onSend={onSend}
           />
-          {session.draft?.kind === "proposal" && turn?.status === "awaiting_confirmation" ? (
+          {awaitingConfirm && session.draft?.kind === "proposal" && turn ? (
             <ProposalDraftPreview
               draft={session.draft}
               turn={turn}
               onConfirm={onConfirm}
               disabled={confirmDisabled}
+              confirming={busy === "confirming"}
             />
           ) : null}
-          {session.draft?.kind === "landed" ? <LandedDraftCard draft={session.draft} /> : null}
+          {landedDraft ? (
+            <LandedDraftCard draft={landedDraft} navigate={props.navigate} />
+          ) : null}
         </>
       ) : (
-        <section style={cardStyle} data-testid="workflow-authoring-session-loading">
-          <p style={mutedStyle}>
-            {projectId
-              ? busy === "loading"
-                ? "正在加载项目作者会话…"
-                : "尚未建立项目作者会话。"
-              : "请选择项目后开始聊天。"}
-          </p>
-        </section>
+        <Card testId="workflow-authoring-session-loading">
+          {projectId ? (
+            busy === "loading" ? (
+              <LoadingText>正在加载项目作者会话…</LoadingText>
+            ) : (
+              <EmptyState title="尚未建立项目作者会话。">
+                加载失败时会保留已有对话；不会回退本地夹具冒充已接通。
+              </EmptyState>
+            )
+          ) : (
+            <EmptyState title="请选择项目后开始聊天。">会话始终绑定当前项目。</EmptyState>
+          )}
+        </Card>
       )}
-      <p style={mutedStyle} data-testid="workflow-authoring-chat-note">
-        {AGENT_REPLY_GAP}
-      </p>
+      <Muted>
+        <span data-testid="workflow-authoring-chat-note">{AGENT_REPLY_GAP}</span>
+      </Muted>
+      {emptyIntent ? (
+        <Notice tone="warning" title="空意图未发送" role="status">
+          <span data-testid="workflow-authoring-empty-intent">{EMPTY_INTENT_NOTE}</span>
+        </Notice>
+      ) : null}
       {error ? (
-        <div style={errorStyle} data-testid="workflow-authoring-error">
-          {error}
+        <div data-testid="workflow-authoring-error">
+          <ErrorText>{error}</ErrorText>
         </div>
       ) : null}
-    </main>
+    </Page>
   );
 }
 
@@ -345,37 +394,35 @@ function ProjectPicker(props: {
 }): ReactNode {
   if (props.routeProjectId) {
     return (
-      <section style={cardStyle} data-testid="workflow-authoring-project">
-        <span style={badgeStyle("muted")}>项目范围</span>
-        <p style={mutedStyle}>当前项目：{props.routeProjectId}</p>
-      </section>
+      <Card testId="workflow-authoring-project">
+        <Badge tone="muted">项目范围</Badge>
+        <Muted>当前项目：{props.routeProjectId}</Muted>
+      </Card>
     );
   }
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-project-picker">
-      <label style={labelStyle} htmlFor="workflow-authoring-project">
-        选择项目
-      </label>
-      {props.loading ? <p style={mutedStyle}>正在加载项目…</p> : null}
+    <Card title="选择项目" testId="workflow-authoring-project-picker">
+      {props.loading ? <LoadingText>正在加载项目…</LoadingText> : null}
       {!props.loading && props.projects.length === 0 ? (
-        <p style={warningStyle}>没有可用项目。请先创建项目，再打开工作流作者面。</p>
+        <Notice tone="warning">没有可用项目。请先创建项目，再打开工作流作者面。</Notice>
       ) : null}
       {!props.loading && props.projects.length > 0 ? (
-        <select
-          id="workflow-authoring-project"
-          data-testid="workflow-authoring-project-select"
-          style={inputStyle}
-          value={props.selectedProjectId}
-          onChange={(event) => props.onChange(event.target.value)}
-        >
-          {props.projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {projectLabel(project)}
-            </option>
-          ))}
-        </select>
+        <Field label="项目" htmlFor="workflow-authoring-project">
+          <Select
+            id="workflow-authoring-project"
+            testId="workflow-authoring-project-select"
+            value={props.selectedProjectId}
+            onChange={(event) => props.onChange(event.target.value)}
+          >
+            {props.projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {projectLabel(project)}
+              </option>
+            ))}
+          </Select>
+        </Field>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -387,66 +434,71 @@ function SessionSummary(props: {
   onRetry: () => void;
   onClose: () => void;
 }): ReactNode {
+  const refsNote = props.turn ? authoringTurnRefsNote(props.turn) : null;
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-session-status">
-      <div style={{ display: "flex", gap: "var(--wf-space-sm, 8px)", alignItems: "center" }}>
-        <span style={badgeStyle(props.session.status === "open" ? "health" : "warning")}>
+    <Card title="会话状态" testId="workflow-authoring-session-status">
+      <Cluster>
+        <Badge tone={sessionStatusTone(props.session.status)}>
           会话 {sessionStatusLabel(props.session.status)}
-        </span>
+        </Badge>
         {props.turn ? (
-          <span
-            style={badgeStyle(props.turn.status === "awaiting_confirmation" ? "warning" : "muted")}
-          >
+          <StatusText tone={turnStatusTone(props.turn.status)}>
             Turn {turnStatusLabel(props.turn.status)}
-          </span>
+          </StatusText>
         ) : null}
-        {props.busy ? <span style={mutedStyle}>{busyLabel(props.busy)}</span> : null}
-      </div>
-      <p style={mutedStyle} data-testid="workflow-authoring-session-id">
-        会话 {props.session.id} · 项目 {props.session.projectId} · revision{" "}
-        {props.session.stateRevision}
-      </p>
+        {props.busy ? <Muted>{busyLabel(props.busy)}</Muted> : null}
+      </Cluster>
+      <Muted>
+        <span data-testid="workflow-authoring-session-id">
+          会话 {props.session.id} · 项目 {props.session.projectId} · revision{" "}
+          {props.session.stateRevision}
+        </span>
+      </Muted>
+      <Notice tone="info" title="不是 Task/Run 完成">
+        <span data-testid="workflow-authoring-run-note">{AUTHORING_RUN_NOT_COMPLETE_NOTE}</span>
+      </Notice>
+      {refsNote ? (
+        <Muted>
+          <span data-testid="workflow-authoring-turn-refs">{refsNote}</span>
+        </Muted>
+      ) : null}
       {props.turn ? (
-        <div
-          style={{ display: "flex", gap: "var(--wf-space-sm, 8px)", flexWrap: "wrap" }}
-          data-testid="workflow-authoring-turn-actions"
-        >
-          {canCancelAuthoringTurn(props.turn.status) ? (
-            <button
-              type="button"
-              data-testid="workflow-authoring-cancel"
-              style={buttonStyle("secondary", props.busy !== null)}
-              disabled={props.busy !== null}
-              onClick={props.onCancel}
-            >
-              {props.busy === "cancelling" ? "取消中…" : "取消生成"}
-            </button>
-          ) : null}
-          {canRetryAuthoringTurn(props.turn.status) ? (
-            <button
-              type="button"
-              data-testid="workflow-authoring-retry"
-              style={buttonStyle("secondary", props.busy !== null)}
-              disabled={props.busy !== null}
-              onClick={props.onRetry}
-            >
-              {props.busy === "retrying" ? "重试中…" : "重试生成"}
-            </button>
-          ) : null}
-          {canCloseAuthoringTurn(props.turn.status) ? (
-            <button
-              type="button"
-              data-testid="workflow-authoring-close"
-              style={buttonStyle("secondary", props.busy !== null)}
-              disabled={props.busy !== null}
-              onClick={props.onClose}
-            >
-              {props.busy === "closing" ? "关闭中…" : "关闭当前会话"}
-            </button>
-          ) : null}
+        <div data-testid="workflow-authoring-turn-actions">
+          <Cluster>
+            {canCancelAuthoringTurn(props.turn.status) ? (
+              <Button
+                testId="workflow-authoring-cancel"
+                variant="dangerOutline"
+                disabled={props.busy !== null}
+                onClick={props.onCancel}
+              >
+                {props.busy === "cancelling" ? "取消中…" : "取消生成"}
+              </Button>
+            ) : null}
+            {canRetryAuthoringTurn(props.turn.status) ? (
+              <Button
+                testId="workflow-authoring-retry"
+                variant="secondary"
+                disabled={props.busy !== null}
+                onClick={props.onRetry}
+              >
+                {props.busy === "retrying" ? "重试中…" : "重试生成"}
+              </Button>
+            ) : null}
+            {canCloseAuthoringTurn(props.turn.status) ? (
+              <Button
+                testId="workflow-authoring-close"
+                variant="outline"
+                disabled={props.busy !== null}
+                onClick={props.onClose}
+              >
+                {props.busy === "closing" ? "关闭中…" : "关闭当前会话"}
+              </Button>
+            ) : null}
+          </Cluster>
         </div>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -455,35 +507,37 @@ function ConversationPanel(props: {
   input: string;
   disabled: boolean;
   busy: BusyAction;
+  sendVariant: "primary" | "secondary";
   onChange: (value: string) => void;
   onSend: () => void;
 }): ReactNode {
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-chat">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>工作流编排对话</h2>
+    <Card title="工作流编排对话" testId="workflow-authoring-chat">
       <MessageList messages={props.session.messages} />
-      <label style={labelStyle} htmlFor="wf-authoring-intent">
-        发送消息
-      </label>
-      <textarea
-        id="wf-authoring-intent"
-        data-testid="workflow-authoring-intent"
-        style={{ ...inputStyle, minHeight: "96px" }}
-        value={props.input}
-        disabled={props.disabled && props.busy !== null}
-        onChange={(event) => props.onChange(event.target.value)}
-        placeholder="例如：创建一个包含规划、实现和审查的工作流。"
-      />
-      <button
-        type="button"
-        data-testid="workflow-authoring-send-chat"
-        style={buttonStyle("primary", props.disabled)}
+      <Field
+        label="发送消息"
+        htmlFor="wf-authoring-intent"
+        hint={EMPTY_INTENT_NOTE}
+      >
+        <Textarea
+          id="wf-authoring-intent"
+          testId="workflow-authoring-intent"
+          rows={4}
+          value={props.input}
+          disabled={props.busy !== null}
+          onChange={(event) => props.onChange(event.target.value)}
+          placeholder="例如：创建一个包含规划、实现和审查的工作流。"
+        />
+      </Field>
+      <Button
+        testId="workflow-authoring-send-chat"
+        variant={props.sendVariant}
         disabled={props.disabled}
         onClick={props.onSend}
       >
         {props.busy === "sending" ? "发送中…" : "发送消息"}
-      </button>
-    </section>
+      </Button>
+    </Card>
   );
 }
 
@@ -492,92 +546,109 @@ function MessageList(props: {
 }): ReactNode {
   if (props.messages.length === 0) {
     return (
-      <p style={mutedStyle} data-testid="workflow-authoring-chat-empty">
-        还没有消息。
-      </p>
+      <EmptyState testId="workflow-authoring-chat-empty" title="还没有消息。">
+        描述角色、流程和任务后发送。空意图不会清空对话。
+      </EmptyState>
     );
   }
   return (
-    <ul
-      style={{ listStyle: "none", padding: 0, margin: "0 0 var(--wf-space-md, 12px)" }}
-      data-testid="workflow-authoring-messages"
-    >
+    <div data-testid="workflow-authoring-messages">
       {props.messages.map((message) => (
-        <li
+        <Card
           key={message.id}
-          data-testid={`workflow-authoring-message-${message.role}`}
-          style={{
-            ...cardStyle,
-            marginBottom: "var(--wf-space-sm, 8px)",
-            background: "var(--wf-color-page, #e8edf2)",
-          }}
+          variant="subtle"
+          testId={`workflow-authoring-message-${message.role}`}
         >
           <strong>
             {message.role === "user" ? "用户" : message.role === "system" ? "系统" : "编排 Agent"}
           </strong>
           {isUnavailableMessage(message.content) ? (
-            <p style={warningStyle}>消息正文在 Daemon 重启后不可恢复，仅保留引用。</p>
+            <Notice tone="warning">消息正文在 Daemon 重启后不可恢复，仅保留引用。</Notice>
           ) : (
-            <p style={{ margin: "var(--wf-space-xs, 4px) 0 0" }}>{message.content}</p>
+            <p>{message.content}</p>
           )}
-        </li>
+        </Card>
       ))}
-    </ul>
+    </div>
   );
 }
 
 function ProposalDraftPreview(props: {
-  draft: Extract<AuthoringSessionViewDto["draft"], { kind: "proposal" }>;
+  draft: ProposalAuthoringDraft;
   turn: AuthoringTurnDto;
   onConfirm: () => void;
   disabled: boolean;
+  confirming: boolean;
 }): ReactNode {
-  const graph = props.draft.workflow?.graph;
-  const nodeCount = graph?.nodes?.length ?? graph?.steps?.length ?? 0;
+  const teamSummary = proposalTeamSummary(props.draft);
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-proposal-preview">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>结构化提案待确认</h2>
-      <p style={mutedStyle} data-testid="workflow-authoring-proposal-preview-note">
-        {AUTHORING_PROPOSAL_PREVIEW_NOTE}
-      </p>
+    <Card title="结构化提案待确认" testId="workflow-authoring-proposal-preview">
+      <Muted>
+        <span data-testid="workflow-authoring-proposal-preview-note">
+          {AUTHORING_PROPOSAL_PREVIEW_NOTE}
+        </span>
+      </Muted>
       <p data-testid="workflow-authoring-proposal-name">
-        工作流：{props.draft.workflow?.name ?? "服务端提案（详情引用由 Daemon 管理）"}
+        工作流：{proposalWorkflowName(props.draft)}
       </p>
-      {props.draft.workflow?.description ? (
-        <p style={mutedStyle}>{props.draft.workflow.description}</p>
-      ) : null}
-      <p style={mutedStyle} data-testid="workflow-authoring-proposal-graph">
-        结构化节点：{nodeCount}
-      </p>
-      <button
-        type="button"
-        data-testid="workflow-authoring-confirm"
-        style={buttonStyle("primary", props.disabled)}
+      {props.draft.workflow?.description ? <Muted>{props.draft.workflow.description}</Muted> : null}
+      <Muted>
+        <span data-testid="workflow-authoring-proposal-graph">
+          结构化节点：{proposalGraphNodeCount(props.draft)}
+        </span>
+      </Muted>
+      {teamSummary ? <Muted>{teamSummary}</Muted> : null}
+      <Button
+        testId="workflow-authoring-confirm"
+        variant="primary"
         disabled={props.disabled}
         onClick={props.onConfirm}
       >
-        {props.disabled ? "确认中…" : "确认并创建未发布草稿"}
-      </button>
-      <p style={mutedStyle}>
+        {props.confirming ? "确认中…" : "确认并创建未发布草稿"}
+      </Button>
+      <Muted>
         Turn {props.turn.id} · revision {props.turn.revision}
-      </p>
-    </section>
+      </Muted>
+    </Card>
   );
 }
 
 function LandedDraftCard(props: {
-  draft: Extract<AuthoringSessionViewDto["draft"], { kind: "landed" }>;
+  draft: LandedAuthoringDraft;
+  navigate: (path: string) => void;
 }): ReactNode {
+  const canvasPath = landedDraftCanvasPath(props.draft);
   return (
-    <section style={cardStyle} data-testid="workflow-authoring-landed">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>未发布草稿已创建</h2>
+    <Card title="未发布草稿已创建" testId="workflow-authoring-landed">
       <p data-testid="workflow-authoring-landed-note">{DRAFT_NOT_RUNTIME_NOTE}</p>
-      <p style={mutedStyle} data-testid="workflow-authoring-workflow-id">
-        草稿 {props.draft.workflowDraftId}
-        {props.draft.workflowId ? ` · 工作流 ${props.draft.workflowId}` : ""}
-        {props.draft.revision ? ` · revision ${props.draft.revision}` : ""}
-      </p>
-    </section>
+      <Muted>
+        <span data-testid="workflow-authoring-workflow-id">
+          草稿 {props.draft.workflowDraftId}
+          {props.draft.workflowId ? ` · 工作流 ${props.draft.workflowId}` : ""}
+          {props.draft.revision ? ` · revision ${props.draft.revision}` : ""}
+        </span>
+      </Muted>
+      {canvasPath ? (
+        <>
+          <Muted>
+            <span data-testid="workflow-authoring-canvas-note">{DRAFT_CANVAS_NOTE}</span>
+          </Muted>
+          <Button
+            testId="workflow-authoring-open-canvas"
+            variant="primary"
+            onClick={() => props.navigate(canvasPath)}
+          >
+            打开画布编辑
+          </Button>
+        </>
+      ) : (
+        <Notice tone="warning">
+          <span data-testid="workflow-authoring-canvas-unavailable">
+            {DRAFT_CANVAS_UNAVAILABLE_NOTE}
+          </span>
+        </Notice>
+      )}
+    </Card>
   );
 }
 
