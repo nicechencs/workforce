@@ -192,7 +192,7 @@ export interface AppServices {
     id: string,
     input: RunInputBody,
   ): MaybeAsync<CommandResult<RunDto>>;
-  listRunEvents(runId: string, query: EventListQuery): PageDto<WorkforceEvent>;
+  listRunEvents(runId: string, query: EventListQuery): MaybeAsync<PageDto<WorkforceEvent>>;
 
   createAuthoringSession(
     ctx: CommandContext,
@@ -246,7 +246,7 @@ export interface AppServices {
   readArtifactContent(id: string, versionId: string): ArtifactContentDto | null;
   getArtifactLineage(id: string, versionId: string): ArtifactLineageDto | null;
 
-  listEvents(query: EventListQuery): PageDto<WorkforceEvent>;
+  listEvents(query: EventListQuery): MaybeAsync<PageDto<WorkforceEvent>>;
   highWaterMark(): number;
   trimHorizon(): number;
   exportProject(

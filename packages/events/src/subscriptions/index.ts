@@ -5,8 +5,15 @@ import {
   type WorkforceEvent,
 } from "@workforce/protocol";
 
-import { highWaterMark, SqliteEventStore, type EventReadQuery } from "../store/index.js";
+import {
+  highWaterMark,
+  trimHorizon,
+  SqliteEventStore,
+  type EventReadQuery,
+} from "../store/index.js";
 import type { SqliteQueryable } from "../store/session.js";
+
+export type { EventReadQuery };
 
 export class EventCursorExpired extends Error {
   readonly code = "event_cursor_expired" as const;
@@ -68,6 +75,14 @@ export class SqliteSubscriptionReader {
     return highWaterMark(this.db);
   }
 
+  trimHorizon(): number {
+    return trimHorizon(this.db);
+  }
+
+  async read(query: EventReadQuery): Promise<WorkforceEvent[]> {
+    return this.store.read(query);
+  }
+
   async readAfterCursor(
     rawCursor: string | undefined,
     query: EventReadQuery,
@@ -76,6 +91,9 @@ export class SqliteSubscriptionReader {
       rawCursor === undefined
         ? (query.afterIngestionPosition ?? 0)
         : decodeSubscriptionCursor(rawCursor, query);
+    if (after < this.trimHorizon()) {
+      throw new EventCursorExpired("SSE cursor is older than retained events");
+    }
     return this.store.read({ ...query, afterIngestionPosition: after });
   }
 }

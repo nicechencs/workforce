@@ -27,6 +27,7 @@ import {
   type StoredArtifactVersion,
 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
+import { SqliteSubscriptionReader, type EventReadQuery } from "@workforce/events/subscriptions";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import {
   DEFAULT_ORCHESTRATION_MODE,
@@ -168,6 +169,7 @@ export class ComposedAppServices implements AppServices {
   readonly stateDir: string;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly sqliteWriter: SqliteWriter;
+  private readonly eventSubscriptions: SqliteSubscriptionReader;
   private readonly operations = new Map<string, CommandReceipt>();
   private readonly artifactContents = new Map<string, ArtifactContentRecord>();
   private readonly workspaces = new Map<string, WorkspaceDto>();
@@ -202,6 +204,7 @@ export class ComposedAppServices implements AppServices {
     this.policy = input.policy;
     this.sqliteWriter = input.sqliteWriter;
     this.authoring = input.authoring;
+    this.eventSubscriptions = new SqliteSubscriptionReader(input.sqlite.connection);
   }
 
   static async open(options: ComposedAppServicesOptions): Promise<ComposedAppServices> {
@@ -1114,7 +1117,7 @@ export class ComposedAppServices implements AppServices {
     });
   }
 
-  listRunEvents(runId: string, query: EventListQuery): PageDto<WorkforceEvent> {
+  listRunEvents(runId: string, query: EventListQuery): Promise<PageDto<WorkforceEvent>> {
     this.requireRun(runId);
     return this.listEvents({ ...query, runId, stream: `run:${runId}` });
   }
@@ -1614,47 +1617,33 @@ export class ComposedAppServices implements AppServices {
     };
   }
 
-  listEvents(query: EventListQuery): PageDto<WorkforceEvent> {
-    const matched = this.app.world.events.events.filter((event) => {
-      if ((event.ingestionPosition ?? 0) <= query.afterIngestionPosition) {
-        return false;
-      }
-      if (query.projectId !== undefined && event.projectId !== query.projectId) {
-        return false;
-      }
-      if (query.runId !== undefined && event.runId !== query.runId) {
-        return false;
-      }
-      if (query.stream !== undefined && event.stream !== query.stream) {
-        return false;
-      }
-      if (
-        query.types !== undefined &&
-        query.types.length > 0 &&
-        !query.types.includes(event.type)
-      ) {
-        return false;
-      }
-      return true;
-    });
+  async listEvents(query: EventListQuery): Promise<PageDto<WorkforceEvent>> {
+    await this.sqliteWrite;
+    const horizon = this.eventSubscriptions.trimHorizon();
+    if (query.afterIngestionPosition > 0 && query.afterIngestionPosition < horizon) {
+      throw new AppError("event_cursor_expired", "Event cursor is older than retained events");
+    }
+    const matched = await this.eventSubscriptions.read(
+      this.toEventReadQuery(query, query.limit + 1),
+    );
     const slice = matched.slice(0, query.limit);
     const last = slice[slice.length - 1];
+    const hasMore = matched.length > query.limit;
     return {
       items: slice,
       page: {
-        nextCursor: slice.length < matched.length && last?.id !== undefined ? last.id : null,
-        hasMore: slice.length < matched.length,
+        nextCursor: hasMore && last?.id !== undefined ? last.id : null,
+        hasMore,
       },
     };
   }
 
   highWaterMark(): number {
-    const last = this.app.world.events.events[this.app.world.events.events.length - 1];
-    return last?.ingestionPosition ?? 0;
+    return this.eventSubscriptions.highWaterMark();
   }
 
   trimHorizon(): number {
-    return 0;
+    return this.eventSubscriptions.trimHorizon();
   }
 
   async close(): Promise<void> {
@@ -2223,6 +2212,27 @@ export class ComposedAppServices implements AppServices {
         this.sqlite.catalogTeams.upsertVersion(tx, version);
       }
     });
+  }
+
+  /** Catch-up query against the durable Event Store. Does not replay side effects. */
+  private toEventReadQuery(query: EventListQuery, limit: number): EventReadQuery {
+    const readQuery: EventReadQuery = {
+      limit,
+      afterIngestionPosition: query.afterIngestionPosition,
+    };
+    if (query.stream !== undefined) {
+      readQuery.stream = query.stream;
+    }
+    if (query.projectId !== undefined) {
+      readQuery.projectId = query.projectId;
+    }
+    if (query.runId !== undefined) {
+      readQuery.runId = query.runId;
+    }
+    if (query.types !== undefined) {
+      readQuery.types = query.types;
+    }
+    return readQuery;
   }
 
   private persist(): void {
