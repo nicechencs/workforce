@@ -1,0 +1,77 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/team-draft.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "members": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quantity": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runtimeProfileId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "runtimeProfileId",
+          "quantity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "status": {
+      "const": "draft",
+      "type": "string"
+    },
+    "teamId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "updatedBy": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "teamId",
+    "revision",
+    "status",
+    "members",
+    "contentHash",
+    "updatedAt",
+    "updatedBy"
+  ],
+  "title": "TeamDraft",
+  "type": "object"
+}

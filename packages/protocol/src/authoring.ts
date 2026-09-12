@@ -6,12 +6,10 @@ import { workflowGraphDefinitionSchema, workflowVersionWriteSchema } from "./wor
 /**
  * D17 conversational authoring session / draft DTOs.
  * Not a Runtime, Task, or Run.
- * V0.1 transport is Desktop-local / in-process against this DTO.
- * There is no Daemon chat resource and no public chat HTTP path.
- * T20 send stays disabled until a follow-up wires a Desktop session
- * store plus user-only append. Agent replies remain planned.
- * Do not set CHAT_SESSION_PROTOCOL_FROZEN=true in this slice.
- * Old name `executionMode` is not D17 and is not accepted here.
+ * V0.1 transport is Daemon AuthoringSession HTTP: Project-scoped
+ * `POST /projects/:id/authoring-sessions`, message append, and turn confirm.
+ * Desktop drives chat through the typed client; `CHAT_SESSION_PROTOCOL_FROZEN`
+ * is true. Old name `executionMode` is not D17 and is not accepted here.
  */
 export const AUTHORING_SESSION_ID_PREFIX = "cas_" as const;
 export const AUTHORING_SESSION_MESSAGE_ID_PREFIX = "cam_" as const;
