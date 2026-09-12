@@ -1,11 +1,12 @@
 import {
-  parseAuthoringChatProposal,
+  parseAuthoringTurnActionCommand,
   parseAuthoringProposal,
   parseAuthoringChangeSet,
   parseWorkflowGraphDefinition,
   parseTeamDraft,
   parseWorkflowDraft,
-  type AuthoringChatProposalDto,
+  type AuthoringProposalTargetInput,
+  type AuthoringTurnActionCommand,
   type AuthoringChangeSetDto,
   type AuthoringProposalDto,
   type CommandReceipt,
@@ -17,7 +18,7 @@ import {
 
 import type { Clock, EventStore, IdGenerator, Tx, UnitOfWork } from "../../ports/index.js";
 import type { AppContext } from "../projects/context.js";
-import { notFound, UseCaseError, validationFailed } from "../projects/errors.js";
+import { notFound, revisionConflict, UseCaseError, validationFailed } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
@@ -92,21 +93,55 @@ export interface AuthoringChatProject {
 export interface AuthoringChatSourceRun {
   id: string;
   projectId: string;
-  organizationId?: string;
+  organizationId: string;
 }
 
 export interface AuthoringChatSession {
   id: string;
+  organizationId: string;
   projectId: string;
-  organizationId?: string;
+  status: "open" | "failed" | "closed";
+  stateRevision: number;
 }
 
 export interface AuthoringChatTurn {
   id: string;
   sessionId: string;
+  organizationId: string;
   projectId: string;
   sourceRunId: string;
+  status:
+    | "accepted"
+    | "running"
+    | "awaiting_confirmation"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "closed";
+  stateRevision: number;
+  proposalId: string | null;
+  changeSetId: string | null;
+  workflowDraftId: string | null;
+  completedOperationId: string | null;
   patchRefs: readonly string[];
+}
+
+export type AuthoringChatProposalStatus = "proposed" | "confirmed" | "rejected" | "failed";
+
+export type AuthoringChatProposalTarget = AuthoringProposalTargetInput & { ordinal: number };
+
+export interface AuthoringChatProposalRecord {
+  id: string;
+  sessionId: string;
+  turnId: string;
+  organizationId: string;
+  projectId: string;
+  sourceRunId: string;
+  proposalRef: string;
+  proposalHash: string;
+  status: AuthoringChatProposalStatus;
+  stateRevision: number;
+  targets: readonly AuthoringChatProposalTarget[];
 }
 
 export interface AuthoringChatPatchBinding {
@@ -145,6 +180,25 @@ export interface AuthoringChatTurnRepository {
     tx: Tx,
     turnId: string,
   ): Promise<AuthoringChatTurn | null> | AuthoringChatTurn | null;
+  completeInTransaction(
+    tx: Tx,
+    input: {
+      turnId: string;
+      expectedStateRevision: number;
+      idempotencyKey: string;
+      proposalId?: string;
+      changeSetId?: string;
+      workflowDraftId?: string;
+      at: string;
+    },
+  ): Promise<AuthoringChatTurn> | AuthoringChatTurn;
+}
+
+export interface AuthoringChatProposalRepository {
+  getInTransaction(
+    tx: Tx,
+    proposalId: string,
+  ): Promise<AuthoringChatProposalRecord | null> | AuthoringChatProposalRecord | null;
 }
 
 export interface AuthoringChatPatchRepository {
@@ -213,16 +267,13 @@ export interface ConfirmChatProposalDeps {
   workflowIdentities: AuthoringWorkflowIdentityRepository;
   workflowAuthorities: AuthoringWorkflowAuthorityRepository;
   workflowDrafts: AuthoringWorkflowDraftRepository;
+  proposals: AuthoringChatProposalRepository;
   resolver: AuthoringChatProposalResolver;
   principalId: string;
   clientId: string;
 }
 
-export interface ConfirmChatProposalCommand {
-  operationId: string;
-  idempotencyKey: string;
-  proposal: AuthoringChatProposalDto;
-}
+export type ConfirmChatProposalCommand = Extract<AuthoringTurnActionCommand, { action: "confirm" }>;
 
 /** Source-compatible name retained for callers migrating to the explicit deps API. */
 export type ConfirmAuthoringChatProposalInput = ConfirmChatProposalCommand;
@@ -332,23 +383,60 @@ export async function confirmAuthoringChatProposal(
   input: ConfirmChatProposalCommand,
   deps: ConfirmChatProposalDeps,
 ): Promise<ConfirmAuthoringChatProposalResult> {
-  const proposal = parseAuthoringChatProposal(input.proposal);
-  const proposalDigest = sha256CanonicalDigest(proposal);
+  const command = parseAuthoringTurnActionCommand(input);
+  if (command.action !== "confirm") {
+    throw validationFailed("authoring turn action must be confirm");
+  }
+  const proposalDigest = sha256CanonicalDigest({
+    action: "confirm",
+    sessionId: command.sessionId,
+    turnId: command.turnId,
+    expectedRevision: command.expectedRevision,
+  });
   const scope = {
     principalId: deps.principalId,
     clientId: deps.clientId,
     canonicalOperation: "authoring.confirm-chat-proposal",
-    resource: `project:${proposal.projectId}`,
-    idempotencyKey: input.idempotencyKey,
+    resource: `authoring-turn:${command.sessionId}:${command.turnId}`,
+    idempotencyKey: command.idempotencyKey,
   } as const;
 
   const existing = await deps.receipts.get(scope);
   const replay = readChatReceipt(existing, proposalDigest);
-  if (replay) return replay;
+  if (replay) {
+    const context = await loadChatConfirmationContext(deps, command, { allowCompleted: true });
+    assertStoredChatResultBinding(replay, context);
+    return replay;
+  }
+
+  let prepared: ChatConfirmationContext;
+  try {
+    prepared = await deps.uow.withTransaction((tx) =>
+      loadChatConfirmationContextInTransaction(deps, tx, command, { allowCompleted: false }),
+    );
+    await deps.uow.withTransaction(async (tx) => {
+      const inTransaction = await deps.receipts.get(scope);
+      const transactionReplay = readChatReceipt(inTransaction, proposalDigest);
+      if (transactionReplay) {
+        throw new ReceiptReplay(transactionReplay);
+      }
+      await deps.receipts.putPending(tx, {
+        operationId: command.operationId,
+        status: "pending",
+        scope,
+        requestDigest: proposalDigest,
+        acceptedAt: deps.clock.now().toISOString(),
+      });
+    });
+  } catch (error) {
+    if (error instanceof ReceiptReplay) return error.result;
+    await persistChatFailure(deps, input, scope, proposalDigest, error);
+    throw error;
+  }
 
   let resolved: ResolvedChatWorkflowTarget[];
   try {
-    resolved = await resolveChatWorkflowTargets(deps.resolver, proposal);
+    resolved = await resolveChatWorkflowTargets(deps.resolver, prepared);
   } catch (error) {
     await persistChatFailure(deps, input, scope, proposalDigest, error);
     throw error;
@@ -357,32 +445,26 @@ export async function confirmAuthoringChatProposal(
   try {
     return await deps.uow.withTransaction(async (tx) => {
       const inTransaction = await deps.receipts.get(scope);
-      const transactionReplay = readChatReceipt(inTransaction, proposalDigest);
-      if (transactionReplay) return transactionReplay;
+      const transactionReplay = readChatReceiptForContinuation(
+        inTransaction,
+        proposalDigest,
+        command.operationId,
+      );
+      if (transactionReplay) {
+        const context = await loadChatConfirmationContextInTransaction(deps, tx, command, {
+          allowCompleted: true,
+        });
+        assertStoredChatResultBinding(transactionReplay, context);
+        return transactionReplay;
+      }
 
-      const pending: CommandReceipt = {
-        operationId: input.operationId,
-        status: "pending",
-        scope,
-        requestDigest: proposalDigest,
-        acceptedAt: deps.clock.now().toISOString(),
-      };
-      await deps.receipts.putPending(tx, pending);
-
-      const project = await deps.projects.getInTransaction(tx, proposal.projectId);
-      if (!project) throw notFound("project", proposal.projectId);
-      const sourceRun = await deps.sourceRuns.getInTransaction(tx, proposal.sourceRunId);
-      if (!sourceRun) throw notFound("source run", proposal.sourceRunId);
-      const session = await deps.sessions.getInTransaction(tx, proposal.sessionId);
-      if (!session) throw notFound("authoring session", proposal.sessionId);
-      const turn = await deps.turns.getInTransaction(tx, proposal.turnId);
-      if (!turn) throw notFound("authoring turn", proposal.turnId);
-
-      assertChatBinding({ proposal, project, sourceRun, session, turn });
+      const context = await loadChatConfirmationContextInTransaction(deps, tx, command, {
+        allowCompleted: false,
+      });
       const drafts: Array<{ draft: WorkflowDraftDto; expectedRevision: number }> = [];
 
       for (const target of resolved) {
-        await assertResolutionBinding(deps, tx, proposal, target);
+        await assertResolutionBinding(deps, tx, context, target);
         const workflowId = target.operation === "create" ? deps.ids.ulid("wf_") : target.workflowId;
         if (!workflowId) {
           throw validationFailed("authoring update target has no workflow identity");
@@ -403,21 +485,21 @@ export async function confirmAuthoringChatProposal(
           });
           await deps.workflowAuthorities.create(tx, {
             workflowId,
-            organizationId: project.organizationId,
-            projectId: project.id,
+            organizationId: context.project.organizationId,
+            projectId: context.project.id,
             createdAt: now,
             createdBy: deps.principalId,
           });
         } else {
           await deps.workflowAuthorities.requireInTransaction(tx, workflowId, {
-            organizationId: project.organizationId,
-            projectId: project.id,
+            organizationId: context.project.organizationId,
+            projectId: context.project.id,
           });
         }
 
         const expectedScope = {
-          organizationId: project.organizationId,
-          projectId: project.id,
+          organizationId: context.project.organizationId,
+          projectId: context.project.id,
         };
         const currentRevision = await deps.workflowDrafts.getCurrentRevision(
           tx,
@@ -427,10 +509,7 @@ export async function confirmAuthoringChatProposal(
         if (target.operation === "update") {
           expectedRevision = target.expectedRevision ?? -1;
           if (currentRevision !== expectedRevision) {
-            throw validationFailed(`authoring workflow draft revision conflict for ${workflowId}`, {
-              expectedRevision,
-              currentRevision,
-            });
+            throw revisionConflict(workflowId, expectedRevision, currentRevision);
           }
         } else if (currentRevision !== 0) {
           throw validationFailed(`new authoring workflow ${workflowId} already has a draft`, {
@@ -453,8 +532,8 @@ export async function confirmAuthoringChatProposal(
 
       for (const item of drafts) {
         await deps.workflowDrafts.append(tx, item.draft, item.expectedRevision, {
-          organizationId: project.organizationId,
-          projectId: project.id,
+          organizationId: context.project.organizationId,
+          projectId: context.project.id,
         });
       }
 
@@ -466,31 +545,134 @@ export async function confirmAuthoringChatProposal(
       }));
       const result: ConfirmAuthoringChatProposalResult = {
         reused: false,
-        proposalId: proposal.id,
-        projectId: project.id,
+        proposalId: context.proposal.id,
+        projectId: context.project.id,
         workflowDrafts: refs,
       };
+      try {
+        await deps.turns.completeInTransaction(tx, {
+          turnId: context.turn.id,
+          expectedStateRevision: command.expectedRevision,
+          idempotencyKey: command.idempotencyKey,
+          proposalId: context.proposal.id,
+          at: deps.clock.now().toISOString(),
+          ...(refs[0] ? { workflowDraftId: refs[0].workflowDraftId } : {}),
+        });
+      } catch (error) {
+        if (isRevisionConflict(error)) {
+          throw revisionConflict(
+            context.turn.id,
+            command.expectedRevision,
+            context.turn.stateRevision,
+          );
+        }
+        throw error;
+      }
       await deps.events.append(
         tx,
         chatConfirmedEvent({
           id: deps.ids.ulid("evt_"),
           now: deps.clock.now().toISOString(),
-          operationId: input.operationId,
+          operationId: command.operationId,
           principalId: deps.principalId,
-          organizationId: project.organizationId,
-          projectId: project.id,
-          sourceRunId: sourceRun.id,
-          proposalId: proposal.id,
+          organizationId: context.project.organizationId,
+          projectId: context.project.id,
+          sourceRunId: context.sourceRun.id,
+          proposalId: context.proposal.id,
           proposalDigest,
           refs,
         }),
       );
-      await deps.receipts.complete(tx, input.operationId, storedChatResult(result));
+      await deps.receipts.complete(tx, command.operationId, storedChatResult(result));
       return result;
     });
   } catch (error) {
     await persistChatFailure(deps, input, scope, proposalDigest, error);
     throw error;
+  }
+}
+
+class ReceiptReplay extends Error {
+  constructor(readonly result: ConfirmAuthoringChatProposalResult) {
+    super("authoring chat receipt replay");
+  }
+}
+
+interface ChatConfirmationContext {
+  project: AuthoringChatProject;
+  sourceRun: AuthoringChatSourceRun;
+  session: AuthoringChatSession;
+  turn: AuthoringChatTurn;
+  proposal: AuthoringChatProposalRecord;
+}
+
+async function loadChatConfirmationContext(
+  deps: ConfirmChatProposalDeps,
+  command: ConfirmChatProposalCommand,
+  options: { allowCompleted: boolean },
+): Promise<ChatConfirmationContext> {
+  return deps.uow.withTransaction((tx) =>
+    loadChatConfirmationContextInTransaction(deps, tx, command, options),
+  );
+}
+
+async function loadChatConfirmationContextInTransaction(
+  deps: ConfirmChatProposalDeps,
+  tx: Tx,
+  command: ConfirmChatProposalCommand,
+  options: { allowCompleted: boolean },
+): Promise<ChatConfirmationContext> {
+  const session = await deps.sessions.getInTransaction(tx, command.sessionId);
+  if (!session) throw notFound("authoring session", command.sessionId);
+  const turn = await deps.turns.getInTransaction(tx, command.turnId);
+  if (!turn) throw notFound("authoring turn", command.turnId);
+  if (turn.sessionId !== session.id) {
+    throw validationFailed("authoring turn does not belong to the session");
+  }
+  if (!options.allowCompleted && turn.stateRevision !== command.expectedRevision) {
+    throw revisionConflict(turn.id, command.expectedRevision, turn.stateRevision);
+  }
+  if (!options.allowCompleted) {
+    if (session.status !== "open") {
+      throw validationFailed("authoring session is not open", { status: session.status });
+    }
+    if (turn.status !== "awaiting_confirmation" || turn.completedOperationId !== null) {
+      throw validationFailed("authoring turn is not awaiting confirmation", {
+        status: turn.status,
+      });
+    }
+  } else if (turn.status !== "completed") {
+    throw validationFailed("authoring turn is not completed for receipt replay", {
+      status: turn.status,
+    });
+  } else if (turn.completedOperationId !== command.idempotencyKey) {
+    throw validationFailed("authoring turn was completed with a different idempotency key", {
+      status: turn.status,
+    });
+  }
+
+  const project = await deps.projects.getInTransaction(tx, session.projectId);
+  if (!project) throw notFound("project", session.projectId);
+  const sourceRun = await deps.sourceRuns.getInTransaction(tx, turn.sourceRunId);
+  if (!sourceRun) throw notFound("source run", turn.sourceRunId);
+  if (!turn.proposalId) throw validationFailed("authoring turn has no proposal");
+  const proposal = await deps.proposals.getInTransaction(tx, turn.proposalId);
+  if (!proposal) throw notFound("authoring proposal", turn.proposalId);
+  assertChatBinding({ proposal, project, sourceRun, session, turn });
+  for (const target of proposal.targets) {
+    const patch = await deps.patches.getInTransaction(tx, target.patchRef);
+    if (!patch) throw notFound("authoring proposal patch", target.patchRef);
+    assertPatchBinding(patch, proposal);
+  }
+  return { project, sourceRun, session, turn, proposal };
+}
+
+function assertStoredChatResultBinding(
+  result: ConfirmAuthoringChatProposalResult,
+  context: ChatConfirmationContext,
+): void {
+  if (result.proposalId !== context.proposal.id || result.projectId !== context.project.id) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt binding is malformed");
   }
 }
 
@@ -505,19 +687,19 @@ interface ResolvedChatWorkflowTarget {
 
 async function resolveChatWorkflowTargets(
   resolver: AuthoringChatProposalResolver,
-  proposal: AuthoringChatProposalDto,
+  context: ChatConfirmationContext,
 ): Promise<ResolvedChatWorkflowTarget[]> {
   const resolved: ResolvedChatWorkflowTarget[] = [];
-  for (const target of proposal.targets) {
+  for (const target of context.proposal.targets) {
     if (target.targetType !== "workflow") {
       throw validationFailed(
         `authoring chat proposal ${target.operation} for ${target.targetType} is not implemented`,
       );
     }
     const resolution = await resolver.resolveWorkflowGraph({
-      proposalId: proposal.id,
-      projectId: proposal.projectId,
-      sourceRunId: proposal.sourceRunId,
+      proposalId: context.proposal.id,
+      projectId: context.proposal.projectId,
+      sourceRunId: context.proposal.sourceRunId,
       operation: target.operation,
       patchRef: target.patchRef,
       ...(target.operation === "update"
@@ -541,18 +723,17 @@ async function resolveChatWorkflowTargets(
 async function assertResolutionBinding(
   deps: ConfirmChatProposalDeps,
   tx: Tx,
-  proposal: AuthoringChatProposalDto,
+  context: ChatConfirmationContext,
   target: ResolvedChatWorkflowTarget,
 ): Promise<void> {
   const proof = target.binding;
   if (
-    proof.organizationId !==
-      (await deps.projects.getInTransaction(tx, proposal.projectId))?.organizationId ||
+    proof.organizationId !== context.project.organizationId ||
     proof.patchRef !== target.patchRef ||
-    proof.projectId !== proposal.projectId ||
-    proof.sessionId !== proposal.sessionId ||
-    proof.turnId !== proposal.turnId ||
-    proof.sourceRunId !== proposal.sourceRunId ||
+    proof.projectId !== context.project.id ||
+    proof.sessionId !== context.session.id ||
+    proof.turnId !== context.turn.id ||
+    proof.sourceRunId !== context.sourceRun.id ||
     (target.operation === "update" &&
       (proof.workflowId !== target.workflowId ||
         proof.expectedRevision !== target.expectedRevision)) ||
@@ -576,7 +757,7 @@ async function assertResolutionBinding(
 }
 
 function assertChatBinding(input: {
-  proposal: AuthoringChatProposalDto;
+  proposal: AuthoringChatProposalRecord;
   project: AuthoringChatProject;
   sourceRun: AuthoringChatSourceRun;
   session: AuthoringChatSession;
@@ -586,28 +767,44 @@ function assertChatBinding(input: {
   if (project.id !== proposal.projectId) {
     throw validationFailed("authoring chat proposal project identity mismatch");
   }
-  if (sourceRun.projectId !== project.id) {
+  if (sourceRun.projectId !== project.id || sourceRun.organizationId !== project.organizationId) {
     throw validationFailed("authoring chat proposal source run does not belong to the project");
   }
   if (
-    sourceRun.organizationId !== undefined &&
-    sourceRun.organizationId !== project.organizationId
+    session.projectId !== project.id ||
+    session.organizationId !== project.organizationId ||
+    session.status !== "open"
   ) {
-    throw validationFailed("authoring chat proposal source run organization mismatch");
-  }
-  if (session.projectId !== project.id) {
     throw validationFailed("authoring chat session does not belong to the project");
-  }
-  if (session.organizationId !== undefined && session.organizationId !== project.organizationId) {
-    throw validationFailed("authoring chat session organization mismatch");
   }
   if (
     turn.sessionId !== session.id ||
+    turn.organizationId !== project.organizationId ||
     turn.projectId !== project.id ||
     turn.sourceRunId !== sourceRun.id ||
+    proposal.sessionId !== session.id ||
+    proposal.turnId !== turn.id ||
+    proposal.organizationId !== project.organizationId ||
+    proposal.projectId !== project.id ||
+    proposal.sourceRunId !== sourceRun.id ||
     proposal.targets.some((target) => !turn.patchRefs.includes(target.patchRef))
   ) {
     throw validationFailed("authoring chat turn is not bound to the proposal");
+  }
+}
+
+function assertPatchBinding(
+  patch: AuthoringChatPatchBinding,
+  proposal: AuthoringChatProposalRecord,
+): void {
+  if (
+    patch.organizationId !== proposal.organizationId ||
+    patch.projectId !== proposal.projectId ||
+    patch.sessionId !== proposal.sessionId ||
+    patch.turnId !== proposal.turnId ||
+    patch.sourceRunId !== proposal.sourceRunId
+  ) {
+    throw validationFailed("authoring proposal patch is outside the confirmed chat turn");
   }
 }
 
@@ -679,6 +876,21 @@ function readChatReceipt(
   return { ...result, reused: true };
 }
 
+function readChatReceiptForContinuation(
+  receipt: CommandReceipt | null,
+  proposalDigest: string,
+  operationId: string,
+): ConfirmAuthoringChatProposalResult | undefined {
+  if (
+    receipt?.status === "pending" &&
+    receipt.operationId === operationId &&
+    receipt.requestDigest === proposalDigest
+  ) {
+    return undefined;
+  }
+  return readChatReceipt(receipt, proposalDigest);
+}
+
 function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposalResult, "reused"> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
@@ -688,9 +900,10 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
     Object.keys(record).some(
       (key) => !["proposalId", "projectId", "workflowDrafts"].includes(key),
     ) ||
-    typeof record.proposalId !== "string" ||
-    typeof record.projectId !== "string" ||
-    !Array.isArray(record.workflowDrafts)
+    !isNonEmptyString(record.proposalId) ||
+    !isNonEmptyString(record.projectId) ||
+    !Array.isArray(record.workflowDrafts) ||
+    record.workflowDrafts.length === 0
   ) {
     throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
   }
@@ -704,8 +917,8 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
         (key) => !["targetType", "workflowId", "workflowDraftId", "revision"].includes(key),
       ) ||
       ref.targetType !== "workflow" ||
-      typeof ref.workflowId !== "string" ||
-      typeof ref.workflowDraftId !== "string" ||
+      !isNonEmptyString(ref.workflowId) ||
+      !isNonEmptyString(ref.workflowDraftId) ||
       !Number.isInteger(ref.revision) ||
       (ref.revision as number) < 1
     ) {
@@ -719,6 +932,10 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
     };
   });
   return { proposalId: record.proposalId, projectId: record.projectId, workflowDrafts: refs };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function storedChatFailure(value: unknown): UseCaseError {
@@ -795,6 +1012,15 @@ function isReceiptControlError(error: unknown): boolean {
   );
 }
 
+function isRevisionConflict(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "revision_conflict"
+  );
+}
+
 function toProtocolError(error: unknown) {
   if (error instanceof UseCaseError) {
     return {
@@ -806,7 +1032,7 @@ function toProtocolError(error: unknown) {
   }
   return {
     code: "conflict" as const,
-    message: error instanceof Error ? error.message : "authoring chat confirmation failed",
+    message: "authoring chat confirmation failed",
     retryable: false,
   };
 }

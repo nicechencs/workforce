@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   AuthoringChatPatchBinding,
+  AuthoringChatProposalRecord,
   AuthoringChatProposalResolver,
   AuthoringChatProject,
   AuthoringChatSession,
@@ -56,6 +57,7 @@ class FakeTransactionalState {
   sessions = new Map<string, AuthoringChatSession>();
   turns = new Map<string, AuthoringChatTurn>();
   patches = new Map<string, AuthoringChatPatchBinding>();
+  proposals = new Map<string, AuthoringChatProposalRecord>();
   identities = new Map<string, WorkflowDefinitionRecord>();
   authorities = new Map<string, { organizationId: string; projectId: string }>();
   drafts = new Map<string, WorkflowDraftDto>();
@@ -75,6 +77,7 @@ class FakeTransactionalState {
       ]),
     );
     copy.patches = new Map(this.patches);
+    copy.proposals = new Map(this.proposals);
     copy.identities = new Map(this.identities);
     copy.authorities = new Map(this.authorities);
     copy.drafts = new Map(this.drafts);
@@ -95,6 +98,7 @@ class FakeTransactionalState {
     this.sessions = snapshot.sessions;
     this.turns = snapshot.turns;
     this.patches = snapshot.patches;
+    this.proposals = snapshot.proposals;
     this.identities = snapshot.identities;
     this.authorities = snapshot.authorities;
     this.drafts = snapshot.drafts;
@@ -170,7 +174,31 @@ function depsFor(state = new FakeTransactionalState()): ConfirmChatProposalDeps 
     projects: { getInTransaction: (_tx, id) => state.projects.get(id) ?? null },
     sourceRuns: { getInTransaction: (_tx, id) => state.sourceRuns.get(id) ?? null },
     sessions: { getInTransaction: (_tx, id) => state.sessions.get(id) ?? null },
-    turns: { getInTransaction: (_tx, id) => state.turns.get(id) ?? null },
+    turns: {
+      getInTransaction: (_tx, id) => state.turns.get(id) ?? null,
+      completeInTransaction: (_tx, input) => {
+        const turn = state.turns.get(input.turnId);
+        if (!turn) throw new Error("missing turn");
+        if (turn.status === "completed") {
+          if (turn.completedOperationId === input.idempotencyKey) return turn;
+          throw new Error("turn already completed");
+        }
+        if (turn.stateRevision !== input.expectedStateRevision) {
+          throw new Error("turn revision conflict");
+        }
+        const next = {
+          ...turn,
+          status: "completed" as const,
+          stateRevision: turn.stateRevision + 1,
+          proposalId: input.proposalId ?? turn.proposalId,
+          workflowDraftId: input.workflowDraftId ?? turn.workflowDraftId,
+          completedOperationId: input.idempotencyKey,
+        };
+        state.turns.set(turn.id, next);
+        return next;
+      },
+    },
+    proposals: { getInTransaction: (_tx, id) => state.proposals.get(id) ?? null },
     patches: { getInTransaction: (_tx, id) => state.patches.get(id) ?? null },
     workflowIdentities: {
       create: (_tx, identity) => {
@@ -270,15 +298,10 @@ function command(overrides: Partial<ConfirmChatProposalCommand> = {}): ConfirmCh
   return {
     operationId: "op_confirm",
     idempotencyKey: "confirm-key",
-    proposal: {
-      id: "proposal_1",
-      projectId: "project_1",
-      sessionId: "session_1",
-      turnId: "turn_1",
-      sourceRunId: "run_1",
-      summary: "secret prompt must not be persisted",
-      targets: [{ operation: "create", targetType: "workflow", patchRef: "patch_1" }],
-    },
+    action: "confirm",
+    sessionId: "session_1",
+    turnId: "turn_1",
+    expectedRevision: 1,
     ...overrides,
   };
 }
@@ -294,13 +317,35 @@ function seed(state: FakeTransactionalState): void {
     id: "session_1",
     projectId: "project_1",
     organizationId: "org_authoring",
+    status: "open",
+    stateRevision: 1,
   });
   state.turns.set("turn_1", {
     id: "turn_1",
     sessionId: "session_1",
+    organizationId: "org_authoring",
     projectId: "project_1",
     sourceRunId: "run_1",
+    status: "awaiting_confirmation",
+    stateRevision: 1,
+    proposalId: "proposal_1",
+    changeSetId: null,
+    workflowDraftId: null,
+    completedOperationId: null,
     patchRefs: ["patch_1"],
+  });
+  state.proposals.set("proposal_1", {
+    id: "proposal_1",
+    sessionId: "session_1",
+    turnId: "turn_1",
+    organizationId: "org_authoring",
+    projectId: "project_1",
+    sourceRunId: "run_1",
+    proposalRef: "proposal-ref-1",
+    proposalHash: "sha256:proposal-1",
+    status: "proposed",
+    stateRevision: 1,
+    targets: [{ ordinal: 1, operation: "create", targetType: "workflow", patchRef: "patch_1" }],
   });
   state.patches.set("patch_1", {
     patchRef: "patch_1",
@@ -362,7 +407,7 @@ describe("confirmAuthoringChatProposal", () => {
       principalId: "usr_author",
       clientId: "cli_desktop",
       canonicalOperation: "authoring.confirm-chat-proposal",
-      resource: "project:project_1",
+      resource: "authoring-turn:session_1:turn_1",
       idempotencyKey: "confirm-key",
     });
     state.receipts.set(key, {
@@ -388,10 +433,15 @@ describe("confirmAuthoringChatProposal", () => {
       principalId: "usr_author",
       clientId: "cli_desktop",
       canonicalOperation: "authoring.confirm-chat-proposal",
-      resource: "project:project_1",
+      resource: "authoring-turn:session_1:turn_1",
       idempotencyKey: "confirm-key",
     } as const;
-    const digest = sha256CanonicalDigest(command().proposal);
+    const digest = sha256CanonicalDigest({
+      action: "confirm",
+      sessionId: "session_1",
+      turnId: "turn_1",
+      expectedRevision: 1,
+    });
     state.receipts.set(receiptKey(scope), {
       operationId: "op_old",
       status: "pending",
@@ -413,16 +463,35 @@ describe("confirmAuthoringChatProposal", () => {
     });
   });
 
+  it("records a fixed redacted failure for unexpected resolver errors", async () => {
+    const state = new FakeTransactionalState();
+    seed(state);
+    const deps = depsFor(state);
+    deps.resolver = {
+      resolveWorkflowGraph: () => {
+        throw new Error("secret prompt must not enter a receipt");
+      },
+    };
+
+    await expect(confirmAuthoringChatProposal(command(), deps)).rejects.toThrow(
+      "secret prompt must not enter a receipt",
+    );
+    const receipt = state.receipts.values().next().value as CommandReceipt;
+    expect(receipt.status).toBe("failed");
+    expect(JSON.stringify(receipt)).not.toContain("secret prompt");
+    expect(receipt.result).toMatchObject({
+      code: "conflict",
+      message: "authoring chat confirmation failed",
+    });
+  });
+
   it("rejects key/digest conflicts, cross-scope proof and stale update CAS", async () => {
     const state = new FakeTransactionalState();
     seed(state);
     const deps = depsFor(state);
     await confirmAuthoringChatProposal(command(), deps);
     await expect(
-      confirmAuthoringChatProposal(
-        command({ proposal: { ...command().proposal, summary: "different payload" } }),
-        deps,
-      ),
+      confirmAuthoringChatProposal(command({ expectedRevision: 2 }), deps),
     ).rejects.toMatchObject({ code: "idempotency_key_reused" });
 
     const crossScopeState = new FakeTransactionalState();
@@ -463,26 +532,40 @@ describe("confirmAuthoringChatProposal", () => {
       updatedAt: "2026-09-12T10:00:00.000Z",
       updatedBy: "usr_author",
     });
+    updateState.proposals.set("proposal_1", {
+      ...updateState.proposals.get("proposal_1")!,
+      targets: [
+        {
+          ordinal: 1,
+          operation: "update",
+          targetType: "workflow",
+          targetId: "wf_existing",
+          expectedRevision: 1,
+          patchRef: "patch_1",
+        },
+      ],
+    });
     const update = command({
       operationId: "op_update",
       idempotencyKey: "update-key",
-      proposal: {
-        ...command().proposal,
-        id: "proposal_update",
-        targets: [
-          {
-            operation: "update",
-            targetType: "workflow",
-            targetId: "wf_existing",
-            expectedRevision: 1,
-            patchRef: "patch_1",
-          },
-        ],
-      },
     });
     await expect(confirmAuthoringChatProposal(update, depsFor(updateState))).rejects.toMatchObject({
-      code: "validation_failed",
+      code: "revision_conflict",
     });
     expect(updateState.drafts).toHaveLength(1);
+  });
+
+  it("rejects a second completion after the turn is terminal", async () => {
+    const state = new FakeTransactionalState();
+    seed(state);
+    const deps = depsFor(state);
+    await confirmAuthoringChatProposal(command(), deps);
+
+    await expect(
+      confirmAuthoringChatProposal(
+        command({ idempotencyKey: "different-key", expectedRevision: 2 }),
+        deps,
+      ),
+    ).rejects.toMatchObject({ code: "validation_failed" });
   });
 });
