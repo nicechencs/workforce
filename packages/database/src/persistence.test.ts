@@ -14,7 +14,6 @@ import {
   MIGRATION_003_SQL,
   MIGRATION_004_SQL,
   MIGRATION_005_SQL,
-  MIGRATION_006_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
