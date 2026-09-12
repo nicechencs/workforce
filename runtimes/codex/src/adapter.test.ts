@@ -242,6 +242,39 @@ describe("CodexRuntimeAdapter", () => {
     expect(processPort.spawned).toHaveLength(0);
   });
 
+  it("fails closed before spawning an authoring run when structured proposal/input transport is unavailable", async () => {
+    const processPort = new FakeProcessController(() => ({ chunks: [] }));
+    let resolved = false;
+    const adapter = new CodexRuntimeAdapter({
+      detect: () => detected(),
+      process: processPort,
+      resolveStart: () => {
+        resolved = true;
+        return context();
+      },
+      platform: "linux",
+    });
+
+    await expect(
+      adapter.start(
+        createStartRunRequest({
+          runtime: { adapterId: CODEX_ADAPTER_ID },
+          snapshotRef: "authoring:proposal",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "unsupported_capability",
+      message: expect.stringContaining("authoring input handoff"),
+      details: {
+        capability: "authoring.proposal",
+        inputTransport: "spawn_stdin_only",
+        structuredProposal: false,
+      },
+    });
+    expect(resolved).toBe(false);
+    expect(processPort.spawned).toHaveLength(0);
+  });
+
   it("refuses start with validation_failed when the CLI is missing", async () => {
     const processPort = new FakeProcessController(() => ({ chunks: [] }));
     const adapter = new CodexRuntimeAdapter({

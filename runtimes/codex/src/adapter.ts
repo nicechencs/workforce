@@ -206,6 +206,27 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       });
     }
 
+    // The Codex CLI transport currently has no safe way to receive a
+    // Workforce authoring message after `start` has been accepted: the
+    // Process port only supports one-shot stdin at spawn time, while the
+    // public StartRunRequest deliberately does not carry raw authoring text.
+    // Reject authoring starts before resolving context or spawning a process
+    // instead of accidentally running the ordinary prompt and then failing
+    // the subsequent Host handoff.
+    if (isAuthoringSnapshotRef(request.snapshotRef)) {
+      throw new RuntimeSdkError(
+        "unsupported_capability",
+        "Codex authoring input handoff is unsupported by the current process transport",
+        {
+          details: {
+            capability: "authoring.proposal",
+            inputTransport: "spawn_stdin_only",
+            structuredProposal: false,
+          },
+        },
+      );
+    }
+
     const detection = this.detectFn();
     if (!detection.found || detection.executable === undefined) {
       throw new RuntimeSdkError("validation_failed", "Codex CLI was not detected", {
@@ -605,4 +626,8 @@ function isUnsupportedCapability(error: unknown): boolean {
     "code" in error &&
     (error as { code: unknown }).code === "unsupported_capability"
   );
+}
+
+function isAuthoringSnapshotRef(snapshotRef: string): boolean {
+  return snapshotRef === "authoring:proposal" || snapshotRef.startsWith("authoring:");
 }
