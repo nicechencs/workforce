@@ -13,6 +13,9 @@ import type {
   Tx,
   WorkflowInstanceRecord,
 } from "@workforce/application";
+import { parseRunExecutionSnapshot } from "@workforce/protocol";
+
+type RunExecutionSnapshot = NonNullable<AppRunRecord["executionSnapshot"]>;
 
 import { SqliteBudgetRepository, SqliteReservationRepository } from "./budgets.js";
 import { organizationIdOfProject } from "./ensure.js";
@@ -203,7 +206,8 @@ function loadAppRuns(db: DatabaseSync): AppRunRecord[] {
     .prepare(
       `SELECT r.id, r.task_id, t.project_id, r.status, r.state_revision, r.attempt,
               r.generation, r.definition_revision, r.operation_id, r.cancel_requested_at,
-              r.created_at
+              r.orchestration_mode, r.transport, r.execution_snapshot_id,
+              r.placement_snapshot_json, r.created_at
          FROM runs r
          INNER JOIN tasks t ON t.id = r.task_id
         ORDER BY r.created_at ASC, r.id ASC`,
@@ -214,6 +218,7 @@ function loadAppRuns(db: DatabaseSync): AppRunRecord[] {
 
 function rowToAppRun(row: Record<string, unknown>): AppRunRecord {
   const createdAt = requiredText(cell(row, "created_at"), "created_at");
+  const executionSnapshot = executionSnapshotFromRow(row);
   return {
     id: requiredText(cell(row, "id"), "id"),
     taskId: requiredText(cell(row, "task_id"), "task_id"),
@@ -226,6 +231,7 @@ function rowToAppRun(row: Record<string, unknown>): AppRunRecord {
     operationId: optionalText(cell(row, "operation_id")) ?? "",
     createdAt,
     updatedAt: createdAt,
+    ...(executionSnapshot ? { executionSnapshot } : {}),
     ...ifPresent("cancelRequestedAt", optionalText(cell(row, "cancel_requested_at"))),
   };
 }
@@ -233,6 +239,20 @@ function rowToAppRun(row: Record<string, unknown>): AppRunRecord {
 function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: AppRunRecord): void {
   const existing = runs.get(run.id);
   const organizationId = organizationIdForTask(db, run.taskId);
+  const executionSnapshot =
+    run.executionSnapshot === undefined
+      ? undefined
+      : validateExecutionSnapshot(run.executionSnapshot, run.id);
+  if (
+    executionSnapshot &&
+    run.orchestrationMode !== undefined &&
+    run.orchestrationMode !== executionSnapshot.orchestrationMode
+  ) {
+    throw new PersistenceError(
+      "conflict",
+      `run ${run.id} has conflicting orchestrationMode and executionSnapshot`,
+    );
+  }
   if (!existing) {
     runs.insert(tx, {
       runId: run.id,
@@ -245,6 +265,7 @@ function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: Ap
       createdAt: run.createdAt,
       status: run.status,
       stateRevision: run.stateRevision,
+      ...(executionSnapshot ? { executionSnapshot } : {}),
       ...ifPresent("cancelRequestedAt", run.cancelRequestedAt),
     });
     return;
@@ -254,6 +275,30 @@ function saveAppRun(tx: Tx, runs: SqliteRunRepository, db: DatabaseSync, run: Ap
       "revision_conflict",
       `run ${run.id} stored revision ${existing.stateRevision} is newer than ${run.stateRevision}`,
     );
+  }
+  const storedExecutionSnapshot = readStoredExecutionSnapshot(db, run.id);
+  if (executionSnapshot) {
+    if (
+      storedExecutionSnapshot &&
+      !sameExecutionSnapshot(storedExecutionSnapshot, executionSnapshot)
+    ) {
+      throw new PersistenceError(
+        "conflict",
+        `run ${run.id} execution snapshot is immutable and cannot be replaced`,
+      );
+    }
+    if (!storedExecutionSnapshot && hasAnyExecutionAxis(db, run.id)) {
+      throw new PersistenceError(
+        "conflict",
+        `run ${run.id} has a partial execution snapshot and cannot be completed`,
+      );
+    }
+    if (!storedExecutionSnapshot) {
+      throw new PersistenceError(
+        "conflict",
+        `run ${run.id} has no stored execution snapshot; explicit backfill is required`,
+      );
+    }
   }
   if (existing.stateRevision !== run.stateRevision || existing.status !== run.status) {
     runs.updateStatus(tx, {
@@ -279,4 +324,80 @@ function organizationIdForTask(db: DatabaseSync, taskId: string): string {
     throw new PersistenceError("not_found", `task ${taskId} not found`);
   }
   return requiredText(cell(row, "organization_id"), "organization_id");
+}
+
+function executionSnapshotFromRow(row: Record<string, unknown>): RunExecutionSnapshot | undefined {
+  const mode = optionalText(cell(row, "orchestration_mode"));
+  const transport = optionalText(cell(row, "transport"));
+  const executionSnapshotId = optionalText(cell(row, "execution_snapshot_id"));
+  const placementJson = optionalText(cell(row, "placement_snapshot_json"));
+  if (
+    mode === null &&
+    transport === null &&
+    executionSnapshotId === null &&
+    placementJson === null
+  ) {
+    return undefined;
+  }
+  if (mode === null || transport === null || placementJson === null) {
+    throw new PersistenceError("constraint", "run execution axes are partially populated");
+  }
+  let placement: unknown;
+  try {
+    placement = JSON.parse(placementJson) as unknown;
+  } catch {
+    throw new PersistenceError("constraint", "run placement_snapshot_json is invalid JSON");
+  }
+  return validateExecutionSnapshot(
+    {
+      orchestrationMode: mode,
+      transport,
+      ...(executionSnapshotId === null ? {} : { executionSnapshotId }),
+      placementSnapshot: placement,
+    },
+    requiredText(cell(row, "id"), "id"),
+  );
+}
+
+function readStoredExecutionSnapshot(
+  db: DatabaseSync,
+  runId: string,
+): RunExecutionSnapshot | undefined {
+  const row = db
+    .prepare(
+      `SELECT id, orchestration_mode, transport, execution_snapshot_id,
+              placement_snapshot_json
+         FROM runs WHERE id = ?`,
+    )
+    .get(runId) as Record<string, unknown> | undefined;
+  return row ? executionSnapshotFromRow(row) : undefined;
+}
+
+function hasAnyExecutionAxis(db: DatabaseSync, runId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT orchestration_mode, transport, execution_snapshot_id,
+              placement_snapshot_json
+         FROM runs WHERE id = ?`,
+    )
+    .get(runId) as Record<string, unknown> | undefined;
+  if (!row) return false;
+  return [
+    "orchestration_mode",
+    "transport",
+    "execution_snapshot_id",
+    "placement_snapshot_json",
+  ].some((column) => optionalText(cell(row, column)) !== null);
+}
+
+function sameExecutionSnapshot(left: RunExecutionSnapshot, right: RunExecutionSnapshot): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validateExecutionSnapshot(value: unknown, runId: string): RunExecutionSnapshot {
+  try {
+    return parseRunExecutionSnapshot(value);
+  } catch {
+    throw new PersistenceError("constraint", `run ${runId} has an invalid execution snapshot`);
+  }
 }

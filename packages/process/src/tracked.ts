@@ -22,6 +22,8 @@ export type TrackedProcess = {
     sessionId: number;
     rootStartIdentity: string;
     owned: boolean;
+    /** The owned group was observed empty (or gone) before ownership was released. */
+    terminalVerified?: true;
   };
   dir?: string;
 };

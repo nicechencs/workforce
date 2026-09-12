@@ -91,8 +91,55 @@ export interface ProcessOutput {
 }
 
 export interface ProcessExitResult {
+  /** Root-process result observed by the OS, not a Workflow or Run outcome. */
   exitCode: number | null;
+  /** Native diagnostic signal. Consumers must not infer a business outcome from it. */
   signal: string | null;
+}
+
+export type ProcessControllerOperation = "spawn" | "wait" | "output" | "inspect" | "cancel";
+
+export type ProcessControllerErrorCode =
+  | "unsupported_capability"
+  | "invalid_request"
+  | "spawn_failed"
+  | "identity_mismatch"
+  | "process_tree_unverified"
+  | "process_input_failed"
+  | "process_output_failed"
+  | "process_output_overflow"
+  | "process_output_abandoned"
+  | "process_wait_failed"
+  | "process_cancel_failed";
+
+/**
+ * A stable failure from the single ProcessController port. `wait()` rejects
+ * rather than returning a plausible ProcessExitResult when terminal process
+ * ownership, output handling, or cancellation cannot be verified.
+ */
+export class ProcessControllerError extends Error {
+  override readonly name = "ProcessControllerError";
+  readonly capability?: "process.capture" | "process.cancel.graceful";
+  readonly platform?: string;
+
+  constructor(
+    readonly code: ProcessControllerErrorCode,
+    readonly operation: ProcessControllerOperation,
+    message: string,
+    options?: {
+      capability?: "process.capture" | "process.cancel.graceful";
+      platform?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    if (options?.capability !== undefined) {
+      this.capability = options.capability;
+    }
+    if (options?.platform !== undefined) {
+      this.platform = options.platform;
+    }
+  }
 }
 
 export interface CapturedProcess {
@@ -104,6 +151,11 @@ export interface CapturedProcess {
    * output is not consumed, the process is force-cancelled and iteration fails.
    */
   output: AsyncIterable<ProcessOutput>;
+  /**
+   * Resolves idempotently only after the root has exited, output reached EOF,
+   * and the owned process tree is confirmed empty. It rejects with
+   * ProcessControllerError when that conclusion cannot be made safely.
+   */
   wait(): Promise<ProcessExitResult>;
 }
 

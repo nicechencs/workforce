@@ -27,10 +27,10 @@ async function collectEvents(stream: AsyncIterable<RuntimeEvent>): Promise<Runti
 }
 
 async function settle(scheduler: { flush(): Promise<void> }): Promise<void> {
-  await scheduler.flush();
-  await Promise.resolve();
-  await Promise.resolve();
-  await scheduler.flush();
+  for (let index = 0; index < 64; index += 1) {
+    await scheduler.flush();
+    await Promise.resolve();
+  }
 }
 
 describe("LocalNodeHost + MockRuntimeAdapter", () => {
@@ -230,7 +230,107 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect((await host.cancel(handle)).accepted).toBe(true);
   });
 
-  it("reattaches from the same store after Host restart without starting a second execution", async () => {
+  it("accepts only its configured remote Mock node and isolates an old binding after replacement", async () => {
+    const remoteNodeId = "ndl_01JTESTREMOTEMOCKNODE00000";
+    const placement = {
+      executionNodeId: remoteNodeId,
+      runtimeInstallationId: "rtm_01JTESTREMOTEINSTALL00000",
+      workspaceInstanceId: "wsi_01JTESTREMOTEWORKSPACE000",
+    };
+    const first = await createMockRuntime({ nodeId: remoteNodeId });
+    const request = createStartRunRequest({
+      operationId: "op_remote_node",
+      snapshotRef: "mock:waiting_input",
+      placement,
+    });
+    const handle = await first.host.start(request);
+    await settle(first.scheduler);
+    expect((await first.host.inspect(handle)).status).toBe("waiting_input");
+    const statusBeforeReplacement = await first.store.getHandle(handle.handleId);
+
+    expect(await first.host.getBinding(handle.handleId)).toMatchObject({
+      nodeId: remoteNodeId,
+      runtimeInstallationId: placement.runtimeInstallationId,
+      workspaceInstanceId: placement.workspaceInstanceId,
+      fencingToken: 1,
+    });
+    await expect(
+      first.host.start(
+        createStartRunRequest({ operationId: "op_wrong_remote_node", snapshotRef: "mock:success" }),
+      ),
+    ).rejects.toSatisfy(
+      (error: unknown) => isRuntimeSdkError(error) && error.code === "validation_failed",
+    );
+
+    await first.host.dispose();
+    const second = await createMockRuntime({
+      nodeId: remoteNodeId,
+      store: first.store,
+      adapter: first.adapter,
+      scheduler: first.scheduler,
+      ids: first.ids,
+    });
+    const recovered = await second.host.recover();
+    expect(recovered).toEqual([
+      expect.objectContaining({
+        attached: false,
+        status: expect.objectContaining({ status: "waiting_input" }),
+      }),
+    ]);
+    expect((await second.store.getNodeSession())?.fencingToken).toBe(2);
+    const iterator = second.host.stream(handle)[Symbol.asyncIterator]();
+    await iterator.next();
+
+    await expect(
+      second.host.sendInput(handle, { operationId: "op_remote_node_input", text: "continue" }),
+    ).rejects.toSatisfy(
+      (error: unknown) => isRuntimeSdkError(error) && error.code === "lease_expired",
+    );
+    const staleInputOperationId = "op_stale_remote_node_input";
+    await first.adapter.sendInput(handle, { operationId: staleInputOperationId, text: "late" });
+    await second.scheduler.advance(10_000);
+    await settle(second.scheduler);
+    const staleEvents = await second.store.listEvents(handle.handleId);
+    expect(staleEvents).toContainEqual(
+      expect.objectContaining({
+        type: "runtime.message",
+        auditOnly: true,
+        data: expect.objectContaining({ inputOperationId: staleInputOperationId }),
+      }),
+    );
+    expect(staleEvents).toContainEqual(
+      expect.objectContaining({ type: "runtime.completed", auditOnly: true }),
+    );
+    const isolated = await second.store.getHandle(handle.handleId);
+    expect(isolated).toMatchObject({
+      status: statusBeforeReplacement?.status,
+      terminal: statusBeforeReplacement?.terminal,
+      lastTrustedFactAt: statusBeforeReplacement?.lastTrustedFactAt,
+      auditOnly: true,
+    });
+    await expect(second.host.inspect(handle)).resolves.toMatchObject({
+      status: statusBeforeReplacement?.status,
+      lastTrustedFactAt: statusBeforeReplacement?.lastTrustedFactAt,
+    });
+    await expect(second.host.recover()).resolves.toEqual([
+      expect.objectContaining({
+        attached: false,
+        status: expect.objectContaining({ status: statusBeforeReplacement?.status }),
+      }),
+    ]);
+    for (let index = 1; index < staleEvents.length; index += 1) {
+      await iterator.next();
+    }
+    let streamClosed = false;
+    void iterator.next().then(() => {
+      streamClosed = true;
+    });
+    await Promise.resolve();
+    expect(streamClosed).toBe(false);
+    await second.host.dispose();
+  });
+
+  it("does not restart an execution when a Host replacement fences its stored binding", async () => {
     const first = await createMockRuntime();
     const request = createStartRunRequest({
       snapshotRef: "mock:waiting_input",
@@ -253,11 +353,14 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
 
     const recovered = await second.host.recover();
     expect(recovered).toHaveLength(1);
-    expect(recovered[0]?.attached).toBe(true);
+    expect(recovered[0]).toMatchObject({
+      attached: false,
+      status: expect.objectContaining({ status: "waiting_input" }),
+    });
     expect((await second.store.listHandles())[0]?.auditOnly).toBe(true);
   });
 
-  it("does not rerun when the adapter lost the process; inspect remains a safe path", async () => {
+  it("does not rerun or promote stale adapter state after Host replacement", async () => {
     const first = await createMockRuntime();
     const request = createStartRunRequest({
       snapshotRef: "mock:waiting_input",
@@ -273,22 +376,25 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     });
     const recovered = await second.host.recover();
     expect(recovered[0]?.attached).toBe(false);
-    expect(recovered[0]?.status.status).toBe("unknown");
+    expect(recovered[0]?.status.status).toBe("waiting_input");
     expect((await second.store.listHandles()).map((record) => record.handle.runId)).toEqual([
       handle.runId,
     ]);
-    expect((await second.host.inspect(handle)).status).toBe("unknown");
+    expect((await second.host.inspect(handle)).status).toBe("waiting_input");
     expect((await second.host.inspect(handle)).lastTrustedFactAt).toBeDefined();
     const replayed = await second.host.start(request);
     expect(replayed.handleId).toBe(handle.handleId);
     expect(await second.store.listHandles()).toHaveLength(1);
   });
 
-  it("never kills on identity mismatch and treats old fencing as audit-only", async () => {
+  it("never kills on identity mismatch and isolates old fencing events from status", async () => {
     const first = await createMockRuntime();
     const handle = await first.host.start(
       createStartRunRequest({ snapshotRef: "mock:waiting_input", operationId: "op_fence" }),
     );
+    await settle(first.scheduler);
+    expect((await first.host.inspect(handle)).status).toBe("waiting_input");
+    const statusBeforeReplacement = await first.store.getHandle(handle.handleId);
     const forged = {
       ...handle,
       process: { pid: 1, startIdentity: "mock:1:not-the-original" },
@@ -305,10 +411,45 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
       scheduler: first.scheduler,
       ids: first.ids,
     });
-    await second.host.sendInput(handle, { operationId: "op_fence_input", text: "go" });
+    await expect(second.host.recover()).resolves.toEqual([
+      expect.objectContaining({
+        attached: false,
+        status: expect.objectContaining({ status: "waiting_input" }),
+      }),
+    ]);
+    const iterator = second.host.stream(handle)[Symbol.asyncIterator]();
+    await iterator.next();
+    await expect(
+      second.host.sendInput(handle, { operationId: "op_fence_input", text: "go" }),
+    ).rejects.toSatisfy(
+      (error: unknown) => isRuntimeSdkError(error) && error.code === "lease_expired",
+    );
+    const staleInputOperationId = "op_fence_stale_input";
+    await first.adapter.sendInput(handle, { operationId: staleInputOperationId, text: "go" });
+    await second.scheduler.advance(10_000);
     await settle(second.scheduler);
-    const events = await collectEvents(second.host.stream(handle));
-    expect(events.some((event) => event.data["auditOnly"] === true)).toBe(true);
+    const staleEvents = await second.store.listEvents(handle.handleId);
+    expect(staleEvents).toContainEqual(
+      expect.objectContaining({
+        type: "runtime.message",
+        auditOnly: true,
+        data: expect.objectContaining({ inputOperationId: staleInputOperationId }),
+      }),
+    );
+    expect(staleEvents).toContainEqual(
+      expect.objectContaining({ type: "runtime.completed", auditOnly: true }),
+    );
+    expect(await second.store.getHandle(handle.handleId)).toMatchObject({
+      status: statusBeforeReplacement?.status,
+      terminal: statusBeforeReplacement?.terminal,
+      lastTrustedFactAt: statusBeforeReplacement?.lastTrustedFactAt,
+      auditOnly: true,
+    });
+    await expect(second.host.inspect(handle)).resolves.toMatchObject({
+      status: statusBeforeReplacement?.status,
+      lastTrustedFactAt: statusBeforeReplacement?.lastTrustedFactAt,
+    });
+    await second.host.dispose();
   });
 
   it("rejects unknown protocol majors", async () => {

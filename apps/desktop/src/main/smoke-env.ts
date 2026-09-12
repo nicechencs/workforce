@@ -8,6 +8,28 @@ export const DESKTOP_SMOKE_ENV = {
   headless: "ELECTRON_HEADLESS",
 } as const;
 
+const MINIMUM_SOURCE_DAEMON_NODE = { major: 22, minor: 7 } as const;
+
+export function supportsSourceDaemonNode(version: string): boolean {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (
+    major > MINIMUM_SOURCE_DAEMON_NODE.major ||
+    (major === MINIMUM_SOURCE_DAEMON_NODE.major && minor >= MINIMUM_SOURCE_DAEMON_NODE.minor)
+  );
+}
+
+export function sourceDaemonNodeRequirement(version: string): string | null {
+  if (supportsSourceDaemonNode(version)) {
+    return null;
+  }
+  return `Daemon source entry requires Node >= ${MINIMUM_SOURCE_DAEMON_NODE.major}.${MINIMUM_SOURCE_DAEMON_NODE.minor}; current Node is ${version}.`;
+}
+
 export function isDesktopSmokeEnabled(env: Record<string, string | undefined>): boolean {
   return env[DESKTOP_SMOKE_ENV.enabled] === "1";
 }

@@ -14,6 +14,9 @@ import {
   MIGRATION_003_SQL,
   MIGRATION_004_SQL,
   MIGRATION_005_SQL,
+  MIGRATION_006_SQL,
+  MIGRATION_007_SQL,
+  MIGRATION_008_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -53,6 +56,7 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("002_entity_alignment")).toBe(true);
       expect(applied.has("003_budget_alignment")).toBe(true);
       expect(applied.has("004_policy_grants")).toBe(true);
+      expect(applied.has("008_execution_axis_migration_audit")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -83,6 +87,8 @@ describe("WorkforceSqlite", () => {
         "004_policy_grants",
         "005_execution_axes_expand",
         "006_catalog_definitions",
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -131,6 +137,8 @@ describe("WorkforceSqlite", () => {
         "004_policy_grants",
         "005_execution_axes_expand",
         "006_catalog_definitions",
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -167,6 +175,8 @@ describe("WorkforceSqlite", () => {
         "004_policy_grants",
         "005_execution_axes_expand",
         "006_catalog_definitions",
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -210,7 +220,12 @@ describe("WorkforceSqlite", () => {
         .run(ids.organizationId, ids.taskId, now);
 
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["005_execution_axes_expand", "006_catalog_definitions"]);
+      expect(ran).toEqual([
+        "005_execution_axes_expand",
+        "006_catalog_definitions",
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
+      ]);
 
       for (const table of [
         "team_drafts",
@@ -301,7 +316,11 @@ describe("WorkforceSqlite", () => {
           .run(version, checksumSql(sql), now);
       }
       const ran = migrate(db.connection);
-      expect(ran).toEqual(["006_catalog_definitions"]);
+      expect(ran).toEqual([
+        "006_catalog_definitions",
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
+      ]);
       for (const table of [
         "catalog_workflows",
         "catalog_workflow_versions",
@@ -310,6 +329,64 @@ describe("WorkforceSqlite", () => {
       ]) {
         expect(tableExists(db.connection, table)).toBe(true);
       }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("upgrades 006 runtime profiles with nullable, constrained transport", () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"), { migrate: false });
+    try {
+      db.connection.exec(SCHEMA_MIGRATIONS_DDL);
+      const prior = [
+        ["001_init", MIGRATION_001_SQL],
+        ["002_entity_alignment", MIGRATION_002_SQL],
+        ["003_budget_alignment", MIGRATION_003_SQL],
+        ["004_policy_grants", MIGRATION_004_SQL],
+        ["005_execution_axes_expand", MIGRATION_005_SQL],
+        ["006_catalog_definitions", MIGRATION_006_SQL],
+      ] as const;
+      for (const [version, sql] of prior) {
+        db.connection.exec(sql);
+        db.connection
+          .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+          .run(version, checksumSql(sql), now);
+      }
+
+      const ran = migrate(db.connection);
+      expect(ran).toEqual([
+        "007_runtime_profile_transport_expand",
+        "008_execution_axis_migration_audit",
+      ]);
+      expect(appliedMigrations(db.connection).get("007_runtime_profile_transport_expand")).toBe(
+        checksumSql(MIGRATION_007_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("008_execution_axis_migration_audit")).toBe(
+        checksumSql(MIGRATION_008_SQL),
+      );
+
+      const transportColumn = (
+        db.connection.prepare("PRAGMA table_info(runtime_profile_versions)").all() as Array<
+          Record<string, unknown>
+        >
+      ).find((column) => column.name === "transport");
+      expect(transportColumn).toBeDefined();
+      expect(transportColumn?.notnull).toBe(0);
+
+      const insert = db.connection.prepare(
+        `INSERT INTO runtime_profile_versions (
+           id, runtime_profile_id, version, adapter_type, config_json, content_hash, transport, created_at
+         ) VALUES (?, ?, 1, 'mock', '{}', ?, ?, ?)`,
+      );
+      expect(() => insert.run("rp_null", "profile_null", "sha256:null", null, now)).not.toThrow();
+      expect(() =>
+        insert.run("rp_process", "profile_process", "sha256:process", "process", now),
+      ).not.toThrow();
+      expect(() =>
+        insert.run("rp_invalid", "profile_invalid", "sha256:invalid", "pty", now),
+      ).toThrow(/CHECK constraint failed|constraint failed/);
     } finally {
       db.close();
     }
@@ -405,6 +482,101 @@ describe("WorkforceSqlite", () => {
       );
       expect(second).toEqual({ runId: "run_a", reused: true });
       expect(db.runs.listByTask(ids.taskId)).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("atomically persists a validated execution snapshot through idempotent Run start", async () => {
+    const db = openDb();
+    db.seedMinimalGraph(ids, now);
+    const command = startCommand("run_snapshot", "op_snapshot", "key-snapshot", "digest-snapshot");
+    const executionSnapshot = {
+      orchestrationMode: "direct" as const,
+      transport: "sdk" as const,
+      placementSnapshot: {
+        nodeId: "nd_1",
+        nodeSessionId: "ns_1",
+        runtimeInstallationId: "ri_1",
+        workspaceInstanceId: "wsi_1",
+        executionLeaseId: "lease_1",
+        fencingToken: 1,
+      },
+    };
+    const commandWithSnapshot = {
+      ...command,
+      run: { ...command.run, executionSnapshot },
+    };
+    try {
+      await db.uow.withTransaction((tx) => startRunIdempotent(tx, db, commandWithSnapshot));
+      await db.uow.withTransaction((tx) => startRunIdempotent(tx, db, commandWithSnapshot));
+
+      expect(
+        db.connection
+          .prepare(
+            `SELECT orchestration_mode, transport, execution_snapshot_id, placement_snapshot_json
+               FROM runs WHERE id = ?`,
+          )
+          .get("run_snapshot"),
+      ).toEqual({
+        orchestration_mode: "direct",
+        transport: "sdk",
+        execution_snapshot_id: null,
+        placement_snapshot_json: JSON.stringify(executionSnapshot.placementSnapshot),
+      });
+      expect(db.runs.listByTask(ids.taskId)).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects invalid execution snapshots before creating a Run", async () => {
+    const db = openDb();
+    db.seedMinimalGraph(ids, now);
+    const directSnapshot = {
+      orchestrationMode: "direct",
+      transport: "process",
+      placementSnapshot: {
+        nodeId: "nd_1",
+        nodeSessionId: "ns_1",
+        runtimeInstallationId: "ri_1",
+        workspaceInstanceId: "wsi_1",
+        executionLeaseId: "lease_1",
+        fencingToken: 1,
+      },
+    };
+    const invalidSnapshots = [
+      { ...directSnapshot, orchestrationMode: "workflow_bound" },
+      { ...directSnapshot, executionSnapshotId: "snp_invalid" },
+      {
+        ...directSnapshot,
+        placementSnapshot: { ...directSnapshot.placementSnapshot, legacySchemaVersion: "" },
+      },
+      { ...directSnapshot, unknownField: true },
+      null,
+      false,
+      0,
+      "",
+    ];
+    try {
+      for (const [index, executionSnapshot] of invalidSnapshots.entries()) {
+        await expect(
+          db.uow.withTransaction((tx) =>
+            db.runs.insertPending(tx, {
+              runId: `run_invalid_snapshot_${index}`,
+              organizationId: ids.organizationId,
+              taskId: ids.taskId,
+              operationId: `op_invalid_snapshot_${index}`,
+              attempt: index + 1,
+              generation: 1,
+              definitionRevision: 1,
+              createdAt: now,
+              executionSnapshot: executionSnapshot as never,
+            }),
+          ),
+        ).rejects.toMatchObject({ code: "constraint" });
+      }
+      expect(db.runs.listByTask(ids.taskId)).toEqual([]);
     } finally {
       db.close();
     }

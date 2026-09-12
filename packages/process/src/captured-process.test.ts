@@ -131,8 +131,11 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
       cwd,
     });
 
-    const exit = await withTimeout(captured.wait(), 5_000);
-    expect(exit.signal).toBe("SIGKILL");
+    await expect(withTimeout(captured.wait(), 5_000)).rejects.toMatchObject({
+      name: "ProcessControllerError",
+      code: "process_output_overflow",
+      operation: "output",
+    });
     await expect(collect(captured.output)).rejects.toMatchObject({
       name: "ProcessOutputOverflowError",
       code: "process_output_overflow",
@@ -152,8 +155,11 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
       break;
     }
 
-    const exit = await withTimeout(captured.wait(), 5_000);
-    expect(exit.signal).toBe("SIGKILL");
+    await expect(withTimeout(captured.wait(), 5_000)).rejects.toMatchObject({
+      name: "ProcessControllerError",
+      code: "process_output_abandoned",
+      operation: "output",
+    });
     await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
   });
 
@@ -164,7 +170,9 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
 
     await expect(withTimeout(iterator.return!(), 5_000)).resolves.toMatchObject({ done: true });
     await expect(withTimeout(iterator.return!(), 5_000)).resolves.toMatchObject({ done: true });
-    await expect(withTimeout(captured.wait(), 5_000)).resolves.toMatchObject({ signal: "SIGKILL" });
+    await expect(withTimeout(captured.wait(), 5_000)).rejects.toMatchObject({
+      code: "process_output_abandoned",
+    });
     await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
   });
 
@@ -177,7 +185,9 @@ capturedProcess(`OsProcessController.spawnCaptured (${process.platform})`, () =>
     const returning = iterator.return!();
     await expect(withTimeout(pending, 1_000)).resolves.toMatchObject({ done: true });
     await expect(withTimeout(returning, 5_000)).resolves.toMatchObject({ done: true });
-    await expect(withTimeout(captured.wait(), 5_000)).resolves.toMatchObject({ signal: "SIGKILL" });
+    await expect(withTimeout(captured.wait(), 5_000)).rejects.toMatchObject({
+      code: "process_output_abandoned",
+    });
     await expect(controller.inspect(captured.handle)).resolves.toMatchObject({ alive: false });
   });
 
@@ -287,11 +297,11 @@ linuxProcess("POSIX managed process group", () => {
       expect(isLiveLinuxPid(childPid)).toBe(true);
 
       await expect(nonOwner.inspect(captured.handle)).rejects.toMatchObject({
-        code: "process_group_unverified",
+        code: "process_tree_unverified",
         operation: "inspect",
       });
       await expect(nonOwner.cancel(captured.handle, "force")).rejects.toMatchObject({
-        code: "process_group_unverified",
+        code: "process_tree_unverified",
         operation: "cancel",
       });
       expect(isLiveLinuxPid(childPid)).toBe(true);
@@ -300,9 +310,10 @@ linuxProcess("POSIX managed process group", () => {
         startIdentity: captured.handle.startIdentity,
       });
 
+      const wait = captured.wait();
+      await expect(withTimeout(wait, 100)).rejects.toThrow("timed out");
       await controller.cancel(captured.handle, "force");
-      await iterator.return?.();
-      await expect(withTimeout(captured.wait(), 5_000)).resolves.toEqual({
+      await expect(withTimeout(wait, 5_000)).resolves.toEqual({
         exitCode: 0,
         signal: null,
       });
@@ -357,10 +368,20 @@ linuxProcess("POSIX managed process group", () => {
 });
 
 describe("captured process platform support", () => {
+  it("reports invalid captured requests through the public stable error", async () => {
+    const controller = new OsProcessController();
+
+    await expect(controller.spawnCaptured({ argv: [], cwd })).rejects.toMatchObject({
+      name: "ProcessControllerError",
+      code: "invalid_request",
+      operation: "spawn",
+    });
+  });
+
   it("fails closed before spawn on Windows", () => {
     expect(() => assertCapturedProcessSupported("win32")).toThrowError(
       expect.objectContaining({
-        name: "UnsupportedProcessCapabilityError",
+        name: "ProcessControllerError",
         code: "unsupported_capability",
         capability: "process.capture",
         platform: "win32",

@@ -22,6 +22,7 @@ describe("captured output mux", () => {
       { source: "stdout", text: "out" },
       { source: "stderr", text: "err" },
     ]);
+    await expect(captured.completion).resolves.toEqual({ kind: "eof" });
   });
 
   it("surfaces a source error and requests force cancellation", async () => {
@@ -35,6 +36,24 @@ describe("captured output mux", () => {
     stdout.destroy(new Error("stdout failed"));
 
     await expect(consuming).rejects.toThrow("stdout failed");
+    expect(abort).toHaveBeenCalledTimes(1);
+    await expect(captured.completion).resolves.toMatchObject({ kind: "error" });
+    stderr.end();
+  });
+
+  it("fails closed when a source closes before EOF", async () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const captured = captureChildOutput({ stdout, stderr } as unknown as ChildProcess);
+    const abort = vi.fn(async () => undefined);
+    captured.setAbortHandler(abort);
+
+    stdout.destroy();
+
+    await expect(captured.completion).resolves.toMatchObject({
+      kind: "error",
+      error: { name: "ProcessOutputClosedError" },
+    });
     expect(abort).toHaveBeenCalledTimes(1);
     stderr.end();
   });
@@ -64,6 +83,7 @@ describe("captured output mux", () => {
     await expect(iterator.return?.()).resolves.toMatchObject({ done: true });
     await expect(iterator.return?.()).resolves.toMatchObject({ done: true });
     expect(abort).toHaveBeenCalledTimes(1);
+    await expect(captured.completion).resolves.toEqual({ kind: "abandoned" });
     stdout.end();
     stderr.end();
   });

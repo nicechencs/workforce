@@ -122,6 +122,26 @@ interface ArtifactStore {
 }
 ```
 
+`CapturedProcess.wait()` 是唯一的可验证终态读取点：它只在根进程已退出、stdout/stderr 已 EOF 且受管进程树确认为空时 resolve；无法证明树收敛、输出 overflow/abandon 或取消失败时，以稳定的 `ProcessControllerError` reject，不能伪造一个 `{ exitCode, signal }`。`ProcessExitResult` 只记录 root 的原生 OS 观察值；`signal` 是诊断，不是业务终态。
+
+```ts
+type ProcessControllerOperation = "spawn" | "wait" | "output" | "inspect" | "cancel";
+type ProcessControllerErrorCode =
+  | "unsupported_capability"
+  | "invalid_request"
+  | "spawn_failed"
+  | "identity_mismatch"
+  | "process_tree_unverified"
+  | "process_input_failed"
+  | "process_output_failed"
+  | "process_output_overflow"
+  | "process_output_abandoned"
+  | "process_wait_failed"
+  | "process_cancel_failed";
+```
+
+`spawnCaptured()` 是一个原子 capability：capture、受管树所有权和可验证 `wait()` 任一不可用时，必须在 spawn 前以 `unsupported_capability` 失败。`inspect()` 始终只报告当前 liveness/identity，不返回历史 exit 或终态原因。timeout、用户取消、预算停止和 Run/Workflow 状态转换由 Application/Workflow Engine 管理：调用方先记录其业务事实，再 graceful/force cancel，最后等待 `wait()`；不得把该业务归因塞进 `ProcessExitResult`。
+
 **权威：** M3 Mock 路径上，`LocalArtifactStore` 是产物字节与登记元数据的权威实现。Daemon composition 必须经 `stage/commit`（或等价 `register`）落盘；公开 `GET /artifacts/{id}/versions/{versionId}/content` 从 store 读取精确版本。`world.json` 只是 sidecar，不得作为 content 权威。崩溃窗口仍遵守决策登记 D04：内容可先于元数据落盘，reconcile 不得发明 `available` 版本。
 
 公开 DTO 不得包含宿主绝对路径；内部 grant 另存。

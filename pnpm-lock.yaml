@@ -202,6 +202,9 @@ importers:
       '@workforce/policy':
         specifier: workspace:*
         version: link:../policy
+      '@workforce/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
       '@types/node':
         specifier: 22.20.2

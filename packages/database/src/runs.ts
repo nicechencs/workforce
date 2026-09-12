@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { Tx } from "@workforce/application";
+import { parseRunExecutionSnapshot, type RunExecutionSnapshot } from "@workforce/protocol";
 
 import { PersistenceError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
@@ -28,6 +29,7 @@ export interface StartRunInput {
   runtimeAdapter?: string;
   snapshotRef?: string;
   createdAt: string;
+  executionSnapshot?: RunExecutionSnapshot;
 }
 
 export interface RunRecord {
@@ -94,20 +96,58 @@ export class SqliteRunRepository {
       .map(rowToRun);
   }
 
+  /** Complete the additive execution-axis projection exactly once. */
+  setExecutionSnapshot(tx: Tx, runId: string, snapshot: RunExecutionSnapshot): void {
+    const db = sqliteDbOf(tx);
+    const executionSnapshot = validateExecutionSnapshot(snapshot, runId);
+    const result = db
+      .prepare(
+        `UPDATE runs
+            SET orchestration_mode = ?,
+                transport = ?,
+                execution_snapshot_id = ?,
+                placement_snapshot_json = ?
+          WHERE id = ?
+            AND orchestration_mode IS NULL
+            AND transport IS NULL
+            AND execution_snapshot_id IS NULL
+            AND placement_snapshot_json IS NULL`,
+      )
+      .run(
+        executionSnapshot.orchestrationMode,
+        executionSnapshot.transport,
+        executionSnapshot.executionSnapshotId ?? null,
+        JSON.stringify(executionSnapshot.placementSnapshot),
+        runId,
+      );
+    if (Number(result.changes) === 0) {
+      throw new PersistenceError(
+        "conflict",
+        `run ${runId} execution snapshot already exists or is partially populated`,
+      );
+    }
+  }
+
   /**
    * Insert a pending Run. Duplicate (task_id, attempt) or a second active Run
    * fails the whole caller transaction.
    */
   insertPending(tx: Tx, input: StartRunInput): void {
     const db = sqliteDbOf(tx);
+    const executionSnapshot =
+      input.executionSnapshot === undefined
+        ? undefined
+        : validateExecutionSnapshot(input.executionSnapshot, input.runId);
     try {
       db.prepare(
         `INSERT INTO runs (
            id, organization_id, task_id, operation_id, attempt, generation,
            definition_revision, status, state_revision,
            execution_node_id, runtime_installation_id, workspace_instance_id,
-           runtime_adapter, snapshot_ref, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?)`,
+            runtime_adapter, snapshot_ref,
+            orchestration_mode, transport, execution_snapshot_id, placement_snapshot_json,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         input.runId,
         input.organizationId,
@@ -121,6 +161,10 @@ export class SqliteRunRepository {
         input.workspaceInstanceId ?? null,
         input.runtimeAdapter ?? null,
         input.snapshotRef ?? null,
+        executionSnapshot?.orchestrationMode ?? null,
+        executionSnapshot?.transport ?? null,
+        executionSnapshot?.executionSnapshotId ?? null,
+        executionSnapshot ? JSON.stringify(executionSnapshot.placementSnapshot) : null,
         input.createdAt,
       );
     } catch (error) {
@@ -147,14 +191,20 @@ export class SqliteRunRepository {
     },
   ): void {
     const db = sqliteDbOf(tx);
+    const executionSnapshot =
+      input.executionSnapshot === undefined
+        ? undefined
+        : validateExecutionSnapshot(input.executionSnapshot, input.runId);
     try {
       db.prepare(
         `INSERT INTO runs (
            id, organization_id, task_id, operation_id, attempt, generation,
            definition_revision, status, state_revision,
            execution_node_id, runtime_installation_id, workspace_instance_id,
-           runtime_adapter, snapshot_ref, cancel_requested_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           runtime_adapter, snapshot_ref, cancel_requested_at,
+           orchestration_mode, transport, execution_snapshot_id, placement_snapshot_json,
+           created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         input.runId,
         input.organizationId,
@@ -171,6 +221,10 @@ export class SqliteRunRepository {
         input.runtimeAdapter ?? null,
         input.snapshotRef ?? null,
         input.cancelRequestedAt ?? null,
+        executionSnapshot?.orchestrationMode ?? null,
+        executionSnapshot?.transport ?? null,
+        executionSnapshot?.executionSnapshotId ?? null,
+        executionSnapshot ? JSON.stringify(executionSnapshot.placementSnapshot) : null,
         input.createdAt,
       );
     } catch (error) {
@@ -218,6 +272,14 @@ export class SqliteRunRepository {
     if (Number(changes.changes) === 0) {
       throw new PersistenceError("revision_conflict", `run ${input.runId} revision mismatch`);
     }
+  }
+}
+
+function validateExecutionSnapshot(value: unknown, runId: string): RunExecutionSnapshot {
+  try {
+    return parseRunExecutionSnapshot(value);
+  } catch {
+    throw new PersistenceError("constraint", `run ${runId} has an invalid execution snapshot`);
   }
 }
 

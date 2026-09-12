@@ -94,6 +94,15 @@ export async function ensureDaemon(deps: SupervisorDeps): Promise<EnsureDaemonRe
     };
   }
 
+  const preflightError = deps.preflightLaunch?.();
+  if (preflightError) {
+    return {
+      ok: false,
+      spawned: false,
+      snapshot: { status: "error", message: preflightError, recoverable: true },
+    };
+  }
+
   const previousIdentity = existing.state?.startIdentity ?? null;
   const child = deps.spawn(deps.launch);
   const state = await waitForReplacementState(deps, previousIdentity, child.pid);
@@ -108,7 +117,6 @@ export async function ensureDaemon(deps: SupervisorDeps): Promise<EnsureDaemonRe
       },
     };
   }
-
   try {
     const health = await deps.healthOf(state.port);
     if (health.startIdentity !== state.startIdentity) {

@@ -84,6 +84,7 @@ export interface SupervisorDeps {
   pidAlive(pid: number): boolean;
   readOsStartIdentity(pid: number): Promise<string | null>;
   healthOf(port: number): Promise<DaemonHealth>;
+  preflightLaunch?(): string | null;
   spawn(spec: DaemonLaunchSpec): SpawnedDaemon;
   wait(ms: number): Promise<void>;
   probeLockHeld(): Promise<boolean>;

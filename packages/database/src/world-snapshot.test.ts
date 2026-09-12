@@ -237,6 +237,113 @@ describe("SqliteWorldSnapshot", () => {
     }
   });
 
+  it("round-trips a complete workflow-bound execution snapshot without inventing legacy axes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const path = join(dir, "workforce.sqlite");
+    const first = WorkforceSqlite.open(path);
+    const snapshot = sampleSnapshot();
+    snapshot.runs = snapshot.runs.map((run) => ({
+      ...run,
+      executionSnapshot: {
+        orchestrationMode: "workflow_bound",
+        transport: "process",
+        executionSnapshotId: "snp_snap",
+        placementSnapshot: {
+          nodeId: "nd_1",
+          nodeSessionId: "ns_1",
+          runtimeInstallationId: "ri_1",
+          workspaceInstanceId: "wsi_1",
+          executionLeaseId: "lease_1",
+          fencingToken: 1,
+        },
+      },
+    }));
+    try {
+      await first.uow.withTransaction(async (tx) => {
+        first.worldSnapshot.save(tx, snapshot, now);
+      });
+    } finally {
+      first.close();
+    }
+
+    const reopened = WorkforceSqlite.open(path);
+    try {
+      expect(reopened.worldSnapshot.load().runs).toEqual(snapshot.runs);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it("rejects a partial or changed execution snapshot on an existing Run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const snapshot = sampleSnapshot();
+    const executionSnapshot = {
+      orchestrationMode: "direct" as const,
+      transport: "sdk" as const,
+      placementSnapshot: {
+        nodeId: "nd_1",
+        nodeSessionId: "ns_1",
+        runtimeInstallationId: "ri_1",
+        workspaceInstanceId: "wsi_1",
+        executionLeaseId: "lease_1",
+        fencingToken: 1,
+      },
+    };
+    snapshot.runs = snapshot.runs.map((run) => ({ ...run, executionSnapshot }));
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.worldSnapshot.save(tx, snapshot, now);
+      });
+      await expect(
+        db.uow.withTransaction(async (tx) => {
+          db.worldSnapshot.save(
+            tx,
+            {
+              ...snapshot,
+              runs: snapshot.runs.map((run) => ({
+                ...run,
+                executionSnapshot: {
+                  ...executionSnapshot,
+                  placementSnapshot: { ...executionSnapshot.placementSnapshot, fencingToken: 2 },
+                },
+              })),
+            },
+            now,
+          );
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+
+      db.connection
+        .prepare("UPDATE runs SET orchestration_mode = NULL WHERE id = ?")
+        .run("run_snap");
+      expect(() => db.worldSnapshot.load()).toThrow(/partially populated/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects a non-undefined invalid execution snapshot from the world projection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const snapshot = sampleSnapshot();
+    snapshot.runs = snapshot.runs.map((run) => ({
+      ...run,
+      executionSnapshot: null as never,
+    }));
+    try {
+      await expect(
+        db.uow.withTransaction((tx) => db.worldSnapshot.save(tx, snapshot, now)),
+      ).rejects.toMatchObject({ code: "constraint" });
+      expect(db.runs.get("run_snap")).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
   it("CAS-rejects a snapshot save that would rewind state_revision", async () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
     dirs.push(dir);

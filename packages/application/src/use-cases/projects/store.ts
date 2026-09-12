@@ -7,7 +7,7 @@ import type {
   TaskStatus,
   WorkflowInstanceStatus,
 } from "@workforce/domain";
-import type { OrchestrationMode } from "@workforce/protocol";
+import type { OrchestrationMode, RunExecutionSnapshot } from "@workforce/protocol";
 import type {
   Clock,
   CommandReceiptRepository,
@@ -107,6 +107,13 @@ export interface RunRecord {
   handleId?: string;
   /** Copied from the project `:start` request onto this Run. Not a StartRunRequest field. */
   orchestrationMode?: OrchestrationMode;
+  /**
+   * D18: the resolved, immutable execution axes for this Run.
+   *
+   * This is optional while the additive migration is in progress: pre-existing
+   * M3 rows intentionally have no execution facts and must remain all-null.
+   */
+  executionSnapshot?: RunExecutionSnapshot;
   createdAt: string;
   updatedAt: string;
 }

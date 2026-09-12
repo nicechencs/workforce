@@ -25,6 +25,7 @@ import { SqliteUnitOfWork } from "./uow.js";
 import { SqliteWorkflowInstanceRepository } from "./workflows.js";
 import { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 import { SqliteWorldSnapshot } from "./world-snapshot.js";
+import { SqliteExecutionAxisMigrationRepository } from "./execution-axis-migration.js";
 
 export interface OpenWorkforceDbOptions extends OpenSqliteOptions {
   migrate?: boolean;
@@ -52,6 +53,7 @@ export class WorkforceSqlite {
   readonly grants: SqliteGrantStore;
   readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
   readonly catalogTeams: SqliteTeamCatalogRepository;
+  readonly executionAxisMigration: SqliteExecutionAxisMigrationRepository;
 
   private constructor(
     readonly path: string,
@@ -78,6 +80,7 @@ export class WorkforceSqlite {
     this.grants = new SqliteGrantStore(connection, this.uow);
     this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
     this.catalogTeams = new SqliteTeamCatalogRepository(connection);
+    this.executionAxisMigration = new SqliteExecutionAxisMigrationRepository(connection);
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {

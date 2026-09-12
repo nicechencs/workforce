@@ -15,7 +15,7 @@ import {
   writeDaemonState,
 } from "./daemon-supervisor/state.js";
 import type { SupervisorDeps } from "./daemon-supervisor/types.js";
-import { resolveDaemonLaunchArgs } from "./smoke-env.js";
+import { resolveDaemonLaunchArgs, sourceDaemonNodeRequirement } from "./smoke-env.js";
 import { resolveWorkspaceTsEsmRegisterUrl } from "./ts-esm-loader.js";
 
 export function resolveDaemonEntry(
@@ -69,6 +69,10 @@ export function createSupervisorDeps(input: {
     pidAlive,
     readOsStartIdentity,
     healthOf: (port) => fetchDaemonHealth(port),
+    preflightLaunch: () =>
+      entry.endsWith(".ts") || entry.endsWith(".mts") || entry.endsWith(".cts")
+        ? sourceDaemonNodeRequirement(process.versions.node)
+        : null,
     spawn: (spec) => asSpawnedDaemon(spawnDetachedDaemon(spec)),
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     probeLockHeld: () => probeNamedPipe(daemonLockSocketPath(input.stateDir)),

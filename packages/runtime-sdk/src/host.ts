@@ -184,8 +184,8 @@ export class LocalNodeHost implements RuntimeAdapter {
 
   async sendInput(handle: RuntimeHandleRef, input: RuntimeInput): Promise<InputReceipt> {
     await this.ensureSession();
-    await this.requireStoredHandle(handle.handleId);
-    await this.assertLeaseAllowsMutation();
+    const stored = await this.requireStoredHandle(handle.handleId);
+    await this.assertLeaseAllowsMutation(stored.binding);
     return this.adapter.sendInput(handle, input);
   }
 
@@ -230,6 +230,10 @@ export class LocalNodeHost implements RuntimeAdapter {
         details: { handleId: handle.handleId },
       });
     }
+    const session = await this.requireSession();
+    if (stored.auditOnly || !this.isBindingCurrent(stored.binding, session)) {
+      return storedStatus(stored);
+    }
     try {
       const live = await this.adapter.inspect(handle);
       await this.store.putHandle({
@@ -263,7 +267,7 @@ export class LocalNodeHost implements RuntimeAdapter {
       for (const event of replay) {
         seen.add(event.sequence);
         yield toRuntimeEvent(event);
-        if (isTerminalLifecycle(event.type)) {
+        if (!event.auditOnly && isTerminalLifecycle(event.type)) {
           sawTerminal = true;
         }
       }
@@ -276,7 +280,7 @@ export class LocalNodeHost implements RuntimeAdapter {
         }
         seen.add(event.sequence);
         yield toRuntimeEvent(event);
-        if (isTerminalLifecycle(event.type)) {
+        if (!event.auditOnly && isTerminalLifecycle(event.type)) {
           return;
         }
       }
@@ -296,6 +300,14 @@ export class LocalNodeHost implements RuntimeAdapter {
           handle: { handleId: handle.handleId, runId: handle.runId },
           status: "unknown",
         },
+      };
+    }
+
+    const session = await this.requireSession();
+    if (stored.auditOnly || !this.isBindingCurrent(stored.binding, session)) {
+      return {
+        attached: false,
+        status: storedStatus(stored),
       };
     }
 
@@ -410,12 +422,29 @@ export class LocalNodeHost implements RuntimeAdapter {
     }
   }
 
-  private async assertLeaseAllowsMutation(): Promise<StoredNodeSession> {
+  private async assertLeaseAllowsMutation(binding?: PlacementSnapshot): Promise<StoredNodeSession> {
     const session = await this.requireSession();
     if (Date.parse(session.expiresAt) <= this.clock.now().getTime()) {
       throw new RuntimeSdkError("lease_expired", "execution lease expired", {
         retryable: true,
         details: { executionLeaseId: session.executionLeaseId },
+      });
+    }
+    if (
+      binding &&
+      (binding.nodeId !== session.nodeId ||
+        binding.nodeSessionId !== session.nodeSessionId ||
+        binding.executionLeaseId !== session.executionLeaseId ||
+        binding.fencingToken !== session.fencingToken)
+    ) {
+      throw new RuntimeSdkError("lease_expired", "execution lease is no longer current", {
+        retryable: true,
+        details: {
+          executionLeaseId: binding.executionLeaseId,
+          fencingToken: binding.fencingToken,
+          currentExecutionLeaseId: session.executionLeaseId,
+          currentFencingToken: session.fencingToken,
+        },
       });
     }
     return session;
@@ -528,7 +557,7 @@ export class LocalNodeHost implements RuntimeAdapter {
           adapterSequence !== (asNumber(last.data["adapterSequence"]) ?? 0) + 1);
 
       const session = await this.requireSession();
-      const auditOnly = stored.auditOnly || stored.binding.fencingToken !== session.fencingToken;
+      const auditOnly = stored.auditOnly || !this.isBindingCurrent(stored.binding, session);
       const sequence = (last?.sequence ?? 0) + 1;
       const nextEvent: HostRuntimeEvent = {
         id: this.ids.ulid("evt_"),
@@ -545,13 +574,17 @@ export class LocalNodeHost implements RuntimeAdapter {
       };
       await this.store.appendEvent(nextEvent);
 
-      const nextStatus = statusFromEvent(event.type) ?? stored.status;
+      const nextStatus = auditOnly ? stored.status : (statusFromEvent(event.type) ?? stored.status);
       await this.store.putHandle({
         ...stored,
         status: nextStatus,
-        terminal: isTerminalStatus(nextStatus),
+        terminal: auditOnly ? stored.terminal : isTerminalStatus(nextStatus),
         auditOnly,
-        lastTrustedFactAt: event.time,
+        ...(auditOnly
+          ? {}
+          : {
+              lastTrustedFactAt: event.time,
+            }),
         ...(eventGap ? { eventGap: true } : {}),
         ...(stored.cancelAcceptedAt ? { cancelAcceptedAt: stored.cancelAcceptedAt } : {}),
       });
@@ -565,7 +598,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     if (tails) {
       for (const tail of tails) {
         tail.push(hostEvent);
-        if (isTerminalLifecycle(event.type)) {
+        if (!hostEvent.auditOnly && isTerminalLifecycle(event.type)) {
           tail.close();
         }
       }
@@ -594,6 +627,15 @@ export class LocalNodeHost implements RuntimeAdapter {
     return session;
   }
 
+  private isBindingCurrent(binding: PlacementSnapshot, session: StoredNodeSession): boolean {
+    return (
+      binding.nodeId === session.nodeId &&
+      binding.nodeSessionId === session.nodeSessionId &&
+      binding.executionLeaseId === session.executionLeaseId &&
+      binding.fencingToken === session.fencingToken
+    );
+  }
+
   private async openSession(): Promise<StoredNodeSession> {
     const existing = await this.store.getNodeSession();
     const now = this.clock.now();
@@ -610,7 +652,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     if (existing) {
       const handles = await this.store.listHandles();
       for (const handle of handles) {
-        if (handle.binding.fencingToken !== session.fencingToken) {
+        if (!this.isBindingCurrent(handle.binding, session)) {
           await this.store.putHandle({ ...handle, auditOnly: true });
         }
       }

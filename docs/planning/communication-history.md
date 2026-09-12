@@ -261,3 +261,99 @@ updated: 2026-09-12
 - **决定：** 启动后的壳缺陷按可见行为收口，不改产品对象或协议。(1) 折叠后的 56px 图标轨只保留品牌标，悬停/聚焦变为展开，禁止 Logo 与折叠按钮并排；(2) 页标题与说明只出现在顶栏，壳内 `Page` 不再重复 h1；(3) 特性页必须作为 React 元素挂载，禁止把 `Page()` 当函数调用，避免切左侧菜单时 hooks 数量变化把整棵树打成空白。
 - **文档影响：** [UI 设计系统](../product-ui/04-design-system.md) §2.4 / §3 补折叠轨与顶栏标题规则。**未改** decision-register、state-matrix、api-capability-matrix、任务清单结论。
 - **状态：** **implemented**（展示层）。真窗口点击仍为人工项。
+
+---
+
+## 2026-09-12（Asia/Taipei）T04 运行快照 SQLite 投影切片
+
+- **决定：** D18 的历史兼容阶段只增加可空、严格校验的 SQLite 投影能力：完整 `RunExecutionSnapshot` 在明确传入时原子持久化并跨重启读回；历史 M3 Run 不回填、不猜测执行事实。`undefined` 是唯一允许的“未提供”，`null` 等其它伪值一律拒绝。生产编排、direct 调度、backfill/switch/contract 不因此视为完成。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 的修订、D17/D18 前置说明及 T04/T16 状态行，区分已验证 repository 投影能力与未接线的生产语义。
+- **状态：** **implemented**（migration 007、Repository/world snapshot、定向 30/30 数据库测试、跨包 typecheck、独立审查）；生产运行快照组装/接线、D02、direct、升级回填与收紧约束仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）D15/D02 前置审计与补缺任务登记
+
+- **决定：** 不把 `:confirm-plan` / `:start` 的拆分伪装成局部状态修改。当前执行图来自请求体 `mockPlanGraph()`，而 SQLite 的 `workflow_versions` 只由 `WorkflowInstance` 持久化时隐式 upsert；直接取消确认阶段的实例创建会使 `ProjectExecutionSnapshot` 缺失其必须引用的已发布版本。先以 `T04-D15-PUBLISH` 收口不可变执行图源，再实施 `T09-D02-SNAPSHOT-START`。同时登记协议图源、Run wire、持久事件补拉、Evaluation/保留、远程 Node 兼容实验、Daemon 崩溃诊断和三平台 smoke 等独立缺口。
+- **文档影响：** [02-development-task-backlog.md](02-development-task-backlog.md) 新增 3.1 的受限子任务表；不改变任何已冻结状态机、API 或任务 owner。
+- **状态：** 任务发现与边界澄清 **implemented**；全部新增子任务均为 **planned**。T04 运行快照投影保持已实现，D15/D02 产品行为与其余 release gate 不因此视为完成。
+
+---
+
+## 2026-09-12（Asia/Taipei）T11 Daemon 启动 stderr 方案撤回
+
+- **决定：** 拒绝 `T11-DAEMON-CRASH-OBSERVABILITY` 的 Desktop stderr-pipe 实现。虽然它只提取白名单错误码，但 supervisor 在完成启动观察后关闭父端 pipe，成功的 detached Daemon 随后写 stderr 会收到 EPIPE 并可能退出，破坏后台生命周期。恢复 `stdio: "ignore"`；Daemon 崩溃和端口冲突必须等 T10 所有权范围内的结构化、Daemon-owned sidecar/state 通道，不能把 raw stderr pipe 变成常驻依赖。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 更正为仅记录已验证的 Node preflight，不再把 stderr 摘要或端口冲突提示记为完成；任务清单的 T11 子任务名称与边界不变。
+- **状态：** stderr 方案 **rejected / removed**；T11 崩溃诊断仍为 **planned**。恢复验证将在本轮最终 T11 测试中执行。
+
+---
+
+## 2026-09-12（Asia/Taipei）T08 受管测试命令终态前置审计
+
+- **决定：** 不在 ArtifactEvaluator 内创建与 `ProcessController` 不兼容的私有退出码接口。规范 port 的普通 `inspect()` 只有 liveness/identity；`spawnCaptured().wait()` 才有 `{ exitCode, signal }`，但 Windows 当前明确不支持 captured process。故将跨平台终态、timeout/cancel、bounded-output 与 fail-closed 行为登记为 `T06-PROCESS-TERMINAL-OUTCOME`（T02/T06 顺序交接），它是 T08 command criterion 真实验收的前置。
+- **文档影响：** [02-development-task-backlog.md](02-development-task-backlog.md) 的补缺子任务表新增 T06 Process terminal outcome；[03-implementation-status.md](03-implementation-status.md) 明确 T08 不能以 fake adapter 或 `inspect()` 扩展宣称阻断失败测试。
+- **状态：** 诊断与任务登记 **implemented**；`T06-PROCESS-TERMINAL-OUTCOME`、T08 M5 Evaluation/retention 和 T09 完成判定接线均为 **planned**。审查发现的实验性 T08 代码已撤回；恢复验证 `pnpm exec vitest run packages/artifacts/src/evaluation/evaluator.test.ts`（6 tests）与 `pnpm --filter @workforce/artifacts typecheck` 均退出 0。
+
+---
+
+## 2026-09-12（Asia/Taipei）T11 源码入口 Node 预检
+
+- **决定：** 把已知的 `--experimental-transform-types` 最低版本要求变为 Supervisor 的 spawn 前检查：仅 TypeScript 源码入口要求 Node ≥22.7，已有可重连 Daemon 与分发 JS 入口不受影响。不引入日志持久化、stderr pipe 或新公共协议。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 的 T11 启动链记录改为反映版本 preflight、撤回的 stderr 方案及更新后的验证范围。
+- **状态：** **implemented**（T11 源码入口版本 preflight）。改动文件：`apps/desktop/src/main/{smoke-env,supervisor-runtime}.ts`、`apps/desktop/src/main/daemon-supervisor/{types,supervisor}.ts`、`apps/desktop/tests/{smoke-env,supervisor}.test.ts`、[03-implementation-status.md](03-implementation-status.md)、本文件。恢复验证（Windows，Node v24.19.0，pnpm 9.4.0）：`pnpm exec vitest run apps/desktop/tests/smoke-env.test.ts apps/desktop/tests/supervisor.test.ts apps/desktop/tests/app-lifecycle.test.ts apps/desktop/tests/daemon-source-launch.test.ts apps/desktop/tests/smoke-script.test.ts` → 5 files / 23 tests 通过；`pnpm --filter @workforce/desktop typecheck` 退出 0。Daemon 崩溃/端口冲突的结构化诊断、运行期日志、诊断导出和三平台真机仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T06 受管进程终态契约拆分
+
+- **决定：** 保留唯一的 `@workforce/application/ports` `ProcessController`：不向 `inspect()` 加历史退出码，也不创建 Artifact 私有 CommandRunner。把 `T02-PROCESS-TERMINAL-CONTRACT` 从 T06 实现中拆出，先定义 `CapturedProcess.wait()` 的树级终态、signal 正规化、timeout/overflow/cancel 与 capability 语义；T06 后续实现 POSIX 进程组收敛和 Windows Job-only capture，T08 最后消费可信结论。Windows capture 失败必须 fail closed，不能退化普通 spawn/taskkill。
+- **文档影响：** [02-development-task-backlog.md](02-development-task-backlog.md) 增加 T02 Process terminal contract 并把 T06 的依赖改为显式顺序；[03-implementation-status.md](03-implementation-status.md) 同步实际前置与未实现边界。
+- **状态：** 设计与任务拆分 **implemented**；T02 契约、T06 adapter、T08 Evaluation 接线、三平台验证均为 **planned**。本条不修改 Process SPI 或 Windows helper，也不宣称任何平台的 captured process 新增支持。
+
+---
+
+## 2026-09-12（Asia/Taipei）T02 Process 终态契约范围确认
+
+- **决定：** 不以文档或 fake test 把根进程 `close` 误称为受管树终态。T02 将以破坏性 API 升级为 `CapturedSpawnRequest` 增加可验证 timeout 语义、`ProcessExitResult` 增加稳定 `reason` 并将 signal 限制为跨平台枚举；`wait()` 仅在同一受管树已收敛时 resolve，无法证明收敛时稳定 fail closed。`inspect()` 继续只表示 liveness/identity。Windows capture 在可信 Job capture 实现前继续 unsupported。
+- **文档影响：** [02-development-task-backlog.md](02-development-task-backlog.md) 的 T02 Process terminal contract 写入具体升级形状；[03-implementation-status.md](03-implementation-status.md) 更正现有 wait 的证据边界。
+- **状态：** 契约设计 **implemented**；公共类型、T06 adapter、T08 消费和跨平台证据均为 **planned**。该决定是后续兼容性变更的前置，不把已有 POSIX root exit 或 Windows unsupported 当成完整终态实现。
+
+---
+
+## 2026-09-12（Asia/Taipei）T03 Remote Node Mock 兼容性证据
+
+- **决定：** 用现有 `LocalNodeHost` / `MockRuntimeAdapter` 做一个受限的 synthetic remote-node 回归场景：Host 只接受其配置的远程节点 ID，完整保留 placement binding；同一 store 上的 replacement Host 获得更高 fencing token 后把旧 binding 视为 unattached，拒绝它的 input，且其迟到事件仅 audit-only、不得经 event、inspect 或 reconcile 推进已存 Runtime 状态。该验证不新建 Domain/Task/Event/API 字段，也不把 placement 误写成 `remote` runtime transport；它没有实现 stale binding 的 rebind 或继续执行。
+- **文档影响：** 新增 [Remote Node Mock compatibility spike](../spikes/remote-node-compatibility.md)，并在 [spikes 索引](../spikes/README.md)、[文档索引](../README.md) 与 [实现进度](03-implementation-status.md) 登记受限证据。
+- **状态：** **implemented（in-process Mock compatibility only）**；Windows 自动化测试 `pnpm exec vitest run runtimes/mock/src/host-scenarios.test.ts` 已通过（12 tests），并完成 Mock/Runtime SDK typecheck 与文档校验。真实远程进程/网络、enrollment、heartbeat、分布式 lease、Daemon/Application 选择路径和 macOS/Linux 实机仍为 **planned / untested**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T02 Process 终态契约裁决
+
+- **决定：** 撤回「`CapturedSpawnRequest.timeoutMs`、`ProcessExitResult.reason`、有限 signal」方案。Process 层不能从 force cancel 判断用户取消、deadline、预算停止或 output 策略，也不应把原生 signal 截断成业务枚举。`wait()` 只在 root exit、output EOF 和受管树收敛均已验证时返回原生 `{ exitCode, signal }`；无法安全得出该结果时，以稳定 `ProcessControllerError` fail closed。timeout/cancel 的业务归因仍由 Application/Workflow 记录并在完成 graceful/force 后等待 `wait()`。
+- **文档影响：** [公共 ports](../protocols/v0.1/ports.md)、[开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 同步唯一语义；`packages/application/src/ports/index.ts` 导出稳定错误类型。后续 T06 实现、T08/T15 消费者迁移和平台证据仍需分别完成。
+- **状态：** **implemented（T02 public contract slice）**；不宣称受管树收敛、Windows Job capture、Evaluation command criterion 或 Codex 终态时序已经实现。
+
+---
+
+## 2026-09-12（Asia/Taipei）T02 契约审查收口与 T11 状态更正
+
+- **决定：** 稳定 `ProcessControllerError` 还必须覆盖 stdin、stdout/stderr 和 root wait 的 I/O 失败，避免 T06 泄露运行时原始异常或把它误报为 overflow。同步撤回实现进度表中残留的 T11 stderr pipe/启动错误摘要描述：目前唯一已实现的 T11 新切片是 TypeScript 源码入口 Node ≥22.7 preflight。
+- **文档影响：** [公共 ports](../protocols/v0.1/ports.md) 与 `packages/application/src/ports/index.ts` 增加 `process_input_failed`、`process_output_failed`、`process_wait_failed`；[实现进度](03-implementation-status.md) 的 T11 行与已撤回 stderr 方案一致。
+- **状态：** **implemented（契约/状态更正）**；T06 尚未将上述错误映射到 OS I/O，T11 崩溃和端口冲突诊断仍 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T06 POSIX captured-process 可信终态切片
+
+- **决定：** 在唯一 `ProcessController` 内实现 POSIX captured process 的可信 `wait()`：仅 root `close`、stdout/stderr 的真实 `end`（不是仅 `close`）以及受管 session/process group 经内核存在性检查确认终结后，才返回原生 `{ exitCode, signal }`。流溢出、消费者在 EOF 前停止、截断关闭、stdin/stdout/stderr/root I/O、取消失败和树不可验证均返回稳定 `ProcessControllerError`，不伪造正常终态。timeout、用户取消与预算归因仍留在 Application/Workflow。
+- **文档影响：** [实现进度](03-implementation-status.md) 将 T06 从笼统的“完成库”更正为本次 POSIX 实现切片，并明确 Windows capture 与跨平台真机证据仍未完成。任务清单与公共 ports 的既有契约保持不变。
+- **状态：** **implemented（POSIX source slice，平台证据受限）**。验证（Windows，Node v24.19.0，pnpm 9.4.0）：`pnpm --filter @workforce/application typecheck`、`pnpm --filter @workforce/process typecheck` 均退出 0；`pnpm --filter @workforce/process exec vitest run` 为 4 files / 21 passed / 18 skipped；`pnpm exec prettier --check`（6 个 T06 文件）与 `git diff --check` 通过。POSIX 受管进程组终态用例在当前 Windows 环境跳过，macOS/Linux 实机验证、Windows Job Object stream capture，以及 T08/T15 对此 port 的消费仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）补缺任务第二轮发现
+
+- **决定：** 不以新的平行 T 卡稀释所有权；将从当前落地方案、状态页和源码交叉确认的缺口归入既有 owner：T09 的 canonical DAG dependency 持久化与 placement/lease 接线，T04 的 SQLite/world 投影对账，T02 的 protocol JSON Schema 生成/漂移门禁，T11 的 Renderer typed client 唯一化。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md) §3.1 新增 `T09-DAG-DEPENDENCY-PERSISTENCE`、`T04-PROJECTION-RECONCILIATION`、`T02-PROTOCOL-SCHEMA-GENERATION`、`T11-RENDERER-CLIENT-CANONICALIZATION` 与 `T09-PLACEMENT-LEASE-WIRING`，并写入依赖和验收边界。
+- **状态：** **planned**。本条只登记已由源码/文档证据确认的工作，不宣称 DAG、投影对账、schema codegen、client 收口或 lease 生命周期已实现。

@@ -59,6 +59,7 @@ Git does not retain empty directories. The `protocols` and `operations` director
 ## Reference
 
 - [开源对标学习笔记](reference/open-source-benchmarks.md) — Eigent / OpenHands 深读指针；对照冻结决策，不表示将采用这些栈
+- [Remote Node Mock compatibility spike](spikes/remote-node-compatibility.md) — in-process protocol evidence only; not a production remote runner
 
 ## Document status
 

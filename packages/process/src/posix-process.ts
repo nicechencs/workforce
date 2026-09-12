@@ -2,6 +2,8 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import process from "node:process";
 
+import { ProcessControllerError } from "@workforce/application/ports";
+
 import { captureChildOutput } from "./captured-output.js";
 import { identityMismatchError } from "./start-identity.js";
 import { observeChild, type TrackedProcess } from "./tracked.js";
@@ -129,6 +131,29 @@ export function trackedPosixGroupAlive(tracked: TrackedProcess): boolean {
   return trackedPosixGroupState(tracked) !== "dead";
 }
 
+/** Waits until the session/process group created for captured execution is empty. */
+export async function waitForTrackedPosixGroupExit(tracked: TrackedProcess): Promise<void> {
+  if (tracked.posixGroup?.terminalVerified) {
+    return;
+  }
+  if (!tracked.posixGroup?.owned) {
+    throw unverifiedProcessGroupError(tracked.handle.pid, "wait");
+  }
+  for (;;) {
+    const state = trackedPosixGroupState(tracked);
+    if (state === "dead") {
+      if (tracked.posixGroup?.terminalVerified) {
+        return;
+      }
+      throw unverifiedProcessGroupError(tracked.handle.pid, "wait");
+    }
+    if (state === "unknown") {
+      throw unverifiedProcessGroupError(tracked.handle.pid, "wait");
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 type GroupState = "alive" | "dead" | "unknown";
 
 function trackedPosixGroupState(tracked: TrackedProcess): GroupState {
@@ -146,8 +171,16 @@ function trackedPosixGroupState(tracked: TrackedProcess): GroupState {
     return "dead";
   }
   if (members.length === 0) {
-    group.owned = false;
-    return "dead";
+    const presence = queryPosixGroupPresence(group.pgid);
+    if (presence === "empty") {
+      group.owned = false;
+      group.terminalVerified = true;
+      return "dead";
+    }
+    // A live numeric PGID alone does not prove it still belongs to this
+    // session. Treat an empty non-atomic member scan as unverified rather
+    // than signalling a potentially reused group.
+    return "unknown";
   }
   return "alive";
 }
@@ -191,6 +224,7 @@ function signalProcessGroup(tracked: TrackedProcess, signal: NodeJS.Signals): vo
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") {
       group.owned = false;
+      group.terminalVerified = true;
       return;
     }
     throw error;
@@ -412,14 +446,28 @@ function queryPosixGroupMembers(pgid: number, sessionId: number): PosixProcessIn
   }
 }
 
+function queryPosixGroupPresence(pgid: number): "alive" | "empty" | "unknown" {
+  try {
+    process.kill(-pgid, 0);
+    return "alive";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") {
+      return "empty";
+    }
+    return "unknown";
+  }
+}
+
 function unverifiedProcessGroupError(
   pid: number,
-  operation: "spawn" | "inspect" | "cancel",
-): Error {
-  const error = new Error(`process group for pid ${pid} could not be verified during ${operation}`);
-  error.name = "UnverifiedProcessGroupError";
-  Object.assign(error, { code: "process_group_unverified", operation, pid });
-  return error;
+  operation: "spawn" | "wait" | "inspect" | "cancel",
+): ProcessControllerError {
+  return new ProcessControllerError(
+    "process_tree_unverified",
+    operation,
+    `process group for pid ${pid} could not be verified during ${operation}`,
+  );
 }
 
 function waitForChildSpawn(child: ChildProcess): Promise<void> {

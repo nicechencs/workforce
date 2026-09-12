@@ -36,6 +36,7 @@ function createDeps(
     osStart?: string | null;
     health?: DaemonHealth | (() => Promise<DaemonHealth>);
     afterSpawnState?: DaemonStateFile;
+    preflightLaunch?: () => string | null;
   },
   spawned: { count: number },
 ): SupervisorDeps {
@@ -60,6 +61,7 @@ function createDeps(
             }
             throw new Error("offline");
           },
+    preflightLaunch: input.preflightLaunch,
     spawn: () => {
       spawned.count += 1;
       if (input.afterSpawnState) {
@@ -175,5 +177,26 @@ describe("ensureDaemon", () => {
     );
     expect(spawned.count).toBe(1);
     expect(result.ok).toBe(true);
+  });
+
+  it("refuses a source launch before spawning when Node is unsupported", async () => {
+    const spawned = { count: 0 };
+    const result = await ensureDaemon(
+      createDeps(
+        {
+          state: null,
+          preflightLaunch: () =>
+            "Daemon source entry requires Node >= 22.7; current Node is 22.6.9.",
+        },
+        spawned,
+      ),
+    );
+
+    expect(spawned.count).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.snapshot.status === "error") {
+      expect(result.snapshot.message).toContain("Node >= 22.7");
+      expect(result.snapshot.recoverable).toBe(true);
+    }
   });
 });

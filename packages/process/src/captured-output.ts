@@ -7,10 +7,19 @@ export const CAPTURED_OUTPUT_BUFFER_LIMIT = 8 * 1024 * 1024;
 
 type AbortOutcome = { ok: true } | { ok: false; error: Error };
 
+export type CapturedOutputCompletion =
+  { kind: "eof" } | { kind: "error"; error: Error } | { kind: "abandoned" };
+
 export interface ManagedCapturedOutput {
   readonly iterable: AsyncIterable<ProcessOutput>;
   /** Resolves only if a requested process abort fails. */
   readonly abortFailure: Promise<Error>;
+  /**
+   * Terminal physical state of stdout/stderr. This is intentionally
+   * non-rejecting so an unobserved captured process cannot create an
+   * unhandled rejection.
+   */
+  readonly completion: Promise<CapturedOutputCompletion>;
   setAbortHandler(handler: () => Promise<void>): void;
 }
 
@@ -25,7 +34,10 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
   readonly #queue: ProcessOutput[] = [];
   readonly #ended = new Set<ProcessOutputSource>();
   readonly abortFailure: Promise<Error>;
+  readonly completion: Promise<CapturedOutputCompletion>;
   #resolveAbortFailure!: (error: Error) => void;
+  #resolveCompletion!: (completion: CapturedOutputCompletion) => void;
+  #completionSettled = false;
   #queuedBytes = 0;
   #consumerStarted = false;
   #discarding = false;
@@ -40,6 +52,9 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
   constructor(stdout: Readable, stderr: Readable) {
     this.abortFailure = new Promise((resolve) => {
       this.#resolveAbortFailure = resolve;
+    });
+    this.completion = new Promise((resolve) => {
+      this.#resolveCompletion = resolve;
     });
     this.#drain(stdout, "stdout");
     this.#drain(stderr, "stderr");
@@ -91,6 +106,7 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
     if (!this.#stopped) {
       this.#stopped = true;
       this.#discarding = true;
+      this.#settleCompletion({ kind: "abandoned" });
       this.#queue.length = 0;
       this.#queuedBytes = 0;
       this.#settlePendingDone();
@@ -120,25 +136,34 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
     });
     stream.once("error", (error) => {
       this.#fail(error);
-      this.#markEnded(source);
     });
     stream.once("end", () => {
       this.#markEnded(source);
     });
     stream.once("close", () => {
-      this.#markEnded(source);
+      this.#markClosed(source);
     });
   }
 
   #markEnded(source: ProcessOutputSource): void {
     this.#ended.add(source);
+    if (this.#ended.size === 2) {
+      this.#settleCompletion({ kind: "eof" });
+    }
     if (this.#ended.size === 2 && this.#queue.length === 0) {
       this.#settlePendingDone();
     }
   }
 
+  #markClosed(source: ProcessOutputSource): void {
+    if (!this.#ended.has(source) && !this.#failure && !this.#stopped) {
+      this.#fail(outputClosedBeforeEofError(source));
+    }
+  }
+
   #fail(error: Error): void {
     this.#failure ??= error;
+    this.#settleCompletion({ kind: "error", error: this.#failure });
     this.#discarding = true;
     this.#queue.length = 0;
     this.#queuedBytes = 0;
@@ -210,6 +235,14 @@ class CapturedOutputMux implements ManagedCapturedOutput, AsyncIterable<ProcessO
     pending.resolve(doneResult());
   }
 
+  #settleCompletion(completion: CapturedOutputCompletion): void {
+    if (this.#completionSettled) {
+      return;
+    }
+    this.#completionSettled = true;
+    this.#resolveCompletion(completion);
+  }
+
   #settlePendingFailure(): void {
     const pending = this.#pending;
     if (!pending) {
@@ -262,6 +295,12 @@ function outputOverflowError(): Error {
   );
   error.name = "ProcessOutputOverflowError";
   Object.assign(error, { code: "process_output_overflow" });
+  return error;
+}
+
+function outputClosedBeforeEofError(source: ProcessOutputSource): Error {
+  const error = new Error(`captured process ${source} closed before EOF`);
+  error.name = "ProcessOutputClosedError";
   return error;
 }
 

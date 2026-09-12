@@ -49,7 +49,16 @@ export {
   MIGRATION_004_SQL,
   MIGRATION_005_SQL,
   MIGRATION_006_SQL,
+  MIGRATION_007_SQL,
+  MIGRATION_008_SQL,
 } from "./schema.js";
+export {
+  SqliteExecutionAxisMigrationRepository,
+  type ExecutionAxisMigrationAuditOptions,
+  type ExecutionAxisMigrationClassification,
+  type ExecutionAxisMigrationEvidence,
+  type ExecutionAxisMigrationItem,
+} from "./execution-axis-migration.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";

@@ -1,11 +1,14 @@
 export const packageName = "@workforce/process" as const;
 
 export { OsProcessController } from "./os-process-controller.js";
+export { ProcessControllerError } from "@workforce/application/ports";
 export type {
   CapturedProcess,
   CapturedSpawnRequest,
   ProcessCancelMode,
   ProcessController,
+  ProcessControllerErrorCode,
+  ProcessControllerOperation,
   ProcessExitResult,
   ProcessHandle,
   ProcessOutput,

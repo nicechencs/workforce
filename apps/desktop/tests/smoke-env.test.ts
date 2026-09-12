@@ -11,6 +11,8 @@ import {
   resolveSmokeDirectoryOverride,
   resolveSmokeResultPath,
   resolveSmokeWorkspacePath,
+  sourceDaemonNodeRequirement,
+  supportsSourceDaemonNode,
   shouldLaunchElectronHeadless,
 } from "../src/main/smoke-env.js";
 import { createMainWindowSpec } from "../src/main/windows/factory.js";
@@ -57,6 +59,17 @@ describe("desktop smoke env", () => {
     expect(resolveDaemonLaunchArgs("/app/daemon/dist/index.js", "/tmp/state")[0]).toBe(
       "/app/daemon/dist/index.js",
     );
+  });
+
+  it("requires a Node runtime that supports source type transformation", () => {
+    expect(supportsSourceDaemonNode("22.7.0")).toBe(true);
+    expect(supportsSourceDaemonNode("22.6.9")).toBe(false);
+    expect(supportsSourceDaemonNode("v24.0.0")).toBe(true);
+    expect(supportsSourceDaemonNode("not-a-version")).toBe(false);
+    expect(sourceDaemonNodeRequirement("22.6.9")).toBe(
+      "Daemon source entry requires Node >= 22.7; current Node is 22.6.9.",
+    );
+    expect(sourceDaemonNodeRequirement("24.0.0")).toBeNull();
   });
 
   it("prefixes --import so workspace TypeScript packages resolve .js to .ts", () => {

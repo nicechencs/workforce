@@ -1,18 +1,26 @@
 import process from "node:process";
 import type { Writable } from "node:stream";
 
+import { ProcessControllerError } from "@workforce/application/ports";
 import type {
   CapturedProcess,
   CapturedSpawnRequest,
   ProcessCancelMode,
   ProcessController,
   ProcessHandle,
+  ProcessExitResult,
   ProcessStatus,
   SpawnRequest,
 } from "@workforce/application/ports";
 
 import { mergeMinimalEnv } from "./env.js";
-import { cancelPosix, inspectPosix, spawnPosix, trackedPosixGroupAlive } from "./posix-process.js";
+import {
+  cancelPosix,
+  inspectPosix,
+  spawnPosix,
+  trackedPosixGroupAlive,
+  waitForTrackedPosixGroupExit,
+} from "./posix-process.js";
 import type { TrackedProcess } from "./tracked.js";
 import { cancelWindows, inspectWindows, spawnWindows } from "./windows-job.js";
 
@@ -20,83 +28,143 @@ export class OsProcessController implements ProcessController {
   readonly #tracked = new Map<string, TrackedProcess>();
 
   async spawn(req: SpawnRequest): Promise<ProcessHandle> {
-    const tracked = await this.#spawnTracked(validateSpawnRequest(req), false);
-    return publicHandle(tracked);
+    try {
+      const tracked = await this.#spawnTracked(validateSpawnRequest(req), false);
+      return publicHandle(tracked);
+    } catch (error) {
+      throw normalizeControllerError(error, "spawn", "spawn_failed");
+    }
   }
 
   async spawnCaptured(req: CapturedSpawnRequest): Promise<CapturedProcess> {
     const normalized = validateSpawnRequest(req);
     if (req.stdin !== undefined && !(req.stdin instanceof Uint8Array)) {
-      throw new Error("CapturedSpawnRequest.stdin must be a Uint8Array");
+      throw new ProcessControllerError(
+        "invalid_request",
+        "spawn",
+        "CapturedSpawnRequest.stdin must be a Uint8Array",
+      );
     }
     assertCapturedProcessSupported(process.platform);
-    const tracked = await this.#spawnTracked(normalized, true);
+    let tracked: TrackedProcess;
+    try {
+      tracked = await this.#spawnTracked(normalized, true);
+    } catch (error) {
+      throw normalizeControllerError(error, "spawn", "spawn_failed");
+    }
     const child = tracked.child;
     const completion = tracked.completion;
     const output = tracked.output;
     if (!child?.stdin || !output || !completion) {
-      await this.cancel(tracked.handle, "force");
-      throw new Error("captured process streams are unavailable");
+      try {
+        await this.cancel(tracked.handle, "force");
+      } catch {
+        // The primary failure remains missing required capture streams.
+      }
+      throw new ProcessControllerError(
+        "spawn_failed",
+        "spawn",
+        "captured process streams are unavailable",
+      );
     }
 
     const handle = publicHandle(tracked);
     output.setAbortHandler(() => this.cancel(handle, "force"));
     const stdinCompletion = finishStdin(child.stdin, req.stdin);
-    const settled = Promise.race([
-      Promise.all([completion, stdinCompletion]).then(([processResult, stdinResult]) => ({
-        kind: "complete" as const,
-        processResult,
-        stdinResult,
-      })),
-      output.abortFailure.then((error) => ({ kind: "abort-error" as const, error })),
+    const settled: Promise<CapturedWaitOutcome> = Promise.race([
+      Promise.all([completion, stdinCompletion, output.completion]).then(
+        async ([processResult, stdinResult, outputResult]) => {
+          if (processResult.kind === "error") {
+            return waitError(
+              processControllerError("process_wait_failed", "wait", processResult.error),
+            );
+          }
+          try {
+            if (process.platform !== "win32") {
+              await waitForTrackedPosixGroupExit(tracked);
+            }
+          } catch (error) {
+            return waitError(normalizeWaitError(error));
+          }
+          if (stdinResult.kind === "error" && !isClosedPipeError(stdinResult.error)) {
+            return waitError(
+              processControllerError("process_input_failed", "wait", stdinResult.error),
+            );
+          }
+          if (outputResult.kind === "error") {
+            return waitError(
+              processControllerError(
+                outputErrorCode(outputResult.error),
+                "output",
+                outputResult.error,
+              ),
+            );
+          }
+          if (outputResult.kind === "abandoned") {
+            return waitError(
+              new ProcessControllerError(
+                "process_output_abandoned",
+                "output",
+                "captured process output was abandoned before EOF",
+              ),
+            );
+          }
+          return {
+            kind: "complete" as const,
+            result: { exitCode: processResult.exitCode, signal: processResult.signal },
+          };
+        },
+        (error: unknown) => waitError(normalizeWaitError(error)),
+      ),
+      output.abortFailure.then((error) =>
+        waitError(processControllerError("process_cancel_failed", "cancel", error)),
+      ),
     ]);
     return {
       handle,
       output: output.iterable,
       async wait() {
-        const result = await settled;
-        if (result.kind === "abort-error") {
-          throw result.error;
+        const outcome = await settled;
+        if (outcome.kind === "error") {
+          throw outcome.error;
         }
-        const { processResult, stdinResult } = result;
-        if (processResult.kind === "error") {
-          throw processResult.error;
-        }
-        if (stdinResult.kind === "error" && !isClosedPipeError(stdinResult.error)) {
-          throw stdinResult.error;
-        }
-        return {
-          exitCode: processResult.exitCode,
-          signal: processResult.signal,
-        };
+        return outcome.result;
       },
     };
   }
 
   async cancel(handle: ProcessHandle, mode: ProcessCancelMode): Promise<void> {
-    const tracked = this.#tracked.get(trackKey(handle));
-    if (process.platform === "win32") {
-      await cancelWindows(handle, mode, tracked);
-    } else {
-      await cancelPosix(handle, mode, tracked);
-    }
-    if (mode === "force") {
-      this.#releaseTrackedWhenStopped(trackKey(handle), tracked);
+    try {
+      const tracked = this.#tracked.get(trackKey(handle));
+      if (process.platform === "win32") {
+        await cancelWindows(handle, mode, tracked);
+      } else {
+        await cancelPosix(handle, mode, tracked);
+      }
+      if (mode === "force") {
+        this.#releaseTrackedWhenStopped(trackKey(handle), tracked);
+      }
+    } catch (error) {
+      throw normalizeControllerError(error, "cancel", "process_cancel_failed");
     }
   }
 
   async inspect(handle: ProcessHandle): Promise<ProcessStatus> {
-    const key = trackKey(handle);
-    const tracked = this.#tracked.get(key);
-    if (process.platform === "win32") {
-      return inspectWindows(handle);
+    try {
+      const key = trackKey(handle);
+      const tracked = this.#tracked.get(key);
+      if (process.platform === "win32") {
+        return inspectWindows(handle);
+      }
+      const status = await inspectPosix(handle, tracked);
+      if (!status.alive && this.#tracked.get(key) === tracked) {
+        clearCleanupTimer(tracked);
+        this.#tracked.delete(key);
+      }
+      return status;
+    } catch (error) {
+      throw normalizeControllerError(error, "inspect", "process_tree_unverified");
     }
-    const status = await inspectPosix(handle, tracked);
-    if (!status.alive && this.#tracked.get(key) === tracked) {
-      clearCleanupTimer(tracked);
-      this.#tracked.delete(key);
-    }
-    return status;
   }
 
   async #spawnTracked(
@@ -135,6 +203,21 @@ export class OsProcessController implements ProcessController {
   }
 }
 
+type CapturedWaitOutcome =
+  | { kind: "complete"; result: ProcessExitResult }
+  | { kind: "error"; error: ProcessControllerError };
+
+function waitError(error: ProcessControllerError): CapturedWaitOutcome {
+  return { kind: "error", error };
+}
+
+function normalizeWaitError(error: unknown): ProcessControllerError {
+  if (error instanceof ProcessControllerError) {
+    return error;
+  }
+  return processControllerError("process_wait_failed", "wait", toError(error));
+}
+
 function clearCleanupTimer(tracked: TrackedProcess | undefined): void {
   if (!tracked?.cleanupTimer) {
     return;
@@ -161,27 +244,27 @@ function validateSpawnRequest(req: SpawnRequest): {
 } {
   const exe = Array.isArray(req?.argv) ? req.argv[0] : undefined;
   if (typeof exe !== "string" || exe.length === 0) {
-    throw new Error("SpawnRequest.argv[0] must be an executable");
+    throw invalidRequestError("SpawnRequest.argv[0] must be an executable");
   }
   for (const arg of req.argv) {
     if (typeof arg !== "string" || arg.includes("\0")) {
-      throw new Error("SpawnRequest.argv must contain only strings without null bytes");
+      throw invalidRequestError("SpawnRequest.argv must contain only strings without null bytes");
     }
   }
   if (typeof req.cwd !== "string" || req.cwd.length === 0 || req.cwd.includes("\0")) {
-    throw new Error("SpawnRequest.cwd is required and must not contain null bytes");
+    throw invalidRequestError("SpawnRequest.cwd is required and must not contain null bytes");
   }
   if (req.env !== undefined && (typeof req.env !== "object" || Array.isArray(req.env))) {
-    throw new Error("SpawnRequest.env must be a string record");
+    throw invalidRequestError("SpawnRequest.env must be a string record");
   }
   for (const [key, value] of Object.entries(req.env ?? {})) {
     if (key.length === 0 || key.includes("=") || key.includes("\0")) {
-      throw new Error(
+      throw invalidRequestError(
         "SpawnRequest.env keys must be non-empty and must not contain '=' or null bytes",
       );
     }
     if (typeof value !== "string" || value.includes("\0")) {
-      throw new Error("SpawnRequest.env values must be strings without null bytes");
+      throw invalidRequestError("SpawnRequest.env values must be strings without null bytes");
     }
   }
   return {
@@ -238,14 +321,49 @@ export function assertCapturedProcessSupported(platform: NodeJS.Platform): void 
   if (platform !== "win32") {
     return;
   }
-  const error = new Error(
+  throw new ProcessControllerError(
+    "unsupported_capability",
+    "spawn",
     "captured processes are unsupported on win32 until Job Object stream capture is available",
+    { capability: "process.capture", platform: "win32" },
   );
-  error.name = "UnsupportedProcessCapabilityError";
-  Object.assign(error, {
-    code: "unsupported_capability",
-    capability: "process.capture",
-    platform: "win32",
-  });
-  throw error;
+}
+
+function outputErrorCode(error: Error): "process_output_overflow" | "process_output_failed" {
+  return (error as { code?: unknown }).code === "process_output_overflow"
+    ? "process_output_overflow"
+    : "process_output_failed";
+}
+
+function processControllerError(
+  code:
+    | "process_wait_failed"
+    | "process_input_failed"
+    | "process_output_overflow"
+    | "process_output_failed"
+    | "process_cancel_failed",
+  operation: "wait" | "output" | "cancel",
+  cause: Error,
+): ProcessControllerError {
+  return new ProcessControllerError(code, operation, cause.message, { cause });
+}
+
+function invalidRequestError(message: string): ProcessControllerError {
+  return new ProcessControllerError("invalid_request", "spawn", message);
+}
+
+function normalizeControllerError(
+  error: unknown,
+  operation: "spawn" | "inspect" | "cancel",
+  fallback: "spawn_failed" | "process_tree_unverified" | "process_cancel_failed",
+): ProcessControllerError {
+  if (error instanceof ProcessControllerError) {
+    return error;
+  }
+  const cause = toError(error);
+  const code = (cause as { code?: unknown }).code;
+  if (code === "identity_mismatch") {
+    return new ProcessControllerError("identity_mismatch", operation, cause.message, { cause });
+  }
+  return new ProcessControllerError(fallback, operation, cause.message, { cause });
 }

@@ -31,6 +31,7 @@ node tooling/spikes/process-tree/run.mjs
 node tooling/spikes/git-worktree/run.mjs
 node tooling/spikes/sqlite/run.mjs
 node tooling/spikes/daemon-lifecycle/run.mjs
+pnpm exec vitest run runtimes/mock/src/host-scenarios.test.ts
 ```
 
 每项报告含命令、预期、实际、限制。无法验证的平台写 **未测**，不伪造。
@@ -42,6 +43,7 @@ node tooling/spikes/daemon-lifecycle/run.mjs
 | Git worktree 异常 | [git-worktree.md](git-worktree.md) |
 | SQLite 原子状态+事件 | [sqlite.md](sqlite.md) |
 | Desktop/Daemon 生命周期 | [daemon-lifecycle.md](daemon-lifecycle.md) |
+| Remote Node Mock 协议兼容性 | [remote-node-compatibility.md](remote-node-compatibility.md) |
 
 状态取值：
 

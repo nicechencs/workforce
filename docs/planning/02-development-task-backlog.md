@@ -98,6 +98,31 @@ flowchart TD
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
 
+### 3.1 当前补缺子任务（2026-09-12 审计新增）
+
+以下是现有 T 卡的受限子任务，不新增平行 owner，也不把父任务误写成完成。依赖与验收来自当前源码、[D15–D18 落地方案](05-d17-d18-landing-plan.md)、[状态矩阵](state-matrix.md)和实现进度；细节以各父任务的边界为准。
+
+| 子任务 | 所属/唯一 owner | 范围与验收 | 前置依赖 |
+|---|---|---|---|
+| `T02-CANONICAL-GRAPH-CONTRACT` | T02 | 将 `WorkflowGraphDefinition`、Draft/CAS、TeamVersion、AuthoringProposal/ChangeSet 冻结为 `packages/protocol` 的唯一图契约；节点、边、failure/concurrency policy 与非法 DAG fixture 可校验，画布与 authoring 复用同一 DTO。 | C5–C9 已冻结；阻塞 T18、T20-SEND、T14-AUTH。 |
+| `T02-RUN-WIRE-CONTRACT` | T02 | 冻结 `POST /tasks/{id}/runs`、placement intent、mode 归一化和 capability mode 维度；Run/Project/Team DTO 只保留一个权威来源，并覆盖幂等、CAS、无能力组合 fixture。 | 阻塞 T09-DIRECT 与 T10 接线。 |
+| `T04-D15-PUBLISH` | T04（迁移/repository）与 T09（发布校验）顺序交接 | 以真实内容 hash insert-once 已发布执行图；实例只能引用版本，禁止 `workflow_instances` 写入时隐式 upsert/改写 `workflow_versions`；对历史兼容、已发布版本更新拒绝和图源可读取做测试。不得复用 catalog DTO 当执行图。 | `T02-CANONICAL-GRAPH-CONTRACT`；完成后解除 T09-D02 的版本图源阻塞。 |
+| `T09-D02-SNAPSHOT-START` | T09 | `confirm-plan` 只创建一次 `ProjectExecutionSnapshot` 并进入 `ready`；`:start` 从 snapshot 创建带同一 ID 的实例，再实例化 Node/Task。覆盖 ready 无实例、失败可重试、幂等重放、Project/租户一致性；审批消费与 SQLite 投影的事务/补偿边界必须先定。 | `T04-D15-PUBLISH`、T10 审批边界、T16 场景。 |
+| `T10-EVENT-REPLAY-SSE` | T10 | `/events` 与 SSE 从持久 Event Store 补拉，cursor/high-water/retention 跨重启有效；断线、重复、缺口、过滤变化和 `410 event_cursor_expired` 有契约/集成测试。 | T04 Event Store，T16 验收。 |
+| `T08-M5-EVALUATION-RETENTION` | T08 | Evaluation 绑定精确 ArtifactVersion/digest；缺产物、完整性或测试失败不得 completed；quarantine 可审计且不被消费；retention 清理原文而保留摘要。 | T04、T06、T07、T09。 |
+| `T02-PROCESS-TERMINAL-CONTRACT` | T02 | 冻结唯一 `CapturedProcess.wait()`：仅 root 退出、output EOF 与受管树收敛均已验证时才 resolve 原生 `{ exitCode, signal }`；无法证明收敛、overflow/abandon 或取消失败须以稳定 `ProcessControllerError` fail closed。timeout、用户取消与预算停止由 Application/Workflow Engine 归因，禁止塞入 exit result；`inspect()` 继续只报告 liveness/identity，禁止第二套 CommandRunner 或私有 exit-code port。 | 阻塞 T06 的跨平台实现与 T08 command criterion；需要 T06/T07/T15/T16 的消费者审阅。 |
+| `T06-PROCESS-TERMINAL-OUTCOME` | T06 | 在唯一 `ProcessController` 上实现已冻结的跨平台终态 `{ exitCode, signal }`、identity/受管树收敛与稳定失败码；明确 bounded output 的消费/丢弃策略、调用方 timeout 后的 graceful/force cancel、Windows Job capture 与不支持时的 fail-closed 行为。不得让消费者通过扩展 `inspect()` 或私有 fake 伪造退出码。 | `T02-PROCESS-TERMINAL-CONTRACT`；阻塞 `T08` 的 command criterion；复用 T07 Policy 与 T16 平台验收。 |
+| `T03-REMOTE-NODE-COMPAT-SPIKE` | T03 | 不改 Domain/Task/Event schema 的 Remote Node Mock start/event/cancel/reconcile/lease-expiry 实验；明确它不是生产 runner，并留下 Windows/macOS/Linux 协议层证据。 | T02、T05。 |
+| `T11-DAEMON-CRASH-OBSERVABILITY` | T11 | Daemon 崩溃、端口冲突、Node 版本不足时，将安全脱敏的 stderr/exit/state transition 写入桌面诊断并给出可操作错误；不泄露 token、环境变量或宿主敏感路径。 | 现有 supervisor/handshake，T16 启动回归。 |
+| `T16-THREE-PLATFORM-SMOKE` | T16 | Windows/macOS/Linux 各至少一台完成安装/启动/握手、最小 M3、取消、重启恢复与 Artifact 读取的真实证据；不支持项按平台明确标注。 | T17 打包，T05/T06/T10/T11/T15。 |
+| `T09-DAG-DEPENDENCY-PERSISTENCE` | T09（T16 负责跨模块验收） | 从已发布 canonical graph 写普通 prerequisite `task_dependencies`；`TaskDto.dependsOn`、数据库与重放一致，failure/cancel/routing 边不得误投影，切换图源后依赖不丢失。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T04-D15-PUBLISH`、`T09-D02-SNAPSHOT-START`。 |
+| `T04-PROJECTION-RECONCILIATION` | T04（T16 故障注入验收） | 使 world/SQLite 投影失败可阻断或可查询对账；重启不得静默选陈旧投影，约束失败、CAS 冲突与部分投影均有恢复证据。 | `T04-MIG`；早于 D17/D18 contract 收紧。 |
+| `T02-PROTOCOL-SCHEMA-GENERATION` | T02 | 从 `packages/protocol` 权威定义生成或校验版本化 JSON Schema/fixtures，并在本地门禁发现手写 schema 漂移。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T02-RUN-WIRE-CONTRACT`。 |
+| `T11-RENDERER-CLIENT-CANONICALIZATION` | T11（T18/T19/T20 配合迁移调用） | 确定唯一生产 typed client/context 装配；隔离重复 fallback，真实 preload 与测试注入走同一行为，禁止新增第三套 client。 | 当前 Desktop shell；先于后续 M7 页面扩展。 |
+| `T09-PLACEMENT-LEASE-WIRING` | T09（T04 repository、T16 恢复验收） | 受管 Run 创建 scheduling record/fencing lease；重复启动不获第二 lease，续租/过期/取消/重启可恢复，未验证 placement 不得写成已绑定。 | `T04-RUN-AXIS`、`T02-RUN-WIRE-CONTRACT`、T05 binding。 |
+
+`T04-MIG`、`T14-AUTH`、`T20-SEND`、`T09-DIRECT`、`T04-RUN-AXIS`、`T16-UPGRADE`、`T15-LIVE`、`T18-HEADED` 与 `T17-PACK` 已在本任务的先前审计中列为同样受限的父卡子任务；不重复造 T22/T23 一类平行大任务。远程 enrollment、生产远程 runner、容器编排、大文件 GC 和完整 OS sandbox 仍属当前 V0.1 范围外，不得借本表默认扩项。
+
 ## 4. 详细任务卡
 
 ### T00 — 决策与蓝图一致性冻结

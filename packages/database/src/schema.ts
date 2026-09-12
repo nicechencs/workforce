@@ -776,6 +776,44 @@ CREATE INDEX IF NOT EXISTS idx_catalog_team_versions_team
   ON catalog_team_versions(team_id, status);
 `;
 
+/**
+ * D18 execution-axis expand follow-up. Runtime profile transport is additive
+ * and nullable so existing M3 profile versions retain their unknown value.
+ * Backfill and contract tightening are intentionally separate migrations.
+ */
+export const MIGRATION_007_SQL = `
+ALTER TABLE runtime_profile_versions
+  ADD COLUMN transport TEXT
+  CHECK (transport IS NULL OR transport IN ('process', 'sdk', 'http'));
+`;
+
+/**
+ * T04-MIG: audit-only execution-axis migration ledger.
+ *
+ * This table deliberately does not add defaults or mutate `runs`.  A row is
+ * an immutable observation of one Run and one source digest.  A later source
+ * digest creates another observation, which keeps the audit history available
+ * while allowing the classifier to be rerun as new, explicitly supplied
+ * evidence arrives.
+ */
+export const MIGRATION_008_SQL = `
+CREATE TABLE execution_axis_migration_items (
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  source_digest TEXT NOT NULL,
+  classification TEXT NOT NULL CHECK (classification IN (
+    'already_canonical','eligible','repair_required','quarantined'
+  )),
+  reason TEXT NOT NULL,
+  source_json TEXT NOT NULL CHECK (json_valid(source_json)),
+  audited_at TEXT NOT NULL,
+  PRIMARY KEY (run_id, source_digest)
+);
+
+CREATE INDEX idx_execution_axis_migration_unresolved
+  ON execution_axis_migration_items(classification, audited_at, run_id)
+  WHERE classification IN ('eligible', 'repair_required', 'quarantined');
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -783,4 +821,6 @@ export const MIGRATIONS = [
   { version: "004_policy_grants", sql: MIGRATION_004_SQL },
   { version: "005_execution_axes_expand", sql: MIGRATION_005_SQL },
   { version: "006_catalog_definitions", sql: MIGRATION_006_SQL },
+  { version: "007_runtime_profile_transport_expand", sql: MIGRATION_007_SQL },
+  { version: "008_execution_axis_migration_audit", sql: MIGRATION_008_SQL },
 ] as const;
