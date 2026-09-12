@@ -2,18 +2,15 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { Tx, WorkflowGraph, WorkflowInstanceRecord } from "@workforce/application";
 
-import { assertCas, organizationIdOfProject, upsertWorkflowVersion } from "./ensure.js";
+import {
+  assertCas,
+  organizationIdOfProject,
+  publishWorkflowVersion,
+  readPublishedWorkflowVersion,
+} from "./ensure.js";
 import { PersistenceError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
-import {
-  asJsonText,
-  cell,
-  ifPresent,
-  optionalText,
-  parseJson,
-  requiredInt,
-  requiredText,
-} from "./sql.js";
+import { asJsonText, cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";
 
 const WORKFLOW_COLUMNS = `
   id, project_id, workflow_version_id, execution_snapshot_id, status, state_revision, graph_json,
@@ -27,7 +24,7 @@ export class SqliteWorkflowInstanceRepository {
     const row = this.db
       .prepare(`SELECT ${WORKFLOW_COLUMNS} FROM workflow_instances WHERE id = ?`)
       .get(id);
-    return row ? rowToWorkflow(row) : null;
+    return row ? rowToWorkflow(this.db, row) : null;
   }
 
   listByProject(projectId: string): WorkflowInstanceRecord[] {
@@ -38,20 +35,20 @@ export class SqliteWorkflowInstanceRepository {
           ORDER BY created_at ASC, id ASC`,
       )
       .all(projectId)
-      .map(rowToWorkflow);
+      .map((row) => rowToWorkflow(this.db, row));
   }
 
   listAll(): WorkflowInstanceRecord[] {
     return this.db
       .prepare(`SELECT ${WORKFLOW_COLUMNS} FROM workflow_instances ORDER BY created_at ASC, id ASC`)
       .all()
-      .map(rowToWorkflow);
+      .map((row) => rowToWorkflow(this.db, row));
   }
 
   insert(tx: Tx, record: WorkflowInstanceRecord, at: string): void {
     const db = sqliteDbOf(tx);
     const organizationId = organizationIdOfProject(db, record.projectId);
-    upsertWorkflowVersion(db, record.workflowVersionId, at, record.graph);
+    const graph = publishAndReadCanonicalGraph(db, record, at);
     try {
       db.prepare(
         `INSERT INTO workflow_instances (
@@ -69,7 +66,7 @@ export class SqliteWorkflowInstanceRepository {
         record.status === "created" ? null : at,
         at,
         at,
-        asJsonText(record.graph),
+        asJsonText(graph),
         record.cancelRequestedAt ?? null,
       );
     } catch (error) {
@@ -82,7 +79,7 @@ export class SqliteWorkflowInstanceRepository {
 
   update(tx: Tx, record: WorkflowInstanceRecord, expectedStateRevision: number, at: string): void {
     const db = sqliteDbOf(tx);
-    upsertWorkflowVersion(db, record.workflowVersionId, at, record.graph);
+    const graph = publishAndReadCanonicalGraph(db, record, at);
     const result = db
       .prepare(
         `UPDATE workflow_instances
@@ -104,7 +101,7 @@ export class SqliteWorkflowInstanceRepository {
         record.executionSnapshotId ?? null,
         record.status,
         record.stateRevision,
-        asJsonText(record.graph),
+        asJsonText(graph),
         record.cancelRequestedAt ?? null,
         at,
         record.status,
@@ -116,17 +113,36 @@ export class SqliteWorkflowInstanceRepository {
   }
 }
 
-function rowToWorkflow(row: Record<string, unknown>): WorkflowInstanceRecord {
+function rowToWorkflow(db: DatabaseSync, row: Record<string, unknown>): WorkflowInstanceRecord {
+  const workflowVersionId = requiredText(cell(row, "workflow_version_id"), "workflow_version_id");
   return {
     id: requiredText(cell(row, "id"), "id"),
     projectId: requiredText(cell(row, "project_id"), "project_id"),
-    workflowVersionId: requiredText(cell(row, "workflow_version_id"), "workflow_version_id"),
-    graph: parseGraph(parseJson(cell(row, "graph_json"), "graph_json")),
+    workflowVersionId,
+    graph: parseGraph(readPublishedWorkflowVersion(db, workflowVersionId)),
     status: requiredText(cell(row, "status"), "status") as WorkflowInstanceRecord["status"],
     stateRevision: requiredInt(cell(row, "state_revision"), "state_revision"),
     ...ifPresent("executionSnapshotId", optionalText(cell(row, "execution_snapshot_id"))),
     ...ifPresent("cancelRequestedAt", optionalText(cell(row, "cancel_requested_at"))),
   };
+}
+
+function publishAndReadCanonicalGraph(
+  db: DatabaseSync,
+  record: WorkflowInstanceRecord,
+  at: string,
+): WorkflowGraph {
+  publishWorkflowVersion(
+    db,
+    {
+      id: record.workflowVersionId,
+      workflowId: record.graph.workflowId,
+      version: record.graph.version,
+      definition: record.graph,
+    },
+    at,
+  );
+  return parseGraph(readPublishedWorkflowVersion(db, record.workflowVersionId));
 }
 
 function parseGraph(value: unknown): WorkflowGraph {

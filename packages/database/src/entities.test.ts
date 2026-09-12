@@ -149,6 +149,31 @@ describe("entity repositories", () => {
       expect(db.workflows.get(workflow.id)?.status).toBe("running");
       expect(db.workflows.get(workflow.id)?.graph).toEqual(sampleGraph());
 
+      const version = db.connection
+        .prepare("SELECT definition_json, content_hash FROM workflow_versions WHERE id = ?")
+        .get(workflow.workflowVersionId) as { definition_json: string; content_hash: string };
+      expect(JSON.parse(version.definition_json)).toEqual(sampleGraph());
+      expect(version.content_hash).toMatch(/^sha256:(?!empty$)[a-f0-9]{64}$/);
+
+      await expect(
+        db.uow.withTransaction(async (tx) => {
+          db.workflows.update(
+            tx,
+            {
+              ...next,
+              stateRevision: 3,
+              graph: {
+                ...sampleGraph(),
+                nodes: [{ id: "other", kind: "task", role: "developer" }],
+              },
+            },
+            2,
+            now,
+          );
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(db.workflows.get(workflow.id)?.graph).toEqual(sampleGraph());
+
       await expect(
         db.uow.withTransaction(async (tx) => {
           db.workflows.update(tx, { ...next, stateRevision: 3, status: "paused" }, 1, now);

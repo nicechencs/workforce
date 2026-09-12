@@ -135,6 +135,7 @@ export class SqliteWorldSnapshot {
         }
       });
     }
+    this.tasks.syncDependencies(tx, snapshot.tasks, at);
     for (const node of snapshot.nodes) {
       putWithCas(this.nodes.get(node.id), node, (expected) => {
         if (expected === undefined) {

@@ -96,4 +96,13 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     uniqueness: "PRIMARY KEY (consumer, message_id)",
     recovery: "INSERT OR IGNORE; changes=0 means already processed",
   },
+  {
+    record: "Execution-axis migration audit",
+    location:
+      "execution_axis_migration_items (append-only table; source_json is sanitized evidence)",
+    uniqueness:
+      "audit_sequence PRIMARY KEY; UNIQUE (run_id, source_digest); unresolved partial index",
+    recovery:
+      "audit historical runs into already_canonical / eligible / repair_required / quarantined; never update runs or infer missing axes",
+  },
 ];

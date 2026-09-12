@@ -53,6 +53,7 @@ export {
   MIGRATION_008_SQL,
 } from "./schema.js";
 export {
+  EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
   SqliteExecutionAxisMigrationRepository,
   type ExecutionAxisMigrationAuditOptions,
   type ExecutionAxisMigrationClassification,

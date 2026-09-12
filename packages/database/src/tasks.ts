@@ -30,7 +30,7 @@ export class SqliteTaskRepository {
 
   get(id: string): TaskRecord | null {
     const row = this.db.prepare(`SELECT ${TASK_COLUMNS} FROM tasks WHERE id = ?`).get(id);
-    return row ? rowToTask(row) : null;
+    return row ? this.withNormalizedDependencies(rowToTask(row)) : null;
   }
 
   listByProject(projectId: string): TaskRecord[] {
@@ -41,14 +41,14 @@ export class SqliteTaskRepository {
           ORDER BY created_at ASC, id ASC`,
       )
       .all(projectId)
-      .map(rowToTask);
+      .map((row) => this.withNormalizedDependencies(rowToTask(row)));
   }
 
   listAll(): TaskRecord[] {
     return this.db
       .prepare(`SELECT ${TASK_COLUMNS} FROM tasks ORDER BY created_at ASC, id ASC`)
       .all()
-      .map(rowToTask);
+      .map((row) => this.withNormalizedDependencies(rowToTask(row)));
   }
 
   insert(tx: Tx, record: TaskRecord): void {
@@ -151,6 +151,72 @@ export class SqliteTaskRepository {
         expectedStateRevision,
       );
     assertCas(result.changes, "task", record.id);
+  }
+
+  /**
+   * Keep the normalized dependency projection in the same transaction as the
+   * Task snapshot. It deliberately runs after every Task row has been
+   * inserted/updated so a graph whose nodes are not topologically ordered
+   * cannot violate the dependency foreign keys.
+   */
+  syncDependencies(tx: Tx, tasks: readonly TaskRecord[], createdAt: string): void {
+    const db = sqliteDbOf(tx);
+    const deleteForTask = db.prepare("DELETE FROM task_dependencies WHERE task_id = ?");
+    const insert = db.prepare(
+      `INSERT INTO task_dependencies (
+         task_id, depends_on_task_id, condition, required_status, created_at
+       ) VALUES (?, ?, NULL, ?, ?)`,
+    );
+    for (const task of tasks) {
+      deleteForTask.run(task.id);
+      const seen = new Set<string>();
+      for (const dependency of task.dependsOn) {
+        if (dependency.taskId === task.id) {
+          throw new PersistenceError("constraint", `task ${task.id} cannot depend on itself`);
+        }
+        if (seen.has(dependency.taskId)) {
+          throw new PersistenceError(
+            "constraint",
+            `task ${task.id} has duplicate dependency ${dependency.taskId}`,
+          );
+        }
+        seen.add(dependency.taskId);
+        insert.run(task.id, dependency.taskId, dependency.waitFor, createdAt);
+      }
+    }
+  }
+
+  private withNormalizedDependencies(task: TaskRecord): TaskRecord {
+    const rows = this.db
+      .prepare(
+        `SELECT depends_on_task_id, required_status
+           FROM task_dependencies
+          WHERE task_id = ?
+          ORDER BY depends_on_task_id ASC`,
+      )
+      .all(task.id) as Record<string, unknown>[];
+    // Existing M3 databases can have only depends_on_json until their first
+    // current snapshot write. Keep that read compatibility; after a synced
+    // row exists, the normalized table is the restart authority.
+    if (rows.length === 0) {
+      return task;
+    }
+    return {
+      ...task,
+      dependsOn: rows.map((row) => {
+        const waitFor = requiredText(cell(row, "required_status"), "required_status");
+        if (waitFor !== "outputs_ready" && waitFor !== "completed") {
+          throw new PersistenceError(
+            "constraint",
+            `task dependency ${task.id} has unsupported required_status ${waitFor}`,
+          );
+        }
+        return {
+          taskId: requiredText(cell(row, "depends_on_task_id"), "depends_on_task_id"),
+          waitFor,
+        };
+      }),
+    };
   }
 }
 

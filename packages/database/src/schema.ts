@@ -798,7 +798,10 @@ ALTER TABLE runtime_profile_versions
  */
 export const MIGRATION_008_SQL = `
 CREATE TABLE execution_axis_migration_items (
-  run_id TEXT NOT NULL REFERENCES runs(id),
+  audit_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- No foreign key: the ledger must survive a later runs rebuild,
+  -- quarantine export, or legacy-row deletion during the contract step.
+  run_id TEXT NOT NULL,
   source_digest TEXT NOT NULL,
   classification TEXT NOT NULL CHECK (classification IN (
     'already_canonical','eligible','repair_required','quarantined'
@@ -806,11 +809,11 @@ CREATE TABLE execution_axis_migration_items (
   reason TEXT NOT NULL,
   source_json TEXT NOT NULL CHECK (json_valid(source_json)),
   audited_at TEXT NOT NULL,
-  PRIMARY KEY (run_id, source_digest)
+  UNIQUE (run_id, source_digest)
 );
 
 CREATE INDEX idx_execution_axis_migration_unresolved
-  ON execution_axis_migration_items(classification, audited_at, run_id)
+  ON execution_axis_migration_items(classification, audit_sequence, run_id)
   WHERE classification IN ('eligible', 'repair_required', 'quarantined');
 `;
 

@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { parseRunExecutionSnapshot, type RunExecutionSnapshot } from "@workforce/protocol";
 
-import { cell, optionalText, requiredText } from "./sql.js";
+import { cell, optionalText, requiredInt, requiredText } from "./sql.js";
 
 export const EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS = [
   "already_canonical",
@@ -32,11 +32,10 @@ export interface ExecutionAxisMigrationEvidence {
 export interface ExecutionAxisMigrationAuditOptions {
   evidence?: readonly ExecutionAxisMigrationEvidence[];
   now?: string;
-  /** Explicit operator action; default is fail-closed for prior quarantine. */
-  allowQuarantinePromotion?: boolean;
 }
 
 export interface ExecutionAxisMigrationItem {
+  auditSequence: number;
   runId: string;
   sourceDigest: string;
   classification: ExecutionAxisMigrationClassification;
@@ -54,17 +53,24 @@ interface RunAxisFacts {
 }
 
 interface SanitizedEvidence {
-  provenance?: { source: string; reference: string };
-  orchestrationMode?: unknown;
-  transport?: unknown;
-  executionSnapshotId?: unknown;
-  placementSnapshot?: unknown;
+  provenance?: { source: string; referenceDigest: string };
+  axisFields?: string[];
+  axisDigest?: string;
 }
 
 interface ClassificationResult {
   classification: ExecutionAxisMigrationClassification;
   reason: string;
   snapshot?: RunExecutionSnapshot;
+}
+
+interface AuditContext {
+  /**
+   * The first quarantined observation in the unresolved chain. Keeping this
+   * opaque value in later source identities prevents an older, harmless
+   * source digest from reviving a pre-quarantine classification.
+   */
+  quarantineOriginDigest?: string;
 }
 
 /**
@@ -83,31 +89,30 @@ export class SqliteExecutionAxisMigrationRepository {
   audit(options: ExecutionAxisMigrationAuditOptions = {}): ExecutionAxisMigrationItem[] {
     const now = options.now ?? new Date().toISOString();
     const evidenceByRun = indexEvidence(options.evidence ?? []);
-    const runs = this.listRunFacts();
-    const wasOpen = this.db.isTransaction;
-    if (!wasOpen) {
-      this.db.exec("BEGIN IMMEDIATE");
+    if (this.db.isTransaction) {
+      throw new Error("execution-axis audit requires its own transaction");
     }
+    this.db.exec("BEGIN IMMEDIATE");
 
     try {
+      const runs = this.listRunFacts();
       const results: ExecutionAxisMigrationItem[] = [];
       for (const run of runs) {
         const evidence = evidenceByRun.get(run.runId);
-        const source = sourceFor(run, evidence);
-        const sourceDigest = digestOf(source);
         const prior = this.latest(run.runId);
         const base = classify(run, evidence);
+        const sourceWithoutContext = sourceFor(run, evidence);
+        const auditContext = quarantineContextFor(prior, base, sourceWithoutContext);
+        const source = sourceFor(run, evidence, auditContext);
+        const sourceDigest = digestOf(source);
         const classification =
-          prior?.classification === "quarantined" &&
-          !options.allowQuarantinePromotion &&
-          base.classification !== "quarantined"
+          prior?.classification === "quarantined" && base.classification !== "quarantined"
             ? "quarantined"
             : base.classification;
         const reason =
           classification === "quarantined" &&
           prior?.classification === "quarantined" &&
-          base.classification !== "quarantined" &&
-          !options.allowQuarantinePromotion
+          base.classification !== "quarantined"
             ? `prior quarantine retained; ${base.reason}`
             : base.reason;
 
@@ -129,12 +134,10 @@ export class SqliteExecutionAxisMigrationRepository {
         );
       }
 
-      if (!wasOpen) {
-        this.db.exec("COMMIT");
-      }
+      this.db.exec("COMMIT");
       return results;
     } catch (error) {
-      if (this.db.isTransaction && !wasOpen) {
+      if (this.db.isTransaction) {
         this.db.exec("ROLLBACK");
       }
       throw error;
@@ -144,7 +147,7 @@ export class SqliteExecutionAxisMigrationRepository {
   get(runId: string, sourceDigest: string): ExecutionAxisMigrationItem | null {
     const row = this.db
       .prepare(
-        `SELECT run_id, source_digest, classification, reason, source_json, audited_at
+        `SELECT audit_sequence, run_id, source_digest, classification, reason, source_json, audited_at
            FROM execution_axis_migration_items
           WHERE run_id = ? AND source_digest = ?`,
       )
@@ -155,9 +158,9 @@ export class SqliteExecutionAxisMigrationRepository {
   list(): ExecutionAxisMigrationItem[] {
     return this.db
       .prepare(
-        `SELECT run_id, source_digest, classification, reason, source_json, audited_at
+        `SELECT audit_sequence, run_id, source_digest, classification, reason, source_json, audited_at
            FROM execution_axis_migration_items
-          ORDER BY audited_at ASC, run_id ASC, source_digest ASC`,
+          ORDER BY audit_sequence ASC`,
       )
       .all()
       .map(rowToItem);
@@ -166,10 +169,10 @@ export class SqliteExecutionAxisMigrationRepository {
   latest(runId: string): ExecutionAxisMigrationItem | null {
     const row = this.db
       .prepare(
-        `SELECT run_id, source_digest, classification, reason, source_json, audited_at
+        `SELECT audit_sequence, run_id, source_digest, classification, reason, source_json, audited_at
            FROM execution_axis_migration_items
           WHERE run_id = ?
-          ORDER BY audited_at DESC, source_digest DESC
+          ORDER BY audit_sequence DESC
           LIMIT 1`,
       )
       .get(runId);
@@ -222,17 +225,54 @@ function indexEvidence(
 function sourceFor(
   run: RunAxisFacts,
   evidence: ExecutionAxisMigrationEvidence | undefined,
+  auditContext: AuditContext = {},
 ): Record<string, unknown> {
+  const databaseAxisValues = {
+    orchestrationMode: run.orchestrationMode,
+    transport: run.transport,
+    executionSnapshotId: run.executionSnapshotId,
+    placementSnapshotJson: run.placementSnapshotJson,
+  };
+  const databaseAxisFields = Object.entries(databaseAxisValues)
+    .filter(([, value]) => value !== null)
+    .map(([key]) => key);
   return {
     runId: run.runId,
     database: {
-      orchestrationMode: run.orchestrationMode,
-      transport: run.transport,
-      executionSnapshotId: run.executionSnapshotId,
-      placementSnapshot: parsePlacementForSource(run.placementSnapshotJson),
+      axisFields: databaseAxisFields,
+      axisDigest: digestOf(databaseAxisValues),
+      placementSnapshotDigest:
+        run.placementSnapshotJson === null ? null : digestOf(run.placementSnapshotJson),
     },
     evidence: evidence === undefined ? null : sanitizeEvidence(evidence),
+    ...(auditContext.quarantineOriginDigest === undefined
+      ? {}
+      : { quarantineContext: { originDigest: auditContext.quarantineOriginDigest } }),
   };
+}
+
+function quarantineContextFor(
+  prior: ExecutionAxisMigrationItem | null,
+  base: ClassificationResult,
+  sourceWithoutContext: Record<string, unknown>,
+): AuditContext {
+  if (base.classification !== "quarantined" && prior?.classification !== "quarantined") {
+    return {};
+  }
+  return {
+    quarantineOriginDigest:
+      prior?.classification === "quarantined"
+        ? (priorQuarantineOrigin(prior) ?? prior.sourceDigest)
+        : digestOf(sourceWithoutContext),
+  };
+}
+
+function priorQuarantineOrigin(item: ExecutionAxisMigrationItem): string | undefined {
+  const context = item.source.quarantineContext;
+  if (!isRecord(context) || typeof context.originDigest !== "string") {
+    return undefined;
+  }
+  return context.originDigest;
 }
 
 function classify(
@@ -244,17 +284,7 @@ function classify(
   const evidenceHasAxes = evidence !== undefined && hasAnyEvidenceAxis(evidence);
 
   if (database.classification === "already_canonical") {
-    if (!evidenceHasAxes) {
-      return database;
-    }
-    const supplied = parseEvidenceSnapshot(evidence);
-    if (supplied.snapshot && sameSnapshot(database.snapshot, supplied.snapshot)) {
-      return database;
-    }
-    return {
-      classification: "quarantined",
-      reason: supplied.reason ?? "external evidence conflicts with canonical Run axes",
-    };
+    return database;
   }
 
   // Any already-written but incomplete/invalid axis is ambiguous. It must be
@@ -272,24 +302,10 @@ function classify(
     };
   }
 
-  const supplied = parseEvidenceSnapshot(evidence);
-  if (!supplied.snapshot) {
-    return {
-      classification:
-        supplied.reason === "external evidence is incomplete" ? "quarantined" : "repair_required",
-      reason: supplied.reason ?? "external evidence cannot establish canonical execution axes",
-    };
-  }
-  if (!hasProvenance(evidence)) {
-    return {
-      classification: "repair_required",
-      reason: "complete external axes have no provenance reference",
-    };
-  }
   return {
-    classification: "eligible",
-    reason: "complete, provenance-bearing external evidence is available; Run was not modified",
-    snapshot: supplied.snapshot,
+    classification: "repair_required",
+    reason:
+      "external execution-axis evidence is recorded only as a digest; verified project, transport, and placement relations are required before eligibility",
   };
 }
 
@@ -343,44 +359,8 @@ function classifyDatabaseFacts(run: RunAxisFacts): ClassificationResult {
   }
 }
 
-function parseEvidenceSnapshot(evidence: SanitizedEvidence): {
-  snapshot?: RunExecutionSnapshot;
-  reason?: string;
-} {
-  const hasRequired =
-    evidence.orchestrationMode !== undefined &&
-    evidence.transport !== undefined &&
-    evidence.placementSnapshot !== undefined;
-  if (!hasRequired) {
-    return { reason: "external evidence is incomplete" };
-  }
-
-  try {
-    const snapshot = parseRunExecutionSnapshot({
-      orchestrationMode: evidence.orchestrationMode,
-      transport: evidence.transport,
-      ...(evidence.executionSnapshotId === undefined
-        ? {}
-        : { executionSnapshotId: evidence.executionSnapshotId }),
-      placementSnapshot: evidence.placementSnapshot,
-    });
-    return { snapshot };
-  } catch {
-    return { reason: "external evidence contains invalid or conflicting execution axes" };
-  }
-}
-
 function hasAnyEvidenceAxis(evidence: SanitizedEvidence): boolean {
-  return (
-    evidence.orchestrationMode !== undefined ||
-    evidence.transport !== undefined ||
-    evidence.executionSnapshotId !== undefined ||
-    evidence.placementSnapshot !== undefined
-  );
-}
-
-function hasProvenance(evidence: SanitizedEvidence): boolean {
-  return evidence.provenance !== undefined;
+  return (evidence.axisFields?.length ?? 0) > 0;
 }
 
 function sanitizeEvidence(input: ExecutionAxisMigrationEvidence): SanitizedEvidence {
@@ -389,75 +369,48 @@ function sanitizeEvidence(input: ExecutionAxisMigrationEvidence): SanitizedEvide
   if (provenance !== undefined) {
     result.provenance = provenance;
   }
-  if (Object.prototype.hasOwnProperty.call(input, "orchestrationMode")) {
-    result.orchestrationMode = jsonSafe(input.orchestrationMode);
+  const axisValues: Record<string, unknown> = {};
+  for (const key of [
+    "orchestrationMode",
+    "transport",
+    "executionSnapshotId",
+    "placementSnapshot",
+  ] as const) {
+    if (Object.prototype.hasOwnProperty.call(input, key)) {
+      axisValues[key] = input[key];
+    }
   }
-  if (Object.prototype.hasOwnProperty.call(input, "transport")) {
-    result.transport = jsonSafe(input.transport);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, "executionSnapshotId")) {
-    result.executionSnapshotId = jsonSafe(input.executionSnapshotId);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, "placementSnapshot")) {
-    result.placementSnapshot = jsonSafe(input.placementSnapshot);
+  const axisFields = Object.keys(axisValues);
+  if (axisFields.length > 0) {
+    result.axisFields = axisFields;
+    result.axisDigest = digestOf(axisValues);
   }
   return result;
 }
 
 function normalizeProvenance(
   value: ExecutionAxisMigrationEvidence["provenance"],
-): { source: string; reference: string } | undefined {
+): { source: string; referenceDigest: string } | undefined {
   if (typeof value === "string" && value.trim() !== "") {
-    return { source: "external", reference: value.trim() };
+    return { source: "external", referenceDigest: digestOf(value.trim()) };
   }
   if (isRecord(value) && typeof value.source === "string" && typeof value.reference === "string") {
     const source = value.source.trim();
     const reference = value.reference.trim();
     if (source !== "" && reference !== "") {
-      return { source, reference };
+      return {
+        source: allowedProvenanceSource(source) ? source : "external",
+        referenceDigest: digestOf(reference),
+      };
     }
   }
   return undefined;
 }
 
-function jsonSafe(value: unknown): unknown {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map(jsonSafe);
-  }
-  if (isRecord(value)) {
-    const object: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      object[key] = jsonSafe(value[key]);
-    }
-    return object;
-  }
-  return { invalidValueType: typeof value };
-}
-
-function parsePlacementForSource(value: string | null): unknown {
-  if (value === null) {
-    return null;
-  }
-  try {
-    return jsonSafe(JSON.parse(value) as unknown);
-  } catch {
-    return { invalidJsonDigest: digestOf(value) };
-  }
-}
-
-function sameSnapshot(
-  left: RunExecutionSnapshot | undefined,
-  right: RunExecutionSnapshot,
-): boolean {
-  return left !== undefined && canonicalJson(left) === canonicalJson(right);
+function allowedProvenanceSource(
+  value: string,
+): value is "operator" | "runtime_handle" | "scheduling_record" | "sidecar_handle" {
+  return ["operator", "runtime_handle", "scheduling_record", "sidecar_handle"].includes(value);
 }
 
 function digestOf(value: unknown): string {
@@ -500,6 +453,7 @@ function rowToItem(row: Record<string, unknown>): ExecutionAxisMigrationItem {
     throw new Error("execution-axis migration source_json must be an object");
   }
   return {
+    auditSequence: requiredInt(cell(row, "audit_sequence"), "audit_sequence"),
     runId: requiredText(cell(row, "run_id"), "run_id"),
     sourceDigest: requiredText(cell(row, "source_digest"), "source_digest"),
     classification: classification as ExecutionAxisMigrationClassification,

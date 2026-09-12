@@ -5,10 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { WorkforceSqlite } from "./database.js";
-import {
-  SqliteExecutionAxisMigrationRepository,
-  type ExecutionAxisMigrationEvidence,
-} from "./execution-axis-migration.js";
+import type { ExecutionAxisMigrationEvidence } from "./execution-axis-migration.js";
 import { appliedMigrations, checksumSql } from "./migrate.js";
 import { MIGRATION_008_SQL } from "./schema.js";
 
@@ -65,14 +62,9 @@ describe("execution-axis migration audit", () => {
     }
   });
 
-  it("quarantines a partial axis and never silently promotes prior quarantine", () => {
+  it("quarantines a partial persisted axis and never silently promotes prior quarantine", () => {
     const db = openDb();
-    insertRun(db, "run_partial");
-    const partialEvidence: ExecutionAxisMigrationEvidence = {
-      runId: "run_partial",
-      provenance: { source: "operator", reference: "ticket-41" },
-      orchestrationMode: "direct",
-    };
+    insertRun(db, "run_partial", { orchestrationMode: "direct" });
     const evidence: ExecutionAxisMigrationEvidence = {
       runId: "run_partial",
       provenance: { source: "operator", reference: "ticket-42" },
@@ -81,7 +73,7 @@ describe("execution-axis migration audit", () => {
       placementSnapshot: placement("partial"),
     };
     try {
-      const first = db.executionAxisMigration.audit({ now, evidence: [partialEvidence] });
+      const first = db.executionAxisMigration.audit({ now });
       expect(first[0]?.classification).toBe("quarantined");
 
       const second = db.executionAxisMigration.audit({
@@ -89,14 +81,39 @@ describe("execution-axis migration audit", () => {
         evidence: [evidence],
       });
       expect(second[0]?.classification).toBe("quarantined");
-      expect(second[0]?.reason).toContain("prior quarantine retained");
+      expect(second[0]?.reason).toContain("partial execution-axis projection");
       expect(db.executionAxisMigration.list()).toHaveLength(2);
       expect(axisColumns(db, "run_partial")).toEqual({
-        orchestration_mode: null,
+        orchestration_mode: "direct",
         transport: null,
         execution_snapshot_id: null,
         placement_snapshot_json: null,
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("keeps a quarantine sticky when an older repair-required source returns", () => {
+    const db = openDb();
+    insertRun(db, "run_quarantine_cycle");
+    try {
+      expect(db.executionAxisMigration.audit({ now })[0]?.classification).toBe("repair_required");
+      db.connection
+        .prepare("UPDATE runs SET orchestration_mode = ? WHERE id = ?")
+        .run("direct", "run_quarantine_cycle");
+      expect(
+        db.executionAxisMigration.audit({ now: "2026-09-12T10:01:00.000Z" })[0]?.classification,
+      ).toBe("quarantined");
+      db.connection
+        .prepare("UPDATE runs SET orchestration_mode = NULL WHERE id = ?")
+        .run("run_quarantine_cycle");
+
+      const [returned] = db.executionAxisMigration.audit({ now: "2026-09-12T10:02:00.000Z" });
+      expect(returned?.classification).toBe("quarantined");
+      expect(returned?.reason).toContain("prior quarantine retained");
+      expect(returned?.auditSequence).toBeGreaterThan(2);
+      expect(db.executionAxisMigration.list()).toHaveLength(3);
     } finally {
       db.close();
     }
@@ -124,7 +141,7 @@ describe("execution-axis migration audit", () => {
     }
   });
 
-  it("reclassifies on a changed source digest, without writing a snapshot", () => {
+  it("records changed external evidence as repair-required, without writing a snapshot", () => {
     const db = openDb();
     insertRun(db, "run_evidence");
     const evidence: ExecutionAxisMigrationEvidence = {
@@ -137,14 +154,72 @@ describe("execution-axis migration audit", () => {
     const before = axisColumns(db, "run_evidence");
     try {
       expect(db.executionAxisMigration.audit({ now })[0]?.classification).toBe("repair_required");
-      const eligible = db.executionAxisMigration.audit({
+      const changed = db.executionAxisMigration.audit({
         now: "2026-09-12T10:01:00.000Z",
         evidence: [evidence],
       });
-      expect(eligible[0]?.classification).toBe("eligible");
+      expect(changed[0]?.classification).toBe("repair_required");
       expect(db.executionAxisMigration.list()).toHaveLength(2);
-      expect(eligible[0]?.sourceDigest).not.toBe(db.executionAxisMigration.list()[0]?.sourceDigest);
+      expect(changed[0]?.sourceDigest).not.toBe(db.executionAxisMigration.list()[0]?.sourceDigest);
       expect(axisColumns(db, "run_evidence")).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("stores only evidence digests and survives later legacy Run removal", () => {
+    const db = openDb();
+    insertRun(db, "run_sanitized");
+    const secret = "never-persist-this-secret";
+    try {
+      const [item] = db.executionAxisMigration.audit({
+        now,
+        evidence: [
+          {
+            runId: "run_sanitized",
+            provenance: { source: "operator", reference: `token=${secret}` },
+            orchestrationMode: "direct",
+            transport: "sdk",
+            placementSnapshot: { ...placement("sanitized"), token: secret, unknown: { secret } },
+          },
+        ],
+      });
+      expect(item?.classification).toBe("repair_required");
+      expect(JSON.stringify(item?.source)).not.toContain(secret);
+      expect(JSON.stringify(item?.source)).not.toContain('"token"');
+
+      db.connection.prepare("DELETE FROM runs WHERE id = ?").run("run_sanitized");
+      expect(db.executionAxisMigration.list()).toHaveLength(1);
+      expect(db.executionAxisMigration.list()[0]?.runId).toBe("run_sanitized");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("does not copy malformed database axis values into the audit ledger", () => {
+    const db = openDb();
+    insertRun(db, "run_malformed_database");
+    const secret = "database-secret-must-not-be-copied";
+    try {
+      db.connection
+        .prepare(
+          `UPDATE runs
+              SET orchestration_mode = ?, transport = ?, execution_snapshot_id = ?, placement_snapshot_json = ?
+            WHERE id = ?`,
+        )
+        .run(
+          `token=${secret}`,
+          `path:C:\\private\\${secret}`,
+          secret,
+          JSON.stringify({ token: secret, sidecar: { secret } }),
+          "run_malformed_database",
+        );
+
+      const [item] = db.executionAxisMigration.audit({ now });
+      expect(item?.classification).toBe("quarantined");
+      expect(JSON.stringify(item?.source)).not.toContain(secret);
+      expect(JSON.stringify(item?.source)).not.toContain("token=");
+      expect(JSON.stringify(item?.source)).not.toContain("path:C:\\private");
     } finally {
       db.close();
     }

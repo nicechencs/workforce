@@ -108,6 +108,59 @@ describe("SqliteWorldSnapshot", () => {
     db.close();
   });
 
+  it("projects task dependencies after every Task row exists and replaces stale edges", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
+    dirs.push(dir);
+    const db = WorkforceSqlite.open(join(dir, "workforce.sqlite"));
+    const snapshot = sampleSnapshot();
+    const dependent: TaskRecord = {
+      ...snapshot.tasks[0]!,
+      id: "tsk_dependent",
+      workflowNodeId: "review",
+      title: "review",
+      status: "blocked",
+      dependsOn: [{ taskId: ids.taskId, waitFor: "outputs_ready" }],
+    };
+    // The dependent intentionally precedes its prerequisite in the snapshot:
+    // dependency persistence must wait until both Task rows exist.
+    snapshot.tasks = [dependent, snapshot.tasks[0]!];
+    try {
+      await db.uow.withTransaction(async (tx) => {
+        db.worldSnapshot.save(tx, snapshot, now);
+      });
+      expect(
+        db.connection
+          .prepare(
+            `SELECT task_id, depends_on_task_id, condition, required_status
+               FROM task_dependencies ORDER BY task_id, depends_on_task_id`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          task_id: "tsk_dependent",
+          depends_on_task_id: ids.taskId,
+          condition: null,
+          required_status: "outputs_ready",
+        },
+      ]);
+
+      const replacement: WorldEntitySnapshot = {
+        ...snapshot,
+        tasks: snapshot.tasks.map((task) =>
+          task.id === dependent.id
+            ? { ...task, stateRevision: task.stateRevision + 1, dependsOn: [] }
+            : task,
+        ),
+      };
+      await db.uow.withTransaction(async (tx) => {
+        db.worldSnapshot.save(tx, replacement, now);
+      });
+      expect(db.connection.prepare("SELECT * FROM task_dependencies").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("reloads budget, active reservation, and usage keys after reopen", async () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-db-snap-"));
     dirs.push(dir);
