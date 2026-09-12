@@ -1,14 +1,25 @@
 import { startIdempotencyKey } from "@workforce/domain";
-import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  type OrchestrationMode,
+  type RunExecutionSnapshot,
+} from "@workforce/protocol";
 
+import { assertExecutionBinding } from "../projects/admission.js";
 import type { AppContext } from "../projects/context.js";
 import { expectRevision, touch } from "../projects/context.js";
 import { notFound, UseCaseError, validationFailed } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
+import type {
+  ProjectRecord,
+  RunRecord,
+  TaskRecord,
+  WorkflowInstanceRecord,
+} from "../projects/store.js";
 import { dispatchTask, evaluateTaskAfterRun, queueTask, requireTask } from "../tasks/tasks.js";
-import type { RunRecord } from "../projects/store.js";
+import { assembleRunExecutionSnapshot } from "./execution-snapshot.js";
 import { unsupportedPause } from "./host.js";
 
 export async function startRun(
@@ -72,68 +83,111 @@ export async function startRun(
         },
       },
       async () => {
-        const live = requireTask(ctx, input.taskId);
-        expectRevision(live, input.expectedStateRevision);
-        const existingActive = ctx.world.activeRunForTask(live.id);
-        if (existingActive) {
-          return { run: existingActive };
-        }
-        const now = ctx.world.nowIso();
-        const runId = ctx.world.ids.ulid("run_");
-        const run: RunRecord = {
-          id: runId,
-          taskId: live.id,
-          projectId: live.projectId,
-          status: "pending",
-          stateRevision: 1,
-          attempt: live.attempt,
-          generation: live.generation,
-          definitionRevision: live.definitionRevision,
-          operationId: input.operationId,
-          orchestrationMode,
-          createdAt: now,
-          updatedAt: now,
-        };
-        ctx.world.runs.set(run.id, run);
+        return ctx.world.withDomainRollback(async () => {
+          const live = requireTask(ctx, input.taskId);
+          expectRevision(live, input.expectedStateRevision);
+          const liveProject = requireProject(ctx, live.projectId);
+          if (liveProject.id !== project.id || live.projectId !== project.id) {
+            throw validationFailed("task does not belong to this project");
+          }
+          if (liveProject.organizationId.trim() === "") {
+            throw validationFailed("project organization is required");
+          }
+          const existingActive = ctx.world.activeRunForTask(live.id);
+          if (existingActive) {
+            return { run: existingActive };
+          }
+          const now = ctx.world.nowIso();
+          const runId = ctx.world.ids.ulid("run_");
+          const workflow = live.workflowInstanceId
+            ? ctx.world.workflows.get(live.workflowInstanceId)
+            : undefined;
+          const executionSnapshot = live.workflowInstanceId
+            ? assembleWorkflowBoundRunSnapshot(ctx, liveProject, live, workflow)
+            : undefined;
+          const run: RunRecord = {
+            id: runId,
+            taskId: live.id,
+            projectId: live.projectId,
+            status: "pending",
+            stateRevision: 1,
+            attempt: live.attempt,
+            generation: live.generation,
+            definitionRevision: live.definitionRevision,
+            operationId: input.operationId,
+            orchestrationMode: executionSnapshot?.orchestrationMode ?? orchestrationMode,
+            createdAt: now,
+            updatedAt: now,
+            ...(executionSnapshot ? { executionSnapshot } : {}),
+          };
+          ctx.world.runs.set(run.id, run);
 
-        const handle = await ctx.host.start({
-          operationId: input.operationId,
-          idempotencyKey,
-          taskId: live.id,
-          definitionRevision: live.definitionRevision,
-          generation: live.generation,
-          attempt: live.attempt,
-          principalId: ctx.principalId,
-          clientId: ctx.clientId,
-          placement: {
-            executionNodeId: project.executionNodeId ?? "",
-            runtimeInstallationId: project.runtimeInstallationId ?? "",
-            workspaceInstanceId: project.workspaceInstanceId ?? "",
-          },
-          runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
-          snapshotRef: input.snapshotRef ?? "mock:success",
-          orchestrationMode,
+          const handle = await ctx.host.start({
+            operationId: input.operationId,
+            idempotencyKey,
+            taskId: live.id,
+            definitionRevision: live.definitionRevision,
+            generation: live.generation,
+            attempt: live.attempt,
+            principalId: ctx.principalId,
+            clientId: ctx.clientId,
+            placement: {
+              executionNodeId: liveProject.executionNodeId ?? "",
+              runtimeInstallationId: liveProject.runtimeInstallationId ?? "",
+              workspaceInstanceId: liveProject.workspaceInstanceId ?? "",
+            },
+            runtime: { adapterId: liveProject.runtimeId ?? "mock", protocolVersion: "0.1" },
+            snapshotRef: input.snapshotRef ?? "mock:success",
+            ...(run.orchestrationMode !== undefined
+              ? { orchestrationMode: run.orchestrationMode }
+              : {}),
+          });
+          run.handleId = handle.handleId;
+          run.status = ctx.engine.nextRunStatus(run.status, "begin-start");
+          run.status = ctx.engine.nextRunStatus(run.status, "attach");
+          touch(run, now);
+          if (live.status === "queued") {
+            dispatchTask(ctx, live.id);
+          }
+          await appendEvent(ctx.world, tx, {
+            type: "run.started",
+            subjectType: "run",
+            subjectId: run.id,
+            projectId: live.projectId,
+            taskId: live.id,
+            runId: run.id,
+            correlationId: input.operationId,
+            data: { to: run.status },
+          });
+          return { run };
         });
-        run.handleId = handle.handleId;
-        run.status = ctx.engine.nextRunStatus(run.status, "begin-start");
-        run.status = ctx.engine.nextRunStatus(run.status, "attach");
-        touch(run, now);
-        if (live.status === "queued") {
-          dispatchTask(ctx, live.id);
-        }
-        await appendEvent(ctx.world, tx, {
-          type: "run.started",
-          subjectType: "run",
-          subjectId: run.id,
-          projectId: live.projectId,
-          taskId: live.id,
-          runId: run.id,
-          correlationId: input.operationId,
-          data: { to: run.status },
-        });
-        return { run };
       },
     ).then((result) => ({ reused: result.reused, run: result.value.run }));
+  });
+}
+
+function assembleWorkflowBoundRunSnapshot(
+  ctx: AppContext,
+  project: ProjectRecord,
+  task: TaskRecord,
+  workflow: WorkflowInstanceRecord | undefined,
+): RunExecutionSnapshot {
+  if (!project.executionSnapshotId) {
+    throw validationFailed("workflow_bound run requires an execution snapshot");
+  }
+  const snapshot = ctx.world.executionSnapshots.get(project.executionSnapshotId);
+  if (!snapshot) {
+    throw validationFailed("project execution snapshot is unavailable");
+  }
+  if (!workflow) {
+    throw validationFailed("workflow instance is unavailable");
+  }
+  assertExecutionBinding({ project, snapshot, workflow, task });
+  return assembleRunExecutionSnapshot({
+    project,
+    nodeSessionId: ctx.world.ids.ulid("nss_"),
+    executionLeaseId: ctx.world.ids.ulid("lse_"),
+    fencingToken: 1,
   });
 }
 

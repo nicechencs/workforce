@@ -59,3 +59,9 @@ export {
   type WorkflowGraph,
   type WorkflowNodeDefinition,
 } from "./types.js";
+export {
+  checkExecutionBinding,
+  cloneWorkflowGraph,
+  requirePublishedWorkflowGraph,
+  type AdmissionCheck,
+} from "./admission.js";

@@ -15,3 +15,4 @@ export {
   settleRunCancel,
   startRun,
 } from "./runs.js";
+export { assembleRunExecutionSnapshot } from "./execution-snapshot.js";
