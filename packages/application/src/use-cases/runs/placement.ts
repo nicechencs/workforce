@@ -16,6 +16,14 @@ export const DEFAULT_LOCAL_PLACEMENT: PlacementCandidate = {
   transport: "sdk",
 };
 
+export const SCHEDULING_PLACEMENT_PENDING = "placement_pending" as const;
+export const SCHEDULING_LEASED = "leased" as const;
+export const SCHEDULING_CANCELLED = "cancelled" as const;
+
+export function isBoundSchedulingState(state: string): boolean {
+  return state === SCHEDULING_LEASED;
+}
+
 /**
  * V0.1 Local Node placement. Remote / container kinds are product Placement
  * values (D19) but this implementation does not schedule them.

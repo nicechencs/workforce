@@ -19,6 +19,18 @@ export type JoinPolicy = "all_success" | "all_terminal" | "min_success";
 
 export type UpstreamWait = "outputs_ready" | "completed" | "failed" | "cancelled" | "any_terminal";
 
+/** Public TaskDto.dependsOn may only project these ordinary prerequisite waits. */
+export const PREREQUISITE_WAITS = ["outputs_ready", "completed"] as const;
+export type PrerequisiteWait = (typeof PREREQUISITE_WAITS)[number];
+
+export const ROUTING_WAITS = ["failed", "cancelled", "any_terminal"] as const;
+export type RoutingWait = (typeof ROUTING_WAITS)[number];
+
+export function isPrerequisiteWait(value: string | undefined): value is PrerequisiteWait {
+  const wait = value ?? "outputs_ready";
+  return wait === "outputs_ready" || wait === "completed";
+}
+
 export type WorkerRole = "planner" | "developer" | "reviewer" | "approver";
 
 export interface WorkflowNodeDefinition {

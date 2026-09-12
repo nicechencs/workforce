@@ -14,16 +14,19 @@ import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
 import type {
-  ExecutionLeaseRecord,
   ProjectRecord,
   RunRecord,
-  SchedulingRecord,
   TaskRecord,
   WorkflowInstanceRecord,
 } from "../projects/store.js";
 import { dispatchTask, evaluateTaskAfterRun, queueTask, requireTask } from "../tasks/tasks.js";
 import { assembleRunExecutionSnapshot } from "./execution-snapshot.js";
 import { unsupportedPause } from "./host.js";
+import {
+  acquireManagedRunLease,
+  markRunSchedulingCancelled,
+  nodeSessionForCandidate,
+} from "./lease.js";
 import { DEFAULT_PLACEMENT_INTENT } from "./placement.js";
 
 export async function startRun(
@@ -52,9 +55,10 @@ export async function startRun(
       ...(project.workspaceInstanceId ? { workspaceInstanceId: project.workspaceInstanceId } : {}),
     },
   });
-  const session = ctx.host.ensureNodeSession
-    ? await ctx.host.ensureNodeSession()
-    : { nodeId: placement.candidate.nodeId, nodeSessionId: ctx.world.ids.ulid("ses_") };
+  const hostSession = ctx.host.ensureNodeSession ? await ctx.host.ensureNodeSession() : undefined;
+  const session = nodeSessionForCandidate(hostSession, placement.candidate, () =>
+    ctx.world.ids.ulid("ses_"),
+  );
   const idempotencyKey =
     input.idempotencyKey ??
     startIdempotencyKey({
@@ -113,26 +117,22 @@ export async function startRun(
             return { run: existingActive };
           }
           const now = ctx.world.nowIso();
-          const expiresAt = new Date(ctx.world.clock.now().getTime() + 60 * 60 * 1000).toISOString();
           const runId = ctx.world.ids.ulid("run_");
-          const leaseId = ctx.world.ids.ulid("lse_");
-          const fencingToken = ctx.world.nextFencingToken();
+          const leased = acquireManagedRunLease(ctx.world, {
+            runId,
+            candidate: placement.candidate,
+            session,
+            reason: placement.reason,
+            now,
+          });
           const workflow = live.workflowInstanceId
             ? ctx.world.workflows.get(live.workflowInstanceId)
             : undefined;
-          const placementSnapshot = {
-            nodeId: placement.candidate.nodeId,
-            nodeSessionId: session.nodeSessionId,
-            runtimeInstallationId: placement.candidate.runtimeInstallationId,
-            workspaceInstanceId: placement.candidate.workspaceInstanceId,
-            executionLeaseId: leaseId,
-            fencingToken,
-          };
           const executionSnapshot = live.workflowInstanceId
             ? assembleWorkflowBoundRunSnapshot(ctx, liveProject, live, workflow, {
                 nodeSessionId: session.nodeSessionId,
-                executionLeaseId: leaseId,
-                fencingToken,
+                executionLeaseId: leased.lease.id,
+                fencingToken: leased.lease.fencingToken,
               })
             : buildRunExecutionSnapshot({
                 orchestrationMode,
@@ -140,7 +140,7 @@ export async function startRun(
                 ...(liveProject.executionSnapshotId
                   ? { executionSnapshotId: liveProject.executionSnapshotId }
                   : {}),
-                placementSnapshot,
+                placementSnapshot: leased.placementSnapshot,
               });
           const run: RunRecord = {
             id: runId,
@@ -159,27 +159,6 @@ export async function startRun(
           };
           ctx.world.runs.set(run.id, run);
 
-          const lease: ExecutionLeaseRecord = {
-            id: leaseId,
-            runId,
-            nodeId: placement.candidate.nodeId,
-            fencingToken,
-            acquiredAt: now,
-            renewedAt: now,
-            expiresAt,
-          };
-          ctx.world.executionLeases.set(lease.id, lease);
-
-          const scheduling: SchedulingRecord = {
-            id: ctx.world.ids.ulid("sch_"),
-            runId,
-            placementSnapshot,
-            state: "leased",
-            reason: placement.reason,
-            createdAt: now,
-          };
-          ctx.world.schedulingRecords.set(scheduling.id, scheduling);
-
           if (live.status === "queued") {
             dispatchTask(ctx, live.id);
           }
@@ -195,8 +174,8 @@ export async function startRun(
               to: run.status,
               orchestrationMode: run.orchestrationMode,
               transport: placement.candidate.transport,
-              executionLeaseId: leaseId,
-              fencingToken,
+              executionLeaseId: leased.lease.id,
+              fencingToken: leased.lease.fencingToken,
             },
           });
           return { run };
@@ -208,7 +187,7 @@ export async function startRun(
   const run = requireRun(ctx, admitted.value.run.id);
   if (!run.handleId) {
     const snapshot = run.executionSnapshot;
-    const lease = [...ctx.world.executionLeases.values()].find((item) => item.runId === run.id);
+    const lease = ctx.world.leaseForRun(run.id);
     const handle = await ctx.host.start({
       operationId: input.operationId,
       idempotencyKey,
@@ -357,6 +336,7 @@ export async function cancelRun(
 
   const now = ctx.world.nowIso();
   run.cancelRequestedAt = now;
+  markRunSchedulingCancelled(ctx.world, run.id);
   touch(run, now);
   return { accepted: true, status: run.status, cancelRequestedAt: now };
 }

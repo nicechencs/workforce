@@ -617,8 +617,8 @@ function instantiateGraph(
 
 /**
  * Public Task dependencies represent only unconditional task-to-task
- * prerequisites. Condition/routing edges are workflow control flow, not a
- * requirement for a Task to wait for another Task's terminal result.
+ * prerequisites projected from the published canonical graph. Condition,
+ * failure, cancel, and other routing edges stay on the Workflow graph.
  */
 export function projectTaskDependencies(
   graph: WorkflowGraph,
@@ -627,20 +627,21 @@ export function projectTaskDependencies(
   taskId: string;
   dependsOn: Array<{ taskId: string; waitFor: "outputs_ready" | "completed" }>;
 }> {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const dependenciesByTask = new Map<
     string,
     Array<{ taskId: string; waitFor: "outputs_ready" | "completed" }>
   >();
   for (const edge of graph.edges) {
+    if (!isPublishedTaskPrerequisiteEdge(nodes, edge)) {
+      continue;
+    }
     const fromTask = nodeToTask.get(edge.from);
     const toTask = nodeToTask.get(edge.to);
-    if (!fromTask || !toTask || edge.conditionValue !== undefined) {
+    if (!fromTask || !toTask) {
       continue;
     }
-    const waitFor = edge.waitFor ?? "outputs_ready";
-    if (waitFor !== "outputs_ready" && waitFor !== "completed") {
-      continue;
-    }
+    const waitFor = edge.waitFor === "completed" ? "completed" : "outputs_ready";
     const dependencies = dependenciesByTask.get(toTask) ?? [];
     if (!dependencies.some((dependency) => dependency.taskId === fromTask)) {
       dependencies.push({ taskId: fromTask, waitFor });
@@ -648,6 +649,22 @@ export function projectTaskDependencies(
     dependenciesByTask.set(toTask, dependencies);
   }
   return [...dependenciesByTask.entries()].map(([taskId, dependsOn]) => ({ taskId, dependsOn }));
+}
+
+function isPublishedTaskPrerequisiteEdge(
+  nodes: ReadonlyMap<string, WorkflowGraph["nodes"][number]>,
+  edge: WorkflowGraph["edges"][number],
+): boolean {
+  const from = nodes.get(edge.from);
+  const to = nodes.get(edge.to);
+  if (!from || !to || from.kind !== "task" || to.kind !== "task") {
+    return false;
+  }
+  if (edge.conditionValue !== undefined) {
+    return false;
+  }
+  const waitFor = edge.waitFor ?? "outputs_ready";
+  return waitFor === "outputs_ready" || waitFor === "completed";
 }
 
 function executionSnapshotContentHash(value: unknown): string {

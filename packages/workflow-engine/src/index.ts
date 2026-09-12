@@ -12,7 +12,9 @@ export {
 } from "./transitions.js";
 export {
   incomingEdges,
+  isTaskPrerequisiteEdge,
   outgoingEdges,
+  projectTaskPrerequisiteDependencies,
   reachableFrom,
   topologicalOrder,
   validateWorkflowGraph,
@@ -28,7 +30,13 @@ export {
   type NodeRuntimeState,
 } from "./eligibility.js";
 export { compareReady, schedule, type ScheduleAction, type ScheduleInput } from "./scheduler.js";
-export { LOCAL_PLACEMENT_SCHEDULER, type PlacementSchedulerPort } from "./placement.js";
+export {
+  LOCAL_PLACEMENT_SCHEDULER,
+  PLACEMENT_RECORD_STATES,
+  isBoundPlacementRecord,
+  type PlacementRecordState,
+  type PlacementSchedulerPort,
+} from "./placement.js";
 export {
   decideRecovery,
   nextBackoffMs,
@@ -49,11 +57,16 @@ export {
 export {
   NODE_INSTANCE_STATUSES,
   NODE_TERMINAL,
+  PREREQUISITE_WAITS,
+  ROUTING_WAITS,
   TASK_TERMINAL,
+  isPrerequisiteWait,
   nodeById,
   type NodeInstanceStatus,
   type JoinPolicy,
   type NodeKind,
+  type PrerequisiteWait,
+  type RoutingWait,
   type UpstreamWait,
   type WorkerRole,
   type WorkflowEdgeDefinition,
