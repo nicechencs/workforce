@@ -1,0 +1,73 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/project.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cancelRequested": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "executionSnapshotId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "orchestrationMode": {
+      "enum": [
+        "workflow_bound",
+        "direct"
+      ],
+      "type": "string"
+    },
+    "organizationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "planArtifactVersionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "stateRevision": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "teamVersionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "organizationId",
+    "name",
+    "objective",
+    "status",
+    "stateRevision",
+    "protocolVersion",
+    "cancelRequested",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "ProjectDto",
+  "type": "object"
+}

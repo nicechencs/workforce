@@ -4,6 +4,7 @@ import {
   authoringChangeSetSchema,
   authoringProposalSchema,
   authoringSessionSchema,
+  teamDraftSchema,
   workflowDraftSchema,
 } from "./authoring.js";
 import {
@@ -23,7 +24,7 @@ import {
   sendAuthoringMessageAcceptedSchema,
   sendAuthoringMessageInputSchema,
 } from "./authoring-chat.js";
-import { runDtoSchema } from "./dto.js";
+import { projectDtoSchema, runDtoSchema } from "./dto.js";
 import {
   startDirectTaskRunAcceptedSchema,
   startDirectTaskRunInputSchema,
@@ -38,16 +39,25 @@ import { teamSchema } from "./team.js";
 import { workflowGraphDefinitionSchema, workflowSchema } from "./workflow.js";
 
 /**
- * The intentionally small V0.1 JSON-Schema publication surface. Do not add
- * internal helper schemas here merely because they happen to be exported by a
- * TypeScript module: every registry entry is a versioned cross-language
- * contract and produces one checked-in document.
+ * The V0.1 JSON Schema / OpenAPI publication surface. Do not add internal
+ * helper schemas merely because a TypeScript module exports them: every
+ * registry entry is a versioned cross-language contract and produces one
+ * checked-in JSON Schema plus one OpenAPI `components.schemas` component.
+ *
+ * A new public DTO must be registered here before it is a published contract.
+ * `export const *DtoSchema` bindings are additionally fail-closed by the
+ * schema generator: missing entries make `protocol:schema:generate/check`
+ * fail so "code has it, schema does not" cannot land again.
  */
 export interface ProtocolJsonSchemaDefinition {
   fileName: string;
   title: string;
   schema: ZodTypeAny;
 }
+
+export const PROTOCOL_OPENAPI_FILE_NAME = "openapi.json" as const;
+export const PROTOCOL_OPENAPI_VERSION = "3.1.0" as const;
+export const PROTOCOL_JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema" as const;
 
 export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[] = [
   {
@@ -171,9 +181,15 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     title: "ProjectExecutionSnapshot",
     schema: projectExecutionSnapshotSchema,
   },
+  { fileName: "project.schema.json", title: "ProjectDto", schema: projectDtoSchema },
   { fileName: "run.schema.json", title: "RunDto", schema: runDtoSchema },
   { fileName: "task.schema.json", title: "TaskDto", schema: taskDtoSchema },
   { fileName: "team.schema.json", title: "Team", schema: teamSchema },
+  {
+    fileName: "team-draft.schema.json",
+    title: "TeamDraft",
+    schema: teamDraftSchema,
+  },
   {
     fileName: "workflow-draft.schema.json",
     title: "WorkflowDraft",
@@ -186,3 +202,69 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
   },
   { fileName: "workflow-catalog.schema.json", title: "Workflow", schema: workflowSchema },
 ] as const;
+
+function duplicateKeys(
+  entries: readonly ProtocolJsonSchemaDefinition[],
+  key: "fileName" | "title",
+): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const entry of entries) {
+    const value = entry[key];
+    if (seen.has(value)) duplicates.add(value);
+    seen.add(value);
+  }
+  return [...duplicates].sort();
+}
+
+/**
+ * Fail closed when the publication catalog is internally inconsistent.
+ * Called by the schema generator before writing or checking artifacts.
+ */
+export function assertProtocolRegistryInvariants(
+  entries: readonly ProtocolJsonSchemaDefinition[] = protocolJsonSchemaRegistry,
+): void {
+  const duplicateFiles = duplicateKeys(entries, "fileName");
+  const duplicateTitles = duplicateKeys(entries, "title");
+  if (duplicateFiles.length > 0 || duplicateTitles.length > 0) {
+    const details = [
+      duplicateFiles.length > 0 ? `fileName: ${duplicateFiles.join(", ")}` : "",
+      duplicateTitles.length > 0 ? `title: ${duplicateTitles.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+    throw new Error(`Protocol JSON Schema registry has duplicate keys (${details}).`);
+  }
+}
+
+const DTO_SCHEMA_EXPORT_SUFFIX = "DtoSchema" as const;
+
+/** `projectDtoSchema` → `ProjectDto`. */
+export function protocolDtoSchemaExportTitle(exportName: string): string {
+  if (!exportName.endsWith(DTO_SCHEMA_EXPORT_SUFFIX)) {
+    throw new Error(`Expected a *DtoSchema export name, received: ${exportName}`);
+  }
+  const withoutSuffix = exportName.slice(0, -"Schema".length);
+  return `${withoutSuffix.charAt(0).toUpperCase()}${withoutSuffix.slice(1)}`;
+}
+
+/**
+ * Every `export const *DtoSchema` public DTO must appear in the registry
+ * under the derived title (`projectDtoSchema` → `ProjectDto`).
+ */
+export function assertPublicDtoSchemasRegistered(
+  exportedDtoSchemas: Readonly<Record<string, ZodTypeAny>>,
+  entries: readonly ProtocolJsonSchemaDefinition[] = protocolJsonSchemaRegistry,
+): void {
+  const missing: string[] = [];
+  for (const [exportName, schema] of Object.entries(exportedDtoSchemas)) {
+    const title = protocolDtoSchemaExportTitle(exportName);
+    const registered = entries.some((entry) => entry.title === title && entry.schema === schema);
+    if (!registered) missing.push(`${exportName} (title ${title})`);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Public DTO schema is not in protocolJsonSchemaRegistry: ${missing.join(", ")}. Register it before publishing.`,
+    );
+  }
+}

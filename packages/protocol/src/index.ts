@@ -1,5 +1,5 @@
 export const packageName = "@workforce/protocol" as const;
-export const protocolVersion = "0.1" as const;
+export { protocolVersion } from "./protocol-version.js";
 
 export * from "./authoring.js";
 export * from "./authoring-chat.js";
@@ -12,6 +12,7 @@ export * from "./execution.js";
 export * from "./execution-snapshot.js";
 export * from "./expected-output.js";
 export * from "./json-schema-registry.js";
+export * from "./openapi.js";
 export * from "./money.js";
 export * from "./run.js";
 export * from "./task.js";
