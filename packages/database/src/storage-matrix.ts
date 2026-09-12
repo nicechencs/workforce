@@ -129,4 +129,13 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     recovery:
       "all-NULL unrepaired historical rows remain readable; contract rejects partial/invalid axis writes without rewriting 005",
   },
+  {
+    record: "world / SQLite projection reconciliation",
+    location:
+      "projection_reconciliation_items (append-only) + world_projection_meta (clock/ids_seq)",
+    uniqueness:
+      "audit_sequence PRIMARY KEY; UNIQUE (source_digest, classification); world_projection_meta id=1",
+    recovery:
+      "query projection_failed / repair_failed / partial_projection; restart always loads SQLite entities; old sidecar is repaired into SQLite or ignored when stale",
+  },
 ];

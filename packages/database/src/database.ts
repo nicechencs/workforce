@@ -26,6 +26,7 @@ import { SqliteWorkflowInstanceRepository } from "./workflows.js";
 import { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 import { SqliteWorldSnapshot } from "./world-snapshot.js";
 import { SqliteExecutionAxisMigrationRepository } from "./execution-axis-migration.js";
+import { SqliteProjectionReconciliationRepository } from "./projection-reconciliation.js";
 import {
   SqliteAuthoringChangeSetRepository,
   SqliteTeamDraftRepository,
@@ -68,6 +69,7 @@ export class WorkforceSqlite {
   readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
   readonly catalogTeams: SqliteTeamCatalogRepository;
   readonly executionAxisMigration: SqliteExecutionAxisMigrationRepository;
+  readonly projectionReconciliation: SqliteProjectionReconciliationRepository;
   readonly workflowDrafts: SqliteWorkflowDraftRepository;
   readonly teamDrafts: SqliteTeamDraftRepository;
   readonly workflowAuthoringScopes: SqliteWorkflowAuthoringScopeRepository;
@@ -105,6 +107,7 @@ export class WorkforceSqlite {
     this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
     this.catalogTeams = new SqliteTeamCatalogRepository(connection);
     this.executionAxisMigration = new SqliteExecutionAxisMigrationRepository(connection);
+    this.projectionReconciliation = new SqliteProjectionReconciliationRepository(connection);
     this.workflowAuthoringScopes = new SqliteWorkflowAuthoringScopeRepository(connection);
     this.workflowDrafts = new SqliteWorkflowDraftRepository(
       connection,

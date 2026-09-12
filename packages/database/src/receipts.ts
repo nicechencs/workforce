@@ -47,6 +47,18 @@ export class SqliteCommandReceiptRepository implements CommandReceiptRepository 
     return row ? rowToReceipt(row) : null;
   }
 
+  listAll(): Receipt[] {
+    return this.db
+      .prepare(
+        `SELECT operation_id, status, principal_id, client_id, canonical_operation,
+                resource, idempotency_key, request_digest, accepted_at, result_json, error_json
+           FROM command_receipts
+          ORDER BY accepted_at ASC, operation_id ASC`,
+      )
+      .all()
+      .map(rowToReceipt);
+  }
+
   async putPending(tx: Tx, receipt: Receipt): Promise<void> {
     const db = sqliteDbOf(tx);
     db.prepare(

@@ -56,6 +56,7 @@ export {
   MIGRATION_011_SQL,
   MIGRATION_012_SQL,
   MIGRATION_013_SQL,
+  MIGRATION_014_SQL,
 } from "./schema.js";
 export {
   EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
@@ -72,6 +73,18 @@ export {
   type ExecutionAxisBackfillAction,
   type ExecutionAxisBackfillResult,
 } from "./execution-axis-backfill.js";
+export {
+  PROJECTION_RECONCILIATION_CLASSIFICATIONS,
+  SqliteProjectionReconciliationRepository,
+  digestOf as projectionSourceDigest,
+  entityAuthorityDigest,
+  hasDurableEntities,
+  planWorldProjectionRepair,
+  type ProjectionReconciliationClassification,
+  type ProjectionReconciliationItem,
+  type ProjectionRepairPlan,
+  type RecordProjectionReconciliationInput,
+} from "./projection-reconciliation.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
 export {
   SqliteAuthoringChatPatchRepository,
@@ -105,7 +118,7 @@ export {
 } from "./authoring.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
-export { SqliteWorldSnapshot, type WorldEntitySnapshot } from "./world-snapshot.js";
+export { SqliteWorldSnapshot, type WorldEntitySnapshot, type WorldProjectionMeta } from "./world-snapshot.js";
 export { SqliteWorkflowInstanceRepository } from "./workflows.js";
 export { SQLITE_SESSION, SqliteTx, assertNotInTransaction, sqliteDbOf } from "./session.js";
 export { startRunIdempotent, type StartRunCommand, type StartRunResult } from "./start-run.js";

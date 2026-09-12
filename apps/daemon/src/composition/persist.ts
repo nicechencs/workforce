@@ -16,7 +16,15 @@ import type {
   WorkflowGraph,
   WorkflowInstanceRecord,
 } from "@workforce/application";
-import { isConstraintError, type RuntimeHandleRecord, WorkforceSqlite } from "@workforce/database";
+import {
+  entityAuthorityDigest,
+  hasDurableEntities,
+  isConstraintError,
+  planWorldProjectionRepair,
+  type RuntimeHandleRecord,
+  type WorldEntitySnapshot,
+  WorkforceSqlite,
+} from "@workforce/database";
 import type {
   AuthoringChangeSetDto,
   CommandReceipt,
@@ -544,104 +552,87 @@ function emptyWorld(): PersistedWorld {
   };
 }
 
-/** SQLite entity tables win over world.json after restart. */
+/** SQLite entity tables are the restart authority. world.json is sidecar only. */
 export async function loadComposition(
   stateDir: string,
   sqlite: WorkforceSqlite,
 ): Promise<CompositionSnapshot | undefined> {
   const json = loadSnapshot(stateDir);
-  const entities = sqlite.worldSnapshot.load();
-  const sqliteEvents = await sqlite.events.read({ limit: 10_000 });
-  if (entities.projects.length === 0) {
+  let entities = sqlite.worldSnapshot.load();
+  const sidecarWorld = json?.world;
+  const sqliteHasEntities = hasDurableEntities(entities);
+  const sidecarHasEntities = sidecarWorld !== undefined && hasDurableEntities(sidecarEntities(sidecarWorld));
+
+  if (!sqliteHasEntities && !sidecarHasEntities) {
     return json;
   }
+
+  const plan = planWorldProjectionRepair(
+    entities,
+    sidecarWorld === undefined ? undefined : sidecarEntities(sidecarWorld),
+  );
+  if (plan.shouldWriteSqlite && sidecarWorld !== undefined) {
+    try {
+      await dualWriteSqlite(
+        sqlite,
+        applyEntitySnapshot(sidecarWorld, plan.snapshot),
+        { eventIds: new Set(), operationIds: new Set() },
+      );
+    } catch (error) {
+      sqlite.projectionReconciliation.record({
+        classification: "repair_failed",
+        reason: persistFailureReason(error),
+        source: {
+          ...plan.source,
+          errorName: error instanceof Error ? error.name : "Error",
+        },
+      });
+      throw error;
+    }
+    entities = sqlite.worldSnapshot.load();
+  }
+  if (plan.classification !== "sqlite_authority") {
+    sqlite.projectionReconciliation.record({
+      classification: plan.classification,
+      reason: plan.reason,
+      source: plan.source,
+    });
+  }
+
+  const sqliteEvents = await sqlite.events.read({ limit: 10_000 });
+  const sqliteReceipts = sqlite.receipts.listAll();
   let sqliteHandleRows = sqlite.handles.list();
   const persistedOperations = new Set(
     sqliteHandleRows.map((record) => storedHandleFromSqlite(record).request.operationId),
   );
+  const sqliteRunOperations = new Set(entities.runs.map((run) => run.operationId));
   for (const handle of json?.host.handles ?? []) {
-    if (!persistedOperations.has(handle.request.operationId)) {
-      await persistRuntimeHandle(sqlite, handle);
+    if (persistedOperations.has(handle.request.operationId)) {
+      continue;
     }
+    if (!sqliteRunOperations.has(handle.request.operationId) && sqliteHasEntities) {
+      continue;
+    }
+    await persistRuntimeHandle(sqlite, handle);
   }
   sqliteHandleRows = sqlite.handles.list();
   const sqliteHandles = sqliteHandleRows.map(storedHandleFromSqlite);
-  const base = json?.world ?? emptyWorld();
-  const sqliteHasBudgets = entities.budgets.length > 0;
-  const sqliteHandlesByRunId = new Map(
-    sqliteHandleRows.map((record, index) => [record.runId, sqliteHandles[index]!] as const),
-  );
-  const handlesByOperation = new Map(
-    sqliteHandles.map((record) => [record.request.operationId, record.handle.handleId] as const),
-  );
-  const world: PersistedWorld = {
-    ...base,
-    projects: entities.projects.map((project) => {
-      const sidecar = base.projects.find((item) => item.id === project.id);
-      return sidecar?.orchestrationMode
-        ? { ...project, orchestrationMode: sidecar.orchestrationMode }
-        : project;
-    }),
-    tasks: entities.tasks,
-    runs: entities.runs.map((run) => {
-      const handleId =
-        sqliteHandlesByRunId.get(run.id)?.handle.handleId ??
-        handlesByOperation.get(run.operationId);
-      const orchestrationMode = base.runs.find((item) => item.id === run.id)?.orchestrationMode;
-      return {
-        ...run,
-        ...(handleId ? { handleId } : {}),
-        ...(orchestrationMode ? { orchestrationMode } : {}),
-      };
-    }),
-    approvals: entities.approvals,
-    artifacts: entities.artifacts,
-    workflows: entities.workflows,
-    workflowVersions:
-      entities.workflowVersions && entities.workflowVersions.length > 0
-        ? entities.workflowVersions
-        : (base.workflowVersions ?? []),
-    nodes: entities.nodes,
-    executionSnapshots: entities.executionSnapshots,
-    executionLeases:
-      entities.executionLeases && entities.executionLeases.length > 0
-        ? entities.executionLeases
-        : (base.executionLeases ?? []),
-    workflowDrafts:
-      entities.workflowDrafts && entities.workflowDrafts.length > 0
-        ? entities.workflowDrafts
-        : (base.workflowDrafts ?? []),
-    teamDrafts:
-      entities.teamDrafts && entities.teamDrafts.length > 0
-        ? entities.teamDrafts
-        : (base.teamDrafts ?? []),
-    authoringChangeSets:
-      entities.authoringChangeSets && entities.authoringChangeSets.length > 0
-        ? entities.authoringChangeSets
-        : (base.authoringChangeSets ?? []),
-    events: sqliteEvents.length > 0 ? (sqliteEvents as WorkforceEvent[]) : base.events,
-    budgets: sqliteHasBudgets ? entities.budgets : base.budgets,
-    reservations: sqliteHasBudgets
-      ? entities.reservations.map((record) => [
-          record.id,
-          {
-            id: record.id,
-            budgetId: record.budgetId,
-            amountMinor: record.amountMinor,
-            ...(record.runId !== undefined ? { runId: record.runId } : {}),
-          },
-        ])
-      : base.reservations,
-    usageKeys:
-      sqliteHasBudgets || entities.usageKeys.length > 0 ? entities.usageKeys : base.usageKeys,
+  const world = composeAuthoritativeWorld({
+    entities: sqlite.worldSnapshot.load(),
+    sqliteEvents: sqliteEvents as WorkforceEvent[],
+    sqliteReceipts,
+    sqliteHandles,
+    sidecar: sidecarWorld,
+  });
+  const host: PersistedHostStore = {
+    ...(json?.host ?? { version: 1, operations: [], events: [] }),
+    handles: sqliteHandles,
   };
-  return {
-    world,
-    host: {
-      ...(json?.host ?? { version: 1, operations: [], events: [] }),
-      handles: sqliteHandles,
-    },
-  };
+  const composed: CompositionSnapshot = { world, host };
+  if (sidecarNeedsRepublish(sidecarWorld, world)) {
+    persistSnapshot(stateDir, composed);
+  }
+  return composed;
 }
 
 export async function dualWriteSqlite(
@@ -679,6 +670,8 @@ export async function dualWriteSqlite(
         workflowDrafts: snapshot.workflowDrafts ?? [],
         teamDrafts: snapshot.teamDrafts ?? [],
         authoringChangeSets: snapshot.authoringChangeSets ?? [],
+        idsSeq: snapshot.idsSeq,
+        unknownStatuses: snapshot.unknownStatuses,
       },
       snapshot.clock,
     );
@@ -785,4 +778,144 @@ function isStoredHandle(value: unknown): value is StoredHandle {
     stored.request &&
     typeof stored.request.operationId === "string",
   );
+}
+
+function sidecarEntities(world: PersistedWorld): WorldEntitySnapshot {
+  return {
+    workflowVersions: world.workflowVersions ?? [],
+    projects: world.projects,
+    tasks: world.tasks,
+    workflows: world.workflows,
+    nodes: world.nodes,
+    approvals: world.approvals,
+    artifacts: world.artifacts,
+    runs: world.runs,
+    executionLeases: world.executionLeases ?? [],
+    budgets: world.budgets,
+    reservations: world.reservations.map(([id, value]) => ({
+      id,
+      budgetId: value.budgetId,
+      amountMinor: value.amountMinor,
+      ...(value.runId !== undefined ? { runId: value.runId } : {}),
+    })),
+    usageKeys: world.usageKeys,
+    executionSnapshots: world.executionSnapshots ?? [],
+    workflowDrafts: world.workflowDrafts ?? [],
+    teamDrafts: world.teamDrafts ?? [],
+    authoringChangeSets: world.authoringChangeSets ?? [],
+  };
+}
+
+function applyEntitySnapshot(world: PersistedWorld, snapshot: WorldEntitySnapshot): PersistedWorld {
+  return {
+    ...world,
+    projects: snapshot.projects,
+    tasks: snapshot.tasks,
+    workflows: snapshot.workflows,
+    nodes: snapshot.nodes,
+    approvals: snapshot.approvals,
+    artifacts: snapshot.artifacts,
+    runs: snapshot.runs,
+    executionLeases: snapshot.executionLeases ?? [],
+    budgets: snapshot.budgets,
+    reservations: snapshot.reservations.map((record) => [
+      record.id,
+      {
+        id: record.id,
+        budgetId: record.budgetId,
+        amountMinor: record.amountMinor,
+        ...(record.runId !== undefined ? { runId: record.runId } : {}),
+      },
+    ]),
+    usageKeys: snapshot.usageKeys,
+    executionSnapshots: snapshot.executionSnapshots,
+    workflowVersions: snapshot.workflowVersions ?? [],
+    workflowDrafts: snapshot.workflowDrafts ?? [],
+    teamDrafts: snapshot.teamDrafts ?? [],
+    authoringChangeSets: snapshot.authoringChangeSets ?? [],
+  };
+}
+
+function composeAuthoritativeWorld(input: {
+  entities: WorldEntitySnapshot;
+  sqliteEvents: WorkforceEvent[];
+  sqliteReceipts: CommandReceipt[];
+  sqliteHandles: StoredHandle[];
+  sidecar: PersistedWorld | undefined;
+}): PersistedWorld {
+  const sidecar = input.sidecar ?? emptyWorld();
+  const idsSeq = Math.max(input.entities.idsSeq ?? 0, sidecar.idsSeq);
+  const handlesByRunId = new Map(
+    input.sqliteHandles.map((record) => [record.handle.runId, record.handle.handleId] as const),
+  );
+  const handlesByOperation = new Map(
+    input.sqliteHandles.map((record) => [record.request.operationId, record.handle.handleId] as const),
+  );
+  return {
+    version: 1,
+    clock: input.entities.clock ?? sidecar.clock,
+    idsSeq: idsSeq > 0 ? idsSeq : 4096,
+    projects: input.entities.projects,
+    tasks: input.entities.tasks,
+    runs: input.entities.runs.map((run) => {
+      const handleId =
+        handlesByRunId.get(run.id) ?? handlesByOperation.get(run.operationId);
+      return handleId === undefined ? run : { ...run, handleId };
+    }),
+    approvals: input.entities.approvals,
+    artifacts: input.entities.artifacts,
+    workflows: input.entities.workflows,
+    workflowVersions: input.entities.workflowVersions ?? [],
+    nodes: input.entities.nodes,
+    budgets: input.entities.budgets,
+    usageKeys: input.entities.usageKeys,
+    unknownStatuses: input.entities.unknownStatuses ?? sidecar.unknownStatuses,
+    reservations: input.entities.reservations.map((record) => [
+      record.id,
+      {
+        id: record.id,
+        budgetId: record.budgetId,
+        amountMinor: record.amountMinor,
+        ...(record.runId !== undefined ? { runId: record.runId } : {}),
+      },
+    ]),
+    events: input.sqliteEvents,
+    receipts: input.sqliteReceipts,
+    operations: sidecar.operations,
+    artifactContents: sidecar.artifactContents,
+    executionSnapshots: input.entities.executionSnapshots,
+    executionLeases: input.entities.executionLeases ?? [],
+    schedulingRecords: sidecar.schedulingRecords ?? [],
+    workflowDrafts: input.entities.workflowDrafts ?? [],
+    teamDrafts: input.entities.teamDrafts ?? [],
+    authoringChangeSets: input.entities.authoringChangeSets ?? [],
+    workspaces: sidecar.workspaces,
+  };
+}
+
+function sidecarNeedsRepublish(
+  sidecar: PersistedWorld | undefined,
+  world: PersistedWorld,
+): boolean {
+  if (sidecar === undefined) {
+    return hasDurableEntities(sidecarEntities(world));
+  }
+  return (
+    entityAuthorityDigest(sidecarEntities(sidecar)) !==
+      entityAuthorityDigest(sidecarEntities(world)) ||
+    sidecar.idsSeq !== world.idsSeq
+  );
+}
+
+function persistFailureReason(error: unknown): string {
+  if (error !== null && typeof error === "object" && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    if (typeof code === "string") {
+      return `projection failed: ${code}`;
+    }
+  }
+  if (error instanceof Error) {
+    return `projection failed: ${error.name}`;
+  }
+  return "projection failed";
 }
