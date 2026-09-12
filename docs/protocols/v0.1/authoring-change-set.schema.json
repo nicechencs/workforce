@@ -1,0 +1,177 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-change-set.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "failure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "organizationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "proposalRef": {
+      "maxLength": 512,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sourceRunId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "validating",
+        "applying",
+        "applied",
+        "partially_applied",
+        "failed",
+        "cancelled",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "failure": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "ordinal": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "patchRef": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "resultRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "applying",
+              "applied",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "targetId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetType": {
+            "enum": [
+              "team",
+              "task",
+              "workflow"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "targetType",
+          "targetId",
+          "expectedRevision",
+          "status",
+          "patchRef"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "workflowId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "organizationId",
+    "projectId",
+    "sourceRunId",
+    "status",
+    "proposalRef",
+    "steps",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "AuthoringChangeSet",
+  "type": "object"
+}

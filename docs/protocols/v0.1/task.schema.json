@@ -1,9 +1,81 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/task.schema.json",
-  "title": "TaskDto",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "type": "integer"
+    },
+    "cancelRequested": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "definitionRevision": {
+      "type": "integer"
+    },
+    "dependsOn": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "taskId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "waitFor": {
+            "enum": [
+              "outputs_ready",
+              "completed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "waitFor"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "type": "integer"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "stateRevision": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "workflowNodeId": {
+      "type": "string"
+    }
+  },
   "required": [
     "id",
     "projectId",
@@ -20,36 +92,6 @@
     "updatedAt",
     "dependsOn"
   ],
-  "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "projectId": { "type": "string", "minLength": 1 },
-    "title": { "type": "string" },
-    "objective": { "type": "string" },
-    "status": { "type": "string" },
-    "stateRevision": { "type": "integer" },
-    "definitionRevision": { "type": "integer" },
-    "generation": { "type": "integer" },
-    "attempt": { "type": "integer" },
-    "protocolVersion": { "const": "0.1" },
-    "cancelRequested": { "type": "boolean" },
-    "createdAt": { "type": "string" },
-    "updatedAt": { "type": "string" },
-    "role": { "type": "string" },
-    "workflowNodeId": { "type": "string" },
-    "dependsOn": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/TaskDependency" }
-    }
-  },
-  "$defs": {
-    "TaskDependency": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["taskId", "waitFor"],
-      "properties": {
-        "taskId": { "type": "string", "minLength": 1 },
-        "waitFor": { "type": "string", "enum": ["outputs_ready", "completed"] }
-      }
-    }
-  }
+  "title": "TaskDto",
+  "type": "object"
 }

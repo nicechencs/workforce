@@ -7,8 +7,11 @@ import {
   isUnpublishedAuthoringDraft,
   parseAppendAuthoringSessionMessageInput,
   parseAuthoringDraft,
+  parseAuthoringChangeSet,
+  parseAuthoringProposal,
   parseAuthoringSession,
   parseCreateAuthoringSessionInput,
+  parseWorkflowDraft,
 } from "./authoring.js";
 
 const fixtures = resolve(
@@ -194,6 +197,79 @@ describe("D17 authoring session / draft DTO", () => {
       }),
     ).toThrow(/proposal draft needs workflow or team/);
     expect(() => parseAuthoringSessionMessageLikeEmpty()).toThrow();
+  });
+});
+
+describe("D17 proposal, change-set, and canonical drafts", () => {
+  const createdAt = "2026-09-12T00:00:00.000Z";
+  const target = {
+    targetType: "workflow" as const,
+    targetId: "wfd_1",
+    expectedRevision: 3,
+    patchRef: "arv_proposal_patch",
+  };
+
+  it("parses a structured proposal and a draft without exposing raw prompt material", () => {
+    expect(
+      parseAuthoringProposal({
+        id: "apr_1",
+        projectId: "prj_1",
+        sourceRunId: "run_1",
+        summary: "Add an approval gate after implementation.",
+        targets: [target],
+      }),
+    ).toMatchObject({ id: "apr_1", targets: [target] });
+    expect(() =>
+      parseAuthoringProposal({
+        id: "apr_1",
+        projectId: "prj_1",
+        sourceRunId: "run_1",
+        summary: "safe summary",
+        targets: [target],
+        rawPrompt: "secret should never enter the structured proposal",
+      }),
+    ).toThrow();
+
+    expect(
+      parseWorkflowDraft({
+        id: "wfdraft_1",
+        workflowId: "wfd_1",
+        revision: 3,
+        status: "draft",
+        graph: {
+          entryNodeIds: ["plan"],
+          nodes: [{ id: "plan", kind: "task", role: "planner" }],
+          edges: [],
+          failurePolicy: { default: "fail" },
+          concurrencyPolicy: { runWorktree: "isolated", integrationWorktree: "dedicated" },
+        },
+        contentHash: "sha256:graph",
+        updatedAt: createdAt,
+        updatedBy: "usr_1",
+      }),
+    ).toMatchObject({ status: "draft", revision: 3 });
+  });
+
+  it("requires uniquely ordered, individually CAS-bound change-set steps", () => {
+    const changeSet = {
+      id: "acs_1",
+      organizationId: "org_1",
+      projectId: "prj_1",
+      workflowId: "wfd_1",
+      sourceRunId: "run_1",
+      status: "proposed" as const,
+      proposalRef: "arv_proposal",
+      steps: [{ id: "acst_1", ordinal: 1, ...target, status: "pending" as const }],
+      createdAt,
+      updatedAt: createdAt,
+    };
+    expect(parseAuthoringChangeSet(changeSet).steps[0]?.expectedRevision).toBe(3);
+    expect(() =>
+      parseAuthoringChangeSet({
+        ...changeSet,
+        steps: [...changeSet.steps, { id: "acst_2", ordinal: 1, ...target, status: "pending" }],
+      }),
+    ).toThrow(/duplicate authoring change-set/i);
   });
 });
 

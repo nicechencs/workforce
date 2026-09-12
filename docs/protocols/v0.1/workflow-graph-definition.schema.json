@@ -1,0 +1,252 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/workflow-graph-definition.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "concurrencyPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "integrationWorktree": {
+          "enum": [
+            "dedicated",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "runWorktree": {
+          "enum": [
+            "isolated",
+            "shared"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "runWorktree",
+        "integrationWorktree"
+      ],
+      "type": "object"
+    },
+    "edges": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "conditionValue": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "from": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputBindings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fromOutputId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "slotId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "slotId",
+                "fromOutputId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "to": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "waitFor": {
+            "enum": [
+              "outputs_ready",
+              "completed",
+              "failed",
+              "cancelled",
+              "any_terminal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "entryNodeIds": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "failurePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "enum": [
+            "fail",
+            "continue_independent",
+            "request_human"
+          ],
+          "type": "string"
+        },
+        "maxReworkCycles": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "onBudgetExceeded": {
+          "enum": [
+            "retry",
+            "request_approval",
+            "fail"
+          ],
+          "type": "string"
+        },
+        "onDependencyFailure": {
+          "enum": [
+            "fail",
+            "continue_independent",
+            "request_human"
+          ],
+          "type": "string"
+        },
+        "onRuntimeUnavailable": {
+          "enum": [
+            "retry",
+            "request_approval",
+            "fail"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "default"
+      ],
+      "type": "object"
+    },
+    "nodes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "branches": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "isDefault": {
+                  "type": "boolean"
+                },
+                "value": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "conditionKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedOutputIds": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "joinPolicy": {
+            "enum": [
+              "all_success",
+              "all_terminal",
+              "min_success"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "task",
+              "approval",
+              "condition",
+              "parallel"
+            ],
+            "type": "string"
+          },
+          "maxAttempts": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxReworkCycles": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minSuccess": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "priority": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requiresReview": {
+            "type": "boolean"
+          },
+          "role": {
+            "enum": [
+              "planner",
+              "developer",
+              "reviewer",
+              "approver"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "entryNodeIds",
+    "nodes",
+    "edges",
+    "failurePolicy",
+    "concurrencyPolicy"
+  ],
+  "title": "WorkflowGraphDefinition",
+  "type": "object"
+}

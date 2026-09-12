@@ -1,9 +1,159 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/event-envelope.schema.json",
-  "title": "WorkforceEvent",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterVersion": {
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "user",
+            "worker",
+            "runtime",
+            "service",
+            "system"
+          ],
+          "type": "string"
+        },
+        "workerVersionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    },
+    "causationId": {
+      "type": "string"
+    },
+    "correlationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "data": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "dataContentType": {
+      "const": "application/json",
+      "type": "string"
+    },
+    "dataSchema": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "extensions": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "ingestionPosition": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "organizationId": {
+      "type": "string"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "recordedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "redaction": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "sensitivity": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "source": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "specVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "stream": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "subject": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "time": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "trace": {
+      "additionalProperties": false,
+      "properties": {
+        "spanId": {
+          "type": "string"
+        },
+        "traceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "traceId"
+      ],
+      "type": "object"
+    },
+    "type": {
+      "pattern": "^[a-z][a-z0-9_.]*[a-z0-9]$",
+      "type": "string"
+    },
+    "workflowInstanceId": {
+      "type": "string"
+    }
+  },
   "required": [
     "specVersion",
     "id",
@@ -20,69 +170,6 @@
     "data",
     "sensitivity"
   ],
-  "properties": {
-    "specVersion": { "const": "0.1" },
-    "id": { "type": "string", "minLength": 1 },
-    "type": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_.]*[a-z0-9]$"
-    },
-    "source": { "type": "string", "minLength": 1 },
-    "subject": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id"],
-      "properties": {
-        "type": { "type": "string", "minLength": 1 },
-        "id": { "type": "string", "minLength": 1 }
-      }
-    },
-    "time": { "type": "string", "format": "date-time" },
-    "recordedAt": { "type": "string", "format": "date-time" },
-    "organizationId": { "type": "string" },
-    "projectId": { "type": "string" },
-    "workflowInstanceId": { "type": "string" },
-    "taskId": { "type": "string" },
-    "runId": { "type": "string" },
-    "actor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["user", "worker", "runtime", "service", "system"]
-        },
-        "id": { "type": "string", "minLength": 1 },
-        "workerVersionId": { "type": "string" },
-        "adapterVersion": { "type": "string" }
-      }
-    },
-    "sequence": { "type": "integer", "minimum": 1 },
-    "stream": { "type": "string", "minLength": 1 },
-    "ingestionPosition": { "type": "integer", "minimum": 1 },
-    "correlationId": { "type": "string", "minLength": 1 },
-    "causationId": { "type": "string" },
-    "trace": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["traceId"],
-      "properties": {
-        "traceId": { "type": "string" },
-        "spanId": { "type": "string" }
-      }
-    },
-    "dataContentType": { "const": "application/json" },
-    "dataSchema": { "type": "string", "minLength": 1 },
-    "data": { "type": "object" },
-    "sensitivity": {
-      "type": "string",
-      "enum": ["public", "internal", "confidential", "restricted"]
-    },
-    "redaction": { "type": "object" },
-    "extensions": {
-      "type": "object",
-      "additionalProperties": true
-    }
-  }
+  "title": "WorkforceEvent",
+  "type": "object"
 }

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   isExecutableWorkflowVersion,
   parseWorkflow,
+  parseWorkflowGraphDefinition,
   parseWorkflowPage,
   parseWorkflowVersion,
   workflowSchema,
@@ -101,5 +102,53 @@ describe("workflow catalog DTO", () => {
     expect(workflow.versions[0]?.immutable).toBe(false);
     expect(workflow.versions[0]?.nodes?.[0]?.kind).toBe("task");
     expect(isExecutableWorkflowVersion(workflow.versions[0]!)).toBe(false);
+  });
+});
+
+describe("canonical workflow graph definition", () => {
+  const graph = {
+    entryNodeIds: ["plan"],
+    nodes: [
+      { id: "plan", kind: "task" as const, role: "planner" as const },
+      { id: "build", kind: "task" as const, role: "developer" as const },
+    ],
+    edges: [{ id: "plan-build", from: "plan", to: "build", waitFor: "outputs_ready" as const }],
+    failurePolicy: { default: "fail" as const },
+    concurrencyPolicy: {
+      runWorktree: "isolated" as const,
+      integrationWorktree: "dedicated" as const,
+    },
+  };
+
+  it("is the strict DAG contract for authoring and canvas", () => {
+    expect(parseWorkflowGraphDefinition(graph)).toEqual(graph);
+    expect(() => parseWorkflowGraphDefinition({ ...graph, runtime: "codex" })).toThrow();
+  });
+
+  it("rejects dangling references, duplicate identities, and cycles", () => {
+    expect(() =>
+      parseWorkflowGraphDefinition({
+        ...graph,
+        entryNodeIds: ["missing"],
+      }),
+    ).toThrow(/entry node/i);
+    expect(() =>
+      parseWorkflowGraphDefinition({
+        ...graph,
+        nodes: [...graph.nodes, graph.nodes[0]!],
+      }),
+    ).toThrow(/duplicate workflow node/i);
+    expect(() =>
+      parseWorkflowGraphDefinition({
+        ...graph,
+        edges: [...graph.edges, { id: "build-plan", from: "build", to: "plan" }],
+      }),
+    ).toThrow(/finite DAG/i);
+    expect(() =>
+      parseWorkflowGraphDefinition({
+        ...graph,
+        edges: [{ id: "missing", from: "plan", to: "missing" }],
+      }),
+    ).toThrow(/missing node/i);
   });
 });

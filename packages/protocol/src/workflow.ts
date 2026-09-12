@@ -91,6 +91,131 @@ export const workflowGraphEdgeSchema = z
 
 export type WorkflowGraphEdgeDto = z.infer<typeof workflowGraphEdgeSchema>;
 
+export const workflowFailureDefaults = ["fail", "continue_independent", "request_human"] as const;
+export type WorkflowFailureDefault = (typeof workflowFailureDefaults)[number];
+
+export const workflowFailureRecoveries = ["retry", "request_approval", "fail"] as const;
+export type WorkflowFailureRecovery = (typeof workflowFailureRecoveries)[number];
+
+export const workflowFailurePolicySchema = z
+  .object({
+    default: z.enum(workflowFailureDefaults),
+    maxReworkCycles: z.number().int().min(0).optional(),
+    onRuntimeUnavailable: z.enum(workflowFailureRecoveries).optional(),
+    onBudgetExceeded: z.enum(workflowFailureRecoveries).optional(),
+    onDependencyFailure: z.enum(workflowFailureDefaults).optional(),
+  })
+  .strict();
+export type WorkflowFailurePolicyDto = z.infer<typeof workflowFailurePolicySchema>;
+
+export const workflowRunWorktreePolicies = ["isolated", "shared"] as const;
+export const workflowIntegrationWorktreePolicies = ["dedicated", "disabled"] as const;
+
+export const workflowConcurrencyPolicySchema = z
+  .object({
+    runWorktree: z.enum(workflowRunWorktreePolicies),
+    integrationWorktree: z.enum(workflowIntegrationWorktreePolicies),
+  })
+  .strict();
+export type WorkflowConcurrencyPolicyDto = z.infer<typeof workflowConcurrencyPolicySchema>;
+
+/**
+ * The one canonical, editable graph shared by authoring, canvas and publication.
+ * Catalog DTOs remain published-version projections and must not replace this shape.
+ */
+export const workflowGraphDefinitionSchema = z
+  .object({
+    entryNodeIds: z.array(z.string().min(1)).min(1),
+    nodes: z.array(workflowGraphNodeSchema).min(1),
+    edges: z.array(workflowGraphEdgeSchema),
+    failurePolicy: workflowFailurePolicySchema,
+    concurrencyPolicy: workflowConcurrencyPolicySchema,
+  })
+  .strict()
+  .superRefine((graph, context) => {
+    const nodeIds = new Set<string>();
+    for (const [index, node] of graph.nodes.entries()) {
+      if (nodeIds.has(node.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["nodes", index, "id"],
+          message: `duplicate workflow node id: ${node.id}`,
+        });
+      }
+      nodeIds.add(node.id);
+    }
+
+    const entryIds = new Set<string>();
+    for (const [index, entryId] of graph.entryNodeIds.entries()) {
+      if (!nodeIds.has(entryId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["entryNodeIds", index],
+          message: `workflow entry node does not exist: ${entryId}`,
+        });
+      }
+      if (entryIds.has(entryId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["entryNodeIds", index],
+          message: `duplicate workflow entry node id: ${entryId}`,
+        });
+      }
+      entryIds.add(entryId);
+    }
+
+    const edgeIds = new Set<string>();
+    const outgoing = new Map<string, string[]>();
+    for (const [index, edge] of graph.edges.entries()) {
+      if (edgeIds.has(edge.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["edges", index, "id"],
+          message: `duplicate workflow edge id: ${edge.id}`,
+        });
+      }
+      edgeIds.add(edge.id);
+      if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["edges", index],
+          message: `workflow edge ${edge.id} references a missing node`,
+        });
+        continue;
+      }
+      if (edge.from === edge.to) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["edges", index],
+          message: `workflow edge ${edge.id} cannot reference itself`,
+        });
+      }
+      outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
+    }
+
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (nodeId: string): boolean => {
+      if (visiting.has(nodeId)) return true;
+      if (visited.has(nodeId)) return false;
+      visiting.add(nodeId);
+      for (const next of outgoing.get(nodeId) ?? []) {
+        if (visit(next)) return true;
+      }
+      visiting.delete(nodeId);
+      visited.add(nodeId);
+      return false;
+    };
+    if (graph.nodes.some((node) => visit(node.id))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["edges"],
+        message: "workflow graph must be a finite DAG",
+      });
+    }
+  });
+export type WorkflowGraphDefinitionDto = z.infer<typeof workflowGraphDefinitionSchema>;
+
 export const workflowVersionSchema = z
   .object({
     id: z.string().min(1),
@@ -192,6 +317,10 @@ export function parsePatchWorkflowInput(input: unknown): PatchWorkflowInput {
 
 export function parseWorkflowVersionWrite(input: unknown): CreateWorkflowVersionInput {
   return workflowVersionWriteSchema.parse(input);
+}
+
+export function parseWorkflowGraphDefinition(input: unknown): WorkflowGraphDefinitionDto {
+  return workflowGraphDefinitionSchema.parse(input);
 }
 
 export function isPublishedWorkflowVersion(

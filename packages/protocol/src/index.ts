@@ -9,6 +9,7 @@ export * from "./event.js";
 export * from "./execution.js";
 export * from "./execution-snapshot.js";
 export * from "./expected-output.js";
+export * from "./json-schema-registry.js";
 export * from "./money.js";
 export * from "./run.js";
 export * from "./task.js";

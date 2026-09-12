@@ -1,8 +1,10 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/orchestration-mode.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "enum": [
+    "workflow_bound",
+    "direct"
+  ],
   "title": "OrchestrationMode",
-  "description": "D18 dual execution mode. Canonical home is packages/protocol/src/execution.ts. Optional on public RunDto/ProjectDto echo. Not a StartRunRequest field and not a new HTTP path. Default when omitted is workflow_bound. Orthogonal to placement. Old name executionMode is not accepted.",
-  "type": "string",
-  "enum": ["workflow_bound", "direct"]
+  "type": "string"
 }

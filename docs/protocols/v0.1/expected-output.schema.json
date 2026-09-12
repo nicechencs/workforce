@@ -1,30 +1,60 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/expected-output.schema.json",
-  "title": "ExpectedOutput",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "required": ["id", "kind", "required"],
   "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "name": { "type": "string" },
-    "kind": {
-      "type": "string",
-      "enum": ["code", "data", "document", "evaluation", "plan", "log", "other"]
-    },
-    "required": { "type": "boolean" },
     "cardinality": {
-      "type": "object",
       "additionalProperties": false,
       "properties": {
-        "min": { "type": "integer", "minimum": 0 },
-        "max": { "type": "integer", "minimum": 1 }
-      }
+        "max": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "min": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "code",
+        "data",
+        "document",
+        "evaluation",
+        "plan",
+        "log",
+        "other"
+      ],
+      "type": "string"
     },
     "mediaTypes": {
-      "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
-    "schema": { "type": "object" }
-  }
+    "name": {
+      "type": "string"
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "schema": {
+      "additionalProperties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "required"
+  ],
+  "title": "ExpectedOutput",
+  "type": "object"
 }

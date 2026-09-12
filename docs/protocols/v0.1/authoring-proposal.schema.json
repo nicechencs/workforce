@@ -1,0 +1,69 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-proposal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "sourceRunId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "patchRef": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetType": {
+            "enum": [
+              "team",
+              "task",
+              "workflow"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetType",
+          "targetId",
+          "expectedRevision",
+          "patchRef"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "projectId",
+    "sourceRunId",
+    "summary",
+    "targets"
+  ],
+  "title": "AuthoringProposal",
+  "type": "object"
+}

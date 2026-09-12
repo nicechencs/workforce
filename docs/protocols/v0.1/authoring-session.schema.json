@@ -1,10 +1,410 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/authoring-session.schema.json",
-  "title": "AuthoringSession",
-  "description": "D17 conversational authoring session and unpublished draft projection. Executable source is packages/protocol AuthoringSessionDto / AuthoringDraftDto. Not a Runtime, Task, or Run. V0.1 transport is Desktop-local / in-process. Not a Daemon chat resource and not a public chat HTTP path. T20 send stays disabled until a follow-up wires a Desktop session store plus user-only append. Agent replies remain planned. Do not set CHAT_SESSION_PROTOCOL_FROZEN=true. Old name executionMode is not accepted.",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "draft": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "proposal",
+              "type": "string"
+            },
+            "team": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "members": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "runtimeProfileId": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "role",
+                      "runtimeProfileId",
+                      "quantity"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "unpublished": {
+              "const": true,
+              "type": "boolean"
+            },
+            "workflow": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "graph": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "edges": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "conditionValue": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "from": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "inputBindings": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "fromOutputId": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "slotId": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "slotId",
+                                "fromOutputId"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "to": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "waitFor": {
+                            "enum": [
+                              "outputs_ready",
+                              "completed",
+                              "failed",
+                              "cancelled",
+                              "any_terminal"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "from",
+                          "to"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "entry": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "nodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "branches": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "isDefault": {
+                                  "type": "boolean"
+                                },
+                                "value": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "conditionKey": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "expectedOutputIds": {
+                            "items": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "id": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "joinPolicy": {
+                            "enum": [
+                              "all_success",
+                              "all_terminal",
+                              "min_success"
+                            ],
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "task",
+                              "approval",
+                              "condition",
+                              "parallel"
+                            ],
+                            "type": "string"
+                          },
+                          "maxAttempts": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "maxReworkCycles": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "minSuccess": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "priority": {
+                            "maximum": 100,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "requiresReview": {
+                            "type": "boolean"
+                          },
+                          "role": {
+                            "enum": [
+                              "planner",
+                              "developer",
+                              "reviewer",
+                              "approver"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "steps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "gate": {
+                            "enum": [
+                              "plan",
+                              "artifact"
+                            ],
+                            "type": "string"
+                          },
+                          "id": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "task",
+                              "delivery",
+                              "approval"
+                            ],
+                            "type": "string"
+                          },
+                          "notes": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "title": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "worker": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "notes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "unpublished"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "landed",
+              "type": "string"
+            },
+            "teamId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "teamVersionId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "unpublished": {
+              "const": true,
+              "type": "boolean"
+            },
+            "workflowId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "workflowVersionId": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "unpublished",
+            "workflowId",
+            "workflowVersionId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "system",
+              "authoring_agent"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "stateRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "failed",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
   "required": [
     "id",
     "projectId",
@@ -15,112 +415,6 @@
     "createdAt",
     "updatedAt"
   ],
-  "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "projectId": { "type": "string", "minLength": 1 },
-    "protocolVersion": { "type": "string", "const": "0.1" },
-    "status": { "type": "string", "enum": ["open", "failed", "closed"] },
-    "messages": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/authoringSessionMessage" }
-    },
-    "draft": { "$ref": "#/$defs/authoringDraft" },
-    "stateRevision": { "type": "integer", "minimum": 1 },
-    "createdAt": { "type": "string", "format": "date-time" },
-    "updatedAt": { "type": "string", "format": "date-time" }
-  },
-  "$defs": {
-    "authoringSessionMessage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "role", "content", "createdAt"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "role": { "type": "string", "enum": ["user", "system", "authoring_agent"] },
-        "content": { "type": "string", "minLength": 1 },
-        "createdAt": { "type": "string", "format": "date-time" }
-      }
-    },
-    "authoringDraft": {
-      "oneOf": [
-        { "$ref": "#/$defs/authoringDraftProposal" },
-        { "$ref": "#/$defs/authoringDraftLanded" }
-      ]
-    },
-    "authoringDraftProposal": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "unpublished"],
-      "properties": {
-        "kind": { "type": "string", "const": "proposal" },
-        "unpublished": { "type": "boolean", "const": true },
-        "workflow": { "$ref": "#/$defs/authoringDraftWorkflowProposal" },
-        "team": { "$ref": "#/$defs/authoringDraftTeamProposal" }
-      },
-      "anyOf": [{ "required": ["workflow"] }, { "required": ["team"] }]
-    },
-    "authoringDraftLanded": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "unpublished", "workflowId", "workflowVersionId"],
-      "properties": {
-        "kind": { "type": "string", "const": "landed" },
-        "unpublished": { "type": "boolean", "const": true },
-        "workflowId": { "type": "string", "minLength": 1 },
-        "workflowVersionId": { "type": "string", "minLength": 1 },
-        "teamId": { "type": "string", "minLength": 1 },
-        "teamVersionId": { "type": "string", "minLength": 1 }
-      }
-    },
-    "authoringDraftWorkflowProposal": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" },
-        "graph": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "version": { "type": "string", "minLength": 1 },
-            "entry": { "type": "string", "minLength": 1 },
-            "steps": {
-              "type": "array",
-              "items": { "$ref": "workflow-catalog.schema.json#/$defs/workflowStep" }
-            },
-            "nodes": {
-              "type": "array",
-              "items": { "$ref": "workflow-catalog.schema.json#/$defs/workflowGraphNode" }
-            },
-            "edges": {
-              "type": "array",
-              "items": { "$ref": "workflow-catalog.schema.json#/$defs/workflowGraphEdge" }
-            }
-          }
-        }
-      }
-    },
-    "authoringDraftTeamProposal": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" },
-        "members": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["role", "runtimeProfileId", "quantity"],
-            "properties": {
-              "id": { "type": "string", "minLength": 1 },
-              "role": { "type": "string", "minLength": 1 },
-              "runtimeProfileId": { "type": "string", "minLength": 1 },
-              "quantity": { "type": "integer", "minimum": 1 }
-            }
-          }
-        }
-      }
-    }
-  }
+  "title": "AuthoringSession",
+  "type": "object"
 }

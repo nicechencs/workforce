@@ -1,9 +1,36 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/project-execution-snapshot.schema.json",
-  "title": "ProjectExecutionSnapshotDto",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "immutable": {
+      "const": true,
+      "type": "boolean"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "teamVersionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workflowVersionId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
   "required": [
     "id",
     "projectId",
@@ -13,13 +40,6 @@
     "immutable",
     "createdAt"
   ],
-  "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "projectId": { "type": "string", "minLength": 1 },
-    "workflowVersionId": { "type": "string", "minLength": 1 },
-    "teamVersionId": { "type": "string", "minLength": 1 },
-    "contentHash": { "type": "string", "minLength": 1 },
-    "immutable": { "const": true },
-    "createdAt": { "type": "string" }
-  }
+  "title": "ProjectExecutionSnapshot",
+  "type": "object"
 }

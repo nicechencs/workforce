@@ -1,17 +1,28 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/money.schema.json",
-  "title": "Money",
-  "description": "Integer minor units. Never encode budget as floating 5.0. Unknown cost is omitted or marked unknown, never 0.",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "required": ["costMinor", "currency"],
   "properties": {
-    "costMinor": { "type": "integer" },
-    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "costMinor": {
+      "type": "integer"
+    },
+    "currency": {
+      "pattern": "^[A-Z]{3}$",
+      "type": "string"
+    },
     "kind": {
-      "type": "string",
-      "enum": ["unknown", "estimated", "settled"]
+      "enum": [
+        "unknown",
+        "estimated",
+        "settled"
+      ],
+      "type": "string"
     }
-  }
+  },
+  "required": [
+    "costMinor",
+    "currency"
+  ],
+  "title": "Money",
+  "type": "object"
 }

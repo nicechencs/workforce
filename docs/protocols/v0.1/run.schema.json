@@ -1,9 +1,93 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workforce.local/protocols/v0.1/run.schema.json",
-  "title": "RunDto",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "type": "integer"
+    },
+    "cancelRequested": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "definitionRevision": {
+      "type": "integer"
+    },
+    "executionSnapshotId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "generation": {
+      "type": "integer"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "orchestrationMode": {
+      "enum": [
+        "workflow_bound",
+        "direct"
+      ],
+      "type": "string"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "stateRevision": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "taskId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "transport": {
+      "enum": [
+        "process",
+        "sdk",
+        "http"
+      ],
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": false,
+      "properties": {
+        "costMinor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "unknown",
+            "estimated",
+            "settled"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "costMinor",
+        "currency",
+        "kind"
+      ],
+      "type": "object"
+    }
+  },
   "required": [
     "id",
     "taskId",
@@ -19,31 +103,6 @@
     "createdAt",
     "updatedAt"
   ],
-  "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "taskId": { "type": "string", "minLength": 1 },
-    "projectId": { "type": "string", "minLength": 1 },
-    "status": { "type": "string" },
-    "stateRevision": { "type": "integer" },
-    "definitionRevision": { "type": "integer" },
-    "generation": { "type": "integer" },
-    "attempt": { "type": "integer" },
-    "protocolVersion": { "const": "0.1" },
-    "cancelRequested": { "type": "boolean" },
-    "usage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["costMinor", "currency", "kind"],
-      "properties": {
-        "costMinor": { "type": "integer" },
-        "currency": { "type": "string" },
-        "kind": { "enum": ["unknown", "estimated", "settled"] }
-      }
-    },
-    "createdAt": { "type": "string" },
-    "updatedAt": { "type": "string" },
-    "orchestrationMode": { "enum": ["workflow_bound", "direct"] },
-    "transport": { "enum": ["process", "sdk", "http"] },
-    "executionSnapshotId": { "type": "string", "minLength": 1 }
-  }
+  "title": "RunDto",
+  "type": "object"
 }
