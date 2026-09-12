@@ -26,7 +26,11 @@ import {
 } from "@workforce/artifacts";
 import { WorkforceSqlite } from "@workforce/database";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
-import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
+import {
+  DEFAULT_ORCHESTRATION_MODE,
+  type CommandReceipt,
+  type WorkforceEvent,
+} from "@workforce/protocol";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";
@@ -766,14 +770,13 @@ export class ComposedAppServices implements AppServices {
           ? { budgetHardLimitMinor: input.budgetHardLimitMinor }
           : {}),
       });
-      assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
-      if (input.orchestrationMode !== undefined) {
-        project.orchestrationMode = input.orchestrationMode;
-      }
+      const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
+      assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
       const started = await this.app.start({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
         projectId: project.id,
+        orchestrationMode,
         ...optionalRevision(ctx.ifMatch),
       });
       await this.dispatchReadyTasks(project.id);
@@ -1893,7 +1896,9 @@ export class ComposedAppServices implements AppServices {
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
     };
-    if (project?.orchestrationMode !== undefined) {
+    if (run.orchestrationMode !== undefined) {
+      dto.orchestrationMode = run.orchestrationMode;
+    } else if (project?.orchestrationMode !== undefined) {
       dto.orchestrationMode = project.orchestrationMode;
     }
     return dto;

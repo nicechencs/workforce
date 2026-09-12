@@ -1,4 +1,5 @@
 import { startIdempotencyKey } from "@workforce/domain";
+import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
 
 import type { AppContext } from "../projects/context.js";
 import { expectRevision, touch } from "../projects/context.js";
@@ -18,10 +19,13 @@ export async function startRun(
     taskId: string;
     expectedStateRevision?: number;
     snapshotRef?: string;
+    orchestrationMode?: OrchestrationMode;
   },
 ): Promise<{ reused: boolean; run: RunRecord }> {
   const task = requireTask(ctx, input.taskId);
   const project = requireProject(ctx, task.projectId);
+  const orchestrationMode =
+    input.orchestrationMode ?? project.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
   if (!project.executionNodeId || !project.runtimeInstallationId || !project.workspaceInstanceId) {
     throw validationFailed("run start requires node, runtime, and workspace placement");
   }
@@ -57,6 +61,7 @@ export async function startRun(
           definitionRevision: task.definitionRevision,
           generation: task.generation,
           attempt: task.attempt,
+          orchestrationMode,
         }),
         scope: {
           principalId: ctx.principalId,
@@ -85,6 +90,7 @@ export async function startRun(
           generation: live.generation,
           definitionRevision: live.definitionRevision,
           operationId: input.operationId,
+          orchestrationMode,
           createdAt: now,
           updatedAt: now,
         };
@@ -106,6 +112,7 @@ export async function startRun(
           },
           runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
           snapshotRef: input.snapshotRef ?? "mock:success",
+          orchestrationMode,
         });
         run.handleId = handle.handleId;
         run.status = ctx.engine.nextRunStatus(run.status, "begin-start");

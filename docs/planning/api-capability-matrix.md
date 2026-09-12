@@ -10,11 +10,13 @@ updated: 2026-09-12
 
 日期：2026-09-12  
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
-权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
+权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+修订：2026-09-12 — 本 tip 补上 T19 写 UI、T21 项目详情挂载与 composed passthrough；D19 Placement（本机默认，远程/容器为一等能力，runner 未实现）。`StartRunRequest` 仍不加 `orchestrationMode`。**不**宣称 M7/M8 完成或 headed PASS。
+
 修订：2026-09-12 — T20 Desktop-local session store + 仅用户 append 已接线（renderer `localStorage`）；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false，无 Agent/send、无 chat HTTP。**不**宣称 M7 完成或 headed PASS。
 
-修订：2026-09-12 — catalog 写切片已接通现有 `POST/PATCH /workflows|/teams`、`/versions`、`:publish`（**不是** 下表 `/drafts` path）。画布 + 草稿写路径是部分 M7 UI，**不是** M7 完成。T19 页面仍 stub。T20 作者壳在，`CHAT_SESSION_PROTOCOL_FROZEN=false`，无 Agent/send。`:start` 可带可选 `orchestrationMode` 并做 capability gating；项目 start 的 mode UI 模块已有但未挂详情；composed passthrough 比 main #28 更薄。**不发明** chat 或 `:direct` path。`orchestrationMode` 权威在 `packages/protocol/src/execution.ts`；`StartRunRequest` 不加该字段。无 headed PASS、无 Codex direct。  
+修订：2026-09-12 — catalog 写切片已接通现有 `POST/PATCH /workflows|/teams`、`/versions`、`:publish`（**不是** 下表 `/drafts` path）。画布 + 草稿写路径是部分 M7 UI，**不是** M7 完成。T20 作者壳在，`CHAT_SESSION_PROTOCOL_FROZEN=false`，无 Agent/send。`:start` 可带可选 `orchestrationMode` 并做 capability gating。**不发明** chat 或 `:direct` path。`orchestrationMode` 权威在 `packages/protocol/src/execution.ts`；`StartRunRequest` 不加该字段。无 headed PASS、无 Codex direct。  
 修订：2026-09-11 — 主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
 
 **项目制：** 页面与 API 围着 Project。M3 用预设 Team + 只读工作流目录走完 Mock 项目闭环。M7 补齐「给该项目编排 Team / 用画布或对话生成并编辑 Workflow」。M8 补齐「Agent 跟随已发布工作流或直接执行」。M7/M8 **未完成**；部分写 API 与画布壳已有代码，见 03。
@@ -243,8 +245,8 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
 | 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话 DTO 已冻结，Desktop-local session store 只追加用户消息；`CHAT_SESSION_PROTOCOL_FROZEN=false` | M7 planned（D17）。作者壳 + 本机会话已有，**无** Agent/send，**无** chat path。**不**宣称对话编排完成 |
 | 发布工作流版本 | `/workflows/{id}/drafts/{draftId}:publish` | M7；有限 DAG 校验通过 |
-| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。gating + DTO 回显已有；控件未挂项目页；无 `direct` 调度。**不**宣称 M8 完成 |
-| 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
+| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。项目详情已挂控件；composed 回传到 `app.start()` / Run 记录。无 `direct` 调度。**不**宣称 M8 完成 |
+| 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿 list/reload 走 `GET /teams?status=draft` + `GET /teams/{id}`。草稿不得 `:start-planning`。无假 publish/bind |
 | 发布 Team 版本 | `/teams/{id}/drafts/{draftId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
 | 确认计划 | `:confirm-plan` 或 `approvals/:approve` gate=plan | Plan Artifact available |
@@ -260,9 +262,9 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 - 只使用 `packages/desktop-client` 生成的 typed client
 - 公开 Task DTO 的 `dependsOn` 由 `packages/protocol` 定义；页面只消费该字段，不另造 DAG API
 - Artifact 内容路由走已列 versioned path；不发明无版本 content
-- 不发明可写项目策略 endpoint 或远程节点 enrollment
+- 不发明可写项目策略 endpoint 或远程节点 enrollment；远程/容器是 D19 产品冻结，不增加 path，不伪造 runner
 - 不改 OpenAPI / protocol（缺口交 T02）
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
-- T18/T19：画布 + catalog 写 path 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；T19 Renderer 仍拒保存（stub）
-- T20/T21：作者壳、Desktop-local session store（仅用户 append）与 `:start` gating 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；不得实现假 Agent send 或假 `direct` 成功；控件未入页不得写成桌面模式选择可用；composed passthrough 更薄，不得写成 main #28 已迁入
+- T18/T19：画布 + catalog 写 path + 自定义 Team 写 UI 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；无假 publish/bind
+- T20/T21：作者壳、Desktop-local session store（仅用户 append）、项目详情 mode 控件与 composed passthrough 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；不得实现假 Agent send 或假 `direct` 成功；**禁止**把 mode 写入 `StartRunRequest`

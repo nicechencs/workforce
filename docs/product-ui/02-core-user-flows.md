@@ -3,7 +3,7 @@ title: Workforce 核心用户流程
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # Workforce 核心用户流程
@@ -106,7 +106,7 @@ flowchart TD
   Snapshot --> Run[Start Run]
 ```
 
-V0.1 只实现 Local Node，但界面保留“自动调度 / 本机 / 指定节点”的模型；未实现选项必须清晰标记，而不是伪造可用。
+V0.1 只实现 Local Node，但界面保留“自动调度 / 本机 / 指定节点”的模型；远程与容器是已冻结的产品 Placement（D19），未实现选项必须清晰标记，而不是伪造可用。不发明 enrollment / Docker / K8s endpoint。
 
 ## 4. 人工审批
 
