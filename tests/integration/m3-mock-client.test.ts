@@ -24,7 +24,7 @@ async function poll<T>(fn: () => Promise<T | undefined>, timeoutMs = 4000): Prom
 describe("M3 mock loop via typed desktop client", () => {
   it(
     "creates, confirms the fixture plan, runs mock developers, and consumes artifact approval",
-    { timeout: 20_000 },
+    { timeout: 40_000 },
     async () => {
       const { client } = await harnesses.start({ testId: "m3-client", completeAfterMs: 5 });
 

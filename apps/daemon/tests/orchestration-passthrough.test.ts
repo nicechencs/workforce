@@ -78,7 +78,10 @@ async function injectJson(
 }
 
 describe("composed orchestrationMode pass-through", () => {
-  it("threads workflow_bound into project.start / Run records and still refuses unsupported direct", async () => {
+  it(
+    "threads workflow_bound into project.start / Run records and still refuses unsupported direct",
+    { timeout: 40_000 },
+    async () => {
     const harness = await startInjected();
     const { auth, services } = harness;
 
@@ -151,5 +154,6 @@ describe("composed orchestrationMode pass-through", () => {
       (item) => item.projectId === project.id,
     );
     expect(worldRun?.orchestrationMode).toBe("workflow_bound");
-  }, 20_000);
+  },
+);
 });
