@@ -22,7 +22,7 @@ import type {
 
 import type { Clock, Scheduler } from "./clock.js";
 import { SystemClock, TimeoutScheduler } from "./clock.js";
-import { startRequestDigest } from "./digest.js";
+import { sha256Hex, stableJson, startRequestDigest } from "./digest.js";
 import { RuntimeSdkError } from "./errors.js";
 import { AsyncEventQueue, toRuntimeEvent } from "./events.js";
 import type { IdGenerator } from "./ids.js";
@@ -38,6 +38,7 @@ import {
   type ProcessTreeKiller,
   RecordingProcessTreeKiller,
   type StoredHandle,
+  type StoredAuthoringInput,
   type StoredNodeSession,
 } from "./types.js";
 
@@ -54,6 +55,13 @@ export interface LocalNodeHostOptions {
   processTreeKiller?: ProcessTreeKiller;
 }
 
+/**
+ * Initial authoring input is accepted only by the concrete Host extension.
+ * RuntimeAdapter.start still receives the ordinary protocol request, and the
+ * value exists only for the duration of the post-start sendInput handoff.
+ */
+export type TransientInitialInput = RuntimeInput;
+
 export class LocalNodeHost implements RuntimeAdapter {
   private readonly adapter: RuntimeAdapter;
   private readonly store: RuntimeHostStore;
@@ -68,6 +76,7 @@ export class LocalNodeHost implements RuntimeAdapter {
   private readonly liveTails = new Map<string, Set<AsyncEventQueue<HostRuntimeEvent>>>();
   private readonly pumps = new Map<string, Promise<void>>();
   private readonly forceKilled = new Set<string>();
+  private readonly initialInputDeliveries = new Map<string, Promise<void>>();
   private writeChain: Promise<void> = Promise.resolve();
   private sessionPromise: Promise<StoredNodeSession> | undefined;
   private disposed = false;
@@ -94,14 +103,37 @@ export class LocalNodeHost implements RuntimeAdapter {
   }
 
   async start(request: StartRunRequest): Promise<RuntimeHandle> {
+    return this.startInternal(request);
+  }
+
+  /**
+   * Start an authoring Runtime and deliver its raw input through the existing
+   * RuntimeAdapter.sendInput channel. The input is never placed in the
+   * StartRunRequest, StoredHandle, operation receipt, or Host event store.
+   */
+  async startWithInitialInput(
+    request: StartRunRequest,
+    initialInput: TransientInitialInput,
+  ): Promise<RuntimeHandle> {
+    return this.startInternal(request, structuredClone(initialInput));
+  }
+
+  private async startInternal(
+    request: StartRunRequest,
+    initialInput?: TransientInitialInput,
+  ): Promise<RuntimeHandle> {
     await this.ensureSession();
     const parsed = parseStartRunRequest(request);
     this.assertProtocol(parsed);
     this.assertNode(parsed);
     await this.assertAdapterId(parsed);
+    if (initialInput) {
+      this.assertTransientInitialInput(parsed, initialInput);
+    }
 
     const digest = startRequestDigest(parsed);
     const scope = startScope(parsed);
+    const initialInputDigest = initialInput ? transientInputDigest(initialInput) : undefined;
 
     const byOperation = await this.store.getOperation(parsed.operationId);
     if (byOperation) {
@@ -112,9 +144,15 @@ export class LocalNodeHost implements RuntimeAdapter {
           { details: { operationId: parsed.operationId } },
         );
       }
-      const existing = await this.handleFromOperation(byOperation.handleId);
+      const existing = await this.storedHandleFromOperation(byOperation.handleId);
       if (existing) {
-        return existing;
+        try {
+          await this.maybeDeliverInitialInput(existing, initialInput, initialInputDigest);
+        } catch (error) {
+          await this.markStartOperationFailed(parsed, scope, digest, existing.handle, error);
+          throw error;
+        }
+        return existing.handle;
       }
     }
 
@@ -127,9 +165,15 @@ export class LocalNodeHost implements RuntimeAdapter {
           { details: { idempotencyKey: parsed.idempotencyKey } },
         );
       }
-      const existing = await this.handleFromOperation(byScope.handleId);
+      const existing = await this.storedHandleFromOperation(byScope.handleId);
       if (existing) {
-        return existing;
+        try {
+          await this.maybeDeliverInitialInput(existing, initialInput, initialInputDigest);
+        } catch (error) {
+          await this.markStartOperationFailed(parsed, scope, digest, existing.handle, error);
+          throw error;
+        }
+        return existing.handle;
       }
     }
 
@@ -173,6 +217,9 @@ export class LocalNodeHost implements RuntimeAdapter {
       terminal: isTerminalStatus(inspected.status),
       request: parsed,
       auditOnly: false,
+      authoringInput: initialInputDigest
+        ? { status: "pending", digest: initialInputDigest }
+        : { status: "none" },
       ...(inspected.lastTrustedFactAt ? { lastTrustedFactAt: inspected.lastTrustedFactAt } : {}),
     });
     await this.store.putOperation({
@@ -184,6 +231,14 @@ export class LocalNodeHost implements RuntimeAdapter {
       handleId: handle.handleId,
     });
     this.ensurePump(handle);
+    if (initialInput && initialInputDigest) {
+      try {
+        await this.deliverInitialInput(handle, initialInput, initialInputDigest);
+      } catch (error) {
+        await this.markStartOperationFailed(parsed, scope, digest, handle, error);
+        throw error;
+      }
+    }
     return handle;
   }
 
@@ -191,6 +246,12 @@ export class LocalNodeHost implements RuntimeAdapter {
     await this.ensureSession();
     const stored = await this.requireStoredHandle(handle.handleId);
     await this.assertLeaseAllowsMutation(stored.binding);
+    if (authoringInputState(stored).status === "pending") {
+      throw new RuntimeSdkError("conflict", "authoring initial input handoff is still pending", {
+        retryable: true,
+        details: { handleId: handle.handleId },
+      });
+    }
     return this.adapter.sendInput(handle, input);
   }
 
@@ -308,6 +369,10 @@ export class LocalNodeHost implements RuntimeAdapter {
       };
     }
 
+    if (authoringInputState(stored).status === "pending") {
+      return this.failClosedPendingAuthoringInput(stored);
+    }
+
     const session = await this.requireSession();
     if (stored.auditOnly || !this.isBindingCurrent(stored.binding, session)) {
       return {
@@ -372,6 +437,7 @@ export class LocalNodeHost implements RuntimeAdapter {
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    this.initialInputDeliveries.clear();
     for (const tails of this.liveTails.values()) {
       for (const tail of tails) {
         tail.close();
@@ -398,14 +464,185 @@ export class LocalNodeHost implements RuntimeAdapter {
     }
   }
 
-  private async handleFromOperation(
+  private async storedHandleFromOperation(
     handleId: string | undefined,
-  ): Promise<RuntimeHandle | undefined> {
+  ): Promise<StoredHandle | undefined> {
     if (!handleId) {
       return undefined;
     }
-    const stored = await this.store.getHandle(handleId);
-    return stored?.handle;
+    return this.store.getHandle(handleId);
+  }
+
+  private assertTransientInitialInput(
+    request: StartRunRequest,
+    input: TransientInitialInput,
+  ): void {
+    if (!isAuthoringSnapshotRef(request.snapshotRef)) {
+      throw new RuntimeSdkError(
+        "validation_failed",
+        "transient initial input is only available for authoring runs",
+        { details: { snapshotRef: request.snapshotRef } },
+      );
+    }
+    if (!input.operationId.trim()) {
+      throw new RuntimeSdkError("validation_failed", "transient input operationId is required");
+    }
+    if (input.text === undefined && input.payload === undefined) {
+      throw new RuntimeSdkError("validation_failed", "transient input content is required");
+    }
+    if (input.text !== undefined && input.text.trim() === "" && input.payload === undefined) {
+      throw new RuntimeSdkError("validation_failed", "transient input content is required");
+    }
+  }
+
+  private async maybeDeliverInitialInput(
+    stored: StoredHandle,
+    input: TransientInitialInput | undefined,
+    digest: string | undefined,
+  ): Promise<void> {
+    if (!input || !digest) {
+      return;
+    }
+    const existing = authoringInputState(stored);
+    if (existing.digest && existing.digest !== digest) {
+      throw new RuntimeSdkError(
+        "conflict",
+        "authoring initial input does not match the original handoff",
+        { details: { handleId: stored.handle.handleId } },
+      );
+    }
+    if (existing.status === "delivered") {
+      return;
+    }
+    if (stored.terminal || isTerminalStatus(stored.status)) {
+      throw new RuntimeSdkError(
+        "conflict",
+        "authoring initial input cannot be delivered to a terminal run",
+        { details: { handleId: stored.handle.handleId } },
+      );
+    }
+    await this.deliverInitialInput(stored.handle, input, digest);
+  }
+
+  private async deliverInitialInput(
+    handle: RuntimeHandle,
+    input: TransientInitialInput,
+    digest: string,
+  ): Promise<void> {
+    const inFlight = this.initialInputDeliveries.get(handle.handleId);
+    if (inFlight) {
+      return inFlight;
+    }
+    const delivery = this.performInitialInputDelivery(handle, input, digest);
+    this.initialInputDeliveries.set(handle.handleId, delivery);
+    try {
+      await delivery;
+    } finally {
+      this.initialInputDeliveries.delete(handle.handleId);
+    }
+  }
+
+  private async performInitialInputDelivery(
+    handle: RuntimeHandle,
+    input: TransientInitialInput,
+    digest: string,
+  ): Promise<void> {
+    const stored = await this.requireStoredHandle(handle.handleId);
+    const state = authoringInputState(stored);
+    if (state.digest && state.digest !== digest) {
+      throw new RuntimeSdkError(
+        "conflict",
+        "authoring initial input does not match the original handoff",
+        { details: { handleId: handle.handleId } },
+      );
+    }
+    if (state.status === "delivered") {
+      return;
+    }
+    if (stored.terminal || isTerminalStatus(stored.status)) {
+      throw new RuntimeSdkError(
+        "conflict",
+        "authoring initial input cannot be delivered to a terminal run",
+        { details: { handleId: handle.handleId } },
+      );
+    }
+
+    try {
+      const receipt = await this.adapter.sendInput(handle, input);
+      if (!receipt.accepted) {
+        throw new Error("input was not accepted");
+      }
+      await this.enqueueWrite(async () => {
+        const current = await this.requireStoredHandle(handle.handleId);
+        const currentState = authoringInputState(current);
+        if (currentState.digest && currentState.digest !== digest) {
+          throw new RuntimeSdkError(
+            "conflict",
+            "authoring initial input does not match the original handoff",
+            { details: { handleId: handle.handleId } },
+          );
+        }
+        await this.store.putHandle({
+          ...current,
+          authoringInput: { status: "delivered", digest },
+        });
+      });
+    } catch (error) {
+      await this.failInitialInputHandoff(handle, digest);
+      if (error instanceof RuntimeSdkError && error.code === "conflict") {
+        throw error;
+      }
+      throw new RuntimeSdkError("conflict", "authoring initial input handoff failed", {
+        retryable: true,
+        details: { handleId: handle.handleId },
+      });
+    }
+  }
+
+  private async failInitialInputHandoff(handle: RuntimeHandle, digest: string): Promise<void> {
+    await this.enqueueWrite(async () => {
+      const current = await this.store.getHandle(handle.handleId);
+      if (!current) {
+        return;
+      }
+      const currentState = authoringInputState(current);
+      if (currentState.status === "delivered") {
+        return;
+      }
+      await this.store.putHandle({
+        ...current,
+        status: "failed",
+        terminal: true,
+        authoringInput: { status: "pending", digest },
+      });
+    });
+    try {
+      await this.adapter.cancel(handle, "authoring initial input handoff failed");
+    } catch {
+      // The persisted failed state is the fail-closed source of truth even if
+      // the adapter process has already disappeared.
+    }
+  }
+
+  private async markStartOperationFailed(
+    request: StartRunRequest,
+    scope: ReceiptScope,
+    requestDigest: string,
+    handle: RuntimeHandle,
+    error: unknown,
+  ): Promise<void> {
+    await this.store.putOperation({
+      operationId: request.operationId,
+      status: "failed",
+      scope,
+      requestDigest,
+      acceptedAt: this.nowIso(),
+      handleId: handle.handleId,
+      error: {
+        code: error instanceof RuntimeSdkError ? error.code : "conflict",
+        message: "authoring initial input handoff failed",
+      },
+    });
   }
 
   private async requireStoredHandle(handleId: string): Promise<StoredHandle> {
@@ -414,6 +651,27 @@ export class LocalNodeHost implements RuntimeAdapter {
       throw new RuntimeSdkError("not_found", "runtime handle not found", { details: { handleId } });
     }
     return stored;
+  }
+
+  private async failClosedPendingAuthoringInput(
+    stored: StoredHandle,
+  ): Promise<ReconciliationResult> {
+    const failed: StoredHandle = {
+      ...stored,
+      status: "failed",
+      terminal: true,
+      authoringInput: authoringInputState(stored),
+    };
+    await this.store.putHandle(failed);
+    try {
+      await this.adapter.cancel(stored.handle, "authoring input was pending during recovery");
+    } catch {
+      // Fail-closed persistence is authoritative when the Runtime is gone.
+    }
+    return {
+      attached: false,
+      status: storedStatus(failed),
+    };
   }
 
   private async assertCapacity(): Promise<void> {
@@ -536,10 +794,16 @@ export class LocalNodeHost implements RuntimeAdapter {
   }
 
   private async ingest(handle: RuntimeHandle, event: RuntimeEvent): Promise<void> {
-    const sanitized = sanitizeRuntimeEvent(event);
     const hostEvent = await this.enqueueWrite(async () => {
-      const stored = await this.store.getHandle(handle.handleId);
+      let stored = await this.store.getHandle(handle.handleId);
       if (!stored) {
+        return undefined;
+      }
+      const sanitized = sanitizeRuntimeEvent(
+        event,
+        isAuthoringSnapshotRef(stored.request.snapshotRef),
+      );
+      if (!sanitized) {
         return undefined;
       }
       if (sanitized.sourceCursor) {
@@ -554,6 +818,13 @@ export class LocalNodeHost implements RuntimeAdapter {
 
       const existing = await this.store.listEvents(handle.handleId);
       const last = existing[existing.length - 1];
+      // A recovery/failure writer may have advanced the safe handoff marker
+      // while this event was waiting on the store. Re-read before merging the
+      // event so an old Runtime event cannot resurrect a pending authoring run.
+      const latest = await this.store.getHandle(handle.handleId);
+      if (latest) {
+        stored = latest;
+      }
       const adapterSequence = asNumber(sanitized.data["adapterSequence"]);
       const eventGap =
         stored.eventGap === true ||
@@ -580,9 +851,17 @@ export class LocalNodeHost implements RuntimeAdapter {
       };
       await this.store.appendEvent(nextEvent);
 
-      const nextStatus = auditOnly
-        ? stored.status
-        : (statusFromEvent(sanitized.type) ?? stored.status);
+      const handoffFailed =
+        authoringInputState(stored).status === "pending" &&
+        stored.status === "failed" &&
+        stored.terminal;
+      const candidateStatus = statusFromEvent(sanitized.type);
+      const nextStatus =
+        auditOnly || handoffFailed
+          ? stored.status
+          : candidateStatus === "starting" && stored.status !== "starting"
+            ? stored.status
+            : (candidateStatus ?? stored.status);
       await this.store.putHandle({
         ...stored,
         status: nextStatus,
@@ -606,7 +885,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     if (tails) {
       for (const tail of tails) {
         tail.push(hostEvent);
-        if (!hostEvent.auditOnly && isTerminalLifecycle(sanitized.type)) {
+        if (!hostEvent.auditOnly && isTerminalLifecycle(hostEvent.type)) {
           tail.close();
         }
       }
@@ -674,10 +953,52 @@ export class LocalNodeHost implements RuntimeAdapter {
 }
 
 /** Validate before persistence so generic RuntimeEvent data cannot smuggle raw authoring input. */
-function sanitizeRuntimeEvent(event: RuntimeEvent): RuntimeEvent {
+function sanitizeRuntimeEvent(event: RuntimeEvent, authoring: boolean): RuntimeEvent | undefined {
+  if (authoring) {
+    if (event.type === "runtime.authoring.proposal") {
+      return sanitizeAuthoringProposalEvent(event);
+    }
+    if (!AUTHORING_SAFE_EVENT_TYPES.has(event.type)) {
+      return undefined;
+    }
+    return sanitizeAuthoringRuntimeEvent(event);
+  }
   if (event.type !== "runtime.authoring.proposal") {
     return event;
   }
+  return sanitizeAuthoringProposalEvent(event);
+}
+
+const AUTHORING_SAFE_EVENT_TYPES = new Set([
+  "runtime.starting",
+  "runtime.started",
+  "runtime.input.requested",
+  "runtime.usage.updated",
+  "runtime.authoring.proposal.rejected",
+  "runtime.completed",
+  "runtime.failed",
+  "runtime.cancelled",
+  "runtime.orphaned",
+]);
+
+function sanitizeAuthoringRuntimeEvent(event: RuntimeEvent): RuntimeEvent {
+  const adapterSequence = asNumber(event.data["adapterSequence"]);
+  const data: Record<string, unknown> = adapterSequence === undefined ? {} : { adapterSequence };
+  if (event.type === "runtime.input.requested" && typeof event.data["kind"] === "string") {
+    data.kind = event.data["kind"];
+  }
+  if (event.type === "runtime.usage.updated" && asNumber(event.data["tokens"]) !== undefined) {
+    data.tokens = asNumber(event.data["tokens"]);
+  }
+  return {
+    type: event.type,
+    time: event.time,
+    ...(event.sourceCursor ? { sourceCursor: event.sourceCursor } : {}),
+    data,
+  };
+}
+
+function sanitizeAuthoringProposalEvent(event: RuntimeEvent): RuntimeEvent {
   const adapterSequence = asNumber(event.data["adapterSequence"]);
   try {
     const proposal = parseAuthoringProposal(event.data["proposal"]);
@@ -753,4 +1074,16 @@ function isTerminalLifecycle(type: string): boolean {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function authoringInputState(stored: StoredHandle): StoredAuthoringInput {
+  return stored.authoringInput ?? { status: "none" };
+}
+
+function transientInputDigest(input: TransientInitialInput): string {
+  return sha256Hex(stableJson(input));
+}
+
+function isAuthoringSnapshotRef(snapshotRef: string): boolean {
+  return snapshotRef === "authoring:proposal" || snapshotRef.startsWith("mock:authoring_proposal");
 }

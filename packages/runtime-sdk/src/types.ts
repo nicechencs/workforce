@@ -15,6 +15,18 @@ export interface StoredOperation {
   error?: { code: string; message: string };
 }
 
+/**
+ * Safe on-disk marker for an authoring prompt handoff.
+ *
+ * The prompt itself is deliberately absent. `digest` is present only for a
+ * pending or delivered handoff and is never a reference that can be resolved
+ * back to the original content.
+ */
+export interface StoredAuthoringInput {
+  status: "none" | "pending" | "delivered";
+  digest?: string;
+}
+
 export interface StoredHandle {
   handle: RuntimeHandle;
   binding: PlacementSnapshot;
@@ -22,6 +34,8 @@ export interface StoredHandle {
   terminal: boolean;
   request: StartRunRequest;
   auditOnly: boolean;
+  /** Safe handoff state; legacy records may omit this field and mean `none`. */
+  authoringInput?: StoredAuthoringInput;
   lastTrustedFactAt?: string;
   cancelAcceptedAt?: string;
   eventGap?: boolean;

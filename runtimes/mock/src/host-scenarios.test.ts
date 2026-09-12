@@ -9,6 +9,8 @@ import {
   isRuntimeSdkError,
   parseStartRunRequest,
   RuntimeSdkError,
+  sha256Hex,
+  stableJson,
 } from "@workforce/runtime-sdk";
 
 import { createMockRuntime } from "./harness.js";
@@ -95,18 +97,24 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
 
   it("persists only protocol-shaped authoring proposals and rejects raw output", async () => {
     const { host, scheduler, store } = await createMockRuntime();
-    const proposalHandle = await host.start(
+    const secret = "secret authoring intent must remain transient";
+    const proposalHandle = await host.startWithInitialInput(
       createStartRunRequest({
         operationId: "op_authoring_proposal",
         snapshotRef: "mock:authoring_proposal",
       }),
+      { operationId: "op_authoring_proposal_input", text: secret },
     );
     await settle(scheduler);
 
     const proposalEvents = await collectEvents(host.stream(proposalHandle));
+    expect(proposalEvents.some((event) => event.type === "runtime.message")).toBe(false);
     const proposalEvent = proposalEvents.find(
       (event) => event.type === "runtime.authoring.proposal",
     );
+    const expectedPatchRef = `arv_mock_authoring_${sha256Hex(
+      stableJson({ operationId: "op_authoring_proposal_input", text: secret }),
+    ).slice(0, 16)}`;
     expect(proposalEvent?.data).toMatchObject({
       proposal: {
         id: expect.stringMatching(/^apr_/),
@@ -118,7 +126,7 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
             targetType: "workflow",
             targetId: "wf_mock_authoring",
             expectedRevision: 1,
-            patchRef: "arv_mock_authoring_patch",
+            patchRef: expectedPatchRef,
           },
         ],
       },
@@ -127,13 +135,22 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
       (event) => event.type === "runtime.authoring.proposal",
     );
     expect(Object.keys(storedProposal?.data ?? {}).sort()).toEqual(["adapterSequence", "proposal"]);
+    expect(JSON.stringify(await store.listEvents(proposalHandle.handleId))).not.toContain(secret);
+    expect(JSON.stringify(await store.getHandle(proposalHandle.handleId))).not.toContain(secret);
+    expect(await store.getHandle(proposalHandle.handleId)).toMatchObject({
+      authoringInput: {
+        status: "delivered",
+        digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
 
-    const invalidHandle = await host.start(
+    const invalidHandle = await host.startWithInitialInput(
       createStartRunRequest({
         operationId: "op_authoring_proposal_invalid",
         attempt: 2,
         snapshotRef: "mock:authoring_proposal_invalid",
       }),
+      { operationId: "op_authoring_proposal_invalid_input", text: secret },
     );
     await settle(scheduler);
     const invalidEvents = await collectEvents(host.stream(invalidHandle));
@@ -146,13 +163,15 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect(JSON.stringify(await store.listEvents(invalidHandle.handleId))).not.toContain(
       "must-not-reach-host-storage",
     );
+    expect(JSON.stringify(await store.getHandle(invalidHandle.handleId))).not.toContain(secret);
 
-    const secretSummaryHandle = await host.start(
+    const secretSummaryHandle = await host.startWithInitialInput(
       createStartRunRequest({
         operationId: "op_authoring_proposal_secret_summary",
         attempt: 3,
         snapshotRef: "mock:authoring_proposal_secret_summary",
       }),
+      { operationId: "op_authoring_proposal_secret_summary_input", text: secret },
     );
     await settle(scheduler);
     const secretSummaryEvents = await collectEvents(host.stream(secretSummaryHandle));
@@ -160,6 +179,82 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect(
       secretSummaryEvents.find((event) => event.type === "runtime.authoring.proposal")?.data,
     ).toMatchObject({ proposal: { summary: "Structured authoring proposal" } });
+    expect(JSON.stringify(await store.listEvents(secretSummaryHandle.handleId))).not.toContain(
+      secret,
+    );
+  });
+
+  it("fails and cancels the run when transient authoring input is rejected", async () => {
+    const { host, store, scheduler } = await createMockRuntime({
+      rejectAuthoringInput: true,
+    });
+    const request = createStartRunRequest({
+      operationId: "op_authoring_handoff_failure",
+      snapshotRef: "mock:authoring_proposal",
+    });
+    const secret = "handoff failure secret";
+
+    await expect(
+      host.startWithInitialInput(request, {
+        operationId: "op_authoring_handoff_failure_input",
+        text: secret,
+      }),
+    ).rejects.toSatisfy((error: unknown) => isRuntimeSdkError(error) && error.code === "conflict");
+
+    const operation = await store.getOperation(request.operationId);
+    expect(operation?.status).toBe("failed");
+    expect(JSON.stringify(operation)).not.toContain(secret);
+    const stored = await store.getHandle(operation?.handleId ?? "");
+    expect(stored).toMatchObject({
+      status: "failed",
+      terminal: true,
+      authoringInput: {
+        status: "pending",
+        digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+    expect(JSON.stringify(stored)).not.toContain(secret);
+    await scheduler.advance(1_000);
+  });
+
+  it("fails closed instead of resuming a pending authoring handoff", async () => {
+    const first = await createMockRuntime();
+    const handle = await first.host.start(
+      createStartRunRequest({
+        operationId: "op_authoring_pending_recovery",
+        snapshotRef: "mock:authoring_proposal",
+      }),
+    );
+    const existing = await first.store.getHandle(handle.handleId);
+    expect(existing?.authoringInput).toEqual({ status: "none" });
+    await first.store.putHandle({
+      ...existing!,
+      status: "waiting_input",
+      terminal: false,
+      authoringInput: { status: "pending", digest: "a".repeat(64) },
+    });
+    expect(await first.store.getHandle(handle.handleId)).toMatchObject({
+      authoringInput: { status: "pending" },
+    });
+    await first.host.dispose();
+
+    const second = await createMockRuntime({ store: first.store });
+    expect(await second.store.getHandle(handle.handleId)).toMatchObject({
+      authoringInput: { status: "pending" },
+    });
+    const results = await second.host.recover();
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        attached: false,
+        status: expect.objectContaining({ status: "failed" }),
+      }),
+    ]);
+    expect(await first.store.getHandle(handle.handleId)).toMatchObject({
+      status: "failed",
+      terminal: true,
+      authoringInput: { status: "pending", digest: "a".repeat(64) },
+    });
   });
 
   it("returns the same handle for the same operation and conflicts on payload reuse", async () => {

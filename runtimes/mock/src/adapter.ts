@@ -24,6 +24,8 @@ import {
   SequentialIdGenerator,
   SystemClock,
   TimeoutScheduler,
+  sha256Hex,
+  stableJson,
 } from "@workforce/runtime-sdk";
 
 export const MOCK_ADAPTER_ID = "mock";
@@ -67,6 +69,8 @@ export interface MockRuntimeAdapterOptions {
   cancelGraceMs?: number;
   completeAfterMs?: number;
   timeoutMs?: number;
+  /** Test-only failure injection for the transient authoring handoff. */
+  rejectAuthoringInput?: boolean;
 }
 
 type StartRequest = Parameters<RuntimeAdapter["start"]>[0];
@@ -78,6 +82,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
   private readonly cancelGraceMs: number;
   private readonly completeAfterMs: number;
   private readonly timeoutMs: number;
+  private readonly rejectAuthoringInput: boolean;
   private readonly byHandle = new Map<string, MockExecution>();
   private readonly byOperation = new Map<string, MockExecution>();
   private nextPid = 4100;
@@ -89,6 +94,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     this.cancelGraceMs = options.cancelGraceMs ?? 1000;
     this.completeAfterMs = options.completeAfterMs ?? 0;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.rejectAuthoringInput = options.rejectAuthoringInput ?? false;
   }
 
   async describe(): Promise<RuntimeDescriptor> {
@@ -154,6 +160,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       completeAfterMs: this.completeAfterMs,
       timeoutMs: this.timeoutMs,
       cancelGraceMs: this.cancelGraceMs,
+      rejectAuthoringInput: this.rejectAuthoringInput,
     });
     this.byHandle.set(handle.handleId, execution);
     this.byOperation.set(request.operationId, execution);
@@ -163,8 +170,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
 
   async sendInput(handle: RuntimeHandleRef, input: RuntimeInput): Promise<InputReceipt> {
     const execution = this.require(handle.handleId);
-    execution.acceptInput(input);
-    return { operationId: input.operationId, accepted: true };
+    return { operationId: input.operationId, accepted: execution.acceptInput(input) };
   }
 
   async pause(handle: RuntimeHandleRef): Promise<OperationReceipt> {
@@ -273,6 +279,7 @@ interface MockExecutionOptions {
   completeAfterMs: number;
   timeoutMs: number;
   cancelGraceMs: number;
+  rejectAuthoringInput: boolean;
 }
 
 class MockExecution {
@@ -288,10 +295,12 @@ class MockExecution {
   private readonly completeAfterMs: number;
   private readonly timeoutMs: number;
   private readonly cancelGraceMs: number;
+  private readonly rejectAuthoringInput: boolean;
   private adapterSequence = 0;
   private readonly waiters: Array<() => void> = [];
   private cancelRequested = false;
   private started = false;
+  private authoringInputDigest?: string;
 
   constructor(options: MockExecutionOptions) {
     this.handle = options.handle;
@@ -302,6 +311,7 @@ class MockExecution {
     this.completeAfterMs = options.completeAfterMs;
     this.timeoutMs = options.timeoutMs;
     this.cancelGraceMs = options.cancelGraceMs;
+    this.rejectAuthoringInput = options.rejectAuthoringInput;
   }
 
   begin(): void {
@@ -314,10 +324,13 @@ class MockExecution {
     this.emit("runtime.started");
     switch (this.scenario) {
       case "success":
+        this.scheduler.schedule(this.completeAfterMs, () => this.succeed());
+        break;
       case "authoring_proposal":
       case "authoring_proposal_secret_summary":
       case "authoring_proposal_invalid":
-        this.scheduler.schedule(this.completeAfterMs, () => this.succeed());
+        this.status = "waiting_input";
+        this.emit("runtime.input.requested", { kind: "text" });
         break;
       case "failure":
         this.scheduler.schedule(this.completeAfterMs, () => this.fail("mock_failure"));
@@ -340,17 +353,28 @@ class MockExecution {
     };
   }
 
-  acceptInput(input: RuntimeInput): void {
+  acceptInput(input: RuntimeInput): boolean {
+    if (this.isAuthoringScenario() && this.rejectAuthoringInput) {
+      this.emit("runtime.message", {
+        inputOperationId: input.operationId,
+        accepted: false,
+      });
+      return false;
+    }
     this.emit("runtime.message", {
       inputOperationId: input.operationId,
       accepted: true,
     });
     if (this.status !== "waiting_input" || this.cancelRequested) {
-      return;
+      return false;
+    }
+    if (this.isAuthoringScenario()) {
+      this.authoringInputDigest = sha256Hex(stableJson(input));
     }
     this.status = "running";
     this.emit("runtime.started", { resumedFrom: "waiting_input" });
     this.scheduler.schedule(this.completeAfterMs, () => this.succeed());
+    return true;
   }
 
   requestCancel(reason?: string): void {
@@ -393,7 +417,7 @@ class MockExecution {
               targetType: "workflow",
               targetId: "wf_mock_authoring",
               expectedRevision: 1,
-              patchRef: "arv_mock_authoring_patch",
+              patchRef: this.authoringPatchRef(),
             },
           ],
         },
@@ -411,7 +435,7 @@ class MockExecution {
               targetType: "workflow",
               targetId: "wf_mock_authoring",
               expectedRevision: 1,
-              patchRef: "arv_mock_authoring_patch",
+              patchRef: this.authoringPatchRef(),
             },
           ],
         },
@@ -422,7 +446,10 @@ class MockExecution {
         proposal: { rawPrompt: "must-not-reach-host-storage" },
       });
     }
-    this.emit("runtime.message", { text: "mock completed" });
+    this.emit(
+      "runtime.message",
+      this.isAuthoringScenario() ? { completed: true } : { text: "mock completed" },
+    );
     this.status = "succeeded";
     this.emit("runtime.completed", { outcome: "succeeded" });
     this.closed = true;
@@ -460,6 +487,19 @@ class MockExecution {
       sourceCursor: `mock:${this.handle.handleId}:${this.adapterSequence}`,
     });
     this.notify();
+  }
+
+  private isAuthoringScenario(): boolean {
+    return (
+      this.scenario === "authoring_proposal" ||
+      this.scenario === "authoring_proposal_secret_summary" ||
+      this.scenario === "authoring_proposal_invalid"
+    );
+  }
+
+  private authoringPatchRef(): string {
+    const digest = this.authoringInputDigest ?? "missing-input";
+    return `arv_mock_authoring_${digest.slice(0, 16)}`;
   }
 
   private notify(): void {

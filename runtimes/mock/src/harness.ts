@@ -30,6 +30,7 @@ export async function createMockRuntime(
     cancelGraceMs?: number;
     timeoutMs?: number;
     nodeId?: string;
+    rejectAuthoringInput?: boolean;
   } = {},
 ): Promise<MockRuntimeHarness> {
   const scheduler = options.scheduler ?? new ManualScheduler();
@@ -45,6 +46,9 @@ export async function createMockRuntime(
       ids,
       cancelGraceMs,
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.rejectAuthoringInput !== undefined
+        ? { rejectAuthoringInput: options.rejectAuthoringInput }
+        : {}),
     });
   const host = new LocalNodeHost({
     adapter,
