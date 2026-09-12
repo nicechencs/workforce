@@ -1,0 +1,84 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-session-page.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "projectId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": "0.1",
+            "type": "string"
+          },
+          "stateRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "failed",
+              "closed"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "protocolVersion",
+          "status",
+          "stateRevision",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "page": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "items",
+    "page"
+  ],
+  "title": "AuthoringSessionPage",
+  "type": "object"
+}

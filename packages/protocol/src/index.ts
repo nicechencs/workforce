@@ -2,6 +2,7 @@ export const packageName = "@workforce/protocol" as const;
 export const protocolVersion = "0.1" as const;
 
 export * from "./authoring.js";
+export * from "./authoring-chat.js";
 export * from "./command.js";
 export * from "./dto.js";
 export * from "./errors.js";

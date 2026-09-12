@@ -1,0 +1,49 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-turn-action-accepted.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "action": {
+      "enum": [
+        "confirm",
+        "cancel",
+        "retry",
+        "close"
+      ],
+      "type": "string"
+    },
+    "operationId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "sessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "turnId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "operationId",
+    "acceptedAt",
+    "sessionId",
+    "turnId",
+    "revision",
+    "action"
+  ],
+  "title": "AuthoringTurnActionAccepted",
+  "type": "object"
+}

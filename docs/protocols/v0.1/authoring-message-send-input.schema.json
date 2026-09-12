@@ -1,0 +1,39 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-message-send-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "content": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "expectedRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "idempotencyKey": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "operationId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "operationId",
+    "idempotencyKey",
+    "sessionId",
+    "expectedRevision",
+    "content"
+  ],
+  "title": "SendAuthoringMessageInput",
+  "type": "object"
+}

@@ -1,0 +1,17 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-session-get-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "sessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "sessionId"
+  ],
+  "title": "AuthoringSessionGetInput",
+  "type": "object"
+}

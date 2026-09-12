@@ -1,0 +1,32 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-session-create-command.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "idempotencyKey": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "intentText": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "operationId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "projectId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "projectId",
+    "operationId",
+    "idempotencyKey"
+  ],
+  "title": "CreateAuthoringSessionCommand",
+  "type": "object"
+}

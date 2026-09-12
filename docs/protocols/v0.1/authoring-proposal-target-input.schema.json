@@ -1,0 +1,80 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-proposal-target-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "not": {}
+        },
+        "operation": {
+          "const": "create",
+          "type": "string"
+        },
+        "patchRef": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "targetId": {
+          "not": {}
+        },
+        "targetType": {
+          "enum": [
+            "team",
+            "task",
+            "workflow"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetType",
+        "patchRef",
+        "operation"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "operation": {
+          "const": "update",
+          "type": "string"
+        },
+        "patchRef": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "targetId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "targetType": {
+          "enum": [
+            "team",
+            "task",
+            "workflow"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetType",
+        "patchRef",
+        "operation",
+        "targetId",
+        "expectedRevision"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "AuthoringProposalTargetInput"
+}

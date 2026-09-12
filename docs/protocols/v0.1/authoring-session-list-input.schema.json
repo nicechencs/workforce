@@ -1,0 +1,27 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-session-list-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "projectId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "projectId"
+  ],
+  "title": "AuthoringSessionListInput",
+  "type": "object"
+}

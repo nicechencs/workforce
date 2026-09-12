@@ -1,0 +1,128 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-chat-proposal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "projectId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sourceRunId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "expectedRevision": {
+                "not": {}
+              },
+              "operation": {
+                "const": "create",
+                "type": "string"
+              },
+              "patchRef": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "targetId": {
+                "not": {}
+              },
+              "targetType": {
+                "enum": [
+                  "team",
+                  "task",
+                  "workflow"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "targetType",
+              "patchRef",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "expectedRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operation": {
+                "const": "update",
+                "type": "string"
+              },
+              "patchRef": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "targetId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "targetType": {
+                "enum": [
+                  "team",
+                  "task",
+                  "workflow"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "targetType",
+              "patchRef",
+              "operation",
+              "targetId",
+              "expectedRevision"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "turnId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "projectId",
+    "sessionId",
+    "turnId",
+    "sourceRunId",
+    "summary",
+    "targets"
+  ],
+  "title": "AuthoringChatProposal",
+  "type": "object"
+}

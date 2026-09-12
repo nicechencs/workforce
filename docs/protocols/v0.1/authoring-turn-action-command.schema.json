@@ -1,0 +1,175 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-turn-action-command.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "confirm",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operationId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "turnId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "idempotencyKey",
+        "sessionId",
+        "turnId",
+        "expectedRevision",
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "cancel",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operationId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "turnId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "idempotencyKey",
+        "sessionId",
+        "turnId",
+        "expectedRevision",
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "retry",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operationId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "turnId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "idempotencyKey",
+        "sessionId",
+        "turnId",
+        "expectedRevision",
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "close",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operationId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "turnId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "idempotencyKey",
+        "sessionId",
+        "turnId",
+        "expectedRevision",
+        "action"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "AuthoringTurnActionCommand"
+}

@@ -1,0 +1,113 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/authoring-turn.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "0.1",
+      "type": "string"
+    },
+    "refs": {
+      "additionalProperties": false,
+      "properties": {
+        "changeSetId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "runId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "taskId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workflowDraftId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "sessionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "accepted",
+        "running",
+        "awaiting_confirmation",
+        "completed",
+        "failed",
+        "cancelled",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "userMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "const": "user",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "content",
+        "createdAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "sessionId",
+    "protocolVersion",
+    "status",
+    "userMessage",
+    "refs",
+    "revision",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "AuthoringTurn",
+  "type": "object"
+}

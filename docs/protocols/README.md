@@ -28,7 +28,7 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
 - `v0.1/workflow-catalog.schema.json` — WorkflowDefinition / WorkflowVersion 目录；GET 列表仍只返回 published
 - `v0.1/team.schema.json` — Team / TeamVersion 写契约（draft | published）
-- `v0.1/authoring-session.schema.json` — D17 会话 / 草稿 DTO；V0.1 传输为 Desktop-local，无 chat HTTP path
+- `v0.1/authoring-session.schema.json` — D17 会话 / 草稿 DTO；V0.1 不提供泛用 Chat API，而提供受鉴权、Project-scoped 的 AuthoringSession / Message / Turn API，用于生成并确认未发布草稿
 - `v0.1/workflow-graph-definition.schema.json` — 画布、作者与发布共用的严格有限 DAG；目录 DTO 不替代它
 - `v0.1/workflow-draft.schema.json` — 可编辑 `WorkflowDraft`，含 graph、revision 与内容摘要
 - `v0.1/authoring-proposal.schema.json` — 编排 Runtime 的结构化输出；只允许脱敏摘要与 Artifact 引用
