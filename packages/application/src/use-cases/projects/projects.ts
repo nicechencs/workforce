@@ -6,6 +6,7 @@ import {
   requirePublishedExecutionGraph,
   resolvePublishedExecutionGraph,
 } from "./admission.js";
+import { findAdHocTask, insertAdHocTask } from "./direct-task.js";
 import type { AppContext } from "./context.js";
 import { expectRevision, touch } from "./context.js";
 import type { WorkflowGraph } from "./engine-port.js";
@@ -365,6 +366,16 @@ export async function startExecution(
           if (project.organizationId.trim() === "") {
             throw validationFailed("project organization is required");
           }
+          const now = ctx.world.nowIso();
+          project.orchestrationMode = orchestrationMode;
+          if (orchestrationMode === "direct") {
+            if (!findAdHocTask(ctx, project.id)) {
+              insertAdHocTask(ctx, project, project.name, input.operationId);
+            }
+            touch(project, now);
+            return { project };
+          }
+
           const nextStatus = ctx.engine.nextProjectStatus(project.status, "start");
           if (!project.executionSnapshotId) {
             throw validationFailed("project has no execution snapshot");
@@ -381,6 +392,10 @@ export async function startExecution(
             ctx.world.workflowVersions,
             snapshot.workflowVersionId,
           );
+          const circular = ctx.engine.reviewerCircularWait(graph);
+          if (circular) {
+            throw validationFailed(circular);
+          }
           const active = [...ctx.world.workflows.values()].find(
             (item) =>
               item.projectId === project.id &&
@@ -392,7 +407,6 @@ export async function startExecution(
             throw validationFailed("project already has an active workflow instance");
           }
 
-          const now = ctx.world.nowIso();
           const workflow: WorkflowInstanceRecord = {
             id: ctx.world.ids.ulid("wfi_"),
             projectId: project.id,
@@ -404,7 +418,6 @@ export async function startExecution(
           };
           assertExecutionBinding({ project, snapshot, workflow });
           ctx.world.workflows.set(workflow.id, workflow);
-          project.orchestrationMode = orchestrationMode;
           project.status = nextStatus;
           project.workflowInstanceId = workflow.id;
           touch(project, now);
@@ -444,6 +457,24 @@ export async function pauseProject(
     : undefined;
   if (workflow && (workflow.status === "running" || workflow.status === "waiting")) {
     workflow.status = ctx.engine.nextWorkflowStatus(workflow.status, "pause");
+    workflow.stateRevision += 1;
+  }
+  return project;
+}
+
+export async function resumeProject(
+  ctx: AppContext,
+  input: { projectId: string; expectedStateRevision?: number },
+): Promise<ProjectRecord> {
+  const project = requireProject(ctx, input.projectId);
+  expectRevision(project, input.expectedStateRevision);
+  project.status = ctx.engine.nextProjectStatus(project.status, "resume");
+  touch(project, ctx.world.nowIso());
+  const workflow = project.workflowInstanceId
+    ? ctx.world.workflows.get(project.workflowInstanceId)
+    : undefined;
+  if (workflow && workflow.status === "paused") {
+    workflow.status = ctx.engine.nextWorkflowStatus(workflow.status, "resume");
     workflow.stateRevision += 1;
   }
   return project;

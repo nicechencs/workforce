@@ -85,6 +85,7 @@ export const paths = {
   task: (id: string) => `/api/v1/tasks/${id}`,
   taskRetry: (id: string) => `/api/v1/tasks/${id}:retry`,
   taskCancel: (id: string) => `/api/v1/tasks/${id}:cancel`,
+  taskRuns: (id: string) => `/api/v1/tasks/${id}/runs`,
   runs: (query?: ListQuery) => `/api/v1/runs${listSearch(query)}`,
   run: (id: string) => `/api/v1/runs/${id}`,
   runCancel: (id: string) => `/api/v1/runs/${id}:cancel`,

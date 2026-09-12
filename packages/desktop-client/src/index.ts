@@ -65,6 +65,7 @@ export type {
   SendAuthoringMessageAcceptedDto,
   SessionDto,
   StartProjectInput,
+  StartTaskRunInput,
   TaskDependency,
   TaskDto,
   TeamDto,

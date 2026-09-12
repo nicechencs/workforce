@@ -4,10 +4,12 @@ export {
   cancelTask,
   dependenciesSatisfied,
   dispatchTask,
+  evaluateTaskAfterFailure,
   evaluateTaskAfterRun,
   queueTask,
   refreshDownstream,
   requestTaskChanges,
   requireTask,
   retryTask,
+  settleTaskCancel,
 } from "./tasks.js";

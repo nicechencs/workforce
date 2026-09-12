@@ -18,6 +18,7 @@ export interface ProjectPolicySnapshot {
   executionNodeId?: string;
   runtimeInstallationId?: string;
   workspaceInstanceId?: string;
+  readonly [key: string]: unknown;
 }
 
 export function captureProjectPolicySnapshot(input: {

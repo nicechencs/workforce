@@ -7,6 +7,7 @@ import {
   parseCreateWorkflowInput,
   parsePatchTeamInput,
   parsePatchWorkflowInput,
+  parseStartTaskRunInput,
   parseTeamVersionWrite,
   parseWorkflowVersionWrite,
 } from "@workforce/protocol";
@@ -270,6 +271,33 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/v1/tasks/:id", async (request, reply) => {
     const task = requireFound(deps.services.getTask(param(request, "id")), "Task not found");
     sendDto(reply, 200, task, task.stateRevision);
+  });
+
+  app.post("/api/v1/tasks/:id/runs", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /tasks/{id}/runs",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId", "orchestrationMode", "placementIntent"]);
+        let parsed;
+        try {
+          parsed = parseStartTaskRunInput({
+            operationId: ctx.operationId,
+            ...withoutOperationId(body),
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Request body failed schema validation";
+          throw new AppError("validation_failed", message);
+        }
+        return deps.services.startTaskRun(ctx, param(request, "id"), parsed);
+      },
+    );
   });
 
   app.post(commandRoute("tasks", "retry"), async (request, reply) => {

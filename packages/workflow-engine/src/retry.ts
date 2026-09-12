@@ -24,9 +24,23 @@ export type RecoveryDecision =
  * Capacity waits do not consume attempt budget. Technical retry stays on the
  * same generation; quality rework starts generation+1 at attempt 1.
  */
-export function decideRecovery(input: RecoveryInput): RecoveryDecision {
+/**
+ * Capacity waits do not consume attempt budget. Technical retry stays on the
+ * same generation; quality rework starts generation+1 at attempt 1.
+ *
+ * `nowIso` / `nextAttemptAt` implement the backoff timer: a retry that is
+ * not yet due is treated as wait-capacity so the attempt counter is unchanged.
+ */
+export function decideRecovery(
+  input: RecoveryInput & { nowIso?: string; nextAttemptAt?: string },
+): RecoveryDecision {
   if (!input.capacityAvailable) {
     return { action: "wait-capacity" };
+  }
+  if (input.nowIso !== undefined && input.nextAttemptAt !== undefined) {
+    if (Date.parse(input.nowIso) < Date.parse(input.nextAttemptAt)) {
+      return { action: "wait-capacity" };
+    }
   }
   if (input.kind === "retry") {
     if (input.attempt >= input.maxAttempts) {

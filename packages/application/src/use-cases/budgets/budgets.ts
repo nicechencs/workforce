@@ -73,8 +73,30 @@ export function settleRunUsage(
 
 export function raiseProjectBudget(
   ctx: AppContext,
-  input: { budgetId: string; newLimitMinor: number },
+  input: { budgetId: string; newLimitMinor: number; approvalId?: string },
 ): BudgetRecord {
   const budget = requireBudget(ctx, input.budgetId);
+  const pending = [...ctx.world.approvals.values()].find(
+    (approval) =>
+      approval.projectId === budget.projectId &&
+      approval.gate === "budget" &&
+      approval.status === "pending",
+  );
+  if (pending) {
+    throw new UseCaseError(
+      "validation_failed",
+      "budget raise requires the pending budget approval to be consumed",
+      { details: { approvalId: pending.id } },
+    );
+  }
+  if (input.approvalId) {
+    const approval = ctx.world.approvals.get(input.approvalId);
+    if (!approval || approval.gate !== "budget" || approval.status !== "consumed") {
+      throw new UseCaseError(
+        "validation_failed",
+        "budget raise requires a consumed budget approval",
+      );
+    }
+  }
   return applyDecision(budget, ctx.engine.raiseBudget(budget, input.newLimitMinor));
 }

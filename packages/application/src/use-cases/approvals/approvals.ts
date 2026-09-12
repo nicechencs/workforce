@@ -97,12 +97,33 @@ export async function decideApproval(
         if (input.decision === "approve" && approval.gate === "artifact") {
           completeRelatedTasks(ctx, approval);
         }
+        if (input.decision === "approve" && approval.gate === "action") {
+          // Consumed above. The gated action may now proceed; it is not a Task complete.
+        }
+        if (input.decision === "approve" && approval.gate === "budget") {
+          // Consumed above. raiseProjectBudget requires this consumed grant.
+        }
+        if (input.decision === "approve" && approval.gate === "plan") {
+          // Consumed above. confirm-plan is the only command that advances Project.
+        }
         if (input.decision === "request-changes" && approval.taskId) {
           const task = requireTask(ctx, approval.taskId);
-          task.status = ctx.engine.nextTaskStatus(task.status, "request-changes");
-          task.generation += 1;
-          task.definitionRevision += 1;
-          task.attempt = 1;
+          const decision = ctx.engine.decideRecovery({
+            kind: "rework",
+            attempt: task.attempt,
+            maxAttempts: task.maxAttempts,
+            generation: task.generation,
+            maxReworkCycles: task.maxReworkCycles,
+            capacityAvailable: true,
+          });
+          if (decision.action === "fail") {
+            task.status = ctx.engine.nextTaskStatus(task.status, "reject");
+          } else if (decision.action === "rework") {
+            task.status = ctx.engine.nextTaskStatus(task.status, "request-changes");
+            task.generation = decision.nextGeneration;
+            task.definitionRevision += 1;
+            task.attempt = decision.nextAttempt;
+          }
         }
         return { approval };
       },
@@ -111,6 +132,18 @@ export async function decideApproval(
 }
 
 function completeRelatedTasks(ctx: AppContext, approval: ApprovalRecord): void {
+  if (approval.artifactVersionId) {
+    const artifact = ctx.world.artifacts.get(approval.artifactVersionId);
+    if (!artifact || artifact.status !== "available") {
+      return;
+    }
+    const failed = ctx.world
+      .evaluationsForArtifact(approval.artifactVersionId)
+      .some((evaluation) => evaluation.verdict === "fail");
+    if (failed) {
+      return;
+    }
+  }
   const related = ctx.world.tasksForProject(approval.projectId).filter((task) => {
     if (task.status !== "waiting_review") {
       return false;
@@ -155,7 +188,10 @@ export function maybeCompleteProject(ctx: AppContext, projectId: string): void {
   }
   const required = ctx.world
     .tasksForProject(projectId)
-    .filter((task) => task.role === "developer" || task.role === "reviewer");
+    .filter(
+      (task) =>
+        Boolean(task.workflowInstanceId) && (task.role === "developer" || task.role === "reviewer"),
+    );
   if (required.length === 0 || required.some((task) => task.status !== "completed")) {
     return;
   }
@@ -172,4 +208,17 @@ export function maybeCompleteProject(ctx: AppContext, projectId: string): void {
   workflow.stateRevision += 1;
   project.status = ctx.engine.nextProjectStatus(project.status, "complete");
   project.stateRevision += 1;
+}
+
+export function expireDueApprovals(ctx: AppContext): void {
+  const now = ctx.world.clock.now().getTime();
+  for (const approval of ctx.world.approvals.values()) {
+    if (approval.status !== "pending" || !approval.expiresAt) {
+      continue;
+    }
+    if (Date.parse(approval.expiresAt) <= now) {
+      approval.status = ctx.engine.nextApprovalStatus(approval.status, "expire");
+      approval.stateRevision += 1;
+    }
+  }
 }

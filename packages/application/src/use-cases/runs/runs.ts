@@ -1,33 +1,19 @@
 import { startIdempotencyKey } from "@workforce/domain";
 import {
   DEFAULT_ORCHESTRATION_MODE,
-  parseRunExecutionSnapshot,
   type OrchestrationMode,
-  type RunExecutionSnapshot,
+  type PlacementIntent,
 } from "@workforce/protocol";
 
-import { assertExecutionBinding } from "../projects/admission.js";
 import type { AppContext } from "../projects/context.js";
-import { expectRevision, touch } from "../projects/context.js";
-import { notFound, UseCaseError, validationFailed } from "../projects/errors.js";
-import { appendEvent } from "../projects/events.js";
-import { digestOf, withIdempotency } from "../projects/idempotency.js";
+import { touch } from "../projects/context.js";
+import { UseCaseError } from "../projects/errors.js";
+import { evaluateTaskAfterFailure, evaluateTaskAfterRun, requireTask } from "../tasks/tasks.js";
 import { requireProject } from "../projects/projects.js";
-import type {
-  ProjectRecord,
-  RunRecord,
-  TaskRecord,
-  WorkflowInstanceRecord,
-} from "../projects/store.js";
-import { dispatchTask, evaluateTaskAfterRun, queueTask, requireTask } from "../tasks/tasks.js";
-import { assembleRunExecutionSnapshot } from "./execution-snapshot.js";
+import type { RunRecord } from "../projects/store.js";
+import { admitRun, attachHostAfterAdmit, requireRun } from "./admit.js";
 import { unsupportedPause } from "./host.js";
-import {
-  acquireManagedRunLease,
-  markRunSchedulingCancelled,
-  nodeSessionForCandidate,
-} from "./lease.js";
-import { DEFAULT_PLACEMENT_INTENT } from "./placement.js";
+import { markRunSchedulingCancelled } from "./lease.js";
 
 export async function startRun(
   ctx: AppContext,
@@ -38,27 +24,34 @@ export async function startRun(
     expectedStateRevision?: number;
     snapshotRef?: string;
     orchestrationMode?: OrchestrationMode;
+    placementIntent?: PlacementIntent;
   },
 ): Promise<{ reused: boolean; run: RunRecord }> {
   const task = requireTask(ctx, input.taskId);
   const project = requireProject(ctx, task.projectId);
   const orchestrationMode =
     input.orchestrationMode ?? project.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
-  const intent = project.placementIntent ?? DEFAULT_PLACEMENT_INTENT;
-  const placement = ctx.placement.resolve({
-    intent: intent.nodeId ? { mode: intent.mode, nodeId: intent.nodeId } : { mode: intent.mode },
-    inventory: {
-      ...(project.executionNodeId ? { nodeId: project.executionNodeId } : {}),
-      ...(project.runtimeInstallationId
-        ? { runtimeInstallationId: project.runtimeInstallationId }
-        : {}),
-      ...(project.workspaceInstanceId ? { workspaceInstanceId: project.workspaceInstanceId } : {}),
-    },
-  });
-  const hostSession = ctx.host.ensureNodeSession ? await ctx.host.ensureNodeSession() : undefined;
-  const session = nodeSessionForCandidate(hostSession, placement.candidate, () =>
-    ctx.world.ids.ulid("ses_"),
-  );
+  return startTaskRun(ctx, { ...input, orchestrationMode });
+}
+
+/**
+ * HTTP `POST /tasks/{id}/runs` entry. Omit `orchestrationMode` → workflow_bound.
+ * Direct and workflow-bound share this command; the body selects the mode.
+ */
+export async function startTaskRun(
+  ctx: AppContext,
+  input: {
+    operationId: string;
+    idempotencyKey?: string;
+    taskId: string;
+    expectedStateRevision?: number;
+    orchestrationMode?: OrchestrationMode;
+    placementIntent?: PlacementIntent;
+    snapshotRef?: string;
+    requireWorkflowBinding?: boolean;
+  },
+): Promise<{ reused: boolean; run: RunRecord }> {
+  const task = requireTask(ctx, input.taskId);
   const idempotencyKey =
     input.idempotencyKey ??
     startIdempotencyKey({
@@ -67,217 +60,37 @@ export async function startRun(
       generation: task.generation,
       attempt: task.attempt,
     });
-
-  if (task.status === "ready") {
-    await queueTask(ctx, {
-      operationId: `${input.operationId}:queue`,
-      idempotencyKey: `${idempotencyKey}:queue`,
-      taskId: task.id,
-    });
-  }
-  const queued = requireTask(ctx, task.id);
-  if (queued.status === "queued") {
-    dispatchTask(ctx, queued.id);
-  }
-
-  const admitted = await ctx.world.uow.withTransaction(async (tx) => {
-    return withIdempotency(
-      ctx.world,
-      tx,
-      {
-        operationId: input.operationId,
-        digest: digestOf({
-          taskId: task.id,
-          definitionRevision: task.definitionRevision,
-          generation: task.generation,
-          attempt: task.attempt,
-          orchestrationMode,
-        }),
-        scope: {
-          principalId: ctx.principalId,
-          clientId: ctx.clientId,
-          canonicalOperation: "runtime.start",
-          resource: `task:${task.id}:definitionRevision:${task.definitionRevision}:generation:${task.generation}:attempt:${task.attempt}`,
-          idempotencyKey,
-        },
-      },
-      async () => {
-        return ctx.world.withDomainRollback(async () => {
-          const live = requireTask(ctx, input.taskId);
-          expectRevision(live, input.expectedStateRevision);
-          const liveProject = requireProject(ctx, live.projectId);
-          if (liveProject.id !== project.id || live.projectId !== project.id) {
-            throw validationFailed("task does not belong to this project");
-          }
-          if (liveProject.organizationId.trim() === "") {
-            throw validationFailed("project organization is required");
-          }
-          const existingActive = ctx.world.activeRunForTask(live.id);
-          if (existingActive) {
-            return { run: existingActive };
-          }
-          const now = ctx.world.nowIso();
-          const runId = ctx.world.ids.ulid("run_");
-          const leased = acquireManagedRunLease(ctx.world, {
-            runId,
-            candidate: placement.candidate,
-            session,
-            reason: placement.reason,
-            now,
-          });
-          const workflow = live.workflowInstanceId
-            ? ctx.world.workflows.get(live.workflowInstanceId)
-            : undefined;
-          const executionSnapshot = live.workflowInstanceId
-            ? assembleWorkflowBoundRunSnapshot(ctx, liveProject, live, workflow, {
-                nodeSessionId: session.nodeSessionId,
-                executionLeaseId: leased.lease.id,
-                fencingToken: leased.lease.fencingToken,
-              })
-            : buildRunExecutionSnapshot({
-                orchestrationMode,
-                transport: placement.candidate.transport,
-                ...(liveProject.executionSnapshotId
-                  ? { executionSnapshotId: liveProject.executionSnapshotId }
-                  : {}),
-                placementSnapshot: leased.placementSnapshot,
-              });
-          const run: RunRecord = {
-            id: runId,
-            taskId: live.id,
-            projectId: live.projectId,
-            status: "pending",
-            stateRevision: 1,
-            attempt: live.attempt,
-            generation: live.generation,
-            definitionRevision: live.definitionRevision,
-            operationId: input.operationId,
-            orchestrationMode: executionSnapshot?.orchestrationMode ?? orchestrationMode,
-            createdAt: now,
-            updatedAt: now,
-            ...(executionSnapshot ? { executionSnapshot } : {}),
-          };
-          ctx.world.runs.set(run.id, run);
-
-          if (live.status === "queued") {
-            dispatchTask(ctx, live.id);
-          }
-          await appendEvent(ctx.world, tx, {
-            type: "run.started",
-            subjectType: "run",
-            subjectId: run.id,
-            projectId: live.projectId,
-            taskId: live.id,
-            runId: run.id,
-            correlationId: input.operationId,
-            data: {
-              to: run.status,
-              orchestrationMode: run.orchestrationMode,
-              transport: placement.candidate.transport,
-              executionLeaseId: leased.lease.id,
-              fencingToken: leased.lease.fencingToken,
-            },
-          });
-          return { run };
-        });
-      },
-    );
+  const admitted = await admitRun(ctx, {
+    operationId: input.operationId,
+    idempotencyKey,
+    taskId: input.taskId,
+    orchestrationMode: input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE,
+    ...(input.requireWorkflowBinding ? { requireWorkflowBinding: true } : {}),
+    ...(input.expectedStateRevision !== undefined
+      ? { expectedStateRevision: input.expectedStateRevision }
+      : {}),
+    ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
+    ...(input.snapshotRef ? { snapshotRef: input.snapshotRef } : {}),
   });
-
-  const run = requireRun(ctx, admitted.value.run.id);
-  if (!run.handleId) {
-    const snapshot = run.executionSnapshot;
-    const lease = ctx.world.leaseForRun(run.id);
-    const handle = await ctx.host.start({
+  if (!admitted.reused || !admitted.run.handleId) {
+    await attachHostAfterAdmit(ctx, {
       operationId: input.operationId,
       idempotencyKey,
-      taskId: run.taskId,
-      definitionRevision: run.definitionRevision,
-      generation: run.generation,
-      attempt: run.attempt,
-      principalId: ctx.principalId,
-      clientId: ctx.clientId,
-      placement: {
-        executionNodeId: placement.candidate.nodeId,
-        runtimeInstallationId: placement.candidate.runtimeInstallationId,
-        workspaceInstanceId: placement.candidate.workspaceInstanceId,
-      },
-      runtime: { adapterId: project.runtimeId ?? "mock", protocolVersion: "0.1" },
-      snapshotRef: input.snapshotRef ?? "mock:success",
-      orchestrationMode: run.orchestrationMode ?? orchestrationMode,
-      ...(lease
-        ? {
-            executionLease: {
-              id: lease.id,
-              fencingToken: lease.fencingToken,
-              nodeSessionId: snapshot?.placementSnapshot.nodeSessionId ?? session.nodeSessionId,
-              runId: run.id,
-            },
-          }
-        : {}),
-    });
-    await ctx.world.uow.withTransaction(async () => {
-      run.handleId = handle.handleId;
-      run.status = ctx.engine.nextRunStatus(run.status, "begin-start");
-      run.status = ctx.engine.nextRunStatus(run.status, "attach");
-      touch(run, ctx.world.nowIso());
+      run: admitted.run,
+      ...(input.snapshotRef ? { snapshotRef: input.snapshotRef } : {}),
     });
   }
-  return { reused: admitted.reused, run };
-}
-
-function buildRunExecutionSnapshot(input: {
-  orchestrationMode: OrchestrationMode;
-  transport: RunExecutionSnapshot["transport"];
-  executionSnapshotId?: string;
-  placementSnapshot: RunExecutionSnapshot["placementSnapshot"];
-}): RunExecutionSnapshot | undefined {
-  const candidate =
-    input.orchestrationMode === "direct"
-      ? {
-          orchestrationMode: input.orchestrationMode,
-          transport: input.transport,
-          placementSnapshot: input.placementSnapshot,
-        }
-      : input.executionSnapshotId
-        ? {
-            orchestrationMode: input.orchestrationMode,
-            transport: input.transport,
-            executionSnapshotId: input.executionSnapshotId,
-            placementSnapshot: input.placementSnapshot,
-          }
-        : undefined;
-  return candidate ? parseRunExecutionSnapshot(candidate) : undefined;
-}
-
-function assembleWorkflowBoundRunSnapshot(
-  ctx: AppContext,
-  project: ProjectRecord,
-  task: TaskRecord,
-  workflow: WorkflowInstanceRecord | undefined,
-  lease: { nodeSessionId: string; executionLeaseId: string; fencingToken: number },
-): RunExecutionSnapshot {
-  if (!project.executionSnapshotId) {
-    throw validationFailed("workflow_bound run requires an execution snapshot");
-  }
-  const snapshot = ctx.world.executionSnapshots.get(project.executionSnapshotId);
-  if (!snapshot) {
-    throw validationFailed("project execution snapshot is unavailable");
-  }
-  if (!workflow) {
-    throw validationFailed("workflow instance is unavailable");
-  }
-  assertExecutionBinding({ project, snapshot, workflow, task });
-  return assembleRunExecutionSnapshot({
-    project,
-    nodeSessionId: lease.nodeSessionId,
-    executionLeaseId: lease.executionLeaseId,
-    fencingToken: lease.fencingToken,
-  });
+  return { reused: admitted.reused, run: requireRun(ctx, admitted.run.id) };
 }
 
 export function recordRunSucceeded(ctx: AppContext, runId: string): RunRecord {
   const run = requireRun(ctx, runId);
+  if (run.orchestrationMode === "direct") {
+    run.status = ctx.engine.nextRunStatus(run.status, "succeed");
+    touch(run, ctx.world.nowIso());
+    evaluateTaskAfterRun(ctx, run.taskId);
+    return run;
+  }
   run.status = ctx.engine.nextRunStatus(run.status, "succeed");
   touch(run, ctx.world.nowIso());
   evaluateTaskAfterRun(ctx, run.taskId);
@@ -288,6 +101,7 @@ export function recordRunFailed(ctx: AppContext, runId: string): RunRecord {
   const run = requireRun(ctx, runId);
   run.status = ctx.engine.nextRunStatus(run.status, "fail");
   touch(run, ctx.world.nowIso());
+  evaluateTaskAfterFailure(ctx, run.taskId);
   return run;
 }
 
@@ -295,7 +109,16 @@ export function recordRunTimedOut(ctx: AppContext, runId: string): RunRecord {
   const run = requireRun(ctx, runId);
   run.status = ctx.engine.nextRunStatus(run.status, "timeout");
   touch(run, ctx.world.nowIso());
+  evaluateTaskAfterFailure(ctx, run.taskId);
   return run;
+}
+
+export async function timeoutRun(ctx: AppContext, input: { runId: string }): Promise<RunRecord> {
+  const run = requireRun(ctx, input.runId);
+  if (run.handleId) {
+    await ctx.host.cancel(run.handleId, "timeout");
+  }
+  return recordRunTimedOut(ctx, run.id);
 }
 
 export async function cancelRun(
@@ -348,7 +171,7 @@ export function settleRunCancel(ctx: AppContext, runId: string): RunRecord {
   return run;
 }
 
-export async function pauseRun(ctx: AppContext, runId: string): Promise<never> {
+export async function pauseRun(ctx: AppContext, runId: string): Promise<RunRecord> {
   const run = requireRun(ctx, runId);
   if (run.handleId) {
     try {
@@ -363,14 +186,19 @@ export async function pauseRun(ctx: AppContext, runId: string): Promise<never> {
       }
       throw error;
     }
+  } else {
+    throw unsupportedPause();
   }
-  throw unsupportedPause();
-}
-
-export function requireRun(ctx: AppContext, runId: string): RunRecord {
-  const run = ctx.world.runs.get(runId);
-  if (!run) {
-    throw notFound("run", runId);
-  }
+  run.status = ctx.engine.nextRunStatus(run.status, "pause");
+  touch(run, ctx.world.nowIso());
   return run;
 }
+
+export async function resumeRun(ctx: AppContext, runId: string): Promise<RunRecord> {
+  const run = requireRun(ctx, runId);
+  run.status = ctx.engine.nextRunStatus(run.status, "resume");
+  touch(run, ctx.world.nowIso());
+  return run;
+}
+
+export { requireRun } from "./admit.js";

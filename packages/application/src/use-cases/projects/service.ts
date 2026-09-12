@@ -9,9 +9,11 @@ import {
   confirmPlan,
   createProject,
   pauseProject,
+  resumeProject,
   startExecution,
   startPlanning,
 } from "./projects.js";
+import { absorbDirectArtifact, createAdHocTask } from "./direct-task.js";
 import {
   bindTaskOutput,
   cancelTask,
@@ -24,7 +26,10 @@ import {
   pauseRun,
   recordRunFailed,
   recordRunSucceeded,
+  resumeRun,
   startRun,
+  startTaskRun,
+  timeoutRun,
 } from "../runs/runs.js";
 import { createApproval, decideApproval } from "../approvals/approvals.js";
 import {
@@ -74,7 +79,10 @@ export class WorkforceApp {
   confirmPlan = (input: Parameters<typeof confirmPlan>[1]) => confirmPlan(this.ctx, input);
   start = (input: Parameters<typeof startExecution>[1]) => startExecution(this.ctx, input);
   pauseProject = (input: Parameters<typeof pauseProject>[1]) => pauseProject(this.ctx, input);
+  resumeProject = (input: Parameters<typeof resumeProject>[1]) => resumeProject(this.ctx, input);
   cancelProject = (input: Parameters<typeof cancelProject>[1]) => cancelProject(this.ctx, input);
+  createAdHocTask = (input: Parameters<typeof createAdHocTask>[1]) =>
+    createAdHocTask(this.ctx, input);
   queueTask = (input: Parameters<typeof queueTask>[1]) => queueTask(this.ctx, input);
   bindTaskOutput = (input: Parameters<typeof bindTaskOutput>[1]) => bindTaskOutput(this.ctx, input);
   retryTask = (input: Parameters<typeof retryTask>[1]) => retryTask(this.ctx, input);
@@ -82,10 +90,15 @@ export class WorkforceApp {
     requestTaskChanges(this.ctx, input);
   cancelTask = (input: Parameters<typeof cancelTask>[1]) => cancelTask(this.ctx, input);
   startRun = (input: Parameters<typeof startRun>[1]) => startRun(this.ctx, input);
+  startTaskRun = (input: Parameters<typeof startTaskRun>[1]) => startTaskRun(this.ctx, input);
   recordRunSucceeded = (runId: string) => recordRunSucceeded(this.ctx, runId);
   recordRunFailed = (runId: string) => recordRunFailed(this.ctx, runId);
   cancelRun = (input: Parameters<typeof cancelRun>[1]) => cancelRun(this.ctx, input);
   pauseRun = (runId: string) => pauseRun(this.ctx, runId);
+  resumeRun = (runId: string) => resumeRun(this.ctx, runId);
+  timeoutRun = (runId: string) => timeoutRun(this.ctx, { runId });
+  absorbDirectArtifact = (input: Parameters<typeof absorbDirectArtifact>[1]) =>
+    absorbDirectArtifact(this.ctx, input);
   createApproval = (input: Parameters<typeof createApproval>[1]) => createApproval(this.ctx, input);
   decideApproval = (input: Parameters<typeof decideApproval>[1]) => decideApproval(this.ctx, input);
   reserveBudget = (input: Parameters<typeof reserveRunBudget>[1]) =>

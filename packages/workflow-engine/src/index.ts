@@ -45,6 +45,13 @@ export {
   type RecoveryKind,
 } from "./retry.js";
 export {
+  retryIsDue,
+  runTimeoutDue,
+  taskCompletionBarrier,
+  type CompletionBarrier,
+  type CompletionBarrierReason,
+} from "./completion.js";
+export {
   availableMinor,
   raiseBudget,
   releaseReservation,

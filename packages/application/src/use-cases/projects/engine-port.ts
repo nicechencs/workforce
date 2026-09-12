@@ -130,7 +130,15 @@ export interface EnginePort {
     generation: number;
     maxReworkCycles: number;
     capacityAvailable: boolean;
+    nowIso?: string;
+    nextAttemptAt?: string;
   }): RecoveryDecision;
+  taskCompletionBarrier?(input: {
+    requiredOutputsBound: boolean;
+    artifacts: readonly { status: string }[];
+    evaluations: readonly { verdict: string }[];
+  }): { ok: true } | { ok: false; reason: string };
+  retryIsDue?(nowIso: string, nextAttemptAt: string | undefined): boolean;
   reserveBudget(state: BudgetState, amount: BudgetAmount): BudgetDecision;
   releaseReservation(state: BudgetState, amountMinor: number): BudgetDecision;
   settleUsage(

@@ -11,9 +11,11 @@ import {
   raiseBudget,
   releaseReservation,
   reserveBudget,
+  retryIsDue,
   reviewerCircularWait,
   schedule,
   settleUsage,
+  taskCompletionBarrier,
   validateWorkflowGraph,
 } from "@workforce/workflow-engine";
 
@@ -34,5 +36,7 @@ export function createEnginePort(): EnginePort {
     settleUsage,
     raiseBudget,
     nextBackoffMs,
+    taskCompletionBarrier,
+    retryIsDue,
   };
 }
