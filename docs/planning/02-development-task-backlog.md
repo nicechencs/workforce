@@ -358,7 +358,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** 使用 typed client；未实现写接口时按钮不可假成功。写接口就绪后：新建 → 保存草稿 → 发布 → 列表可见新版本；未发布图不能被 `:start` / Runtime 执行。有限 DAG 非法边/循环被拒绝。headed 未跑不得宣称画布可用。
 
-**当前切片（见 03）：** catalog 写 API + 画布壳已接线；headed 未跑；皮肤未重贴设计系统。本卡所有权不变，剩余工作仍按上表领取。
+**当前切片（见 03）：** 画布 + 草稿写 API 已接线（部分 M7 UI）；headed 未跑；皮肤未重贴设计系统。**不**宣称 M7 完成。本卡所有权不变，剩余工作仍按上表领取。
 
 **集成依赖：** T02 图 DTO、T09 发布校验、T10 写 API、T11 路由（已有 workflows slot 则可复用）。可先用 fake client 画 UI，合并时接真实 endpoint。
 
@@ -398,7 +398,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 会话/草稿 DTO + 作者壳已有；**无** send / 编排 Agent。不得把壳写成对话编排完成。
+**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** send / 编排 Agent / session store。不得把壳写成对话编排完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
@@ -435,7 +435,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 
-**当前切片（见 03）：** `:start` 可选 `orchestrationMode` + DTO 回显 + capability 拒 `direct`。控件未入项目页。**禁止**写入 `StartRunRequest`。无 direct 调度。
+**当前切片（见 03）：** 项目 start 的 mode UI 模块 + `:start` capability gating 已有；控件**未挂**项目详情。composed 只回显 DTO，比 main #28 更薄（mode 不进 `app.start()`）。公共权威是 `execution.ts`，不是第二套 protocol。**禁止**写入 `StartRunRequest`。无 headed PASS、无 Codex direct、无 direct 调度。
 
 **集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 

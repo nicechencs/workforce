@@ -37,6 +37,14 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）合入 `dev` 前再钉本分支切片边界
+
+- **决定：** 向 `dev` 开 PR 的进度页必须只写本分支实有代码。T18 = 画布 + 草稿写 API（部分 M7 UI）；T19 = 写 API 已通、页面仍 stub；T20 = 作者壳在、`CHAT_SESSION_PROTOCOL_FROZEN=false`、无 Agent/send、无 session store；T21 = 项目 start 的 mode UI 模块 + capability gating 已有，控件未挂详情，composed passthrough 比 main #28 更薄。公共 `orchestrationMode` 权威仍是 `execution.ts`（C5–C9），Daemon `modules/orchestration.ts` 只做 parse/gate。不宣称 M7/M8 完成、headed PASS、Codex direct。不发明 chat / `:direct` / enrollment。未迁 main #20 placements 文档深度、#21 完整 T19 写 UI、#28 passthrough 测试深度、#30/#31 session store + localStorage。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T18–T21 与 §5.4–5.7；[02-development-task-backlog.md](02-development-task-backlog.md) 各卡当前切片；[decision-register.md](decision-register.md) §0 / §9 去掉「可写面尚未实现 / 代码尚未实现」的绝对句；[api-capability-matrix.md](api-capability-matrix.md) M7/M8 行与页面动作表。
+- **状态：** 文档对齐 **implemented**。M7/M8 产品完成仍 **planned**。headed 真窗仍未跑。
+
+---
+
 ## 2026-09-12（Asia/Taipei）进度文档与部分移植切片对齐
 
 - **决定：** `task/port-main-m7-t18-t21` 是部分移植，不是 T18–T21 全量。合入 `dev` 前进度真源必须与代码一致：有画布壳 / catalog 写 API / 作者壳 / `:start` 回显，就不得再写「都还没有代码」。同时钉死诚实边界：不宣称 M7/M8 完成、headed PASS、Agent send、`direct` 调度；`StartRunRequest` 不加 `orchestrationMode`；T19 页面仍拒保存；T21 控件未入项目页；画布与设计系统两套皮肤并存。

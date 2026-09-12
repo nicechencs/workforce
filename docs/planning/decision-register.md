@@ -3,17 +3,17 @@ title: Workforce V0.1 Decision Register
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # V0.1 决策登记
 
-日期：2026-09-11  
+日期：2026-09-12  
 状态：**已冻结（M0–M3 开工基线；项目制主对象；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式）**  
 范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行。  
 协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。产品/规划文档变更必须追加 [communication-history.md](communication-history.md)。
 
-本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**尚未实现**；进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**完成态尚未实现**；进度以 [03-implementation-status.md](03-implementation-status.md) 为准，不得把已有画布/写 API/作者壳/mode 回显切片写成「都还没有代码」。
 
 未测的真实 Runtime 能力转交 T03，不得用猜测当决定。
 
@@ -27,7 +27,7 @@ updated: 2026-09-11
 
 主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环的可写面（画布、自定义 Team、对话生成、双执行模式）**尚未实现**。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、作者壳（`CHAT_SESSION_PROTOCOL_FROZEN=false`）、`:start` orchestrationMode 回显与 capability gating；自定义 Team **页面仍是 stub**。不发明 chat / `:direct` / enrollment path。
 
 ## 1. 冻结总表
 
@@ -420,7 +420,7 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 ## 9. 对话生成与双执行模式（M7/M8）
 
-用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**代码尚未实现**；本登记不发明 chat 或 execution-mode endpoint。进度以 [03-implementation-status.md](03-implementation-status.md) 为准。
+用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**产品完成态尚未实现**；本登记不发明 chat 或 `:direct` endpoint。切片进度以 [03-implementation-status.md](03-implementation-status.md) 为准（作者壳 / mode 回显 ≠ D17/D18 完成）。
 
 D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
 
@@ -428,7 +428,7 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 
 对话是项目制循环里**生成**可定制工作流的一等作者路径，不是独立聊天产品，也不是替代画布的第二套 Runtime。
 
-**范围（M7 扩展，必达，尚未实现）：**
+**范围（M7 扩展，必达，完成态尚未实现）：**
 
 1. 用户用自然语言描述意图，例如：创建 bot1（角色）、bot2、bot3；跑流程 X；某个 bot 负责任务 Y。编排 Agent 理解后**生成**草稿：Team 角色、Tasks、有限 DAG 的 `WorkflowDraft` / canonical graph；此阶段不产生可执行的 `WorkflowVersion`。
 2. 生成结果必须可编辑：进入 D15 画布或结构化编辑面，改节点/边/角色/任务后再保存、发布。禁止「对话一次生成即锁定、不可改」。
@@ -458,7 +458,7 @@ Authoring 契约：对话 turn/raw intent 先由 Application 创建受治理 aut
 
 当某个 bot/Agent 做事时，执行模式是一等产品能力，不是隐藏开关。
 
-**范围（M8 必达，尚未实现）：**
+**范围（M8 必达，完成态尚未实现）：**
 
 1. **workflow-bound：** 跟随该项目已确认、已发布的 `WorkflowVersion`（D02）。Agent 只执行图中轮到它的节点，不得暗改活动执行图。
 2. **direct：** 直接执行用户/任务此刻给出的目标（ad-hoc / 绕过该次已发布图）。Application 先创建项目内 ad-hoc Task，待三轴解析与同一 Policy、Workspace、预算、Approval、Artifact/Evaluation、capability probe 治理完成后再创建正常 Run；它只绕过 WorkflowInstance 调度，不绕过控制面，不是「无协议乱跑」。direct 永不推进 WorkflowInstance 或 Project；若吸收成果，必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收，原 direct Run 不改变父聚合。
