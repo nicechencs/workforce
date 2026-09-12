@@ -46,7 +46,7 @@ import {
 } from "./records.js";
 import { SqliteRunRepository } from "./runs.js";
 import { sqliteDbOf } from "./session.js";
-import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";
+import { cell, ifPresent, optionalText, parseJson, requiredInt, requiredText } from "./sql.js";
 import { SqliteTaskRepository } from "./tasks.js";
 import {
   listPublishedWorkflowGraphs,
@@ -78,6 +78,16 @@ export interface WorldEntitySnapshot {
   workflowDrafts?: WorkflowDraftDto[];
   teamDrafts?: TeamDraftDto[];
   authoringChangeSets?: AuthoringChangeSetDto[];
+  /** Restart clock/ids authority; absent only before 014. */
+  clock?: string;
+  idsSeq?: number;
+  unknownStatuses?: string[];
+}
+
+export interface WorldProjectionMeta {
+  clock: string;
+  idsSeq: number;
+  unknownStatuses: string[];
 }
 
 export class SqliteWorldSnapshot {
@@ -118,6 +128,7 @@ export class SqliteWorldSnapshot {
   }
 
   load(): WorldEntitySnapshot {
+    const meta = this.loadMeta();
     return {
       workflowVersions: listPublishedWorkflowGraphs(this.db),
       projects: this.projects.listAll(),
@@ -136,6 +147,52 @@ export class SqliteWorldSnapshot {
       workflowDrafts: this.workflowDrafts.listAll(),
       teamDrafts: this.teamDrafts.listAll(),
       authoringChangeSets: this.authoringChangeSets.listAll(),
+      ...(meta
+        ? {
+            clock: meta.clock,
+            idsSeq: meta.idsSeq,
+            unknownStatuses: meta.unknownStatuses,
+          }
+        : {}),
+    };
+  }
+
+  loadMeta(): WorldProjectionMeta | null {
+    let row: Record<string, unknown> | undefined;
+    try {
+      row = this.db
+        .prepare(
+          `SELECT clock, ids_seq, unknown_statuses_json
+             FROM world_projection_meta WHERE id = 1`,
+        )
+        .get();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("no such table")) {
+        return null;
+      }
+      throw error;
+    }
+    if (!row) {
+      return null;
+    }
+    const unknownStatuses = parseJson(
+      cell(row, "unknown_statuses_json"),
+      "unknown_statuses_json",
+    );
+    if (
+      !Array.isArray(unknownStatuses) ||
+      unknownStatuses.some((item) => typeof item !== "string")
+    ) {
+      throw new PersistenceError(
+        "constraint",
+        "world_projection_meta.unknown_statuses_json must be a string array",
+      );
+    }
+    return {
+      clock: requiredText(cell(row, "clock"), "clock"),
+      idsSeq: requiredInt(cell(row, "ids_seq"), "ids_seq"),
+      unknownStatuses,
     };
   }
 
@@ -258,6 +315,13 @@ export class SqliteWorldSnapshot {
         organizationId,
         keys: snapshot.usageKeys,
         createdAt: at,
+      });
+    }
+    if (typeof snapshot.idsSeq === "number") {
+      saveWorldProjectionMeta(tx, {
+        clock: at,
+        idsSeq: snapshot.idsSeq,
+        unknownStatuses: snapshot.unknownStatuses ?? [],
       });
     }
   }
@@ -462,7 +526,9 @@ function rowToAppRun(row: Record<string, unknown>): AppRunRecord {
     operationId: optionalText(cell(row, "operation_id")) ?? "",
     createdAt,
     updatedAt: createdAt,
-    ...(executionSnapshot ? { executionSnapshot } : {}),
+    ...(executionSnapshot
+      ? { executionSnapshot, orchestrationMode: executionSnapshot.orchestrationMode }
+      : {}),
     ...ifPresent("cancelRequestedAt", optionalText(cell(row, "cancel_requested_at"))),
   };
 }
@@ -631,6 +697,27 @@ function validateExecutionSnapshot(value: unknown, runId: string): RunExecutionS
   } catch {
     throw new PersistenceError("constraint", `run ${runId} has an invalid execution snapshot`);
   }
+}
+
+function saveWorldProjectionMeta(
+  tx: Tx,
+  meta: WorldProjectionMeta,
+): void {
+  sqliteDbOf(tx)
+    .prepare(
+      `INSERT INTO world_projection_meta (id, clock, ids_seq, unknown_statuses_json, updated_at)
+       VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         clock = excluded.clock,
+         ids_seq = excluded.ids_seq,
+         unknown_statuses_json = excluded.unknown_statuses_json,
+         updated_at = excluded.updated_at`,
+    )
+    .run(meta.clock, meta.idsSeq, JSON.stringify(meta.unknownStatuses), atOrNow(meta));
+}
+
+function atOrNow(meta: WorldProjectionMeta): string {
+  return meta.clock;
 }
 
 function loadExecutionLeases(db: DatabaseSync): ExecutionLeaseRecord[] {

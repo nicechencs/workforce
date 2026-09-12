@@ -105,4 +105,13 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     recovery:
       "audit historical runs into already_canonical / eligible / repair_required / quarantined; never update runs or infer missing axes",
   },
+  {
+    record: "world / SQLite projection reconciliation",
+    location:
+      "projection_reconciliation_items (append-only) + world_projection_meta (clock/ids_seq)",
+    uniqueness:
+      "audit_sequence PRIMARY KEY; UNIQUE (source_digest, classification); world_projection_meta id=1",
+    recovery:
+      "query projection_failed / repair_failed / partial_projection; restart always loads SQLite entities; old sidecar is repaired into SQLite or ignored when stale",
+  },
 ];

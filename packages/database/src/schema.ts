@@ -940,6 +940,45 @@ CREATE INDEX idx_authoring_proposal_targets_patch
   ON authoring_proposal_targets(patch_ref, proposal_id);
 `;
 
+/**
+ * T04-PROJECTION-RECONCILIATION. Forward-only: do not rewrite 001–010.
+ *
+ * 011–013 are reserved for T04-MIG execution-axis backfill / switch / contract
+ * on `task/t04-mig`. This ledger makes world/SQLite projection failures and old
+ * sidecar repair queryable; `world_projection_meta` is the restart clock/ids
+ * authority so a stale `world.json` cannot be chosen silently.
+ */
+export const MIGRATION_014_SQL = `
+CREATE TABLE world_projection_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  clock TEXT NOT NULL,
+  ids_seq INTEGER NOT NULL CHECK (ids_seq >= 0),
+  unknown_statuses_json TEXT NOT NULL CHECK (json_valid(unknown_statuses_json)),
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE projection_reconciliation_items (
+  audit_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_digest TEXT NOT NULL,
+  classification TEXT NOT NULL CHECK (classification IN (
+    'sqlite_authority',
+    'sidecar_repaired',
+    'sidecar_stale_ignored',
+    'projection_failed',
+    'repair_failed',
+    'partial_projection'
+  )),
+  reason TEXT NOT NULL,
+  source_json TEXT NOT NULL CHECK (json_valid(source_json)),
+  recorded_at TEXT NOT NULL,
+  UNIQUE (source_digest, classification)
+);
+
+CREATE INDEX idx_projection_reconciliation_unresolved
+  ON projection_reconciliation_items(classification, audit_sequence)
+  WHERE classification IN ('projection_failed', 'repair_failed', 'partial_projection');
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -951,4 +990,5 @@ export const MIGRATIONS = [
   { version: "008_execution_axis_migration_audit", sql: MIGRATION_008_SQL },
   { version: "009_workflow_authoring_scopes", sql: MIGRATION_009_SQL },
   { version: "010_authoring_chat_metadata", sql: MIGRATION_010_SQL },
+  { version: "014_projection_reconciliation", sql: MIGRATION_014_SQL },
 ] as const;

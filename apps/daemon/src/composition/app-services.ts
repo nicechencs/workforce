@@ -285,6 +285,12 @@ export class ComposedAppServices implements AppServices {
       for (const workspace of restored.workspaces) {
         services.workspaces.set(workspace.id, workspace);
       }
+      for (const event of snapshot.world.events) {
+        services.synced.eventIds.add(event.id);
+      }
+      for (const receipt of snapshot.world.receipts) {
+        services.synced.operationIds.add(receipt.operationId);
+      }
       const clock = app.world.clock as unknown as { current: Date };
       clock.current = new Date();
       for (const workspace of services.workspaces.values()) {
@@ -2200,10 +2206,29 @@ export class ComposedAppServices implements AppServices {
   /**
    * A swallowed SQLite projection failure makes world.json silently outrun the
    * entity tables that are the restart authority (D04). Persist stays
-   * fire-and-forget for the request path, but the failure must be observable.
+   * fire-and-forget for the request path, but the failure must be queryable.
    */
   private reportPersistFailure(error: unknown): void {
     console.error("[workforce] persist failed; SQLite entity tables may be stale", error);
+    try {
+      this.sqlite.projectionReconciliation.record({
+        classification: "projection_failed",
+        reason:
+          error !== null && typeof error === "object" && "code" in error
+            ? `projection failed: ${String((error as { code: unknown }).code)}`
+            : error instanceof Error
+              ? `projection failed: ${error.name}`
+              : "projection failed",
+        source: {
+          errorName: error instanceof Error ? error.name : "Error",
+          ...(error !== null && typeof error === "object" && "code" in error
+            ? { errorCode: String((error as { code: unknown }).code) }
+            : {}),
+        },
+      });
+    } catch (ledgerError) {
+      console.error("[workforce] persist failure could not be recorded", ledgerError);
+    }
   }
 
   private persistDurably(): Promise<void> {
