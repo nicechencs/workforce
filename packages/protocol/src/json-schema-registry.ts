@@ -24,6 +24,10 @@ import {
   sendAuthoringMessageInputSchema,
 } from "./authoring-chat.js";
 import { runDtoSchema } from "./dto.js";
+import {
+  startDirectTaskRunAcceptedSchema,
+  startDirectTaskRunInputSchema,
+} from "./direct-execution.js";
 import { workforceEventSchema } from "./event.js";
 import { orchestrationModeSchema } from "./execution.js";
 import { projectExecutionSnapshotSchema } from "./execution-snapshot.js";
@@ -135,6 +139,16 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     fileName: "authoring-message-send-accepted.schema.json",
     title: "SendAuthoringMessageAccepted",
     schema: sendAuthoringMessageAcceptedSchema,
+  },
+  {
+    fileName: "direct-task-run-start-input.schema.json",
+    title: "StartDirectTaskRunInput",
+    schema: startDirectTaskRunInputSchema,
+  },
+  {
+    fileName: "direct-task-run-start-accepted.schema.json",
+    title: "StartDirectTaskRunAccepted",
+    schema: startDirectTaskRunAcceptedSchema,
   },
   {
     fileName: "event-envelope.schema.json",

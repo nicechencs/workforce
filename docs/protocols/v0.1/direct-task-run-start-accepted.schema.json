@@ -1,0 +1,40 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/direct-task-run-start-accepted.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "executionSnapshotId": {
+      "not": {}
+    },
+    "orchestrationMode": {
+      "const": "direct",
+      "type": "string"
+    },
+    "projectId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "runId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "taskId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "workflowInstanceId": {
+      "not": {}
+    }
+  },
+  "required": [
+    "projectId",
+    "taskId",
+    "runId",
+    "orchestrationMode"
+  ],
+  "title": "StartDirectTaskRunAccepted",
+  "type": "object"
+}

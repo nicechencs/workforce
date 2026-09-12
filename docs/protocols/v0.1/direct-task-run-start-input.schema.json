@@ -1,0 +1,92 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/direct-task-run-start-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "executionSnapshotId": {
+      "not": {}
+    },
+    "expectedTaskStateRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "idempotencyKey": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "operationId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "orchestrationMode": {
+      "const": "direct",
+      "type": "string"
+    },
+    "placementIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "dataLocality": {
+          "enum": [
+            "workspace_local",
+            "replicated",
+            "remote_access"
+          ],
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "automatic",
+            "local_only",
+            "remote_only",
+            "specific_node"
+          ],
+          "type": "string"
+        },
+        "nodeId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "preferredLabels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "requiredLabels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "projectId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "taskId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "workflowInstanceId": {
+      "not": {}
+    }
+  },
+  "required": [
+    "operationId",
+    "idempotencyKey",
+    "projectId",
+    "taskId",
+    "orchestrationMode"
+  ],
+  "title": "StartDirectTaskRunInput",
+  "type": "object"
+}

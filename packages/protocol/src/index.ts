@@ -5,6 +5,7 @@ export * from "./authoring.js";
 export * from "./authoring-chat.js";
 export * from "./command.js";
 export * from "./dto.js";
+export * from "./direct-execution.js";
 export * from "./errors.js";
 export * from "./event.js";
 export * from "./execution.js";
