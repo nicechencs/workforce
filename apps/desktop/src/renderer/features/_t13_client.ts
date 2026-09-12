@@ -1,17 +1,20 @@
 import {
-  createDesktopClient,
-  DesktopClient,
   ProblemError,
-  type ClientTransport,
   type CommandOptions,
-  type TransportRequest,
-  type TransportResponse,
+  type DesktopClient,
 } from "@workforce/desktop-client";
-import type { ApiRequest, ApiResponse, WorkforcePreloadApi } from "@workforce/ui";
+import type { ApiRequest, ApiResponse } from "@workforce/ui";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  getWorkforceClient,
+  resetRendererClient,
+  setApiRequestForTests,
+  setWorkforceClientForTests,
+} from "../app/renderer-client.js";
+
 /**
- * T13 typed client: DesktopClient over `window.workforce.api.request`.
+ * T13 typed client: same production DesktopClient as the shell / hooks.
  * Tests inject the preload request (or a DesktopClient) — never loopback from the renderer.
  *
  * 展示层不在这里：样式与组件已统一到 `renderer/components/ui.tsx`
@@ -20,77 +23,20 @@ import { useEffect, useRef, useState } from "react";
 
 export type T13ApiRequest = (input: ApiRequest) => Promise<ApiResponse>;
 
-let apiRequestOverride: T13ApiRequest | null = null;
-let clientOverride: DesktopClient | null = null;
-
 export function setT13ApiRequest(request: T13ApiRequest | null): void {
-  apiRequestOverride = request;
-  clientOverride = null;
+  setApiRequestForTests(request);
 }
 
 export function setT13Client(client: DesktopClient | null): void {
-  clientOverride = client;
+  setWorkforceClientForTests(client);
 }
 
 export function resetT13Client(): void {
-  apiRequestOverride = null;
-  clientOverride = null;
-}
-
-function getPreloadApi(): WorkforcePreloadApi {
-  const fromWindow = (globalThis as { window?: { workforce?: WorkforcePreloadApi } }).window
-    ?.workforce;
-  if (fromWindow) {
-    return fromWindow;
-  }
-  throw new Error("Workforce preload bridge is not available");
-}
-
-function fromApiResponse(res: ApiResponse): TransportResponse {
-  if (res.ok) {
-    return { status: res.status, headers: {}, body: res.body };
-  }
-  return {
-    status: res.status,
-    headers: { "content-type": "application/problem+json" },
-    body: {
-      type: `urn:workforce:error:${res.code}`,
-      title: res.code,
-      status: res.status,
-      code: res.code,
-      detail: res.message,
-      instance: "",
-      requestId: "",
-      retryable: false,
-    },
-  };
-}
-
-function toApiRequest(req: TransportRequest): ApiRequest {
-  const input: ApiRequest = { method: req.method, path: req.path };
-  if (req.headers !== undefined) {
-    input.headers = req.headers;
-  }
-  if (req.body !== undefined) {
-    input.body = req.body;
-  }
-  return input;
-}
-
-function createBridgeTransport(): ClientTransport {
-  return {
-    async request(req: TransportRequest): Promise<TransportResponse> {
-      const requestFn = apiRequestOverride ?? ((input) => getPreloadApi().api.request(input));
-      return fromApiResponse(await requestFn(toApiRequest(req)));
-    },
-  };
+  resetRendererClient();
 }
 
 export function getT13Client(): DesktopClient {
-  if (clientOverride) {
-    return clientOverride;
-  }
-  return createDesktopClient({ transport: createBridgeTransport() });
+  return getWorkforceClient();
 }
 
 export function formatT13Error(error: unknown): string {

@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import {
-  createDesktopClient,
-  type CapabilitiesDto,
-  type DesktopClient,
-} from "@workforce/desktop-client";
-import { primaryNavItems, type ConnectionSnapshot, type WorkforcePreloadApi } from "@workforce/ui";
+import type { CapabilitiesDto } from "@workforce/desktop-client";
+import { primaryNavItems, type ConnectionSnapshot } from "@workforce/ui";
 
 import { OutletErrorBoundary } from "../components/outlet-error-boundary.js";
 import { PlaceholderPage } from "../components/placeholder-page.js";
@@ -13,7 +9,7 @@ import { ShellFrame } from "../components/shell-frame.js";
 import type { RouteRegistry } from "../routes/registry.js";
 import { shouldRenderFeaturePage } from "./feature-modules.js";
 import { parseHashPath, pathToHash } from "./hash-router.js";
-import { createIpcTransport } from "./ipc-transport.js";
+import { getPreloadApi, getWorkforceClient } from "./renderer-client.js";
 import { renderShell } from "./shell.js";
 import { WorkforceProvider } from "./workforce-context.js";
 
@@ -22,9 +18,8 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
   const [path, navigate] = useHashRoute();
   const [connection, setConnection] = useState<ConnectionSnapshot>({ status: "loading" });
   const [capabilities, setCapabilities] = useState<CapabilitiesDto | null>(null);
-  const api = getPreloadApi();
-
-  const client = useMemo(() => createRendererClient(api), [api]);
+  const api = getPreloadApi() ?? null;
+  const client = getWorkforceClient();
 
   useEffect(() => {
     if (!api) {
@@ -133,25 +128,3 @@ function useHashRoute(): [string, (path: string) => void] {
   return [path, navigate];
 }
 
-function getPreloadApi(): WorkforcePreloadApi | null {
-  if (typeof window === "undefined" || !window.workforce) {
-    return null;
-  }
-  return window.workforce;
-}
-
-function createRendererClient(api: WorkforcePreloadApi | null): DesktopClient {
-  return createDesktopClient({
-    transport: createIpcTransport(async (input) => {
-      if (!api) {
-        return {
-          ok: false,
-          status: 503,
-          code: "preload_missing",
-          message: "window.workforce is unavailable",
-        };
-      }
-      return api.api.request(input);
-    }),
-  });
-}

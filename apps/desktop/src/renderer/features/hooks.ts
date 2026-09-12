@@ -2,30 +2,29 @@ import { useEffect, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
 import type { ConnectionSnapshot } from "@workforce/ui";
 
-import { useOptionalWorkforceContext } from "../app/workforce-context.js";
 import {
   getInjectedConnectionForTests,
   getPreloadApi,
-  getWorkforceClient as getFallbackClient,
-  setWorkforceClientForTests as setFallbackClient,
-  setWorkforceConnectionForTests as setFallbackConnection,
-} from "./_client-fallback.js";
+  getWorkforceClient,
+  setWorkforceClientForTests as setCanonicalClient,
+  setWorkforceConnectionForTests as setCanonicalConnection,
+} from "../app/renderer-client.js";
+import { useOptionalWorkforceContext } from "../app/workforce-context.js";
 
 export {
   asCatalogClient,
   createPreloadTransport,
-  getPreloadApi,
-  getWorkforceClient,
   hasCatalogMethod,
 } from "./_client-fallback.js";
 export type { CatalogClient } from "./_client-fallback.js";
+export { getPreloadApi, getWorkforceClient };
 
 export function setWorkforceClientForTests(client: DesktopClient | null): void {
-  setFallbackClient(client);
+  setCanonicalClient(client);
 }
 
 export function setWorkforceConnectionForTests(snapshot: ConnectionSnapshot | undefined): void {
-  setFallbackConnection(snapshot);
+  setCanonicalConnection(snapshot);
 }
 
 export function useWorkforceClient(): DesktopClient {
@@ -33,7 +32,7 @@ export function useWorkforceClient(): DesktopClient {
   if (ctx) {
     return ctx.client;
   }
-  return getFallbackClient();
+  return getWorkforceClient();
 }
 
 export function useWorkforceConnection(): ConnectionSnapshot {
