@@ -177,40 +177,35 @@ export class FakeAppServices implements AppServices {
     };
   }
 
-  createAuthoringSession(_ctx: CommandContext, _projectId: string): never {
+  createAuthoringSession(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  listAuthoringSessions(_projectId: string, _query: ListQuery): never {
+  listAuthoringSessions(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  getAuthoringSession(_sessionId: string): never {
+  getAuthoringSession(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  getAuthoringTurn(_sessionId: string, _turnId: string): never {
+  getAuthoringTurn(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  getAuthoringProposal(_sessionId: string, _proposalId: string): never {
+  getAuthoringProposal(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  sendAuthoringMessage(_ctx: CommandContext, _sessionId: string, _content: string): never {
+  sendAuthoringMessage(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  confirmAuthoringTurn(_ctx: CommandContext, _sessionId: string, _turnId: string): never {
+  confirmAuthoringTurn(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
-  authoringTurnAction(
-    _ctx: CommandContext,
-    _sessionId: string,
-    _turnId: string,
-    _action: "cancel" | "retry" | "close",
-  ): never {
+  authoringTurnAction(): never {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 

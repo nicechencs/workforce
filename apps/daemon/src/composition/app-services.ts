@@ -1311,7 +1311,7 @@ export class ComposedAppServices implements AppServices {
       }
       const nextStatus = action === "cancel" ? "cancelled" : "closed";
       const now = this.app.world.nowIso();
-      await this.sqlite.uow.withTransaction(async (_tx) => {
+      await this.sqlite.uow.withTransaction(async () => {
         const changed = this.sqlite.connection
           .prepare(
             `UPDATE authoring_turns SET status = ?, state_revision = state_revision + 1, updated_at = ?
