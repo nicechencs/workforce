@@ -10,7 +10,8 @@ export type ArtifactErrorCode =
   | "ARTIFACT_STAGING_MISSING"
   | "ARTIFACT_IMMUTABLE"
   | "ARTIFACT_ACCESS_DENIED"
-  | "ARTIFACT_TEST_PORTS_REQUIRED";
+  | "ARTIFACT_TEST_PORTS_REQUIRED"
+  | "ARTIFACT_CONTENT_RETAINED";
 
 export class ArtifactError extends Error {
   override readonly name = "ArtifactError";

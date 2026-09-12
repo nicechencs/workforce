@@ -53,6 +53,11 @@ export interface StoredArtifactVersion extends ArtifactVersion {
   createdAt: string;
   availableAt?: string;
   quarantinedAt?: string;
+  quarantineReason?: string;
+  retainedAt?: string;
+  contentSummary?: string;
+  contentPurged?: boolean;
+  retentionPolicyId?: string;
   taskId?: string;
   runId?: string;
   name?: string;
@@ -91,7 +96,61 @@ export interface AcceptanceReady {
   ready: boolean;
   missing: string[];
   quarantined: string[];
+  retained: string[];
   bindings: OutputBinding[];
+}
+
+export interface QuarantineRecord {
+  artifactVersionId: string;
+  digest: string;
+  reason: string;
+  observedAt: string;
+  details?: Record<string, unknown>;
+}
+
+export interface RetentionRecord {
+  artifactVersionId: string;
+  digest: string;
+  size: number;
+  kind: RegistrableKind;
+  summary: string;
+  retainedAt: string;
+  blobRemoved: boolean;
+  policyId?: string;
+  reason?: string;
+}
+
+export interface AcceptanceBlocker {
+  code:
+    | "missing_artifact"
+    | "integrity_quarantined"
+    | "content_retained"
+    | "evaluation_failed"
+    | "evaluation_inconclusive";
+  message: string;
+  slotId?: string;
+  artifactVersionId?: string;
+  digest?: string;
+}
+
+export interface AcceptanceEvidence {
+  ready: boolean;
+  missing: string[];
+  quarantined: Array<{
+    slotId: string;
+    artifactVersionId?: string;
+    digest?: string;
+    reason: string;
+  }>;
+  retained: Array<{
+    slotId: string;
+    artifactVersionId: string;
+    digest: string;
+    summary: string;
+  }>;
+  evaluations: EvaluationRecord[];
+  unevaluated: string[];
+  blocking: AcceptanceBlocker[];
 }
 
 export type ArtifactUsePurpose = "read" | "approval" | "input" | "browse";
@@ -116,6 +175,7 @@ export interface EvaluationRecord {
   evidenceRefs: Array<{ artifactVersionId: string }>;
   createdAt: string;
   criterionId: string;
+  digest?: string;
   scores?: Record<string, number>;
   summary?: string;
 }
