@@ -88,8 +88,8 @@ async function observeLaunchContext(
     lockHeld,
     portBusy,
     spawnAttempted: input.child !== null,
-    preflightMessage: input.preflightMessage,
-    healthFailed: input.healthFailed,
+    preflightMessage: input.preflightMessage ?? null,
+    healthFailed: input.healthFailed === true,
   });
 }
 

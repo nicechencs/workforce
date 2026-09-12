@@ -214,7 +214,7 @@ export function classifyLaunchFailure(input: ClassifyLaunchFailureInput): Deskto
     /\bEADDRINUSE\b/.test(combined) ||
     (input.lockHeld && exit !== null);
   const code = resolveDiagnosticCode({
-    preflightMessage: input.preflightMessage,
+    preflightMessage: input.preflightMessage ?? null,
     inspectStatus: input.inspectStatus,
     healthFailed: input.healthFailed === true,
     portConflictHint,
@@ -228,7 +228,7 @@ export function classifyLaunchFailure(input: ClassifyLaunchFailureInput): Deskto
     ...(spawnErrorRedacted?.categories ?? []),
   ]);
   const message = actionableMessage(code, {
-    preflightMessage: input.preflightMessage,
+    preflightMessage: input.preflightMessage ?? null,
     exit,
     spawnError: spawnErrorRedacted?.value ?? null,
   });
