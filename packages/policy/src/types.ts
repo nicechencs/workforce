@@ -41,6 +41,10 @@ export const CONSTRAINT = {
   concurrencyLimit: "concurrency.limit",
   usageTokens: "usage.tokens",
   commandApproval: "command.approval",
+  credentialOsStore: "credential.os_store",
+  credentialCopyEnv: "credential.copy_env",
+  credentialCopyAuthJson: "credential.copy_auth_json",
+  credentialMinimalInject: "credential.minimal_inject",
 } as const;
 
 export type ConstraintName = (typeof CONSTRAINT)[keyof typeof CONSTRAINT] | (string & {});
