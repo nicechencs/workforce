@@ -24,10 +24,18 @@ export const WORKFLOW_BOUND_COPY =
   "跟随已发布工作流：只执行该项目已确认、已发布 WorkflowVersion 中轮到的节点。";
 
 export const DIRECT_COPY =
-  "直接执行：按当前任务目标即席执行，仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn。";
+  "直接执行：按所选 Task 调用 POST /tasks/{id}/runs（orchestrationMode=direct）。仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn，也不走 :start。";
 
 export const SLICE_NOTE =
-  "T21 UI 切片：仅项目「开始执行」写入现有 POST /projects/{id}:start 的 orchestrationMode。Task 详情不挂未接线控件。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";
+  "T21 UI 切片：workflow_bound 走现有 POST /projects/{id}:start 的 orchestrationMode；direct 走 POST /tasks/{id}/runs。Task 详情不挂未接线控件。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";
+
+export const DIRECT_TASK_REQUIRED =
+  "直接执行需要选择项目内已有 Task，再 POST /tasks/{id}/runs。不会改走 :start 假装成功，也不会由 Renderer 创建 ad-hoc Task。";
+
+export const TASK_RUN_NOT_WIRED =
+  "typed client 尚未暴露 startTaskRun，且预加载桥不可用，无法 POST /tasks/{id}/runs。这不是 direct 已完成。";
+
+export const MODE_UNREAD = "模式未回传";
 
 export const MODE_LABELS: Record<OrchestrationMode, string> = {
   workflow_bound: "跟随已发布工作流",
@@ -128,4 +136,13 @@ export function buildStartProjectInput(
     ok: true,
     input: { orchestrationMode: resolveSelectedMode(selected, probe) },
   };
+}
+
+export function runOrchestrationModeLabel(run: {
+  orchestrationMode?: OrchestrationMode | undefined;
+}): string {
+  if (run.orchestrationMode === "workflow_bound" || run.orchestrationMode === "direct") {
+    return MODE_LABELS[run.orchestrationMode];
+  }
+  return MODE_UNREAD;
 }

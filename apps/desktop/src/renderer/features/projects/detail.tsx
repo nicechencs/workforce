@@ -48,8 +48,11 @@ import {
   OrchestrationModeControl,
   buildStartProjectInput,
   DEFAULT_MODE,
+  DIRECT_TASK_REQUIRED,
   probeOrchestrationSupport,
   resolveSelectedMode,
+  runOrchestrationModeLabel,
+  startDirectTaskRun,
   type OrchestrationMode,
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
@@ -111,6 +114,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [bindBusy, setBindBusy] = useState(false);
   const [bindError, setBindError] = useState<string | null>(null);
   const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
+  const [directTaskId, setDirectTaskId] = useState("");
 
   const reload = useCallback(
     async (keepInput: boolean) => {
@@ -226,10 +230,28 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         );
         setProject(next);
       } else if (id === "startProject") {
-        const start = buildStartProjectInput(
-          orchestrationMode,
-          probeOrchestrationSupport({ capabilities }),
-        );
+        const probe = probeOrchestrationSupport({ capabilities });
+        const mode = resolveSelectedMode(orchestrationMode, probe);
+        if (mode === "direct") {
+          if (!probe.direct) {
+            setError(probe.reason);
+            return;
+          }
+          if (directTaskId.length === 0) {
+            setError(DIRECT_TASK_REQUIRED);
+            return;
+          }
+          const task = tasks.find((item) => item.id === directTaskId);
+          await startDirectTaskRun({
+            client,
+            taskId: directTaskId,
+            probe,
+            options: commandOptions(task?.stateRevision),
+          });
+          await reload(true);
+          return;
+        }
+        const start = buildStartProjectInput(mode, probe);
         if (!start.ok) {
           setError(start.error);
           return;
@@ -375,6 +397,8 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   };
   const actions = visibleProjectActions(actionInput);
   const statusLabel = projectStatusLabel(project);
+  const probe = probeOrchestrationSupport({ capabilities });
+  const selectedMode = resolveSelectedMode(orchestrationMode, probe);
 
   return (
     <Page
@@ -416,13 +440,13 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         {budget}
       </p>
       <OrchestrationModeControl
-        selected={resolveSelectedMode(
-          orchestrationMode,
-          probeOrchestrationSupport({ capabilities }),
-        )}
-        probe={probeOrchestrationSupport({ capabilities })}
+        selected={selectedMode}
+        probe={probe}
         disabled={busy !== null}
         onChange={setOrchestrationMode}
+        tasks={tasks.map((task) => ({ id: task.id, title: task.title }))}
+        selectedTaskId={directTaskId}
+        onSelectTask={setDirectTaskId}
       />
 
       <Tabs
@@ -649,7 +673,13 @@ function RunList(props: { runs: RunDto[]; empty: string; onOpen: (runId: string)
         <ListRow
           key={run.id}
           title={run.id}
-          meta={`${runHeadlineStatus(run)}${isActiveRun(run) ? " · 当前" : " · 历史"} · Task ${run.taskId} · attempt ${run.attempt}`}
+          meta={
+            <span data-testid={`project-run-mode-${run.id}`}>
+              {runHeadlineStatus(run)}
+              {isActiveRun(run) ? " · 当前" : " · 历史"} · Task {run.taskId} · attempt {run.attempt}{" "}
+              · 模式 {runOrchestrationModeLabel(run)}
+            </span>
+          }
           onClick={() => props.onOpen(run.id)}
         />
       ))}
