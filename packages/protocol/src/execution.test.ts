@@ -40,11 +40,13 @@ describe("execution axes", () => {
   });
 
   it("rejects remote as a transport (placement is a separate axis)", () => {
-    expect(() => parseRunExecutionSnapshot({
-      orchestrationMode: "direct",
-      transport: "remote",
-      placementSnapshot: placement,
-    })).toThrow(/transport/);
+    expect(() =>
+      parseRunExecutionSnapshot({
+        orchestrationMode: "direct",
+        transport: "remote",
+        placementSnapshot: placement,
+      }),
+    ).toThrow(/transport/);
   });
 });
 
@@ -57,17 +59,19 @@ describe("run execution snapshot", () => {
   });
 
   it("requires a project execution snapshot for workflow_bound", () => {
-    expect(() => parseRunExecutionSnapshot({
-      orchestrationMode: "workflow_bound",
-      transport: "process",
-      placementSnapshot: placement,
-    })).toThrow(/executionSnapshotId/);
+    expect(() =>
+      parseRunExecutionSnapshot({
+        orchestrationMode: "workflow_bound",
+        transport: "process",
+        placementSnapshot: placement,
+      }),
+    ).toThrow(/executionSnapshotId/);
   });
 
   it("rejects the illegal direct-with-snapshot fixture", () => {
-    expect(() => parseRunExecutionSnapshot(
-      fixture("illegal.run.execution.direct-with-snapshot.json"),
-    )).toThrow(/direct execution must not reference/);
+    expect(() =>
+      parseRunExecutionSnapshot(fixture("illegal.run.execution.direct-with-snapshot.json")),
+    ).toThrow(/direct execution must not reference/);
   });
 
   it("accepts direct without a project execution snapshot", () => {
@@ -80,10 +84,12 @@ describe("run execution snapshot", () => {
   });
 
   it("requires a resolved placement snapshot", () => {
-    expect(() => parseRunExecutionSnapshot({
-      orchestrationMode: "direct",
-      transport: "sdk",
-    })).toThrow();
+    expect(() =>
+      parseRunExecutionSnapshot({
+        orchestrationMode: "direct",
+        transport: "sdk",
+      }),
+    ).toThrow();
   });
 
   it("marks a rebuilt placement snapshot as legacy", () => {
@@ -96,12 +102,14 @@ describe("run execution snapshot", () => {
   });
 
   it("rejects the retired executionMode field name", () => {
-    expect(() => parseRunExecutionSnapshot({
-      orchestrationMode: "direct",
-      transport: "sdk",
-      placementSnapshot: placement,
-      executionMode: "bound",
-    })).toThrow(/executionMode/);
+    expect(() =>
+      parseRunExecutionSnapshot({
+        orchestrationMode: "direct",
+        transport: "sdk",
+        placementSnapshot: placement,
+        executionMode: "bound",
+      }),
+    ).toThrow(/executionMode/);
   });
 });
 

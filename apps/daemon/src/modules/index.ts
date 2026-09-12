@@ -61,10 +61,7 @@ export interface AppServices {
   listTeams(query: ListQuery): PageDto<TeamDto>;
   getTeam(id: string): TeamDto | null;
   getTeamVersion(id: string, versionId: string): TeamVersionDto | null;
-  createTeam(
-    ctx: CommandContext,
-    input: CreateTeamInput,
-  ): MaybeAsync<CommandResult<TeamDto>>;
+  createTeam(ctx: CommandContext, input: CreateTeamInput): MaybeAsync<CommandResult<TeamDto>>;
   patchTeam(
     ctx: CommandContext,
     id: string,

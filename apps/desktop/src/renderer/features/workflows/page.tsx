@@ -130,10 +130,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
       title="工作流"
       subtitle="模板、版本和结构化步骤。已发布版本只读；未发布草稿走画布。"
       actions={
-        <Button
-          testId="workflow-new-canvas"
-          onClick={() => props.navigate(canvasCreatePath())}
-        >
+        <Button testId="workflow-new-canvas" onClick={() => props.navigate(canvasCreatePath())}>
           新建画布
         </Button>
       }
