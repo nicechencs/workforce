@@ -3,7 +3,7 @@ title: Workforce 页面信息架构
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # Workforce 页面信息架构
@@ -213,7 +213,7 @@ Task 页面展示“应该做什么”；Runtime 原始日志放在 Run 页面�
 - 当前 Run
 - 诊断、drain 和 revoke 操作
 
-V0.1 只需要默认 Local Node 和只读诊断；远程 enrollment 作为后续能力。
+V0.1 只需要默认 Local Node 和只读诊断。远程与容器是 [D19](../planning/decision-register.md#d19-执行-placement本机远程与容器) 已冻结的一等 Placement，**不是** later nicety；enrollment / 远程控制面 / 容器 runner **未实现**。UI 不得伪造在线远程节点或可点成功的容器调度。
 
 ### 4.8 审批中心
 

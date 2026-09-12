@@ -7,6 +7,7 @@ import type {
   TaskStatus,
   WorkflowInstanceStatus,
 } from "@workforce/domain";
+import type { OrchestrationMode } from "@workforce/protocol";
 import type {
   Clock,
   CommandReceiptRepository,
@@ -44,7 +45,7 @@ export interface ProjectRecord {
   /** D02: the confirmed execution snapshot. Written once when the plan is confirmed. */
   executionSnapshotId?: string;
   /** Echo of requested D18 mode after `:start`. Not a StartRunRequest field. */
-  orchestrationMode?: "workflow_bound" | "direct";
+  orchestrationMode?: OrchestrationMode;
   cancelRequestedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -104,6 +105,8 @@ export interface RunRecord {
   operationId: string;
   cancelRequestedAt?: string;
   handleId?: string;
+  /** Copied from the project `:start` request onto this Run. Not a StartRunRequest field. */
+  orchestrationMode?: OrchestrationMode;
   createdAt: string;
   updatedAt: string;
 }

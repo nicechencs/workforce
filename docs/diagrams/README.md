@@ -3,7 +3,7 @@ title: Workforce 架构流程图索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # Workforce 架构流程图
@@ -14,7 +14,7 @@ updated: 2026-09-11
 - [D17 Authoring：Proposal → Draft → CAS → Publish](workflow-authoring-flow.md)
 - [D18 双执行模式：Bound / Direct 汇合](dual-execution-mode-flow.md)
 
-这些 Mermaid 源文件是可复用的流程索引；蓝图中的内嵌图必须与其保持同一语义。统一术语包括 `WorkflowDraft`、published `WorkflowVersion`、`ProjectExecutionSnapshot`、`TeamVersion`、`ExecutionNode`、`RuntimeInstallation`、`Run`、`WorkspaceInstance`、`ExecutionLease`、`transport`、`placement` 和 `orchestrationMode`。
+这些 Mermaid 源文件是可复用的流程索引；蓝图中的内嵌图必须与其保持同一语义。统一术语包括 `WorkflowDraft`、published `WorkflowVersion`、`ProjectExecutionSnapshot`、`TeamVersion`、`ExecutionNode`、`RuntimeInstallation`、`Run`、`WorkspaceInstance`、`ExecutionLease`、`transport`、`placement`、`orchestrationMode` 和 D19 Placement kind（`local` 默认 / `remote` / `container`；后两者未实现 runner）。
 
 所有流程都保留 `Renderer → Electron Main → Daemon → Application → Ports → Runtime/Workspace/Policy` 边界。D17 不发明 chat endpoint，D18 不发明 `:direct` endpoint；未发布草稿不得进入 Runtime，direct 仍由 Application 创建受治理 Task/Run。
 

@@ -37,6 +37,14 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）把 main 隔夜剩余缺口迁到 `dev`（不并进 `main`）
+
+- **决定：** 日常线是 `dev`。在 tip `122600d`（#32 + #33）之上补迁 main 仍多出来的隔夜工作：T19 完整自定义 Team 写 UI + 草稿 persist（#21）；T21 项目详情挂载 orchestrationMode 控件（#26）；composed `orchestrationMode` 传入 `app.start()` / Run / host 记录（#28 深度，**不**重开 C5–C9，不把该字段写入 `StartRunRequest`）；#20 Placement 文档（本机默认，远程与容器为一等产品能力，实现未完成）。不 merge 到 `main`，不删除 `main`。不宣称 M7/M8 完成、headed PASS、`direct` 调度、生产 Codex direct，或远程/容器 runner 已实现。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T12/T16/T19/T21 与 §5；[02-development-task-backlog.md](02-development-task-backlog.md) T19/T21 当前切片；[decision-register.md](decision-register.md) §0 / 冻结表 / D07 / **D19**；[api-capability-matrix.md](api-capability-matrix.md) 页面动作与 T18–T21 约定；[01-information-architecture.md](../product-ui/01-information-architecture.md) §4.7；[02-core-user-flows.md](../product-ui/02-core-user-flows.md) §3；[0001-hybrid-distributed-execution.md](../adr/0001-hybrid-distributed-execution.md)。
+- **状态：** T19 写 UI + 草稿 persist、T21 详情挂载、composed passthrough、D19 文档 **implemented**（本 tip 单测 / happy-dom）。M7/M8 完成、headed、Codex direct、远程 enrollment、容器 runner 仍 **planned**。
+
+---
+
 ## 2026-09-12（Asia/Taipei）把 #31 session store 迁到 `dev`，不并进 `main`
 
 - **决定：** 日常线是 `dev`。#31 指向 `main` 且已分叉，不把 #31 合进 `main`。只把 Desktop-local authoring session store、仅用户 append、renderer `localStorage`（跨 Ctrl+R）迁到当前 `dev` tip。`CHAT_SESSION_PROTOCOL_FROZEN` 保持 false；无 Agent/send、无 chat HTTP。不宣称 M7/M8 完成，不照搬 #30/#31 在 main 上的 headed PASS。
@@ -66,6 +74,22 @@ updated: 2026-09-12
 - **决定：** 日常集成分支是 `dev`。`main` 上 15c058f 起的 M7 catalog 写 API、D17 authoring DTO、T18–T21 功能要迁回 `dev`，但不得覆盖 `dev` 已裁决的 C5–C9：`StartRunRequest` 不承载 `orchestrationMode`；migration `005_execution_axes_expand` 不改号；catalog 四张表使用 `006_catalog_definitions`。UI 重贴 `dev` 设计系统另切片。
 - **文档影响：** [protocols/README.md](../protocols/README.md) 增加 team / authoring-session / orchestration-mode schema 索引；`orchestration-mode.schema.json` 写明权威在 `execution.ts` 而非 `StartRunRequest`。
 - **状态：** 写 API + protocol DTO + 006 迁移 **implemented**（源码与测试）。T18/T19/T20 页面重贴与 T21 UI **planned**。
+
+---
+
+## 2026-09-11（Asia/Taipei）本机为默认执行位置；远程连接为一等产品能力
+
+- **决定：** 产品支持在用户**本机**工作，也支持经**远程连接**工作。**默认是本机**（本机 Workspace / Local Node）。远程不是「以后再说的 nicety」，也不是把 UI 假设永远锁在客户端所在电脑；它与本机共用 ExecutionNode 抽象。V0.1 实现深度不变：只做单用户 Local Node；远程 enrollment / heartbeat / 服务器 lease 仍是版本化契约 + Mock，不建服务器控制面，不发明矩阵未列的 enrollment endpoint，UI 不得伪造在线远程节点。
+- **文档影响：** [decision-register.md](decision-register.md) 冻结表、D07（默认 `local_only`、与 transport / D18 正交）与 **D19**（Placement kind `local` / `remote`）。
+- **状态：** 产品模型 **planned 已冻结**。本机 Local Node **已实现**（只读诊断 + worktree）。远程执行 **未实现**（契约/Mock）。
+
+---
+
+## 2026-09-11（Asia/Taipei）容器为一等执行 Placement
+
+- **决定：** 产品必须支持在**容器**中工作。容器是与本机、远程并列的 Placement kind（`container`），不是 D10 worktree 隔离的别名，也不是 `transport`。容器 Run 仍绑定某个 ExecutionNode（本机或远程宿主机）上的 WorkspaceInstance；`container` 不是第四种机器类型。
+- **文档影响：** [decision-register.md](decision-register.md) **D19** 冻结 `container`；D07 / later 表写明与 isolation、enrollment、控制面的边界。不发明 Docker / K8s / 编排 endpoint。
+- **状态：** 产品模型 **planned 已冻结**。容器 runner / 编排 **未实现**。不得写成已完成。
 
 ---
 

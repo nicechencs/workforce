@@ -31,7 +31,27 @@ import {
   runStatusLabel as runHeadlineStatus,
   timelineFromEvents,
 } from "../runs/model.js";
-import { PRESET_TEAM, PRESET_TEAM_ID } from "../teams/model.js";
+import { ProjectTeamBindingField } from "../teams/page.js";
+import {
+  PRESET_TEAM,
+  TEAM_WRITE_API_MISSING,
+  isTeamReadyForPlanning,
+  loadTeamCatalog,
+  mergeCatalogTeams,
+  probeTeamWriteSupport,
+  projectTeamVersionId,
+  unavailableTeamWriteSupport,
+  type TeamView,
+  type TeamWriteSupport,
+} from "../teams/model.js";
+import {
+  OrchestrationModeControl,
+  buildStartProjectInput,
+  DEFAULT_MODE,
+  probeOrchestrationSupport,
+  resolveSelectedMode,
+  type OrchestrationMode,
+} from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
@@ -85,7 +105,12 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [tab, setTab] = useState<ProjectDetailTab>(() =>
     typeof window === "undefined" ? "overview" : parseTabFromHash(window.location.hash),
   );
-  const selection = defaultDraftSelection();
+  const [selection, setSelection] = useState(defaultDraftSelection);
+  const [catalogTeams, setCatalogTeams] = useState<TeamView[]>([PRESET_TEAM]);
+  const [teamWrite, setTeamWrite] = useState<TeamWriteSupport>(unavailableTeamWriteSupport);
+  const [bindBusy, setBindBusy] = useState(false);
+  const [bindError, setBindError] = useState<string | null>(null);
+  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
 
   const reload = useCallback(
     async (keepInput: boolean) => {
@@ -109,6 +134,18 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       setArtifacts(artifactPage.items);
       setEvents(eventPage.items);
       const catalog = asCatalogClient(client);
+      const support = await probeTeamWriteSupport(client);
+      setTeamWrite(support);
+      if (hasCatalogMethod(catalog, "listTeams")) {
+        try {
+          const parsed = await loadTeamCatalog(client);
+          if (parsed.length > 0) {
+            setCatalogTeams(mergeCatalogTeams(parsed));
+          }
+        } catch {
+          setCatalogTeams([PRESET_TEAM]);
+        }
+      }
       if (hasCatalogMethod(catalog, "getProjectBudget")) {
         try {
           setBudget(budgetPlaceholder(await catalog.getProjectBudget(projectId)));
@@ -189,7 +226,15 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         );
         setProject(next);
       } else if (id === "startProject") {
-        const next = await client.startProject(project.id, opts);
+        const start = buildStartProjectInput(
+          orchestrationMode,
+          probeOrchestrationSupport({ capabilities }),
+        );
+        if (!start.ok) {
+          setError(start.error);
+          return;
+        }
+        const next = await client.startProject(project.id, opts, start.input);
         setProject(next);
       } else if (id === "cancel") {
         const result = await client.cancelProject(project.id, opts);
@@ -257,6 +302,40 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
     setGrant(picked.grant);
   }
 
+  async function bindPublishedTeam() {
+    if (!project) {
+      return;
+    }
+    if (!teamWrite.bind) {
+      setBindError(TEAM_WRITE_API_MISSING);
+      return;
+    }
+    const selected = catalogTeams.find((team) => team.id === selection.teamId);
+    if (!selected || selected.status !== "published" || selected.kind === "preset") {
+      return;
+    }
+    setBindBusy(true);
+    setBindError(null);
+    try {
+      const next = await client.patchProject(
+        project.id,
+        { teamVersionId: selected.versionId },
+        commandOptions(project.stateRevision),
+      );
+      const echoed = projectTeamVersionId(next);
+      if (echoed !== selected.versionId) {
+        setProject(next);
+        setBindError("服务端未回传精确 teamVersionId，未当作自定义团队绑定成功。");
+        return;
+      }
+      setProject(next);
+    } catch (caught) {
+      setBindError(errorMessage(caught));
+    } finally {
+      setBindBusy(false);
+    }
+  }
+
   if (error && !project) {
     return (
       <Page title="项目">
@@ -273,11 +352,21 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   }
 
   const workspaceBound = grant !== null;
+  const selectedTeam = catalogTeams.find((team) => team.id === selection.teamId) ?? PRESET_TEAM;
+  const boundTeamVersionId = projectTeamVersionId(project);
   const actionInput = {
     status: project.status,
     cancelRequested: project.cancelRequested,
     workspaceBound,
-    teamSelected: selection.teamId === PRESET_TEAM_ID,
+    teamSelected: isTeamReadyForPlanning({
+      selection: {
+        teamId: selection.teamId,
+        versionId: selection.teamVersionId,
+        status: selectedTeam.status,
+        kind: selectedTeam.kind,
+      },
+      projectTeamVersionId: boundTeamVersionId,
+    }),
     runtimeSelected: selection.runtimeId === "mock",
     capabilities: capabilities.project,
     ...(project.planArtifactVersionId !== undefined
@@ -323,9 +412,18 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       <ErrorText>{error}</ErrorText>
       <ErrorText>{edit.error}</ErrorText>
       <p className="wf-muted" data-testid="project-chrome-summary">
-        {project.objective} · 团队 {PRESET_TEAM.name} · 工作区 {publicWorkspaceLabel(grant)} ·{" "}
+        {project.objective} · 团队 {selectedTeam.name} · 工作区 {publicWorkspaceLabel(grant)} ·{" "}
         {budget}
       </p>
+      <OrchestrationModeControl
+        selected={resolveSelectedMode(
+          orchestrationMode,
+          probeOrchestrationSupport({ capabilities }),
+        )}
+        probe={probeOrchestrationSupport({ capabilities })}
+        disabled={busy !== null}
+        onChange={setOrchestrationMode}
+      />
 
       <Tabs
         ariaLabel="项目详情"
@@ -344,6 +442,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             approvals={approvals}
             grant={grant}
             budget={budget}
+            teamName={selectedTeam.name}
             edit={edit}
             setEdit={setEdit}
             onSave={() => void saveEdit()}
@@ -375,7 +474,22 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             grant={grant}
             budget={budget}
             capabilities={capabilities}
+            teams={catalogTeams}
+            teamWrite={teamWrite}
+            selection={selection}
+            projectTeamVersionId={boundTeamVersionId}
+            bindBusy={bindBusy}
+            bindError={bindError}
             onBind={() => void bindWorkspace()}
+            onSelectTeam={(team) => {
+              setSelection((current) => ({
+                ...current,
+                teamId: team.id,
+                teamVersionId: team.versionId,
+              }));
+              setBindError(null);
+            }}
+            onBindTeam={() => void bindPublishedTeam()}
           />
         ) : null}
       </div>
@@ -397,12 +511,13 @@ function OverviewPanel(props: {
   approvals: number;
   grant: WorkspaceGrant | null;
   budget: string;
+  teamName: string;
   edit: ProjectEditForm;
   setEdit: (update: (current: ProjectEditForm) => ProjectEditForm) => void;
   onSave: () => void;
   onOpenSettings: () => void;
 }) {
-  const { project, tasks, approvals, grant, budget, edit } = props;
+  const { project, tasks, approvals, grant, budget, teamName, edit } = props;
   return (
     <>
       <Card title="概览" testId="project-overview">
@@ -411,7 +526,7 @@ function OverviewPanel(props: {
           <dt>状态</dt>
           <dd>{projectStatusLabel(project)}</dd>
           <dt>团队</dt>
-          <dd>{PRESET_TEAM.name}（预设，只读）</dd>
+          <dd>{teamName}</dd>
           <dt>节点范围</dt>
           <dd>{nodeScopeLabel()}</dd>
           <dt>进度</dt>
@@ -600,13 +715,21 @@ function SettingsPanel(props: {
   grant: WorkspaceGrant | null;
   budget: string;
   capabilities: CapabilitiesDto;
+  teams: TeamView[];
+  teamWrite: TeamWriteSupport;
+  selection: { teamId: string; teamVersionId: string };
+  projectTeamVersionId: string | null;
+  bindBusy: boolean;
+  bindError: string | null;
   onBind: () => void;
+  onSelectTeam: (team: TeamView) => void;
+  onBindTeam: () => void;
 }) {
   const showBind = props.project.status === "draft";
   return (
     <>
       <Card title="WorkspaceBinding" testId="project-settings-workspace">
-        <Muted>绑定工作区、预设团队与 Mock 运行时。界面不展示宿主绝对路径。</Muted>
+        <Muted>绑定工作区、已发布团队与 Mock 运行时。界面不展示宿主绝对路径。</Muted>
         <div className="wf-cluster">
           {showBind ? (
             <Button testId="project-bind-workspace" onClick={props.onBind}>
@@ -615,9 +738,17 @@ function SettingsPanel(props: {
           ) : null}
           <Muted>{publicWorkspaceLabel(props.grant)}</Muted>
         </div>
-        <Field label="预设团队" htmlFor="wf-project-team">
-          <Input id="wf-project-team" value={PRESET_TEAM.name} readOnly />
-        </Field>
+        <ProjectTeamBindingField
+          teams={props.teams}
+          writeSupport={props.teamWrite}
+          selection={{ teamId: props.selection.teamId, versionId: props.selection.teamVersionId }}
+          projectTeamVersionId={props.projectTeamVersionId}
+          disabled={!showBind}
+          busy={props.bindBusy}
+          error={props.bindError}
+          onSelect={props.onSelectTeam}
+          onBind={props.onBindTeam}
+        />
         <Field label="运行时" htmlFor="wf-project-runtime">
           <Input id="wf-project-runtime" value="Mock" readOnly />
         </Field>

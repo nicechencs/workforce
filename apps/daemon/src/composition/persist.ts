@@ -469,13 +469,23 @@ export async function loadComposition(
   );
   const world: PersistedWorld = {
     ...base,
-    projects: entities.projects,
+    projects: entities.projects.map((project) => {
+      const sidecar = base.projects.find((item) => item.id === project.id);
+      return sidecar?.orchestrationMode
+        ? { ...project, orchestrationMode: sidecar.orchestrationMode }
+        : project;
+    }),
     tasks: entities.tasks,
     runs: entities.runs.map((run) => {
       const handleId =
         sqliteHandlesByRunId.get(run.id)?.handle.handleId ??
         handlesByOperation.get(run.operationId);
-      return handleId ? { ...run, handleId } : run;
+      const orchestrationMode = base.runs.find((item) => item.id === run.id)?.orchestrationMode;
+      return {
+        ...run,
+        ...(handleId ? { handleId } : {}),
+        ...(orchestrationMode ? { orchestrationMode } : {}),
+      };
     }),
     approvals: entities.approvals,
     artifacts: entities.artifacts,

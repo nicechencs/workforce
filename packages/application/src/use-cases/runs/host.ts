@@ -1,3 +1,5 @@
+import type { OrchestrationMode } from "@workforce/protocol";
+
 import { UseCaseError } from "../projects/errors.js";
 
 export interface StartRunHostRequest {
@@ -16,6 +18,8 @@ export interface StartRunHostRequest {
   };
   runtime: { adapterId: string; protocolVersion: string };
   snapshotRef: string;
+  /** Echoed host metadata. Not added to protocol StartRunRequest. */
+  orchestrationMode?: OrchestrationMode;
 }
 
 /**

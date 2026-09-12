@@ -300,8 +300,16 @@ export function presetTeamCopy(): { id: string; name: string; runtime: string } 
   return { id: PRESET_TEAM.id, name: PRESET_TEAM.name, runtime: PRESET_TEAM.runtime.label };
 }
 
-export function defaultDraftSelection(): { teamId: string; runtimeId: string } {
-  return { teamId: PRESET_TEAM_ID, runtimeId: PRESET_RUNTIME_ID };
+export function defaultDraftSelection(): {
+  teamId: string;
+  teamVersionId: string;
+  runtimeId: string;
+} {
+  return {
+    teamId: PRESET_TEAM_ID,
+    teamVersionId: PRESET_TEAM.versionId,
+    runtimeId: PRESET_RUNTIME_ID,
+  };
 }
 
 export function nodeScopeLabel(): string {

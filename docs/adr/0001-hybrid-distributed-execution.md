@@ -1,7 +1,8 @@
 # ADR 0001：混合与分布式执行模型
 
 **状态：** Accepted  
-**日期：** 2026-09-10
+**日期：** 2026-09-10  
+**修订：** 2026-09-12 — 对齐 D19：远程与容器是产品 Placement，不是已实现 runner。
 
 ## 决策
 
@@ -12,8 +13,8 @@
 5. 每个非终态 Run 同一时刻只有一个有效 Lease；fencing token 阻止旧节点提交迟到结果。
 6. 每个并发 Run 使用独立 WorkspaceInstance、进程树、权限、凭据授权、日志和资源配额。
 7. Git/GitHub 用于代码与文档 Artifact 的版本化协作；Task、Event 和结构化 CoordinationMessage 用于信息协作。
-8. V0.1 只实现 Local Node，但核心协议不得假设客户端与执行位置相同。
-9. 多服务器调度、跨节点 Agent 协作、Artifact 复制和故障转移作为远期能力。
+8. V0.1 只实现 Local Node，但核心协议不得假设客户端与执行位置相同。远程与容器是产品 Placement（D19），不是 later nicety；本 ADR 不把它们写成已实现 runner。
+9. 多服务器调度、跨节点 Agent 协作、Artifact 复制和故障转移作为远期能力。远程 enrollment / 容器编排控制面仍属未实现。
 
 ## 理由
 
