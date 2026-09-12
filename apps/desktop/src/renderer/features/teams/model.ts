@@ -86,6 +86,9 @@ export const UNPUBLISHED_BIND_REASON = "未发布的 Team 草稿不能绑定到�
 export const CUSTOM_BIND_UNCONFIRMED_REASON =
   "自定义 Team 绑定需要服务端写入并回传精确 teamVersionId。在写 API 确认前，不会启用开始规划。";
 
+export const PUBLISH_NOT_IN_CATALOG_REASON =
+  "发布响应已返回，但 GET /teams 仍看不到该已发布团队。未当作发布成功。";
+
 export type TeamActionId = "create" | "edit" | "save" | "publish" | "bind";
 
 export interface TeamWriteSupport {
@@ -130,7 +133,11 @@ export interface TeamWriteClient {
     versionId: string,
     options: TeamWriteOptions,
   ) => Promise<unknown>;
-  patchProject?: (...args: never[]) => unknown;
+  patchProject?: (
+    id: string,
+    input: { teamVersionId: string },
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
 }
 
 export interface TeamPageModel {
@@ -420,8 +427,25 @@ export function interpretPublishResponse(
   return { ok: true, published: true, versionId };
 }
 
-export function canBindTeamVersion(team: Pick<TeamView, "status" | "kind">): boolean {
-  return team.status === "published";
+export function canBindTeamVersion(
+  team: Pick<TeamView, "id" | "status" | "kind" | "versionId">,
+): boolean {
+  if (team.status !== "published") {
+    return false;
+  }
+  return hasExactTeamVersionId(team);
+}
+
+export function hasExactTeamVersionId(
+  team: Pick<TeamView, "id" | "kind" | "versionId">,
+): boolean {
+  if (team.versionId.length === 0) {
+    return false;
+  }
+  if (team.kind === "custom" && team.versionId === team.id) {
+    return false;
+  }
+  return true;
 }
 
 export function rejectUnpublishedBind(team: Pick<TeamView, "status">): {
@@ -454,15 +478,20 @@ export function isTeamReadyForPlanning(input: {
   if (input.selection.kind === "preset" || isPresetTeamId(input.selection.teamId)) {
     return true;
   }
-  return (
-    input.projectTeamVersionId !== null &&
-    (input.projectTeamVersionId === input.selection.versionId ||
-      input.projectTeamVersionId === input.selection.teamId)
-  );
+  if (
+    !hasExactTeamVersionId({
+      id: input.selection.teamId,
+      kind: input.selection.kind,
+      versionId: input.selection.versionId,
+    })
+  ) {
+    return false;
+  }
+  return input.projectTeamVersionId === input.selection.versionId;
 }
 
 export function bindableTeams(teams: TeamView[]): TeamView[] {
-  return teams.filter((team) => team.status === "published");
+  return teams.filter((team) => canBindTeamVersion(team));
 }
 
 export function unpublishedTeams(teams: TeamView[]): TeamView[] {
@@ -495,14 +524,9 @@ export function asTeamView(value: unknown): TeamView | null {
       : undefined) ??
     (active && typeof active.version === "string" ? active.version : undefined) ??
     PRESET_TEAM_VERSION;
-  const versionId =
-    (typeof record.activeVersionId === "string" && record.activeVersionId) ||
-    (typeof record.teamVersionId === "string" && record.teamVersionId) ||
-    (typeof record.versionId === "string" && record.versionId) ||
-    (active && typeof active.id === "string" && active.id) ||
-    version;
   const status = record.status === "draft" ? "draft" : "published";
   const kind = isPresetTeamId(record.id) || name === PRESET_TEAM.name ? "preset" : "custom";
+  const versionId = pickExactTeamVersionId(record, active, version, kind);
   const members = parseMembers(record, active);
   const publishedAt =
     typeof record.publishedAt === "string"
@@ -559,6 +583,27 @@ function pickActiveVersion(record: Record<string, unknown>): Record<string, unkn
   return (
     versions.find((item) => item.status === "published") ?? versions[versions.length - 1] ?? null
   );
+}
+
+function pickExactTeamVersionId(
+  record: Record<string, unknown>,
+  active: Record<string, unknown> | null,
+  versionLabel: string,
+  kind: "preset" | "custom",
+): string {
+  const teamId = typeof record.id === "string" ? record.id : "";
+  const candidates = [
+    typeof record.activeVersionId === "string" ? record.activeVersionId : null,
+    typeof record.teamVersionId === "string" ? record.teamVersionId : null,
+    typeof record.versionId === "string" ? record.versionId : null,
+    active && typeof active.id === "string" ? active.id : null,
+  ].filter((item): item is string => Boolean(item && item.length > 0));
+  const exact =
+    candidates.find((id) => id !== teamId && id !== versionLabel) ?? candidates[0] ?? "";
+  if (kind === "custom") {
+    return exact !== teamId ? exact : "";
+  }
+  return exact.length > 0 ? exact : versionLabel;
 }
 
 function parseMembers(
@@ -878,19 +923,71 @@ function readStateRevision(value: unknown): number | undefined {
     : undefined;
 }
 
-export async function loadTeamCatalog(client: TeamWriteClient): Promise<TeamView[]> {
+export async function loadPublishedTeamCatalog(client: TeamWriteClient): Promise<TeamView[]> {
   if (typeof client.listTeams !== "function") {
     return [];
   }
   const published = await client.listTeams();
-  const draftPage = await client.listTeams({ status: "draft" }).catch(() => ({ items: [] }));
-  const drafts = draftPage.items;
   const byId = new Map<string, TeamView>();
-  for (const item of [...published.items, ...drafts]) {
+  for (const item of published.items) {
+    const view = asTeamView(item);
+    if (view && view.status === "published") {
+      byId.set(view.id, view);
+    }
+  }
+  return [...byId.values()];
+}
+
+export function findPublishedCatalogTeam(
+  teams: TeamView[],
+  input: { teamId: string; versionId: string },
+): TeamView | null {
+  return (
+    teams.find(
+      (team) =>
+        team.id === input.teamId &&
+        team.status === "published" &&
+        team.versionId === input.versionId &&
+        canBindTeamVersion(team),
+    ) ?? null
+  );
+}
+
+export async function confirmTeamPublishedInCatalog(
+  client: TeamWriteClient,
+  input: { teamId: string; versionId: string },
+): Promise<{ ok: true; team: TeamView } | { ok: false; reason: string }> {
+  if (typeof client.listTeams !== "function") {
+    return { ok: false, reason: TEAM_WRITE_API_MISSING };
+  }
+  let catalog: TeamView[];
+  try {
+    catalog = await loadPublishedTeamCatalog(client);
+  } catch (caught) {
+    return { ok: false, reason: errorMessage(caught) };
+  }
+  const found = findPublishedCatalogTeam(catalog, input);
+  if (!found) {
+    return { ok: false, reason: PUBLISH_NOT_IN_CATALOG_REASON };
+  }
+  return { ok: true, team: found };
+}
+
+export async function loadTeamCatalog(client: TeamWriteClient): Promise<TeamView[]> {
+  if (typeof client.listTeams !== "function") {
+    return [];
+  }
+  const published = await loadPublishedTeamCatalog(client);
+  const draftPage = await client.listTeams({ status: "draft" }).catch(() => ({ items: [] }));
+  const byId = new Map<string, TeamView>();
+  for (const item of draftPage.items) {
     const view = asTeamView(item);
     if (view) {
       byId.set(view.id, view);
     }
+  }
+  for (const team of published) {
+    byId.set(team.id, team);
   }
   return [...byId.values()];
 }
@@ -999,9 +1096,10 @@ export async function persistTeamDraft(
   if (!confirmed) {
     throw new Error("保存后 GET /teams/{id} 未返回该团队，未当作草稿成功。");
   }
+  const resolvedVersionId = confirmed.versionId || versionId;
   return {
     teamId,
-    versionId: confirmed.versionId || versionId,
+    versionId: resolvedVersionId,
     ...(confirmed.stateRevision !== undefined
       ? { teamStateRevision: confirmed.stateRevision }
       : teamStateRevision !== undefined
@@ -1012,7 +1110,7 @@ export async function persistTeamDraft(
       : versionStateRevision !== undefined
         ? { versionStateRevision }
         : {}),
-    team: confirmed,
+    team: { ...confirmed, versionId: resolvedVersionId },
   };
 }
 
@@ -1021,7 +1119,8 @@ export async function publishPersistedTeamVersion(
   input: { teamId: string; versionId: string; versionStateRevision?: number },
   options: (ifMatch?: number) => TeamWriteOptions = writeOptions,
 ): Promise<
-  { ok: true; published: true; versionId: string } | { ok: false; published: false; reason: string }
+  | { ok: true; published: true; versionId: string; team: TeamView }
+  | { ok: false; published: false; reason: string }
 > {
   if (typeof client.publishTeamVersion !== "function") {
     return { ok: false, published: false, reason: TEAM_WRITE_API_MISSING };
@@ -1031,7 +1130,52 @@ export async function publishPersistedTeamVersion(
     input.versionId,
     options(input.versionStateRevision),
   );
-  return interpretPublishResponse(response);
+  const interpreted = interpretPublishResponse(response);
+  if (!interpreted.ok) {
+    return interpreted;
+  }
+  const visible = await confirmTeamPublishedInCatalog(client, {
+    teamId: input.teamId,
+    versionId: interpreted.versionId,
+  });
+  if (!visible.ok) {
+    return { ok: false, published: false, reason: visible.reason };
+  }
+  return {
+    ok: true,
+    published: true,
+    versionId: interpreted.versionId,
+    team: visible.team,
+  };
+}
+
+export async function bindProjectToPublishedTeamVersion(
+  client: TeamWriteClient,
+  input: {
+    projectId: string;
+    team: Pick<TeamView, "id" | "kind" | "status" | "versionId">;
+    projectStateRevision?: number;
+  },
+): Promise<{ ok: true; teamVersionId: string; project: unknown } | { ok: false; reason: string }> {
+  if (input.team.status !== "published") {
+    return { ok: false, reason: UNPUBLISHED_BIND_REASON };
+  }
+  if (input.team.kind !== "custom" || !canBindTeamVersion(input.team)) {
+    return { ok: false, reason: CUSTOM_BIND_UNCONFIRMED_REASON };
+  }
+  if (typeof client.patchProject !== "function") {
+    return { ok: false, reason: TEAM_WRITE_API_MISSING };
+  }
+  const patched = await client.patchProject(
+    input.projectId,
+    { teamVersionId: input.team.versionId },
+    writeOptions(input.projectStateRevision),
+  );
+  const echoed = projectTeamVersionId(patched);
+  if (echoed !== input.team.versionId) {
+    return { ok: false, reason: CUSTOM_BIND_UNCONFIRMED_REASON };
+  }
+  return { ok: true, teamVersionId: echoed, project: patched };
 }
 
 export function teamById(teams: TeamView[], teamId: string): TeamView | null {

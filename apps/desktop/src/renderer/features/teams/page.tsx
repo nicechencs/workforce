@@ -20,6 +20,7 @@ import {
 } from "../projects/ui.js";
 import {
   addDraftMember,
+  bindableTeams,
   canBindTeamVersion,
   createTeamButton,
   draftFormFromTeam,
@@ -137,9 +138,45 @@ export function TeamsPage(props: FeaturePageProps) {
     });
   }
 
+  async function refreshCatalogFromGetTeams(): Promise<TeamView[] | null> {
+    try {
+      const parsed = await loadTeamCatalog(client);
+      const model = teamPageModel({
+        liveTeams: parsed.length > 0 ? parsed : null,
+        writeSupport,
+      });
+      setTeams(model.teams);
+      setSource(model.source);
+      setNote(model.note);
+      setListError(null);
+      return model.teams;
+    } catch (caught) {
+      setListError(errorMessage(caught));
+      return null;
+    }
+  }
+
   function openTeam(team: TeamView) {
     upsertTeam(team);
     props.navigate(`/teams/${team.id}`);
+  }
+
+  async function openPublishedTeam(team: TeamView) {
+    const catalog = await refreshCatalogFromGetTeams();
+    const visible =
+      catalog?.find(
+        (item) =>
+          item.id === team.id &&
+          item.status === "published" &&
+          item.versionId === team.versionId,
+      ) ?? (team.status === "published" ? team : null);
+    if (!visible) {
+      return;
+    }
+    if (!catalog) {
+      upsertTeam(visible);
+    }
+    props.navigate(`/teams/${visible.id}`);
   }
 
   if (creating) {
@@ -151,7 +188,7 @@ export function TeamsPage(props: FeaturePageProps) {
           writeSupport={writeSupport}
           runtimes={runtimes}
           onPersisted={openTeam}
-          onPublished={openTeam}
+          onPublished={(team) => void openPublishedTeam(team)}
         />
       </main>
     );
@@ -170,7 +207,7 @@ export function TeamsPage(props: FeaturePageProps) {
           runtimes={runtimes}
           client={client}
           onPersisted={openTeam}
-          onPublished={openTeam}
+          onPublished={(team) => void openPublishedTeam(team)}
         />
       </main>
     );
@@ -407,6 +444,11 @@ function TeamCard(props: {
         </p>
       ) : null}
       {props.team.kind === "custom" && props.team.status === "published" ? (
+        <p style={mutedStyle} data-testid="team-published-version">
+          已发布精确 TeamVersion {props.team.versionId}。可在项目 Settings 绑定该版本后开始规划。
+        </p>
+      ) : null}
+      {props.team.kind === "custom" && props.team.status === "published" ? (
         <p>
           <button
             type="button"
@@ -521,17 +563,6 @@ function TeamEditor(props: {
         props.onPersisted(persisted.team);
         return;
       }
-      const confirmed = await loadTeamDetail(props.client, persisted.teamId);
-      if (!confirmed || confirmed.status !== "published") {
-        setForm((current) =>
-          reduceTeamDraftForm(current, {
-            type: "failure",
-            error: new Error("发布响应不是带 published + immutable 的 TeamVersion。"),
-          }),
-        );
-        props.onPersisted(persisted.team);
-        return;
-      }
       setForm((current) =>
         reduceTeamDraftForm(current, {
           type: "published",
@@ -539,7 +570,7 @@ function TeamEditor(props: {
           versionId: interpreted.versionId,
         }),
       );
-      props.onPublished(confirmed);
+      props.onPublished(interpreted.team);
     } catch (caught) {
       setForm((current) => reduceTeamDraftForm(current, { type: "failure", error: caught }));
       if (isRevisionConflict(caught)) {
@@ -603,7 +634,7 @@ function TeamEditor(props: {
       </p>
       {form.published ? (
         <p style={mutedStyle} data-testid="team-published">
-          已发布不可变 TeamVersion {form.versionId}。
+          已发布不可变 TeamVersion {form.versionId}，且已出现在 GET /teams。
         </p>
       ) : null}
       {form.error ? (
@@ -758,11 +789,20 @@ export function ProjectTeamBindingField(props: {
   onSelect: (team: TeamView) => void;
   onBind: () => void;
 }) {
-  const published = props.teams.filter((team) => team.status === "published");
+  const published = bindableTeams(props.teams);
   const drafts = props.teams.filter((team) => team.status === "draft");
-  const selected = published.find((team) => team.id === props.selection.teamId) ?? PRESET_TEAM;
+  const selected =
+    published.find((team) => team.versionId === props.selection.versionId) ??
+    published.find((team) => team.id === props.selection.teamId) ??
+    PRESET_TEAM;
   const customSelected = selected.kind === "custom";
-  const canBind = props.writeSupport.bind && customSelected && !props.disabled && !props.busy;
+  const exactVersion = canBindTeamVersion(selected);
+  const canBind =
+    props.writeSupport.bind &&
+    customSelected &&
+    exactVersion &&
+    !props.disabled &&
+    !props.busy;
   return (
     <div data-testid="project-team-binding">
       <label style={labelStyle} htmlFor="wf-project-team">
@@ -773,21 +813,30 @@ export function ProjectTeamBindingField(props: {
         data-testid="project-team-select"
         style={inputStyle}
         disabled={props.disabled}
-        value={selected.id}
+        value={selected.versionId || selected.id}
         onChange={(event) => {
-          const next = published.find((team) => team.id === event.target.value);
-          if (next) {
+          const next = published.find(
+            (team) =>
+              team.versionId === event.target.value ||
+              (team.versionId.length === 0 && team.id === event.target.value),
+          );
+          if (next && canBindTeamVersion(next)) {
             props.onSelect(next);
           }
         }}
       >
         {published.map((team) => (
-          <option key={team.id} value={team.id}>
+          <option key={`${team.id}:${team.versionId}`} value={team.versionId || team.id}>
             {team.name}
-            {team.kind === "preset" ? "（预设）" : ""} · {team.version}
+            {team.kind === "preset" ? "（预设）" : ""} · {team.versionId || team.version}
           </option>
         ))}
       </select>
+      {customSelected && exactVersion ? (
+        <p style={mutedStyle} data-testid="project-team-version">
+          绑定精确 TeamVersion {selected.versionId}。未发布草稿不可 :start-planning。
+        </p>
+      ) : null}
       {drafts.length > 0 ? (
         <p style={mutedStyle} data-testid="project-team-unpublished">
           {drafts.length} 个未发布草稿不可绑定，也不会启用开始规划。
