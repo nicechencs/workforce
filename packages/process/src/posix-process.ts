@@ -171,16 +171,12 @@ function trackedPosixGroupState(tracked: TrackedProcess): GroupState {
     return "dead";
   }
   if (members.length === 0) {
-    const presence = queryPosixGroupPresence(group.pgid);
-    if (presence === "empty") {
-      group.owned = false;
-      group.terminalVerified = true;
-      return "dead";
-    }
-    // A live numeric PGID alone does not prove it still belongs to this
-    // session. Treat an empty non-atomic member scan as unverified rather
-    // than signalling a potentially reused group.
-    return "unknown";
+    // A successful session-filtered scan found no live (non-zombie) members.
+    // kill(-pgid, 0) still succeeds for zombies, so it must not keep inspect
+    // throwing process_tree_unverified after this owned tree has exited.
+    group.owned = false;
+    group.terminalVerified = true;
+    return "dead";
   }
   return "alive";
 }
@@ -443,19 +439,6 @@ function queryPosixGroupMembers(pgid: number, sessionId: number): PosixProcessIn
     return members;
   } catch {
     return undefined;
-  }
-}
-
-function queryPosixGroupPresence(pgid: number): "alive" | "empty" | "unknown" {
-  try {
-    process.kill(-pgid, 0);
-    return "alive";
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") {
-      return "empty";
-    }
-    return "unknown";
   }
 }
 

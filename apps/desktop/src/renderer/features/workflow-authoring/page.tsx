@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type {
   AuthoringSessionViewDto,
   AuthoringTurnDto,
@@ -71,6 +71,7 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [emptyIntent, setEmptyIntent] = useState(false);
+  const intentRef = useRef<HTMLTextAreaElement | null>(null);
   const boundProjectRef = useRef(projectId);
 
   boundProjectRef.current = projectId;
@@ -162,11 +163,13 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
     if (!current || current.status !== "open" || busy !== null) {
       return;
     }
-    if (isEmptyAuthoringIntent(input)) {
+    const typed = intentRef.current?.value ?? input;
+    if (isEmptyAuthoringIntent(typed)) {
       setEmptyIntent(true);
       return;
     }
-    const content = input.trim();
+    const content = typed.trim();
+    setInput(content);
     setBusy("sending");
     setError(null);
     setEmptyIntent(false);
@@ -329,6 +332,7 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
           <ConversationPanel
             session={session}
             input={input}
+            intentRef={intentRef}
             disabled={sendDisabled}
             busy={busy}
             sendVariant={sendVariant}
@@ -505,6 +509,7 @@ function SessionSummary(props: {
 function ConversationPanel(props: {
   session: AuthoringSessionViewDto;
   input: string;
+  intentRef: RefObject<HTMLTextAreaElement | null>;
   disabled: boolean;
   busy: BusyAction;
   sendVariant: "primary" | "secondary";
@@ -521,6 +526,7 @@ function ConversationPanel(props: {
       >
         <Textarea
           id="wf-authoring-intent"
+          ref={props.intentRef}
           testId="workflow-authoring-intent"
           rows={4}
           value={props.input}

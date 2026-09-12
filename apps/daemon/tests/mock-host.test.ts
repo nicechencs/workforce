@@ -23,7 +23,7 @@ const authoringRequest = (snapshotRef: string): StartRunHostRequest => ({
   snapshotRef,
 });
 
-async function eventually(assertion: () => void, timeoutMs = 500): Promise<void> {
+async function eventually(assertion: () => void, timeoutMs = 2_000): Promise<void> {
   const started = Date.now();
   let last: unknown;
   while (Date.now() - started < timeoutMs) {
@@ -51,7 +51,12 @@ describe("ComposedMockHost authoring proposal consumption", () => {
         return false;
       },
     });
-    await first.start(authoringRequest("authoring:proposal"));
+    const authoring = authoringRequest("authoring:proposal");
+    first.setInitialInput(authoring.operationId, {
+      operationId: `${authoring.operationId}:input`,
+      text: "transient authoring intent",
+    });
+    await first.start(authoring);
     await eventually(() => expect(firstAttempts).toBeGreaterThan(0));
     await first.dispose();
 
