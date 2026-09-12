@@ -45,3 +45,9 @@ export {
   type StartPlanningInput,
 } from "./projects.js";
 export type { AppContext } from "./context.js";
+export {
+  captureProjectPolicySnapshot,
+  APPLICATION_POLICY_VERSION,
+  POLICY_SNAPSHOT_SCHEMA,
+  type ProjectPolicySnapshot,
+} from "./policy-snapshot.js";

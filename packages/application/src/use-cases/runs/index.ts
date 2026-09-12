@@ -20,3 +20,4 @@ export {
   DEFAULT_PLACEMENT_INTENT,
   LocalNodePlacementScheduler,
 } from "./placement.js";
+export { assembleRunExecutionSnapshot } from "./execution-snapshot.js";

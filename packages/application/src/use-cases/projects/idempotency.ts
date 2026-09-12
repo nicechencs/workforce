@@ -44,7 +44,9 @@ export async function withIdempotency<T>(
         { details: { idempotencyKey: input.scope.idempotencyKey } },
       );
     }
-    return { reused: true, value: existing.result as T };
+    if (existing.status !== "failed") {
+      return { reused: true, value: existing.result as T };
+    }
   }
   await world.receipts.putPending(tx, {
     operationId: input.operationId,
