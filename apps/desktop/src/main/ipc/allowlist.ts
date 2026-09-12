@@ -2,6 +2,10 @@ import type { ApiMethod, ApiRequest } from "@workforce/ui";
 
 const ID = "[-A-Za-z0-9_:.]+";
 
+/**
+ * Renderer IPC 只放行 Daemon 当前已注册的 handler。
+ * 契约里有、Daemon 尚未实现的路径见 {@link UNIMPLEMENTED_API_ROUTE_TEMPLATES}，不得编进本表。
+ */
 export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[] = [
   { method: "GET", path: "/health" },
   { method: "GET", path: "/ready" },
@@ -16,50 +20,44 @@ export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[]
   { method: "POST", path: "/api/v1/projects/{id}:start-planning" },
   { method: "POST", path: "/api/v1/projects/{id}:confirm-plan" },
   { method: "POST", path: "/api/v1/projects/{id}:start" },
-  { method: "POST", path: "/api/v1/projects/{id}:pause" },
-  { method: "POST", path: "/api/v1/projects/{id}:resume" },
   { method: "POST", path: "/api/v1/projects/{id}:cancel" },
   { method: "POST", path: "/api/v1/projects/{id}:export" },
   { method: "POST", path: "/api/v1/projects/{id}/workspaces" },
   { method: "GET", path: "/api/v1/tasks" },
   { method: "GET", path: "/api/v1/tasks/{id}" },
-  { method: "PATCH", path: "/api/v1/tasks/{id}" },
-  { method: "POST", path: "/api/v1/tasks/{id}:queue" },
   { method: "POST", path: "/api/v1/tasks/{id}:cancel" },
   { method: "POST", path: "/api/v1/tasks/{id}:retry" },
-  { method: "POST", path: "/api/v1/tasks/{id}/runs" },
   { method: "GET", path: "/api/v1/runs" },
   { method: "GET", path: "/api/v1/runs/{id}" },
   { method: "POST", path: "/api/v1/runs/{id}:cancel" },
   { method: "POST", path: "/api/v1/runs/{id}:pause" },
-  { method: "POST", path: "/api/v1/runs/{id}:resume" },
   { method: "POST", path: "/api/v1/runs/{id}:input" },
-  { method: "POST", path: "/api/v1/runs/{id}:take-over" },
-  { method: "GET", path: "/api/v1/runs/{id}/logs" },
   { method: "GET", path: "/api/v1/runs/{id}/events" },
+  { method: "POST", path: "/api/v1/projects/{id}/authoring-sessions" },
+  { method: "GET", path: "/api/v1/authoring-sessions" },
+  { method: "GET", path: "/api/v1/authoring-sessions/{id}" },
+  { method: "GET", path: "/api/v1/authoring-sessions/{sessionId}/turns/{turnId}" },
+  { method: "GET", path: "/api/v1/authoring-sessions/{sessionId}/proposals/{proposalId}" },
+  { method: "POST", path: "/api/v1/authoring-sessions/{id}/messages" },
+  { method: "POST", path: "/api/v1/authoring-sessions/{sessionId}/turns/{turnId}/_cmd/confirm" },
+  { method: "POST", path: "/api/v1/authoring-sessions/{sessionId}/turns/{turnId}/_cmd/cancel" },
+  { method: "POST", path: "/api/v1/authoring-sessions/{sessionId}/turns/{turnId}/_cmd/retry" },
+  { method: "POST", path: "/api/v1/authoring-sessions/{sessionId}/turns/{turnId}/_cmd/close" },
   { method: "GET", path: "/api/v1/approvals" },
   { method: "GET", path: "/api/v1/approvals/{id}" },
   { method: "POST", path: "/api/v1/approvals/{id}:approve" },
   { method: "POST", path: "/api/v1/approvals/{id}:reject" },
   { method: "POST", path: "/api/v1/approvals/{id}:request-changes" },
-  { method: "POST", path: "/api/v1/approvals/{id}:take-over" },
   { method: "GET", path: "/api/v1/artifacts" },
   { method: "GET", path: "/api/v1/artifacts/{id}" },
   { method: "GET", path: "/api/v1/artifacts/{id}/versions/{versionId}" },
   { method: "GET", path: "/api/v1/artifacts/{id}/versions/{versionId}/content" },
   { method: "GET", path: "/api/v1/artifacts/{id}/versions/{versionId}/lineage" },
-  { method: "POST", path: "/api/v1/artifacts/{id}/versions/{versionId}:verify" },
   { method: "GET", path: "/api/v1/events" },
   { method: "GET", path: "/api/v1/events/stream" },
-  { method: "GET", path: "/api/v1/workspaces/{id}" },
-  { method: "POST", path: "/api/v1/workspaces/{id}:validate" },
-  { method: "POST", path: "/api/v1/workspaces/{id}:provision" },
-  { method: "GET", path: "/api/v1/workspaces/{id}/changes" },
   { method: "GET", path: "/api/v1/runtimes" },
   { method: "GET", path: "/api/v1/runtimes/{id}" },
   { method: "GET", path: "/api/v1/runtimes/{id}/capabilities" },
-  { method: "POST", path: "/api/v1/runtimes/{id}:validate" },
-  { method: "POST", path: "/api/v1/runtimes/{id}:diagnose" },
   { method: "GET", path: "/api/v1/nodes" },
   { method: "GET", path: "/api/v1/nodes/{id}" },
   { method: "GET", path: "/api/v1/teams" },
@@ -79,7 +77,39 @@ export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[]
   { method: "PATCH", path: "/api/v1/workflows/{id}/versions/{versionId}" },
   { method: "POST", path: "/api/v1/workflows/{id}/versions/{versionId}:publish" },
   { method: "GET", path: "/api/v1/projects/{id}/budget" },
-  { method: "POST", path: "/api/v1/projects/{id}/budget:raise" },
+];
+
+/**
+ * 能力矩阵/API 设计里有、当前 Daemon `routes.ts` 无 handler 的路径。
+ * 编进 {@link API_ROUTE_TEMPLATES} 会让真窗口 IPC 放行后 404，假装可写。
+ * T10/T09 落地对应 handler 后再移入 allowlist。
+ */
+export const UNIMPLEMENTED_API_ROUTE_TEMPLATES: readonly {
+  method: ApiMethod;
+  path: string;
+  blockedUntil: string;
+}[] = [
+  { method: "POST", path: "/api/v1/projects/{id}:pause", blockedUntil: "T09-M5" },
+  { method: "POST", path: "/api/v1/projects/{id}:resume", blockedUntil: "T09-M5" },
+  { method: "PATCH", path: "/api/v1/tasks/{id}", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/tasks/{id}:queue", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/tasks/{id}/runs", blockedUntil: "T10-TASK-RUN-HTTP" },
+  { method: "POST", path: "/api/v1/runs/{id}:resume", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/runs/{id}:take-over", blockedUntil: "T09-M5" },
+  { method: "GET", path: "/api/v1/runs/{id}/logs", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/approvals/{id}:take-over", blockedUntil: "T09-M5" },
+  {
+    method: "POST",
+    path: "/api/v1/artifacts/{id}/versions/{versionId}:verify",
+    blockedUntil: "T10",
+  },
+  { method: "GET", path: "/api/v1/workspaces/{id}", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/workspaces/{id}:validate", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/workspaces/{id}:provision", blockedUntil: "T10" },
+  { method: "GET", path: "/api/v1/workspaces/{id}/changes", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/runtimes/{id}:validate", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/runtimes/{id}:diagnose", blockedUntil: "T10" },
+  { method: "POST", path: "/api/v1/projects/{id}/budget:raise", blockedUntil: "T10" },
 ];
 
 const FORBIDDEN_BODY_KEYS = new Set([

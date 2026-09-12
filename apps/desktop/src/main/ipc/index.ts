@@ -1,5 +1,6 @@
 export {
   API_ROUTE_TEMPLATES,
+  UNIMPLEMENTED_API_ROUTE_TEMPLATES,
   assertSafeApiRequest,
   isAllowedApiRequest,
   normalizeApiPath,
