@@ -41,10 +41,15 @@ import {
 import { markRunUnknown, reconcile } from "../recovery/recovery.js";
 import {
   applyAuthoringChangeSet,
+  cancelAuthoringChangeSet,
+  expireAuthoringChangeSet,
+  failAuthoringChangeSet,
   recordAuthoringProposal,
+  retryAuthoringChangeSet,
   startAuthoring,
+  storeAuthoringSessionBody as persistAuthoringSessionBody,
   validateAuthoringChangeSet,
-} from "../authoring/authoring.js";
+} from "../authoring/index.js";
 
 export interface WorkforceAppOptions {
   engine: EnginePort;
@@ -116,6 +121,16 @@ export class WorkforceApp {
     recordAuthoringProposal(this.ctx, input);
   validateAuthoringChangeSet = (input: Parameters<typeof validateAuthoringChangeSet>[1]) =>
     validateAuthoringChangeSet(this.ctx, input);
+  failAuthoringChangeSet = (input: Parameters<typeof failAuthoringChangeSet>[1]) =>
+    failAuthoringChangeSet(this.ctx, input);
+  cancelAuthoringChangeSet = (input: Parameters<typeof cancelAuthoringChangeSet>[1]) =>
+    cancelAuthoringChangeSet(this.ctx, input);
+  retryAuthoringChangeSet = (input: Parameters<typeof retryAuthoringChangeSet>[1]) =>
+    retryAuthoringChangeSet(this.ctx, input);
+  expireAuthoringChangeSet = (input: Parameters<typeof expireAuthoringChangeSet>[1]) =>
+    expireAuthoringChangeSet(this.ctx, input);
+  storeAuthoringSessionBody = (input: Parameters<typeof persistAuthoringSessionBody>[1]) =>
+    persistAuthoringSessionBody(this.world, input);
 }
 
 export function createWorkforceApp(options: WorkforceAppOptions): WorkforceApp {

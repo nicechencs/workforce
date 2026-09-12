@@ -4,8 +4,10 @@ import {
   parseAuthoringChangeSet,
   parseWorkflowGraphDefinition,
   parseTeamDraft,
+  parseTeamVersionWrite,
   parseWorkflowDraft,
   type AuthoringProposalTargetInput,
+  type TeamMemberDto,
   type AuthoringTurnActionCommand,
   type AuthoringChangeSetDto,
   type AuthoringProposalDto,
@@ -23,7 +25,26 @@ import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
 import { startRun } from "../runs/runs.js";
-import type { WorkflowDefinitionRecord } from "../catalog/types.js";
+import type { TeamDefinitionRecord, WorkflowDefinitionRecord } from "../catalog/types.js";
+import type { TaskRecord } from "../projects/store.js";
+import { sha256CanonicalDigest } from "./canonical-digest.js";
+import {
+  authoringProtectedEventData,
+  storeAuthoringIntent,
+} from "./protected-content.js";
+
+export interface AuthoringTaskPatch {
+  taskId: string;
+  revision: number;
+  title?: string;
+  role?: TaskRecord["role"];
+  requiresReview?: boolean;
+  expectedOutputs?: TaskRecord["expectedOutputs"];
+  dependsOn?: TaskRecord["dependsOn"];
+  maxAttempts?: number;
+  maxReworkCycles?: number;
+  priority?: number;
+}
 
 export interface ApplyAuthoringChangeSetInput {
   operationId: string;
@@ -31,6 +52,7 @@ export interface ApplyAuthoringChangeSetInput {
   changeSet: AuthoringChangeSetDto;
   workflowDrafts?: readonly WorkflowDraftDto[];
   teamDrafts?: readonly TeamDraftDto[];
+  taskPatches?: readonly AuthoringTaskPatch[];
 }
 
 export interface StartAuthoringInput {
@@ -39,6 +61,20 @@ export interface StartAuthoringInput {
   projectId: string;
   /** Used only for Runtime invocation; never copied to events, ChangeSets, or drafts. */
   intent: string;
+}
+
+export interface StartAuthoringResult {
+  reused: boolean;
+  taskId: string;
+  runId: string;
+  intentRef: string;
+  intentHash: string;
+  /**
+   * `authoring.start` only requests a Runtime. Intent is handed off
+   * transiently; this flag stays false so callers cannot treat Task/Run
+   * creation as Agent receipt.
+   */
+  agentReceivedIntent: false;
 }
 
 export interface RecordAuthoringProposalInput {
@@ -62,6 +98,8 @@ export interface AuthoringChatBindingProof {
   sourceRunId: string;
   patchRef: string;
   workflowId?: string;
+  teamId?: string;
+  taskId?: string;
   expectedRevision?: number;
 }
 
@@ -83,6 +121,28 @@ export interface AuthoringChatProposalResolver {
   }):
     | Promise<{ graph: WorkflowGraphDefinitionDto; binding: AuthoringChatBindingProof }>
     | { graph: WorkflowGraphDefinitionDto; binding: AuthoringChatBindingProof };
+  resolveTeamDraft?(input: {
+    proposalId: string;
+    projectId: string;
+    sourceRunId: string;
+    operation: "create" | "update";
+    patchRef: string;
+    teamId?: string;
+    expectedRevision?: number;
+  }):
+    | Promise<{ members: readonly TeamMemberDto[]; binding: AuthoringChatBindingProof }>
+    | { members: readonly TeamMemberDto[]; binding: AuthoringChatBindingProof };
+  resolveTaskPatch?(input: {
+    proposalId: string;
+    projectId: string;
+    sourceRunId: string;
+    operation: "create" | "update";
+    patchRef: string;
+    taskId?: string;
+    expectedRevision?: number;
+  }):
+    | Promise<{ patch: AuthoringTaskPatch; binding: AuthoringChatBindingProof }>
+    | { patch: AuthoringTaskPatch; binding: AuthoringChatBindingProof };
 }
 
 export interface AuthoringChatProject {
@@ -124,6 +184,7 @@ export interface AuthoringChatTurn {
   workflowDraftId: string | null;
   completedOperationId: string | null;
   patchRefs: readonly string[];
+  taskId?: string | null;
 }
 
 export type AuthoringChatProposalStatus = "proposed" | "confirmed" | "rejected" | "failed";
@@ -253,6 +314,37 @@ export interface AuthoringWorkflowDraftRepository {
   ): Promise<void> | void;
 }
 
+export interface AuthoringTeamIdentityRepository {
+  create(tx: Tx, team: TeamDefinitionRecord): Promise<void> | void;
+}
+
+export interface AuthoringTeamDraftRepository {
+  getCurrentRevision(tx: Tx, teamId: string): Promise<number> | number;
+  append(tx: Tx, draft: TeamDraftDto, expectedRevision: number): Promise<void> | void;
+}
+
+export interface AuthoringTaskPatchTarget {
+  id: string;
+  projectId: string;
+  definitionRevision: number;
+}
+
+export interface AuthoringTaskPatchRepository {
+  getInTransaction(
+    tx: Tx,
+    taskId: string,
+  ): Promise<AuthoringTaskPatchTarget | null> | AuthoringTaskPatchTarget | null;
+  applyInTransaction(
+    tx: Tx,
+    input: {
+      taskId: string;
+      expectedRevision: number;
+      patch: AuthoringTaskPatch;
+      at: string;
+    },
+  ): Promise<AuthoringTaskPatchTarget> | AuthoringTaskPatchTarget;
+}
+
 export interface ConfirmChatProposalDeps {
   clock: Clock;
   ids: IdGenerator;
@@ -267,6 +359,9 @@ export interface ConfirmChatProposalDeps {
   workflowIdentities: AuthoringWorkflowIdentityRepository;
   workflowAuthorities: AuthoringWorkflowAuthorityRepository;
   workflowDrafts: AuthoringWorkflowDraftRepository;
+  teamIdentities?: AuthoringTeamIdentityRepository;
+  teamDrafts?: AuthoringTeamDraftRepository;
+  tasks?: AuthoringTaskPatchRepository;
   proposals: AuthoringChatProposalRepository;
   resolver: AuthoringChatProposalResolver;
   principalId: string;
@@ -285,32 +380,49 @@ export interface ConfirmedAuthoringWorkflowDraftRef {
   revision: number;
 }
 
+export interface ConfirmedAuthoringTeamDraftRef {
+  targetType: "team";
+  teamId: string;
+  teamDraftId: string;
+  revision: number;
+}
+
+export interface ConfirmedAuthoringTaskPatchRef {
+  targetType: "task";
+  taskId: string;
+  definitionRevision: number;
+}
+
 export interface ConfirmAuthoringChatProposalResult {
   reused: boolean;
   proposalId: string;
   projectId: string;
   workflowDrafts: readonly ConfirmedAuthoringWorkflowDraftRef[];
+  teamDrafts: readonly ConfirmedAuthoringTeamDraftRef[];
+  taskPatches: readonly ConfirmedAuthoringTaskPatchRef[];
 }
 
 /**
  * Creates the governed Task/Run that a Runtime adapter uses for authoring.
- * The intent intentionally remains transient; adapters must return references
- * and a structured Proposal through recordAuthoringProposal instead of logging it.
+ * The intent remains transient in process memory. Completing this command is
+ * not Agent receipt: adapters must deliver the body via a short-lived
+ * handoff, and restart without that body fail-closes.
  */
 export async function startAuthoring(
   ctx: AppContext,
   input: StartAuthoringInput,
-): Promise<{ reused: boolean; taskId: string; runId: string }> {
+): Promise<StartAuthoringResult> {
   if (input.intent.trim() === "") {
     throw validationFailed("authoring intent is required");
   }
+  const intentHash = sha256CanonicalDigest(input.intent);
   const taskResult = await ctx.world.uow.withTransaction(async (tx) =>
     withIdempotency(
       ctx.world,
       tx,
       {
         operationId: input.operationId,
-        digest: digestOf({ projectId: input.projectId, intent: input.intent }),
+        digest: digestOf({ projectId: input.projectId, intentHash }),
         scope: {
           principalId: ctx.principalId,
           clientId: ctx.clientId,
@@ -323,6 +435,7 @@ export async function startAuthoring(
         const project = requireProject(ctx, input.projectId);
         const now = ctx.world.nowIso();
         const taskId = ctx.world.ids.ulid("tsk_");
+        const intent = storeAuthoringIntent(ctx.world, { taskId, intent: input.intent });
         ctx.world.tasks.set(taskId, {
           id: taskId,
           projectId: project.id,
@@ -351,9 +464,17 @@ export async function startAuthoring(
           projectId: project.id,
           taskId,
           correlationId: input.operationId,
-          data: { phase: "runtime_requested" },
+          data: {
+            phase: "runtime_requested",
+            agentReceivedIntent: false,
+            ...authoringProtectedEventData(intent),
+          },
         });
-        return { taskId };
+        return {
+          taskId,
+          intentRef: intent.contentRef,
+          intentHash: intent.contentHash,
+        };
       },
     ),
   );
@@ -367,6 +488,9 @@ export async function startAuthoring(
     reused: taskResult.reused && run.reused,
     taskId: taskResult.value.taskId,
     runId: run.run.id,
+    intentRef: taskResult.value.intentRef,
+    intentHash: taskResult.value.intentHash,
+    agentReceivedIntent: false,
   };
 }
 
@@ -434,9 +558,9 @@ export async function confirmAuthoringChatProposal(
     throw error;
   }
 
-  let resolved: ResolvedChatWorkflowTarget[];
+  let resolved: ResolvedChatTarget[];
   try {
-    resolved = await resolveChatWorkflowTargets(deps.resolver, prepared);
+    resolved = await resolveChatTargets(deps, prepared);
   } catch (error) {
     await persistChatFailure(deps, input, scope, proposalDigest, error);
     throw error;
@@ -461,93 +585,53 @@ export async function confirmAuthoringChatProposal(
       const context = await loadChatConfirmationContextInTransaction(deps, tx, command, {
         allowCompleted: false,
       });
-      const drafts: Array<{ draft: WorkflowDraftDto; expectedRevision: number }> = [];
+      const workflowDrafts: Array<{ draft: WorkflowDraftDto; expectedRevision: number }> = [];
+      const teamDrafts: Array<{ draft: TeamDraftDto; expectedRevision: number }> = [];
+      const taskPatches: ConfirmedAuthoringTaskPatchRef[] = [];
 
       for (const target of resolved) {
         await assertResolutionBinding(deps, tx, context, target);
-        const workflowId = target.operation === "create" ? deps.ids.ulid("wf_") : target.workflowId;
-        if (!workflowId) {
-          throw validationFailed("authoring update target has no workflow identity");
-        }
-
-        let expectedRevision = 0;
-        if (target.operation === "create") {
-          const now = deps.clock.now().toISOString();
-          await deps.workflowIdentities.create(tx, {
-            id: workflowId,
-            name: "Untitled workflow",
-            description: "",
-            status: "draft",
-            stateRevision: 1,
-            definitionRevision: 1,
-            createdAt: now,
-            updatedAt: now,
-          });
-          await deps.workflowAuthorities.create(tx, {
-            workflowId,
-            organizationId: context.project.organizationId,
-            projectId: context.project.id,
-            createdAt: now,
-            createdBy: deps.principalId,
-          });
+        if (target.kind === "workflow") {
+          workflowDrafts.push(await landChatWorkflowDraft(deps, tx, context, target));
+        } else if (target.kind === "team") {
+          teamDrafts.push(await landChatTeamDraft(deps, tx, context, target));
         } else {
-          await deps.workflowAuthorities.requireInTransaction(tx, workflowId, {
-            organizationId: context.project.organizationId,
-            projectId: context.project.id,
-          });
+          taskPatches.push(await landChatTaskPatch(deps, tx, context, target));
         }
-
-        const expectedScope = {
-          organizationId: context.project.organizationId,
-          projectId: context.project.id,
-        };
-        const currentRevision = await deps.workflowDrafts.getCurrentRevision(
-          tx,
-          workflowId,
-          expectedScope,
-        );
-        if (target.operation === "update") {
-          expectedRevision = target.expectedRevision ?? -1;
-          if (currentRevision !== expectedRevision) {
-            throw revisionConflict(workflowId, expectedRevision, currentRevision);
-          }
-        } else if (currentRevision !== 0) {
-          throw validationFailed(`new authoring workflow ${workflowId} already has a draft`, {
-            currentRevision,
-          });
-        }
-
-        const draft = parseWorkflowDraft({
-          id: deps.ids.ulid("wfd_"),
-          workflowId,
-          revision: currentRevision + 1,
-          status: "draft",
-          graph: target.graph,
-          contentHash: sha256CanonicalDigest(target.graph),
-          updatedAt: deps.clock.now().toISOString(),
-          updatedBy: deps.principalId,
-        });
-        drafts.push({ draft, expectedRevision });
       }
 
-      for (const item of drafts) {
+      for (const item of workflowDrafts) {
         await deps.workflowDrafts.append(tx, item.draft, item.expectedRevision, {
           organizationId: context.project.organizationId,
           projectId: context.project.id,
         });
       }
+      const teamPorts = teamDrafts.length > 0 ? requireTeamPorts(deps) : undefined;
+      if (teamPorts) {
+        for (const item of teamDrafts) {
+          await teamPorts.drafts.append(tx, item.draft, item.expectedRevision);
+        }
+      }
 
-      const refs = drafts.map(({ draft }) => ({
+      const workflowRefs = workflowDrafts.map(({ draft }) => ({
         targetType: "workflow" as const,
         workflowId: draft.workflowId,
         workflowDraftId: draft.id,
+        revision: draft.revision,
+      }));
+      const teamRefs = teamDrafts.map(({ draft }) => ({
+        targetType: "team" as const,
+        teamId: draft.teamId,
+        teamDraftId: draft.id,
         revision: draft.revision,
       }));
       const result: ConfirmAuthoringChatProposalResult = {
         reused: false,
         proposalId: context.proposal.id,
         projectId: context.project.id,
-        workflowDrafts: refs,
+        workflowDrafts: workflowRefs,
+        teamDrafts: teamRefs,
+        taskPatches,
       };
       try {
         await deps.turns.completeInTransaction(tx, {
@@ -556,7 +640,7 @@ export async function confirmAuthoringChatProposal(
           idempotencyKey: command.idempotencyKey,
           proposalId: context.proposal.id,
           at: deps.clock.now().toISOString(),
-          ...(refs[0] ? { workflowDraftId: refs[0].workflowDraftId } : {}),
+          ...(workflowRefs[0] ? { workflowDraftId: workflowRefs[0].workflowDraftId } : {}),
         });
       } catch (error) {
         if (isRevisionConflict(error)) {
@@ -580,7 +664,9 @@ export async function confirmAuthoringChatProposal(
           sourceRunId: context.sourceRun.id,
           proposalId: context.proposal.id,
           proposalDigest,
-          refs,
+          workflowDrafts: workflowRefs,
+          teamDrafts: teamRefs,
+          taskPatches,
         }),
       );
       await deps.receipts.complete(tx, command.operationId, storedChatResult(result));
@@ -677,6 +763,7 @@ function assertStoredChatResultBinding(
 }
 
 interface ResolvedChatWorkflowTarget {
+  kind: "workflow";
   operation: "create" | "update";
   graph: WorkflowGraphDefinitionDto;
   binding: AuthoringChatBindingProof;
@@ -685,48 +772,300 @@ interface ResolvedChatWorkflowTarget {
   expectedRevision?: number;
 }
 
-async function resolveChatWorkflowTargets(
-  resolver: AuthoringChatProposalResolver,
+interface ResolvedChatTeamTarget {
+  kind: "team";
+  operation: "create" | "update";
+  members: readonly TeamMemberDto[];
+  binding: AuthoringChatBindingProof;
+  patchRef: string;
+  teamId?: string;
+  expectedRevision?: number;
+}
+
+interface ResolvedChatTaskTarget {
+  kind: "task";
+  operation: "create" | "update";
+  patch: AuthoringTaskPatch;
+  binding: AuthoringChatBindingProof;
+  patchRef: string;
+  taskId?: string;
+  expectedRevision?: number;
+}
+
+type ResolvedChatTarget =
+  | ResolvedChatWorkflowTarget
+  | ResolvedChatTeamTarget
+  | ResolvedChatTaskTarget;
+
+async function resolveChatTargets(
+  deps: ConfirmChatProposalDeps,
   context: ChatConfirmationContext,
-): Promise<ResolvedChatWorkflowTarget[]> {
-  const resolved: ResolvedChatWorkflowTarget[] = [];
+): Promise<ResolvedChatTarget[]> {
+  const resolved: ResolvedChatTarget[] = [];
   for (const target of context.proposal.targets) {
-    if (target.targetType !== "workflow") {
-      throw validationFailed(
-        `authoring chat proposal ${target.operation} for ${target.targetType} is not implemented`,
-      );
+    if (target.targetType === "workflow") {
+      const resolution = await deps.resolver.resolveWorkflowGraph({
+        proposalId: context.proposal.id,
+        projectId: context.proposal.projectId,
+        sourceRunId: context.proposal.sourceRunId,
+        operation: target.operation,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { workflowId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      resolved.push({
+        kind: "workflow",
+        operation: target.operation,
+        graph: parseWorkflowGraphDefinition(resolution.graph),
+        binding: resolution.binding,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { workflowId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      continue;
     }
-    const resolution = await resolver.resolveWorkflowGraph({
+    if (target.targetType === "team") {
+      if (!deps.resolver.resolveTeamDraft) {
+        throw validationFailed("authoring chat team confirmation requires a team draft resolver");
+      }
+      requireTeamPorts(deps);
+      const resolution = await deps.resolver.resolveTeamDraft({
+        proposalId: context.proposal.id,
+        projectId: context.proposal.projectId,
+        sourceRunId: context.proposal.sourceRunId,
+        operation: target.operation,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { teamId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      const members = parseTeamVersionWrite({ members: resolution.members }).members;
+      resolved.push({
+        kind: "team",
+        operation: target.operation,
+        members,
+        binding: resolution.binding,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { teamId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      continue;
+    }
+    if (!deps.resolver.resolveTaskPatch || !deps.tasks) {
+      throw validationFailed("authoring chat task confirmation requires a task patch resolver");
+    }
+    const resolution = await deps.resolver.resolveTaskPatch({
       proposalId: context.proposal.id,
       projectId: context.proposal.projectId,
       sourceRunId: context.proposal.sourceRunId,
       operation: target.operation,
       patchRef: target.patchRef,
       ...(target.operation === "update"
-        ? { workflowId: target.targetId, expectedRevision: target.expectedRevision }
+        ? { taskId: target.targetId, expectedRevision: target.expectedRevision }
         : {}),
     });
-    const graph = parseWorkflowGraphDefinition(resolution.graph);
     resolved.push({
+      kind: "task",
       operation: target.operation,
-      graph,
+      patch: parseAuthoringTaskPatch(resolution.patch),
       binding: resolution.binding,
       patchRef: target.patchRef,
       ...(target.operation === "update"
-        ? { workflowId: target.targetId, expectedRevision: target.expectedRevision }
+        ? { taskId: target.targetId, expectedRevision: target.expectedRevision }
         : {}),
     });
   }
   return resolved;
 }
 
-async function assertResolutionBinding(
+async function landChatWorkflowDraft(
   deps: ConfirmChatProposalDeps,
   tx: Tx,
   context: ChatConfirmationContext,
   target: ResolvedChatWorkflowTarget,
+): Promise<{ draft: WorkflowDraftDto; expectedRevision: number }> {
+  const workflowId = target.operation === "create" ? deps.ids.ulid("wf_") : target.workflowId;
+  if (!workflowId) {
+    throw validationFailed("authoring update target has no workflow identity");
+  }
+  let expectedRevision = 0;
+  if (target.operation === "create") {
+    const now = deps.clock.now().toISOString();
+    await deps.workflowIdentities.create(tx, {
+      id: workflowId,
+      name: "Untitled workflow",
+      description: "",
+      status: "draft",
+      stateRevision: 1,
+      definitionRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await deps.workflowAuthorities.create(tx, {
+      workflowId,
+      organizationId: context.project.organizationId,
+      projectId: context.project.id,
+      createdAt: now,
+      createdBy: deps.principalId,
+    });
+  } else {
+    await deps.workflowAuthorities.requireInTransaction(tx, workflowId, {
+      organizationId: context.project.organizationId,
+      projectId: context.project.id,
+    });
+  }
+  const expectedScope = {
+    organizationId: context.project.organizationId,
+    projectId: context.project.id,
+  };
+  const currentRevision = await deps.workflowDrafts.getCurrentRevision(
+    tx,
+    workflowId,
+    expectedScope,
+  );
+  if (target.operation === "update") {
+    expectedRevision = target.expectedRevision ?? -1;
+    if (currentRevision !== expectedRevision) {
+      throw revisionConflict(workflowId, expectedRevision, currentRevision);
+    }
+  } else if (currentRevision !== 0) {
+    throw validationFailed(`new authoring workflow ${workflowId} already has a draft`, {
+      currentRevision,
+    });
+  }
+  return {
+    draft: parseWorkflowDraft({
+      id: deps.ids.ulid("wfd_"),
+      workflowId,
+      revision: currentRevision + 1,
+      status: "draft",
+      graph: target.graph,
+      contentHash: sha256CanonicalDigest(target.graph),
+      updatedAt: deps.clock.now().toISOString(),
+      updatedBy: deps.principalId,
+    }),
+    expectedRevision,
+  };
+}
+
+async function landChatTeamDraft(
+  deps: ConfirmChatProposalDeps,
+  tx: Tx,
+  _context: ChatConfirmationContext,
+  target: ResolvedChatTeamTarget,
+): Promise<{ draft: TeamDraftDto; expectedRevision: number }> {
+  const ports = requireTeamPorts(deps);
+  const teamId = target.operation === "create" ? deps.ids.ulid("tm_") : target.teamId;
+  if (!teamId) {
+    throw validationFailed("authoring update target has no team identity");
+  }
+  let expectedRevision = 0;
+  if (target.operation === "create") {
+    const now = deps.clock.now().toISOString();
+    await ports.identities.create(tx, {
+      id: teamId,
+      name: "Untitled team",
+      description: "",
+      status: "draft",
+      stateRevision: 1,
+      definitionRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const currentRevision = await ports.drafts.getCurrentRevision(tx, teamId);
+  if (target.operation === "update") {
+    expectedRevision = target.expectedRevision ?? -1;
+    if (currentRevision !== expectedRevision) {
+      throw revisionConflict(teamId, expectedRevision, currentRevision);
+    }
+  } else if (currentRevision !== 0) {
+    throw validationFailed(`new authoring team ${teamId} already has a draft`, {
+      currentRevision,
+    });
+  }
+  return {
+    draft: parseTeamDraft({
+      id: deps.ids.ulid("tmd_"),
+      teamId,
+      revision: currentRevision + 1,
+      status: "draft",
+      members: [...target.members],
+      contentHash: sha256CanonicalDigest(target.members),
+      updatedAt: deps.clock.now().toISOString(),
+      updatedBy: deps.principalId,
+    }),
+    expectedRevision,
+  };
+}
+
+async function landChatTaskPatch(
+  deps: ConfirmChatProposalDeps,
+  tx: Tx,
+  context: ChatConfirmationContext,
+  target: ResolvedChatTaskTarget,
+): Promise<ConfirmedAuthoringTaskPatchRef> {
+  if (!deps.tasks) {
+    throw validationFailed("authoring chat task confirmation requires a task patch repository");
+  }
+  const taskId = target.operation === "update" ? target.taskId : target.patch.taskId;
+  if (!taskId) {
+    throw validationFailed("authoring task patch has no task identity");
+  }
+  const current = await deps.tasks.getInTransaction(tx, taskId);
+  if (!current) throw validationFailed(`missing task ${taskId} for authoring patch`);
+  if (current.projectId !== context.project.id) {
+    throw validationFailed("authoring task patch does not belong to the project");
+  }
+  const expectedRevision =
+    target.operation === "update" ? (target.expectedRevision ?? -1) : current.definitionRevision;
+  const applied = await deps.tasks.applyInTransaction(tx, {
+    taskId,
+    expectedRevision,
+    patch: { ...target.patch, taskId },
+    at: deps.clock.now().toISOString(),
+  });
+  return {
+    targetType: "task",
+    taskId,
+    definitionRevision: applied.definitionRevision,
+  };
+}
+
+function requireTeamPorts(deps: ConfirmChatProposalDeps): {
+  identities: AuthoringTeamIdentityRepository;
+  drafts: AuthoringTeamDraftRepository;
+} {
+  if (!deps.teamIdentities || !deps.teamDrafts) {
+    throw validationFailed(
+      "authoring chat team confirmation requires team identity and draft repositories",
+    );
+  }
+  return { identities: deps.teamIdentities, drafts: deps.teamDrafts };
+}
+
+async function assertResolutionBinding(
+  deps: ConfirmChatProposalDeps,
+  tx: Tx,
+  context: ChatConfirmationContext,
+  target: ResolvedChatTarget,
 ): Promise<void> {
   const proof = target.binding;
+  const identityMatches =
+    target.kind === "workflow"
+      ? target.operation === "update"
+        ? proof.workflowId === target.workflowId && proof.expectedRevision === target.expectedRevision
+        : proof.workflowId === undefined && proof.expectedRevision === undefined
+      : target.kind === "team"
+        ? target.operation === "update"
+          ? proof.teamId === target.teamId && proof.expectedRevision === target.expectedRevision
+          : proof.teamId === undefined && proof.expectedRevision === undefined
+        : target.operation === "update"
+          ? proof.taskId === target.taskId && proof.expectedRevision === target.expectedRevision
+          : proof.taskId === undefined && proof.expectedRevision === undefined;
   if (
     proof.organizationId !== context.project.organizationId ||
     proof.patchRef !== target.patchRef ||
@@ -734,11 +1073,7 @@ async function assertResolutionBinding(
     proof.sessionId !== context.session.id ||
     proof.turnId !== context.turn.id ||
     proof.sourceRunId !== context.sourceRun.id ||
-    (target.operation === "update" &&
-      (proof.workflowId !== target.workflowId ||
-        proof.expectedRevision !== target.expectedRevision)) ||
-    (target.operation === "create" &&
-      (proof.workflowId !== undefined || proof.expectedRevision !== undefined))
+    !identityMatches
   ) {
     throw validationFailed("authoring proposal resolver binding proof does not match the request");
   }
@@ -818,7 +1153,9 @@ function chatConfirmedEvent(input: {
   sourceRunId: string;
   proposalId: string;
   proposalDigest: string;
-  refs: readonly ConfirmedAuthoringWorkflowDraftRef[];
+  workflowDrafts: readonly ConfirmedAuthoringWorkflowDraftRef[];
+  teamDrafts: readonly ConfirmedAuthoringTeamDraftRef[];
+  taskPatches: readonly ConfirmedAuthoringTaskPatchRef[];
 }) {
   return {
     specVersion: "0.1" as const,
@@ -839,7 +1176,9 @@ function chatConfirmedEvent(input: {
     data: {
       proposalId: input.proposalId,
       proposalDigest: input.proposalDigest,
-      workflowDrafts: input.refs,
+      workflowDrafts: input.workflowDrafts,
+      teamDrafts: input.teamDrafts,
+      taskPatches: input.taskPatches,
     },
     sensitivity: "internal" as const,
   };
@@ -850,6 +1189,8 @@ function storedChatResult(result: ConfirmAuthoringChatProposalResult) {
     proposalId: result.proposalId,
     projectId: result.projectId,
     workflowDrafts: result.workflowDrafts,
+    teamDrafts: result.teamDrafts,
+    taskPatches: result.taskPatches,
   };
 }
 
@@ -898,40 +1239,107 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
   const record = value as Record<string, unknown>;
   if (
     Object.keys(record).some(
-      (key) => !["proposalId", "projectId", "workflowDrafts"].includes(key),
+      (key) =>
+        !["proposalId", "projectId", "workflowDrafts", "teamDrafts", "taskPatches"].includes(key),
     ) ||
     !isNonEmptyString(record.proposalId) ||
     !isNonEmptyString(record.projectId) ||
-    !Array.isArray(record.workflowDrafts) ||
-    record.workflowDrafts.length === 0
+    !Array.isArray(record.workflowDrafts)
   ) {
     throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
   }
-  const refs = record.workflowDrafts.map((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
-    }
-    const ref = value as Record<string, unknown>;
-    if (
-      Object.keys(ref).some(
-        (key) => !["targetType", "workflowId", "workflowDraftId", "revision"].includes(key),
-      ) ||
-      ref.targetType !== "workflow" ||
-      !isNonEmptyString(ref.workflowId) ||
-      !isNonEmptyString(ref.workflowDraftId) ||
-      !Number.isInteger(ref.revision) ||
-      (ref.revision as number) < 1
-    ) {
-      throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
-    }
-    return {
-      targetType: "workflow" as const,
-      workflowId: ref.workflowId,
-      workflowDraftId: ref.workflowDraftId,
-      revision: ref.revision as number,
-    };
-  });
-  return { proposalId: record.proposalId, projectId: record.projectId, workflowDrafts: refs };
+  const workflowDrafts = record.workflowDrafts.map((item) =>
+    parseWorkflowDraftRef(item),
+  );
+  const teamDrafts = Array.isArray(record.teamDrafts)
+    ? record.teamDrafts.map((item) => parseTeamDraftRef(item))
+    : [];
+  const taskPatches = Array.isArray(record.taskPatches)
+    ? record.taskPatches.map((item) => parseTaskPatchRef(item))
+    : [];
+  if (workflowDrafts.length === 0 && teamDrafts.length === 0 && taskPatches.length === 0) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  return {
+    proposalId: record.proposalId,
+    projectId: record.projectId,
+    workflowDrafts,
+    teamDrafts,
+    taskPatches,
+  };
+}
+
+function parseWorkflowDraftRef(value: unknown): ConfirmedAuthoringWorkflowDraftRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  const ref = value as Record<string, unknown>;
+  if (
+    Object.keys(ref).some(
+      (key) => !["targetType", "workflowId", "workflowDraftId", "revision"].includes(key),
+    ) ||
+    ref.targetType !== "workflow" ||
+    !isNonEmptyString(ref.workflowId) ||
+    !isNonEmptyString(ref.workflowDraftId) ||
+    !Number.isInteger(ref.revision) ||
+    (ref.revision as number) < 1
+  ) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  return {
+    targetType: "workflow",
+    workflowId: ref.workflowId,
+    workflowDraftId: ref.workflowDraftId,
+    revision: ref.revision as number,
+  };
+}
+
+function parseTeamDraftRef(value: unknown): ConfirmedAuthoringTeamDraftRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  const ref = value as Record<string, unknown>;
+  if (
+    Object.keys(ref).some(
+      (key) => !["targetType", "teamId", "teamDraftId", "revision"].includes(key),
+    ) ||
+    ref.targetType !== "team" ||
+    !isNonEmptyString(ref.teamId) ||
+    !isNonEmptyString(ref.teamDraftId) ||
+    !Number.isInteger(ref.revision) ||
+    (ref.revision as number) < 1
+  ) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  return {
+    targetType: "team",
+    teamId: ref.teamId,
+    teamDraftId: ref.teamDraftId,
+    revision: ref.revision as number,
+  };
+}
+
+function parseTaskPatchRef(value: unknown): ConfirmedAuthoringTaskPatchRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  const ref = value as Record<string, unknown>;
+  if (
+    Object.keys(ref).some(
+      (key) => !["targetType", "taskId", "definitionRevision"].includes(key),
+    ) ||
+    ref.targetType !== "task" ||
+    !isNonEmptyString(ref.taskId) ||
+    !Number.isInteger(ref.definitionRevision) ||
+    (ref.definitionRevision as number) < 1
+  ) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  return {
+    targetType: "task",
+    taskId: ref.taskId,
+    definitionRevision: ref.definitionRevision as number,
+  };
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -1038,131 +1446,7 @@ function toProtocolError(error: unknown) {
 }
 
 /** Cryptographic digest deliberately independent from the legacy FNV helper. */
-export function sha256CanonicalDigest(value: unknown): string {
-  const bytes = utf8Bytes(canonicalJson(value));
-  return `sha256:${sha256Words(bytes)
-    .map((word) => word.toString(16).padStart(8, "0"))
-    .join("")}`;
-}
-
-function utf8Bytes(value: string): Uint8Array {
-  const bytes: number[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    let codePoint = value.charCodeAt(index);
-    if (codePoint >= 0xd800 && codePoint <= 0xdbff && index + 1 < value.length) {
-      const low = value.charCodeAt(index + 1);
-      if (low >= 0xdc00 && low <= 0xdfff) {
-        codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (low - 0xdc00);
-        index += 1;
-      }
-    }
-    if (codePoint <= 0x7f) {
-      bytes.push(codePoint);
-    } else if (codePoint <= 0x7ff) {
-      bytes.push(0xc0 | (codePoint >>> 6), 0x80 | (codePoint & 0x3f));
-    } else if (codePoint <= 0xffff) {
-      bytes.push(
-        0xe0 | (codePoint >>> 12),
-        0x80 | ((codePoint >>> 6) & 0x3f),
-        0x80 | (codePoint & 0x3f),
-      );
-    } else {
-      bytes.push(
-        0xf0 | (codePoint >>> 18),
-        0x80 | ((codePoint >>> 12) & 0x3f),
-        0x80 | ((codePoint >>> 6) & 0x3f),
-        0x80 | (codePoint & 0x3f),
-      );
-    }
-  }
-  return new Uint8Array(bytes);
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function sha256Words(input: Uint8Array): number[] {
-  const constants = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-  ];
-  const paddedLength = Math.ceil((input.length + 9) / 64) * 64;
-  const padded = new Uint8Array(paddedLength);
-  padded.set(input);
-  padded[input.length] = 0x80;
-  const bitLength = input.length * 8;
-  const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 8, Math.floor(bitLength / 0x100000000));
-  view.setUint32(padded.length - 4, bitLength >>> 0);
-  let h0 = 0x6a09e667;
-  let h1 = 0xbb67ae85;
-  let h2 = 0x3c6ef372;
-  let h3 = 0xa54ff53a;
-  let h4 = 0x510e527f;
-  let h5 = 0x9b05688c;
-  let h6 = 0x1f83d9ab;
-  let h7 = 0x5be0cd19;
-  const schedule = new Uint32Array(64);
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    for (let index = 0; index < 16; index += 1) {
-      schedule[index] = view.getUint32(offset + index * 4);
-    }
-    for (let index = 16; index < 64; index += 1) {
-      const x = schedule[index - 15]!;
-      const y = schedule[index - 2]!;
-      const sigma0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
-      const sigma1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
-      schedule[index] = (schedule[index - 16]! + sigma0 + schedule[index - 7]! + sigma1) >>> 0;
-    }
-    let a = h0;
-    let b = h1;
-    let c = h2;
-    let d = h3;
-    let e = h4;
-    let f = h5;
-    let g = h6;
-    let h = h7;
-    for (let index = 0; index < 64; index += 1) {
-      const sigma1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
-      const choice = (e & f) ^ (~e & g);
-      const temp1 = (h + sigma1 + choice + constants[index]! + schedule[index]!) >>> 0;
-      const sigma0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
-      const majority = (a & b) ^ (a & c) ^ (b & c);
-      const temp2 = (sigma0 + majority) >>> 0;
-      h = g;
-      g = f;
-      f = e;
-      e = (d + temp1) >>> 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (temp1 + temp2) >>> 0;
-    }
-    h0 = (h0 + a) >>> 0;
-    h1 = (h1 + b) >>> 0;
-    h2 = (h2 + c) >>> 0;
-    h3 = (h3 + d) >>> 0;
-    h4 = (h4 + e) >>> 0;
-    h5 = (h5 + f) >>> 0;
-    h6 = (h6 + g) >>> 0;
-    h7 = (h7 + h) >>> 0;
-  }
-  return [h0, h1, h2, h3, h4, h5, h6, h7];
-}
+export { sha256CanonicalDigest } from "./canonical-digest.js";
 
 /** Runtime adapters call this with validated, reference-only Proposal output. */
 export async function recordAuthoringProposal(
@@ -1282,9 +1566,10 @@ export async function validateAuthoringChangeSet(
 }
 
 /**
- * Applies a previously validated, structured proposal to authoring drafts.
- * This intentionally has no Runtime call: Runtime proposal creation, task
- * patches, recovery and durable adapter composition are separate slices.
+ * Applies a previously validated, structured proposal to authoring drafts
+ * and Task definition patches. Steps are staged in order. A later failure
+ * keeps already-applied steps and reports `partially_applied` instead of
+ * pretending the ChangeSet fully succeeded.
  */
 export async function applyAuthoringChangeSet(
   ctx: AppContext,
@@ -1301,6 +1586,7 @@ export async function applyAuthoringChangeSet(
           changeSet: requested,
           workflowDrafts: input.workflowDrafts ?? [],
           teamDrafts: input.teamDrafts ?? [],
+          taskPatches: input.taskPatches ?? [],
         }),
         scope: {
           principalId: ctx.principalId,
@@ -1315,7 +1601,7 @@ export async function applyAuthoringChangeSet(
         if (!stored) {
           throw notFound("authoring change set", requested.id);
         }
-        if (digestOf(stored) !== digestOf(requested)) {
+        if (changeSetIdentityDigest(stored) !== changeSetIdentityDigest(requested)) {
           throw validationFailed("authoring change set differs from its validated record");
         }
         const project = requireProject(ctx, requested.projectId);
@@ -1329,8 +1615,12 @@ export async function applyAuthoringChangeSet(
         if (sourceRun.projectId !== requested.projectId) {
           throw validationFailed("authoring source run does not belong to the project");
         }
-        if (requested.status !== "validating") {
-          throw validationFailed("authoring change set must be validating before apply");
+        if (
+          stored.status !== "validating" &&
+          stored.status !== "applying" &&
+          stored.status !== "partially_applied"
+        ) {
+          throw validationFailed(`authoring change set cannot apply from ${stored.status}`);
         }
         const workflowDrafts = new Map(
           (input.workflowDrafts ?? []).map((draft) => [
@@ -1341,19 +1631,30 @@ export async function applyAuthoringChangeSet(
         const teamDrafts = new Map(
           (input.teamDrafts ?? []).map((draft) => [draft.teamId, parseTeamDraft(draft)]),
         );
+        const taskPatches = new Map(
+          (input.taskPatches ?? []).map((patch) => [
+            patch.taskId,
+            parseAuthoringTaskPatch(patch),
+          ]),
+        );
         if (
           workflowDrafts.size !== (input.workflowDrafts ?? []).length ||
-          teamDrafts.size !== (input.teamDrafts ?? []).length
+          teamDrafts.size !== (input.teamDrafts ?? []).length ||
+          taskPatches.size !== (input.taskPatches ?? []).length
         ) {
           throw validationFailed("authoring draft targets must be unique");
         }
 
-        for (const step of requested.steps) {
-          if (step.status !== "pending") {
+        const pendingSteps = stored.steps.filter((step) => step.status !== "applied");
+        for (const step of pendingSteps) {
+          if (step.status !== "pending" && step.status !== "applying" && step.status !== "failed") {
             throw validationFailed("authoring change set steps must be pending before apply");
           }
           if (step.targetType === "task") {
-            throw validationFailed("task authoring patches are not implemented");
+            if (!taskPatches.get(step.targetId)) {
+              throw validationFailed(`missing task draft for ${step.targetId}`);
+            }
+            continue;
           }
           const draft =
             step.targetType === "workflow"
@@ -1378,40 +1679,198 @@ export async function applyAuthoringChangeSet(
         }
 
         const now = ctx.world.nowIso();
-        for (const draft of workflowDrafts.values()) ctx.world.workflowDrafts.set(draft.id, draft);
-        for (const draft of teamDrafts.values()) ctx.world.teamDrafts.set(draft.id, draft);
+        const steps = stored.steps.map((step) => ({ ...step }));
+        let halted: { code: string; message: string } | undefined;
+        for (const step of steps) {
+          if (step.status === "applied") continue;
+          if (halted) continue;
+          try {
+            const resultRevision = applyAuthoringStep(ctx, {
+              step,
+              workflowDrafts,
+              teamDrafts,
+              taskPatches,
+              now,
+            });
+            step.status = "applied";
+            step.resultRevision = resultRevision;
+            step.completedAt = now;
+            delete step.failure;
+          } catch (error) {
+            const failure = toStepFailure(error);
+            step.status = "failed";
+            step.failure = failure;
+            step.completedAt = now;
+            halted = failure;
+          }
+        }
+
+        const appliedCount = steps.filter((step) => step.status === "applied").length;
+        const failedCount = steps.filter((step) => step.status === "failed").length;
+        const status =
+          halted === undefined
+            ? "applied"
+            : appliedCount > 0
+              ? "partially_applied"
+              : "failed";
         const applied = parseAuthoringChangeSet({
-          ...requested,
-          status: "applied",
+          ...stored,
+          status,
           updatedAt: now,
-          steps: requested.steps.map((step) => {
-            const draft =
-              step.targetType === "workflow"
-                ? workflowDrafts.get(step.targetId)
-                : teamDrafts.get(step.targetId);
-            return {
-              ...step,
-              status: "applied",
-              resultRevision: draft?.revision,
-              completedAt: now,
-            };
-          }),
+          steps,
+          ...(halted && status === "failed" ? { failure: halted } : {}),
         });
         ctx.world.authoringChangeSets.set(applied.id, applied);
         await appendEvent(ctx.world, tx, {
-          type: "workflow.authoring.applied",
+          type:
+            status === "applied"
+              ? "workflow.authoring.applied"
+              : status === "partially_applied"
+                ? "workflow.authoring.partially_applied"
+                : "workflow.authoring.failed",
           subjectType: "authoring_change_set",
           subjectId: applied.id,
           projectId: applied.projectId,
           runId: applied.sourceRunId,
           correlationId: input.operationId,
-          data: { status: applied.status, stepCount: applied.steps.length },
+          data: {
+            status: applied.status,
+            stepCount: applied.steps.length,
+            appliedCount,
+            failedCount,
+          },
         });
         return applied;
       },
     );
     return { reused: result.reused, changeSet: result.value };
   });
+}
+
+export function parseAuthoringTaskPatch(input: AuthoringTaskPatch): AuthoringTaskPatch {
+  if (!isNonEmptyString(input.taskId) || !Number.isInteger(input.revision) || input.revision < 1) {
+    throw validationFailed("authoring task patch is malformed");
+  }
+  const roles: ReadonlySet<TaskRecord["role"]> = new Set([
+    "planner",
+    "developer",
+    "reviewer",
+    "approver",
+  ]);
+  if (input.role !== undefined && !roles.has(input.role)) {
+    throw validationFailed(`authoring task patch has an unknown role ${input.role}`);
+  }
+  return {
+    taskId: input.taskId,
+    revision: input.revision,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.role !== undefined ? { role: input.role } : {}),
+    ...(input.requiresReview !== undefined ? { requiresReview: input.requiresReview } : {}),
+    ...(input.expectedOutputs !== undefined ? { expectedOutputs: input.expectedOutputs } : {}),
+    ...(input.dependsOn !== undefined ? { dependsOn: input.dependsOn } : {}),
+    ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
+    ...(input.maxReworkCycles !== undefined ? { maxReworkCycles: input.maxReworkCycles } : {}),
+    ...(input.priority !== undefined ? { priority: input.priority } : {}),
+  };
+}
+
+export function adaptTeamDraftRepository(repository: {
+  listByTeam(teamId: string): readonly TeamDraftDto[];
+  append(tx: Tx, draft: TeamDraftDto, expectedRevision: number): Promise<void> | void;
+}): AuthoringTeamDraftRepository {
+  return {
+    getCurrentRevision: (_tx, teamId) =>
+      Math.max(0, ...repository.listByTeam(teamId).map((draft) => draft.revision)),
+    append: (tx, draft, expectedRevision) => repository.append(tx, draft, expectedRevision),
+  };
+}
+
+function changeSetIdentityDigest(changeSet: AuthoringChangeSetDto): string {
+  return digestOf({
+    id: changeSet.id,
+    organizationId: changeSet.organizationId,
+    projectId: changeSet.projectId,
+    workflowId: changeSet.workflowId,
+    sourceRunId: changeSet.sourceRunId,
+    proposalRef: changeSet.proposalRef,
+    steps: changeSet.steps.map((step) => ({
+      id: step.id,
+      ordinal: step.ordinal,
+      targetType: step.targetType,
+      targetId: step.targetId,
+      expectedRevision: step.expectedRevision,
+      patchRef: step.patchRef,
+    })),
+  });
+}
+
+function applyAuthoringStep(
+  ctx: AppContext,
+  input: {
+    step: AuthoringChangeSetDto["steps"][number];
+    workflowDrafts: Map<string, WorkflowDraftDto>;
+    teamDrafts: Map<string, TeamDraftDto>;
+    taskPatches: Map<string, AuthoringTaskPatch>;
+    now: string;
+  },
+): number {
+  if (input.step.targetType === "task") {
+    return applyTaskPatch(ctx, input.step, input.taskPatches.get(input.step.targetId)!, input.now);
+  }
+  if (input.step.targetType === "workflow") {
+    const draft = input.workflowDrafts.get(input.step.targetId);
+    if (!draft) {
+      throw validationFailed(`missing workflow draft for ${input.step.targetId}`);
+    }
+    ctx.world.workflowDrafts.set(draft.id, draft);
+    return draft.revision;
+  }
+  const draft = input.teamDrafts.get(input.step.targetId);
+  if (!draft) {
+    throw validationFailed(`missing team draft for ${input.step.targetId}`);
+  }
+  ctx.world.teamDrafts.set(draft.id, draft);
+  return draft.revision;
+}
+
+function applyTaskPatch(
+  ctx: AppContext,
+  step: AuthoringChangeSetDto["steps"][number],
+  patch: AuthoringTaskPatch,
+  now: string,
+): number {
+  const task = ctx.world.tasks.get(step.targetId);
+  if (!task) {
+    throw validationFailed(`missing task ${step.targetId} for authoring patch`);
+  }
+  if (task.projectId !== ctx.world.projects.get(task.projectId)?.id) {
+    throw validationFailed("authoring task patch does not belong to a known project");
+  }
+  if (task.definitionRevision !== step.expectedRevision || patch.revision !== step.expectedRevision + 1) {
+    throw validationFailed(`authoring task draft revision conflict for ${step.targetId}`, {
+      expectedRevision: step.expectedRevision,
+      currentRevision: task.definitionRevision,
+      nextRevision: patch.revision,
+    });
+  }
+  if (patch.title !== undefined) task.title = patch.title;
+  if (patch.role !== undefined) task.role = patch.role;
+  if (patch.requiresReview !== undefined) task.requiresReview = patch.requiresReview;
+  if (patch.expectedOutputs !== undefined) task.expectedOutputs = [...patch.expectedOutputs];
+  if (patch.dependsOn !== undefined) task.dependsOn = [...patch.dependsOn];
+  if (patch.maxAttempts !== undefined) task.maxAttempts = patch.maxAttempts;
+  if (patch.maxReworkCycles !== undefined) task.maxReworkCycles = patch.maxReworkCycles;
+  if (patch.priority !== undefined) task.priority = patch.priority;
+  task.definitionRevision = patch.revision;
+  task.updatedAt = now;
+  return patch.revision;
+}
+
+function toStepFailure(error: unknown): { code: string; message: string } {
+  if (error instanceof UseCaseError) {
+    return { code: error.code, message: error.message };
+  }
+  return { code: "conflict", message: "authoring change set step failed" };
 }
 
 function assertDraftRevision(
