@@ -1,5 +1,6 @@
 export const UNTESTED_PROCESS_PLATFORMS = ["darwin"] as const;
-export const UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS = ["win32"] as const;
+/** Empty: win32 captured spawn is implemented via Job Object; spawn still fail-closes if capture is unavailable. */
+export const UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS: readonly string[] = [];
 export const UNTESTED_CAPTURED_PROCESS_PLATFORMS = ["darwin"] as const;
 
 export function formatWin32StartIdentity(pid: number, createTimeUtc: Date | string): string {

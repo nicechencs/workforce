@@ -21,8 +21,15 @@ import {
   trackedPosixGroupAlive,
   waitForTrackedPosixGroupExit,
 } from "./posix-process.js";
+import { UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS } from "./start-identity.js";
 import type { TrackedProcess } from "./tracked.js";
-import { cancelWindows, inspectWindows, spawnWindows } from "./windows-job.js";
+import {
+  cancelWindows,
+  inspectWindows,
+  spawnWindows,
+  trackedWindowsJobAlive,
+  waitForTrackedWindowsJobExit,
+} from "./windows-job.js";
 
 export class OsProcessController implements ProcessController {
   readonly #tracked = new Map<string, TrackedProcess>();
@@ -80,7 +87,9 @@ export class OsProcessController implements ProcessController {
             );
           }
           try {
-            if (process.platform !== "win32") {
+            if (process.platform === "win32") {
+              await waitForTrackedWindowsJobExit(tracked);
+            } else {
               await waitForTrackedPosixGroupExit(tracked);
             }
           } catch (error) {
@@ -153,10 +162,10 @@ export class OsProcessController implements ProcessController {
     try {
       const key = trackKey(handle);
       const tracked = this.#tracked.get(key);
-      if (process.platform === "win32") {
-        return inspectWindows(handle);
-      }
-      const status = await inspectPosix(handle, tracked);
+      const status =
+        process.platform === "win32"
+          ? await inspectWindows(handle, tracked)
+          : await inspectPosix(handle, tracked);
       if (!status.alive && this.#tracked.get(key) === tracked) {
         clearCleanupTimer(tracked);
         this.#tracked.delete(key);
@@ -173,7 +182,7 @@ export class OsProcessController implements ProcessController {
   ): Promise<TrackedProcess> {
     const tracked =
       process.platform === "win32"
-        ? await spawnWindows(req)
+        ? await spawnWindows({ ...req, capture })
         : await spawnPosix({ ...req, capture });
     const key = trackKey(tracked.handle);
     this.#tracked.set(key, tracked);
@@ -186,7 +195,11 @@ export class OsProcessController implements ProcessController {
       clearCleanupTimer(tracked);
       return;
     }
-    if (tracked.platform === "posix" && trackedPosixGroupAlive(tracked)) {
+    const groupAlive =
+      tracked.platform === "posix"
+        ? trackedPosixGroupAlive(tracked)
+        : tracked.usedJob && trackedWindowsJobAlive(tracked);
+    if (groupAlive) {
       if (tracked.cleanupTimer) {
         return;
       }
@@ -318,14 +331,14 @@ function toError(value: unknown): Error {
 }
 
 export function assertCapturedProcessSupported(platform: NodeJS.Platform): void {
-  if (platform !== "win32") {
+  if (!(UNSUPPORTED_CAPTURED_PROCESS_PLATFORMS as readonly string[]).includes(platform)) {
     return;
   }
   throw new ProcessControllerError(
     "unsupported_capability",
     "spawn",
-    "captured processes are unsupported on win32 until Job Object stream capture is available",
-    { capability: "process.capture", platform: "win32" },
+    `captured processes are unsupported on ${platform}`,
+    { capability: "process.capture", platform },
   );
 }
 

@@ -25,6 +25,13 @@ export type TrackedProcess = {
     /** The owned group was observed empty (or gone) before ownership was released. */
     terminalVerified?: true;
   };
+  win32Job?: {
+    owned: boolean;
+    jobFile: string;
+    exitFile: string;
+    /** The owned job was observed empty (or closed with KILL_ON_JOB_CLOSE) before ownership was released. */
+    terminalVerified?: true;
+  };
   dir?: string;
 };
 

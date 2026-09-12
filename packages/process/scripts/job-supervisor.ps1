@@ -4,6 +4,9 @@ param(
   [string]$RequestFile = "",
   [string]$StatusFile = "",
   [string]$CloseFlag = "",
+  [string]$ExitFile = "",
+  [string]$JobFile = "",
+  [switch]$Capture = $false,
   [int]$ProcessId = 0
 )
 
@@ -14,6 +17,13 @@ function Write-Status([string]$json) {
   $tmp = "$StatusFile.tmp"
   [System.IO.File]::WriteAllText($tmp, $json)
   Move-Item -LiteralPath $tmp -Destination $StatusFile -Force
+}
+
+function Write-JsonFile([string]$file, [string]$json) {
+  if (-not $file) { return }
+  $tmp = "$file.tmp"
+  [System.IO.File]::WriteAllText($tmp, $json)
+  Move-Item -LiteralPath $tmp -Destination $file -Force
 }
 
 if ($Action -eq "identity") {
@@ -31,6 +41,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 public class WorkforceJobNative {
     [StructLayout(LayoutKind.Sequential)]
@@ -125,6 +136,7 @@ public class WorkforceJobNative {
         public string Name;
     }
 
+    public const int JobObjectBasicAccountingInformation = 1;
     public const int JobObjectExtendedLimitInformation = 9;
     public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
     public const uint CREATE_SUSPENDED = 0x00000004;
@@ -134,6 +146,32 @@ public class WorkforceJobNative {
     public const uint STILL_ACTIVE = 259;
     public const uint WAIT_OBJECT_0 = 0;
     public const uint TH32CS_SNAPPROCESS = 0x00000002;
+    public const uint HANDLE_FLAG_INHERIT = 0x00000001;
+    public const int STARTF_USESHOWWINDOW = 1;
+    public const int STARTF_USESTDHANDLES = 0x00000100;
+    public const int STD_INPUT_HANDLE = -10;
+    public const int STD_OUTPUT_HANDLE = -11;
+    public const int STD_ERROR_HANDLE = -12;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SECURITY_ATTRIBUTES {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bInheritHandle;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
+        public Int64 TotalUserTime;
+        public Int64 TotalKernelTime;
+        public Int64 ThisPeriodTotalUserTime;
+        public Int64 ThisPeriodTotalKernelTime;
+        public UInt32 TotalPageFaultCount;
+        public UInt32 TotalProcesses;
+        public UInt32 ActiveProcesses;
+        public UInt32 TotalTerminatedProcesses;
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
@@ -159,6 +197,28 @@ public class WorkforceJobNative {
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool QueryInformationJobObject(
+        IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength, out uint lpReturnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CreatePipe(
+        out IntPtr hReadPipe, out IntPtr hWritePipe, ref SECURITY_ATTRIBUTES lpPipeAttributes, uint nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool ReadFile(
+        IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool WriteFile(
+        IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetProcessTimes(
@@ -202,10 +262,28 @@ public class WorkforceJobNative {
     }
 
     public static LaunchResult LaunchSuspended(string applicationName, string commandLine, string cwd, IntPtr env, bool breakaway) {
+        return LaunchProcess(applicationName, commandLine, cwd, env, breakaway, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, false);
+    }
+
+    public static LaunchResult LaunchCaptured(
+        string applicationName, string commandLine, string cwd, IntPtr env, bool breakaway,
+        IntPtr hStdInput, IntPtr hStdOutput, IntPtr hStdError) {
+        return LaunchProcess(applicationName, commandLine, cwd, env, breakaway, hStdInput, hStdOutput, hStdError, true);
+    }
+
+    public static LaunchResult LaunchProcess(
+        string applicationName, string commandLine, string cwd, IntPtr env, bool breakaway,
+        IntPtr hStdInput, IntPtr hStdOutput, IntPtr hStdError, bool inheritHandles) {
         var si = new STARTUPINFO();
         si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
-        si.dwFlags = 1;
+        si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = 0;
+        if (inheritHandles) {
+            si.dwFlags |= STARTF_USESTDHANDLES;
+            si.hStdInput = hStdInput;
+            si.hStdOutput = hStdOutput;
+            si.hStdError = hStdError;
+        }
         var pi = new PROCESS_INFORMATION();
         uint flags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
         if (breakaway) {
@@ -213,7 +291,7 @@ public class WorkforceJobNative {
         }
         var sb = new StringBuilder(commandLine);
         bool ok = CreateProcessW(
-            applicationName, sb, IntPtr.Zero, IntPtr.Zero, false, flags, env, cwd, ref si, out pi);
+            applicationName, sb, IntPtr.Zero, IntPtr.Zero, inheritHandles, flags, env, cwd, ref si, out pi);
         var result = new LaunchResult();
         result.Ok = ok;
         result.Error = ok ? 0 : Marshal.GetLastWin32Error();
@@ -221,6 +299,98 @@ public class WorkforceJobNative {
         result.ProcessHandle = pi.hProcess;
         result.ThreadHandle = pi.hThread;
         return result;
+    }
+
+    public static bool CreateStdPipes(
+        out IntPtr stdinRead, out IntPtr stdinWrite,
+        out IntPtr stdoutRead, out IntPtr stdoutWrite,
+        out IntPtr stderrRead, out IntPtr stderrWrite,
+        out int error) {
+        stdinRead = stdinWrite = stdoutRead = stdoutWrite = stderrRead = stderrWrite = IntPtr.Zero;
+        var sa = new SECURITY_ATTRIBUTES();
+        sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));
+        sa.bInheritHandle = true;
+        if (!CreatePipe(out stdinRead, out stdinWrite, ref sa, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        if (!SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        if (!CreatePipe(out stdoutRead, out stdoutWrite, ref sa, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        if (!SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        if (!CreatePipe(out stderrRead, out stderrWrite, ref sa, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        if (!SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0)) {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        error = 0;
+        return true;
+    }
+
+    public static bool QueryActiveProcesses(IntPtr job, out uint active, out int error) {
+        active = 0;
+        var info = new JOBOBJECT_BASIC_ACCOUNTING_INFORMATION();
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
+        IntPtr ptr = Marshal.AllocHGlobal(length);
+        try {
+            uint returned;
+            bool ok = QueryInformationJobObject(job, JobObjectBasicAccountingInformation, ptr, (uint)length, out returned);
+            error = ok ? 0 : Marshal.GetLastWin32Error();
+            if (!ok) {
+                return false;
+            }
+            info = (JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)Marshal.PtrToStructure(ptr, typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
+            active = info.ActiveProcesses;
+            return true;
+        } finally {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    public static Thread StartCopy(IntPtr src, IntPtr dst, bool closeDstOnEof) {
+        var thread = new Thread(() => CopyPipe(src, dst, closeDstOnEof));
+        thread.IsBackground = true;
+        thread.Start();
+        return thread;
+    }
+
+    public static void CopyPipe(IntPtr src, IntPtr dst, bool closeDstOnEof) {
+        var buffer = new byte[8192];
+        try {
+            while (true) {
+                uint read;
+                if (!ReadFile(src, buffer, (uint)buffer.Length, out read, IntPtr.Zero) || read == 0) {
+                    break;
+                }
+                int offset = 0;
+                uint remaining = read;
+                while (remaining > 0) {
+                    var chunk = new byte[remaining];
+                    Buffer.BlockCopy(buffer, offset, chunk, 0, (int)remaining);
+                    uint written;
+                    if (!WriteFile(dst, chunk, remaining, out written, IntPtr.Zero) || written == 0) {
+                        return;
+                    }
+                    offset += (int)written;
+                    remaining -= written;
+                }
+            }
+        } finally {
+            if (closeDstOnEof && dst != IntPtr.Zero) {
+                CloseHandle(dst);
+            }
+        }
     }
 
     public static ProcRow[] Snapshot() {
@@ -308,11 +478,25 @@ if ($Action -eq "snapshot") {
 if (-not $RequestFile -or -not $StatusFile -or -not $CloseFlag) {
   throw "spawn requires RequestFile, StatusFile, and CloseFlag"
 }
+if ($Capture -and (-not $ExitFile -or -not $JobFile)) {
+  throw "captured spawn requires ExitFile and JobFile"
+}
 
+$ProgressPreference = "SilentlyContinue"
 $job = [IntPtr]::Zero
 $hProcess = [IntPtr]::Zero
 $hThread = [IntPtr]::Zero
 $envPtr = [IntPtr]::Zero
+$stdinRead = [IntPtr]::Zero
+$stdinWrite = [IntPtr]::Zero
+$stdoutRead = [IntPtr]::Zero
+$stdoutWrite = [IntPtr]::Zero
+$stderrRead = [IntPtr]::Zero
+$stderrWrite = [IntPtr]::Zero
+$stdinCopy = $null
+$stdoutCopy = $null
+$stderrCopy = $null
+$stdinWriteOwnedByCopy = $false
 
 try {
   $raw = [System.IO.File]::ReadAllText($RequestFile)
@@ -356,9 +540,26 @@ try {
     exit 1
   }
 
-  $launch = [WorkforceJobNative]::LaunchSuspended($app, $commandLine, $cwd, $envPtr, $true)
-  if (-not $launch.Ok) {
-    $launch = [WorkforceJobNative]::LaunchSuspended($app, $commandLine, $cwd, $envPtr, $false)
+  if ($Capture) {
+    $pipeErr = 0
+    $pipesOk = [WorkforceJobNative]::CreateStdPipes(
+      [ref]$stdinRead, [ref]$stdinWrite,
+      [ref]$stdoutRead, [ref]$stdoutWrite,
+      [ref]$stderrRead, [ref]$stderrWrite,
+      [ref]$pipeErr)
+    if (-not $pipesOk) {
+      Write-Status ((@{ ok = $false; stage = "CreateStdPipes"; win32 = $pipeErr }) | ConvertTo-Json -Compress)
+      exit 1
+    }
+    $launch = [WorkforceJobNative]::LaunchCaptured($app, $commandLine, $cwd, $envPtr, $true, $stdinRead, $stdoutWrite, $stderrWrite)
+    if (-not $launch.Ok) {
+      $launch = [WorkforceJobNative]::LaunchCaptured($app, $commandLine, $cwd, $envPtr, $false, $stdinRead, $stdoutWrite, $stderrWrite)
+    }
+  } else {
+    $launch = [WorkforceJobNative]::LaunchSuspended($app, $commandLine, $cwd, $envPtr, $true)
+    if (-not $launch.Ok) {
+      $launch = [WorkforceJobNative]::LaunchSuspended($app, $commandLine, $cwd, $envPtr, $false)
+    }
   }
   if (-not $launch.Ok) {
     Write-Status ((@{ ok = $false; stage = "CreateProcessW"; win32 = $launch.Error }) | ConvertTo-Json -Compress)
@@ -367,6 +568,22 @@ try {
 
   $hProcess = $launch.ProcessHandle
   $hThread = $launch.ThreadHandle
+
+  if ($Capture) {
+    [void][WorkforceJobNative]::CloseHandle($stdinRead)
+    $stdinRead = [IntPtr]::Zero
+    [void][WorkforceJobNative]::CloseHandle($stdoutWrite)
+    $stdoutWrite = [IntPtr]::Zero
+    [void][WorkforceJobNative]::CloseHandle($stderrWrite)
+    $stderrWrite = [IntPtr]::Zero
+    $hStdIn = [WorkforceJobNative]::GetStdHandle(-10)
+    $hStdOut = [WorkforceJobNative]::GetStdHandle(-11)
+    $hStdErr = [WorkforceJobNative]::GetStdHandle(-12)
+    $stdinCopy = [WorkforceJobNative]::StartCopy($hStdIn, $stdinWrite, $true)
+    $stdinWriteOwnedByCopy = $true
+    $stdoutCopy = [WorkforceJobNative]::StartCopy($stdoutRead, $hStdOut, $false)
+    $stderrCopy = [WorkforceJobNative]::StartCopy($stderrRead, $hStdErr, $false)
+  }
 
   $assigned = [WorkforceJobNative]::AssignProcessToJobObject($job, $hProcess)
   if (-not $assigned) {
@@ -406,20 +623,84 @@ try {
 
   Write-Status ((@{ ok = $true; pid = [int]$launch.Pid; startIdentity = $identity }) | ConvertTo-Json -Compress)
 
-  $stdinStream = [Console]::OpenStandardInput()
-  $buf = New-Object byte[] 1
-  $readOp = $stdinStream.BeginRead($buf, 0, 1, $null, $null)
+  if ($Capture) {
+    Write-JsonFile $JobFile ((@{ activeProcesses = 1; jobClosed = $false }) | ConvertTo-Json -Compress)
+    $jobClosed = $false
+    $rootExited = $false
+    while ($true) {
+      if ((-not $jobClosed) -and (Test-Path -LiteralPath $CloseFlag)) {
+        [void][WorkforceJobNative]::CloseHandle($job)
+        $job = [IntPtr]::Zero
+        $jobClosed = $true
+        Write-JsonFile $JobFile ((@{ activeProcesses = 0; jobClosed = $true }) | ConvertTo-Json -Compress)
+      }
+      $waited = [WorkforceJobNative]::WaitForSingleObject($hProcess, 50)
+      if ($waited -eq 0) {
+        $rootExited = $true
+      }
+      if ($jobClosed) {
+        if (-not $rootExited) {
+          [void][WorkforceJobNative]::WaitForSingleObject($hProcess, 60000)
+          $rootExited = $true
+        }
+        break
+      }
+      $active = [uint32]0
+      $qerr = 0
+      $qok = [WorkforceJobNative]::QueryActiveProcesses($job, [ref]$active, [ref]$qerr)
+      if (-not $qok) {
+        Write-JsonFile $ExitFile ((@{ ok = $false; stage = "QueryInformationJobObject"; win32 = $qerr }) | ConvertTo-Json -Compress)
+        exit 1
+      }
+      Write-JsonFile $JobFile ((@{ activeProcesses = [int64]$active; jobClosed = $false }) | ConvertTo-Json -Compress)
+      if ($rootExited -and $active -eq 0) {
+        break
+      }
+    }
 
-  while ($true) {
-    if (Test-Path -LiteralPath $CloseFlag) { break }
-    if ($readOp.IsCompleted) { break }
-    $waited = [WorkforceJobNative]::WaitForSingleObject($hProcess, 50)
-    if ($waited -eq 0) { break }
+    $exitCode = [uint32]0
+    $gotExit = [WorkforceJobNative]::GetExitCodeProcess($hProcess, [ref]$exitCode)
+    if ((-not $gotExit) -or ($exitCode -eq [WorkforceJobNative]::STILL_ACTIVE)) {
+      Write-JsonFile $ExitFile ((@{
+        ok = $false
+        stage = "GetExitCodeProcess"
+        stillActive = ($exitCode -eq [WorkforceJobNative]::STILL_ACTIVE)
+      }) | ConvertTo-Json -Compress)
+      exit 1
+    }
+    if ($stdoutCopy) { [void]$stdoutCopy.Join() }
+    if ($stderrCopy) { [void]$stderrCopy.Join() }
+    if ($stdinCopy) { [void]$stdinCopy.Join(1000) }
+    if (-not $jobClosed) {
+      Write-JsonFile $JobFile ((@{ activeProcesses = 0; jobClosed = $false }) | ConvertTo-Json -Compress)
+    }
+    Write-JsonFile $ExitFile ((@{
+      ok = $true
+      exitCode = [int64]$exitCode
+      activeProcesses = 0
+      jobClosed = [bool]$jobClosed
+    }) | ConvertTo-Json -Compress)
+  } else {
+    $stdinStream = [Console]::OpenStandardInput()
+    $buf = New-Object byte[] 1
+    $readOp = $stdinStream.BeginRead($buf, 0, 1, $null, $null)
+
+    while ($true) {
+      if (Test-Path -LiteralPath $CloseFlag) { break }
+      if ($readOp.IsCompleted) { break }
+      $waited = [WorkforceJobNative]::WaitForSingleObject($hProcess, 50)
+      if ($waited -eq 0) { break }
+    }
   }
 } catch {
   try {
     Write-Status ((@{ ok = $false; stage = "trap"; error = $_.ToString() }) | ConvertTo-Json -Compress)
   } catch {}
+  if ($Capture -and $ExitFile) {
+    try {
+      Write-JsonFile $ExitFile ((@{ ok = $false; stage = "trap"; error = $_.ToString() }) | ConvertTo-Json -Compress)
+    } catch {}
+  }
   throw
 } finally {
   if ($hThread -ne [IntPtr]::Zero) {
@@ -433,6 +714,15 @@ try {
   if ($job -ne [IntPtr]::Zero) {
     [void][WorkforceJobNative]::CloseHandle($job)
     $job = [IntPtr]::Zero
+  }
+  if ((-not $stdinWriteOwnedByCopy) -and ($stdinWrite -ne [IntPtr]::Zero)) {
+    [void][WorkforceJobNative]::CloseHandle($stdinWrite)
+    $stdinWrite = [IntPtr]::Zero
+  }
+  foreach ($handle in @($stdinRead, $stdoutRead, $stdoutWrite, $stderrRead, $stderrWrite)) {
+    if ($handle -ne [IntPtr]::Zero) {
+      [void][WorkforceJobNative]::CloseHandle($handle)
+    }
   }
   if ($envPtr -ne [IntPtr]::Zero) {
     [Runtime.InteropServices.Marshal]::FreeHGlobal($envPtr)
