@@ -3,7 +3,11 @@ import {
   type RuntimeHostPort,
   type StartRunHostRequest,
 } from "@workforce/application";
-import { parseStartRunRequest } from "@workforce/protocol";
+import {
+  parseAuthoringProposal,
+  parseStartRunRequest,
+  type AuthoringProposalDto,
+} from "@workforce/protocol";
 import { MockRuntimeAdapter } from "@workforce/runtime-mock";
 import { LocalNodeHost, type RuntimeHostStore } from "@workforce/runtime-sdk";
 import type { RuntimeHandle } from "@workforce/runtime-spi";
@@ -18,9 +22,18 @@ export interface RunTerminalEvent {
   status: RunTerminalStatus;
 }
 
+/** A proposal is delivered only after LocalNodeHost has persisted its sanitized event. */
+export interface RunAuthoringProposalEvent {
+  handleId: string;
+  hostRunId: string;
+  sourceCursor: string;
+  proposal: AuthoringProposalDto;
+}
+
 export interface ComposedMockHostOptions {
   store: RuntimeHostStore;
   onTerminal: (event: RunTerminalEvent) => Promise<void>;
+  onAuthoringProposal?: (event: RunAuthoringProposalEvent) => Promise<void>;
   completeAfterMs?: number;
   nodeId?: string;
 }
@@ -30,6 +43,8 @@ export class ComposedMockHost implements RuntimeHostPort {
   readonly host: LocalNodeHost;
   private readonly store: RuntimeHostStore;
   private readonly onTerminal: (event: RunTerminalEvent) => Promise<void>;
+  private readonly onAuthoringProposal:
+    ((event: RunAuthoringProposalEvent) => Promise<void>) | undefined;
   private readonly watching = new Set<string>();
   private readonly handles = new Map<string, RuntimeHandle>();
   private disposed = false;
@@ -45,6 +60,7 @@ export class ComposedMockHost implements RuntimeHostPort {
     });
     this.store = options.store;
     this.onTerminal = options.onTerminal;
+    this.onAuthoringProposal = options.onAuthoringProposal;
   }
 
   async start(request: StartRunHostRequest): Promise<{ handleId: string; runId: string }> {
@@ -140,6 +156,19 @@ export class ComposedMockHost implements RuntimeHostPort {
       for await (const event of this.host.stream(handle)) {
         if (this.disposed) {
           return;
+        }
+        if (event.type === "runtime.authoring.proposal" && this.onAuthoringProposal) {
+          try {
+            await this.onAuthoringProposal({
+              handleId: handle.handleId,
+              hostRunId: handle.runId,
+              sourceCursor: event.sourceCursor ?? "host:unknown",
+              proposal: parseAuthoringProposal(event.data["proposal"]),
+            });
+          } catch {
+            // The Host has retained the event; reconciliation must not synthesize a Proposal.
+          }
+          continue;
         }
         const status = terminalStatus(event.type);
         if (!status) {

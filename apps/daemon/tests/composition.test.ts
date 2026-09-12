@@ -555,6 +555,63 @@ describe("composed M3 mock loop", () => {
     });
   });
 
+  it("consumes a Host-bound structured authoring proposal without persisting intent", async () => {
+    const harness = await startInjected();
+    const created = await injectJson(harness, "/api/v1/projects", {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "create-authoring-proposal"),
+      body: JSON.stringify({
+        name: "Authoring proposal",
+        objective: "receive a structured proposal",
+        operationId: "op_create_authoring_proposal",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const project = created.body as { id: string; stateRevision: number };
+    const planned = await injectJson(harness, `/api/v1/projects/${project.id}:start-planning`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "plan-authoring-proposal", project.stateRevision),
+      body: JSON.stringify({ operationId: "op_plan_authoring_proposal" }),
+    });
+    expect(planned.status).toBe(200);
+    const planning = planned.body as { stateRevision: number; planArtifactVersionId: string };
+    const confirmed = await injectJson(harness, `/api/v1/projects/${project.id}:confirm-plan`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "confirm-authoring-proposal", planning.stateRevision),
+      body: JSON.stringify({
+        planArtifactVersionId: planning.planArtifactVersionId,
+        operationId: "op_confirm_authoring_proposal",
+      }),
+    });
+    expect(confirmed.status).toBe(200);
+    const started = await harness.services.app.startAuthoring({
+      operationId: "op_start_authoring_proposal",
+      idempotencyKey: "start-authoring-proposal",
+      projectId: project.id,
+      intent: "sensitive intent must remain transient",
+    });
+
+    const changeSet = await poll(async () =>
+      [...harness.services.app.world.authoringChangeSets.values()].find(
+        (item) => item.sourceRunId === started.runId,
+      ),
+    );
+    expect(changeSet).toMatchObject({
+      projectId: project.id,
+      sourceRunId: started.runId,
+      status: "proposed",
+      steps: [
+        expect.objectContaining({
+          targetType: "workflow",
+          patchRef: "arv_mock_authoring_patch",
+        }),
+      ],
+    });
+    expect(JSON.stringify(harness.services.app.world.events.events)).not.toContain(
+      "sensitive intent must remain transient",
+    );
+  });
+
   it("preserves a pending cancellation through restart without dispatching another run", async () => {
     const first = await startInjected(undefined, 60_000);
     const { services, stateDir } = first;

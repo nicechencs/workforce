@@ -11,10 +11,18 @@ import type {
   ProjectRecord,
   RunRecord,
   TaskRecord,
+  WorkflowGraph,
   WorkflowInstanceRecord,
 } from "@workforce/application";
 import { isConstraintError, type RuntimeHandleRecord, WorkforceSqlite } from "@workforce/database";
-import type { CommandReceipt, ReceiptScope, WorkforceEvent } from "@workforce/protocol";
+import type {
+  AuthoringChangeSetDto,
+  CommandReceipt,
+  ReceiptScope,
+  TeamDraftDto,
+  WorkforceEvent,
+  WorkflowDraftDto,
+} from "@workforce/protocol";
 import type { RuntimeHostStore } from "@workforce/runtime-sdk";
 import type {
   HostRuntimeEvent,
@@ -57,6 +65,8 @@ export interface PersistedWorld {
   approvals: ApprovalRecord[];
   artifacts: ArtifactRecord[];
   workflows: WorkflowInstanceRecord[];
+  /** Canonical published graphs; optional so pre-D02 sidecars remain readable. */
+  workflowVersions?: WorkflowGraph[];
   nodes: NodeInstanceRecord[];
   budgets: BudgetRecord[];
   usageKeys: string[];
@@ -69,6 +79,10 @@ export interface PersistedWorld {
   operations: CommandReceipt[];
   artifactContents: ArtifactContentRecord[];
   executionSnapshots: ProjectExecutionSnapshotRecord[];
+  /** Optional for pre-T20-B sidecars; SQLite becomes authority once populated. */
+  workflowDrafts?: WorkflowDraftDto[];
+  teamDrafts?: TeamDraftDto[];
+  authoringChangeSets?: AuthoringChangeSetDto[];
   workspaces: WorkspaceDto[];
 }
 
@@ -286,6 +300,7 @@ export function dumpWorld(input: {
     approvals: [...input.world.approvals.values()].map((record) => clone(record)),
     artifacts: [...input.world.artifacts.values()].map((record) => clone(record)),
     workflows: [...input.world.workflows.values()].map((record) => clone(record)),
+    workflowVersions: [...input.world.workflowVersions.values()].map((record) => clone(record)),
     nodes: [...input.world.nodes.values()].map((record) => clone(record)),
     budgets: [...input.world.budgets.values()].map((record) => clone(record)),
     usageKeys: [...input.world.usageKeys],
@@ -304,6 +319,11 @@ export function dumpWorld(input: {
     operations: input.operations.map((receipt) => clone(receipt)),
     artifactContents: input.artifactContents.map((record) => clone(sidecarArtifact(record))),
     executionSnapshots: [...input.world.executionSnapshots.values()].map((record) => clone(record)),
+    workflowDrafts: [...input.world.workflowDrafts.values()].map((record) => clone(record)),
+    teamDrafts: [...input.world.teamDrafts.values()].map((record) => clone(record)),
+    authoringChangeSets: [...input.world.authoringChangeSets.values()].map((record) =>
+      clone(record),
+    ),
     workspaces: input.workspaces.map((record) => clone(record)),
   };
 }
@@ -327,9 +347,13 @@ export async function hydrateWorld(
   replaceMap(world.approvals, snapshot.approvals, (record) => record.id);
   replaceMap(world.artifacts, snapshot.artifacts, (record) => record.artifactVersionId);
   replaceMap(world.workflows, snapshot.workflows, (record) => record.id);
+  replaceMap(world.workflowVersions, snapshot.workflowVersions ?? [], (record) => record.id);
   replaceMap(world.nodes, snapshot.nodes, (record) => record.id);
   replaceMap(world.budgets, snapshot.budgets, (record) => record.id);
   replaceMap(world.executionSnapshots, snapshot.executionSnapshots ?? [], (record) => record.id);
+  replaceMap(world.workflowDrafts, snapshot.workflowDrafts ?? [], (record) => record.id);
+  replaceMap(world.teamDrafts, snapshot.teamDrafts ?? [], (record) => record.id);
+  replaceMap(world.authoringChangeSets, snapshot.authoringChangeSets ?? [], (record) => record.id);
 
   world.usageKeys.clear();
   for (const key of snapshot.usageKeys) {
@@ -404,7 +428,17 @@ export function loadSnapshot(stateDir: string): CompositionSnapshot | undefined 
   if (!world) {
     return undefined;
   }
-  return { world: { ...world, executionSnapshots: world.executionSnapshots ?? [] }, host };
+  return {
+    world: {
+      ...world,
+      executionSnapshots: world.executionSnapshots ?? [],
+      workflowVersions: world.workflowVersions ?? [],
+      workflowDrafts: world.workflowDrafts ?? [],
+      teamDrafts: world.teamDrafts ?? [],
+      authoringChangeSets: world.authoringChangeSets ?? [],
+    },
+    host,
+  };
 }
 
 function emptyWorld(): PersistedWorld {
@@ -418,6 +452,7 @@ function emptyWorld(): PersistedWorld {
     approvals: [],
     artifacts: [],
     workflows: [],
+    workflowVersions: [],
     nodes: [],
     budgets: [],
     usageKeys: [],
@@ -428,6 +463,9 @@ function emptyWorld(): PersistedWorld {
     operations: [],
     artifactContents: [],
     executionSnapshots: [],
+    workflowDrafts: [],
+    teamDrafts: [],
+    authoringChangeSets: [],
     workspaces: [],
   };
 }
@@ -485,8 +523,24 @@ export async function loadComposition(
     approvals: entities.approvals,
     artifacts: entities.artifacts,
     workflows: entities.workflows,
+    workflowVersions:
+      entities.workflowVersions && entities.workflowVersions.length > 0
+        ? entities.workflowVersions
+        : (base.workflowVersions ?? []),
     nodes: entities.nodes,
     executionSnapshots: entities.executionSnapshots,
+    workflowDrafts:
+      entities.workflowDrafts && entities.workflowDrafts.length > 0
+        ? entities.workflowDrafts
+        : (base.workflowDrafts ?? []),
+    teamDrafts:
+      entities.teamDrafts && entities.teamDrafts.length > 0
+        ? entities.teamDrafts
+        : (base.teamDrafts ?? []),
+    authoringChangeSets:
+      entities.authoringChangeSets && entities.authoringChangeSets.length > 0
+        ? entities.authoringChangeSets
+        : (base.authoringChangeSets ?? []),
     events: sqliteEvents.length > 0 ? (sqliteEvents as WorkforceEvent[]) : base.events,
     budgets: sqliteHasBudgets ? entities.budgets : base.budgets,
     reservations: sqliteHasBudgets
@@ -526,6 +580,7 @@ export async function dualWriteSqlite(
     sqlite.worldSnapshot.save(
       tx,
       {
+        workflowVersions: snapshot.workflowVersions ?? [],
         projects: snapshot.projects,
         tasks: snapshot.tasks,
         workflows: snapshot.workflows,
@@ -542,6 +597,9 @@ export async function dualWriteSqlite(
         })),
         usageKeys: snapshot.usageKeys,
         executionSnapshots: snapshot.executionSnapshots ?? [],
+        workflowDrafts: snapshot.workflowDrafts ?? [],
+        teamDrafts: snapshot.teamDrafts ?? [],
+        authoringChangeSets: snapshot.authoringChangeSets ?? [],
       },
       snapshot.clock,
     );

@@ -100,7 +100,11 @@ import {
 } from "./catalog.js";
 import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
 import { createEnginePort } from "./engine.js";
-import { ComposedMockHost, type RunTerminalEvent } from "./mock-host.js";
+import {
+  ComposedMockHost,
+  type RunAuthoringProposalEvent,
+  type RunTerminalEvent,
+} from "./mock-host.js";
 import {
   dualWriteSqlite,
   dumpWorld,
@@ -219,6 +223,12 @@ export class ComposedAppServices implements AppServices {
           return;
         }
         await composed.services.handleTerminal(event);
+      },
+      onAuthoringProposal: async (event) => {
+        if (!composed.services) {
+          return;
+        }
+        await composed.services.handleAuthoringProposal(event);
       },
     });
     const app = createWorkforceApp({
@@ -1226,6 +1236,36 @@ export class ComposedAppServices implements AppServices {
       } else if (event.status === "cancelled") {
         settleRunCancel(this.app.ctx, run.id);
       }
+      this.persist();
+    });
+  }
+
+  /**
+   * The Runtime proposal is scoped to a Host handle, not trusted for its project/run IDs.
+   * We derive those IDs from the durable application Run bound to the handle before
+   * passing the already-sanitized structured fields to the Application use case.
+   */
+  private async handleAuthoringProposal(event: RunAuthoringProposalEvent): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    await this.exclusive(async () => {
+      const run = [...this.app.world.runs.values()].find(
+        (item) => item.handleId === event.handleId,
+      );
+      if (!run) {
+        return;
+      }
+      const operationId = `runtime.authoring.proposal:${event.handleId}:${event.sourceCursor}`;
+      await this.app.recordAuthoringProposal({
+        operationId,
+        idempotencyKey: operationId,
+        proposal: {
+          ...event.proposal,
+          projectId: run.projectId,
+          sourceRunId: run.id,
+        },
+      });
       this.persist();
     });
   }
