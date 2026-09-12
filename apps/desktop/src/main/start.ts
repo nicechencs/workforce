@@ -1,6 +1,10 @@
 import { protocolVersion } from "@workforce/protocol";
 import { assertNoSecretFields, type ConnectionSnapshot } from "@workforce/ui";
 
+import {
+  recordSessionFailureDiagnostic,
+  sessionFailureMessage,
+} from "./daemon-supervisor/diagnostics.js";
 import { ensureDaemon } from "./daemon-supervisor/supervisor.js";
 import type { SupervisorDeps } from "./daemon-supervisor/types.js";
 import {
@@ -124,13 +128,12 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
       session = await establishSessionFromStateDir(port, stateDir, fetchImpl);
     } catch (error) {
       session = null;
-      const message =
-        error instanceof Error ? error.message : "Failed to establish a daemon session";
       const errorSnapshot: ConnectionSnapshot = {
         status: "error",
-        message,
+        message: sessionFailureMessage(error, stateDir),
         recoverable: true,
       };
+      recordSessionFailureDiagnostic(stateDir, error, new Date(), result.state);
       setSnapshot(errorSnapshot);
       return errorSnapshot;
     }

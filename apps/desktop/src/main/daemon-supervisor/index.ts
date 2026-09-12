@@ -21,8 +21,22 @@ export {
   readDaemonState,
   writeDaemonState,
 } from "./state.js";
+export {
+  classifyLaunchFailure,
+  daemonDiagnosticSnapshotPath,
+  daemonDiagnosticsDir,
+  daemonStderrLogPath,
+  redactDiagnosticText,
+  recordLaunchDiagnostic,
+  sessionFailureMessage,
+} from "./diagnostics.js";
+export type {
+  DaemonDiagnosticCode,
+  DesktopDaemonDiagnostic,
+} from "./diagnostics.js";
 export { ensureDaemon, reconnectDaemon } from "./supervisor.js";
 export type {
+  DaemonExitObservation,
   DaemonHealth,
   DaemonLaunchSpec,
   DaemonStateFile,

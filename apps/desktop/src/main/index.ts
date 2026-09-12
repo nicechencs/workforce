@@ -8,11 +8,16 @@ export {
 } from "./app-lifecycle/index.js";
 export {
   canSpawnReplacement,
+  classifyLaunchFailure,
   DAEMON_MUTEX_NAME,
+  daemonDiagnosticSnapshotPath,
+  daemonDiagnosticsDir,
+  daemonStderrLogPath,
   detachedDaemonSpawnOptions,
   ensureDaemon,
   handshakeProtocolVersion,
   inspectExistingDaemon,
+  redactDiagnosticText,
   spawnDetachedDaemon,
 } from "./daemon-supervisor/index.js";
 export {
@@ -38,6 +43,7 @@ export { startDesktopApp } from "./start.js";
 export type { DesktopAppPorts, DesktopWindowPort, StartDesktopOptions } from "./start.js";
 export {
   createSupervisorDeps,
+  desktopDiagnosticPaths,
   resolveDaemonEntry,
   resolveDesktopStateDir,
 } from "./supervisor-runtime.js";

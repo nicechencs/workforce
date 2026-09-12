@@ -3,10 +3,18 @@ import path from "node:path";
 
 import { protocolVersion } from "@workforce/protocol";
 
-import { asSpawnedDaemon, spawnDetachedDaemon } from "./daemon-supervisor/spawn.js";
+import {
+  daemonDiagnosticSnapshotPath,
+  daemonDiagnosticsDir,
+  daemonStderrLogPath,
+  readCappedText,
+  recordLaunchDiagnostic as persistLaunchDiagnostic,
+  type DesktopDaemonDiagnostic,
+} from "./daemon-supervisor/diagnostics.js";
 import { fetchDaemonHealth } from "./daemon-supervisor/health.js";
 import { readOsStartIdentity } from "./daemon-supervisor/identity.js";
-import { probeNamedPipe } from "./daemon-supervisor/lock.js";
+import { probeExclusiveListenHeld, probeNamedPipe } from "./daemon-supervisor/lock.js";
+import { asSpawnedDaemon, spawnDetachedDaemon } from "./daemon-supervisor/spawn.js";
 import {
   daemonLockSocketPath,
   defaultDaemonStateDir,
@@ -43,6 +51,18 @@ export function resolveDesktopStateDir(
   return defaultDaemonStateDir();
 }
 
+export function desktopDiagnosticPaths(stateDir: string): {
+  directory: string;
+  stderr: string;
+  latest: string;
+} {
+  return {
+    directory: daemonDiagnosticsDir(stateDir),
+    stderr: daemonStderrLogPath(stateDir),
+    latest: daemonDiagnosticSnapshotPath(stateDir),
+  };
+}
+
 export function createSupervisorDeps(input: {
   stateDir: string;
   appRoot: string;
@@ -52,6 +72,7 @@ export function createSupervisorDeps(input: {
   const env = input.env ?? process.env;
   const entry = resolveDaemonEntry(input.appRoot, env);
   const expectedProtocolVersion = input.expectedProtocolVersion ?? protocolVersion;
+  const stderrPath = daemonStderrLogPath(input.stateDir);
   return {
     expectedProtocolVersion,
     stateDir: input.stateDir,
@@ -73,8 +94,14 @@ export function createSupervisorDeps(input: {
       entry.endsWith(".ts") || entry.endsWith(".mts") || entry.endsWith(".cts")
         ? sourceDaemonNodeRequirement(process.versions.node)
         : null,
-    spawn: (spec) => asSpawnedDaemon(spawnDetachedDaemon(spec)),
+    spawn: (spec) => asSpawnedDaemon(spawnDetachedDaemon(spec, { stderrPath })),
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     probeLockHeld: () => probeNamedPipe(daemonLockSocketPath(input.stateDir)),
+    probePortBusy: (port) =>
+      probeExclusiveListenHeld({ kind: "tcp", host: "127.0.0.1", port }),
+    readLaunchStderr: () => readCappedText(stderrPath),
+    recordLaunchDiagnostic: (diagnostic) => {
+      persistLaunchDiagnostic(input.stateDir, diagnostic as DesktopDaemonDiagnostic);
+    },
   };
 }
