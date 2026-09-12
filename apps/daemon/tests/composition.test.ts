@@ -607,6 +607,64 @@ describe("composed M3 mock loop", () => {
         }),
       ],
     });
+    const sourceRun = harness.services.app.world.runs.get(started.runId);
+    expect(sourceRun?.handleId).toBeTruthy();
+    expect(
+      harness.services.sqlite.inbox.seen(
+        "daemon.authoring-proposal",
+        `${sourceRun!.handleId}:host:4`,
+      ),
+    ).toBe(true);
+    await (
+      harness.services as unknown as {
+        handleAuthoringProposal(event: {
+          handleId: string;
+          hostRunId: string;
+          sourceCursor: string;
+          proposal: {
+            id: string;
+            projectId: string;
+            sourceRunId: string;
+            summary: string;
+            targets: Array<{
+              targetType: "workflow";
+              targetId: string;
+              expectedRevision: number;
+              patchRef: string;
+            }>;
+          };
+        }): Promise<boolean>;
+      }
+    ).handleAuthoringProposal({
+      handleId: sourceRun!.handleId!,
+      hostRunId: "host-run-duplicate-proposal-id",
+      sourceCursor: "host:999",
+      proposal: {
+        id: changeSet.proposalRef,
+        projectId: project.id,
+        sourceRunId: started.runId,
+        summary: "Structured authoring proposal",
+        targets: [
+          {
+            targetType: "workflow",
+            targetId: "wf_mock_authoring_second_cursor",
+            expectedRevision: 1,
+            patchRef: "arv_mock_authoring_patch_second_cursor",
+          },
+        ],
+      },
+    });
+    expect(
+      [...harness.services.app.world.authoringChangeSets.values()].filter(
+        (item) => item.sourceRunId === started.runId,
+      ),
+    ).toHaveLength(2);
+    expect(
+      harness.services.sqlite.inbox.seen(
+        "daemon.authoring-proposal",
+        `${sourceRun!.handleId}:host:999`,
+      ),
+    ).toBe(true);
     expect(JSON.stringify(harness.services.app.world.events.events)).not.toContain(
       "sensitive intent must remain transient",
     );

@@ -132,6 +132,7 @@ import {
 } from "../modules/authoring-catalog.js";
 
 const encoder = new TextEncoder();
+const AUTHORING_PROPOSAL_CONSUMER = "daemon.authoring-proposal";
 type SqliteWriter = typeof dualWriteSqlite;
 const sqliteWriterOption = Symbol("sqliteWriter");
 
@@ -226,9 +227,9 @@ export class ComposedAppServices implements AppServices {
       },
       onAuthoringProposal: async (event) => {
         if (!composed.services) {
-          return;
+          return false;
         }
-        await composed.services.handleAuthoringProposal(event);
+        return composed.services.handleAuthoringProposal(event);
       },
     });
     const app = createWorkforceApp({
@@ -1245,28 +1246,55 @@ export class ComposedAppServices implements AppServices {
    * We derive those IDs from the durable application Run bound to the handle before
    * passing the already-sanitized structured fields to the Application use case.
    */
-  private async handleAuthoringProposal(event: RunAuthoringProposalEvent): Promise<void> {
+  private async handleAuthoringProposal(event: RunAuthoringProposalEvent): Promise<boolean> {
     if (this.closed) {
-      return;
+      return false;
     }
-    await this.exclusive(async () => {
+    const messageId = `${event.handleId}:${event.sourceCursor}`;
+    if (this.sqlite.inbox.seen(AUTHORING_PROPOSAL_CONSUMER, messageId)) {
+      return true;
+    }
+    return this.exclusive(async () => {
+      if (this.sqlite.inbox.seen(AUTHORING_PROPOSAL_CONSUMER, messageId)) {
+        return true;
+      }
       const run = [...this.app.world.runs.values()].find(
         (item) => item.handleId === event.handleId,
       );
       if (!run) {
-        return;
+        return false;
       }
       const operationId = `runtime.authoring.proposal:${event.handleId}:${event.sourceCursor}`;
-      await this.app.recordAuthoringProposal({
-        operationId,
-        idempotencyKey: operationId,
-        proposal: {
-          ...event.proposal,
-          projectId: run.projectId,
-          sourceRunId: run.id,
-        },
+      const priorProjection = this.app.world.events.events.find(
+        (record) =>
+          record.type === "workflow.authoring.proposed" && record.correlationId === operationId,
+      );
+      const alreadyProjected =
+        priorProjection?.subject.type === "authoring_change_set" &&
+        this.app.world.authoringChangeSets.has(priorProjection.subject.id);
+      if (!alreadyProjected) {
+        await this.app.recordAuthoringProposal({
+          operationId,
+          idempotencyKey: operationId,
+          proposal: {
+            ...event.proposal,
+            projectId: run.projectId,
+            sourceRunId: run.id,
+          },
+        });
+      }
+      // The consumer ACK is written only after the ChangeSet/Event projection commits.
+      // A crash before this point replays safely; a crash after it has a durable projection.
+      await this.persistDurably();
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        this.sqlite.inbox.record(
+          tx,
+          AUTHORING_PROPOSAL_CONSUMER,
+          messageId,
+          this.app.world.nowIso(),
+        );
       });
-      this.persist();
+      return true;
     });
   }
 

@@ -33,7 +33,8 @@ export interface RunAuthoringProposalEvent {
 export interface ComposedMockHostOptions {
   store: RuntimeHostStore;
   onTerminal: (event: RunTerminalEvent) => Promise<void>;
-  onAuthoringProposal?: (event: RunAuthoringProposalEvent) => Promise<void>;
+  /** false means the durable Application Run is not bound yet; Host must replay later. */
+  onAuthoringProposal?: (event: RunAuthoringProposalEvent) => Promise<boolean>;
   completeAfterMs?: number;
   nodeId?: string;
 }
@@ -44,8 +45,9 @@ export class ComposedMockHost implements RuntimeHostPort {
   private readonly store: RuntimeHostStore;
   private readonly onTerminal: (event: RunTerminalEvent) => Promise<void>;
   private readonly onAuthoringProposal:
-    ((event: RunAuthoringProposalEvent) => Promise<void>) | undefined;
+    ((event: RunAuthoringProposalEvent) => Promise<boolean>) | undefined;
   private readonly watching = new Set<string>();
+  private readonly replayScheduled = new Set<string>();
   private readonly handles = new Map<string, RuntimeHandle>();
   private disposed = false;
 
@@ -118,10 +120,14 @@ export class ComposedMockHost implements RuntimeHostPort {
   }
 
   async recover(): Promise<void> {
-    for (const stored of await this.store.listHandles()) {
+    const storedHandles = await this.store.listHandles();
+    for (const stored of storedHandles) {
       this.handles.set(stored.handle.handleId, stored.handle);
     }
     await this.host.recover();
+    for (const stored of storedHandles) {
+      this.watch(stored.handle);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -159,14 +165,31 @@ export class ComposedMockHost implements RuntimeHostPort {
         }
         if (event.type === "runtime.authoring.proposal" && this.onAuthoringProposal) {
           try {
-            await this.onAuthoringProposal({
+            const storedEvent = (await this.store.listEvents(handle.handleId)).find(
+              (item) => item.sourceCursor === event.sourceCursor,
+            );
+            const storedHandle = await this.store.getHandle(handle.handleId);
+            if (
+              !storedEvent ||
+              storedEvent.auditOnly ||
+              storedHandle?.request.snapshotRef !== "authoring:proposal"
+            ) {
+              continue;
+            }
+            const consumed = await this.onAuthoringProposal({
               handleId: handle.handleId,
               hostRunId: handle.runId,
               sourceCursor: event.sourceCursor ?? "host:unknown",
               proposal: parseAuthoringProposal(event.data["proposal"]),
             });
+            if (!consumed) {
+              this.scheduleReplay(handle);
+              return;
+            }
           } catch {
-            // The Host has retained the event; reconciliation must not synthesize a Proposal.
+            // The Host retained the sanitized event; retry it rather than inventing a Proposal.
+            this.scheduleReplay(handle);
+            return;
           }
           continue;
         }
@@ -183,7 +206,20 @@ export class ComposedMockHost implements RuntimeHostPort {
       }
     } catch {
       // Restart reconcile inspects handles; never invent a second start.
+    } finally {
+      this.watching.delete(handle.handleId);
     }
+  }
+
+  private scheduleReplay(handle: RuntimeHandle): void {
+    if (this.disposed || this.replayScheduled.has(handle.handleId)) {
+      return;
+    }
+    this.replayScheduled.add(handle.handleId);
+    setTimeout(() => {
+      this.replayScheduled.delete(handle.handleId);
+      this.watch(handle);
+    }, 10);
   }
 }
 
