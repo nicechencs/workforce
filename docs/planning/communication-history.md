@@ -37,6 +37,14 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）进度文档与部分移植切片对齐
+
+- **决定：** `task/port-main-m7-t18-t21` 是部分移植，不是 T18–T21 全量。合入 `dev` 前进度真源必须与代码一致：有画布壳 / catalog 写 API / 作者壳 / `:start` 回显，就不得再写「都还没有代码」。同时钉死诚实边界：不宣称 M7/M8 完成、headed PASS、Agent send、`direct` 调度；`StartRunRequest` 不加 `orchestrationMode`；T19 页面仍拒保存；T21 控件未入项目页；画布与设计系统两套皮肤并存。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 重写 T18–T21 与 §5.4–5.7；[02-development-task-backlog.md](02-development-task-backlog.md) 去掉「T18–T21 代码均未实现」并给各卡加当前切片；[api-capability-matrix.md](api-capability-matrix.md) 写明现切片走 `.../versions` 而非表内 `/drafts` path。
+- **状态：** 文档对齐 **implemented**。M7/M8 产品完成仍 **planned**。headed 真窗仍未跑。
+
+---
+
 ## 2026-09-12（Asia/Taipei）把 main 上的 M7 写 API 迁回 dev，保留 C5–C9 契约
 
 - **决定：** 日常集成分支是 `dev`。`main` 上 15c058f 起的 M7 catalog 写 API、D17 authoring DTO、T18–T21 功能要迁回 `dev`，但不得覆盖 `dev` 已裁决的 C5–C9：`StartRunRequest` 不承载 `orchestrationMode`；migration `005_execution_axes_expand` 不改号；catalog 四张表使用 `006_catalog_definitions`。UI 重贴 `dev` 设计系统另切片。

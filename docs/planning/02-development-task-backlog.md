@@ -3,13 +3,13 @@ title: Workforce V0.1 Development Task Backlog
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # V0.1 开发任务清单：供后续 agent 领取
 
-日期：2026-09-11  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。**T18–T21 代码均未实现**。  
+日期：2026-09-12  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 作者壳 / `:start` 回显已有切片，完成度只认 03。  
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -358,6 +358,8 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** 使用 typed client；未实现写接口时按钮不可假成功。写接口就绪后：新建 → 保存草稿 → 发布 → 列表可见新版本；未发布图不能被 `:start` / Runtime 执行。有限 DAG 非法边/循环被拒绝。headed 未跑不得宣称画布可用。
 
+**当前切片（见 03）：** catalog 写 API + 画布壳已接线；headed 未跑；皮肤未重贴设计系统。本卡所有权不变，剩余工作仍按上表领取。
+
 **集成依赖：** T02 图 DTO、T09 发布校验、T10 写 API、T11 路由（已有 workflows slot 则可复用）。可先用 fake client 画 UI，合并时接真实 endpoint。
 
 ### T19 — 自定义 Team 编排
@@ -374,6 +376,8 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 - 空态与 412 保留输入；无写接口时不渲染可点击成功态。
 
 **验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
+
+**当前切片（见 03）：** Team 写 API 已通；Renderer 仍 `rejectCustomTeamSave()`。领取本卡只换写面，不要再复制一套 HTTP。
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
@@ -393,6 +397,8 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 - 对话回复不得写成 Task/Run 完成。
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
+
+**当前切片（见 03）：** 会话/草稿 DTO + 作者壳已有；**无** send / 编排 Agent。不得把壳写成对话编排完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
@@ -428,6 +434,8 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 - T02 未冻结字段前不发明 `/runs/{id}:direct`，不渲染假 mode；M3 缺省解析为 `workflow_bound`。
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
+
+**当前切片（见 03）：** `:start` 可选 `orchestrationMode` + DTO 回显 + capability 拒 `direct`。控件未入项目页。**禁止**写入 `StartRunRequest`。无 direct 调度。
 
 **集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 

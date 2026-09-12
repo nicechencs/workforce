@@ -3,38 +3,40 @@ title: Workforce V0.1 Implementation Status
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # V0.1 实现进度（以代码与测试为准）
 
-日期：2026-09-11  
+日期：2026-09-12  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-11 — 桌面 IPC allowlist 补上只读 `GET /workflows` / `{id}` / `{id}/versions/{versionId}`（Daemon composition 早已返回已发布模板；headed 真窗口读失败是 Electron 代理拒路，不是 Fake-only）。不宣称 headed Electron / live Codex 已在 CI 复验。同日规划冻结 D17 对话生成工作流、D18 双执行模式与[产品沟通历史](communication-history.md)；**均未实现**，不得把本文件写成 chat authoring / 直接执行已完成。#16 `dependsOn` + `LocalArtifactStore`、#17 画布/自定义 Team 决策文档、#18 IPC 目录放行的已验证结论仍有效。
+修订：2026-09-12 — `task/port-main-m7-t18-t21` 把 main 上的 M7 catalog 写 API / 画布壳 / 作者壳 / `:start` orchestrationMode 回显迁到 `dev` 契约上。本文件按切片改写 T18–T21，禁止再写「都还没有代码」。**不**宣称 M7/M8 完成、headed Electron PASS、编排 Agent / chat send、`direct` 调度，或未发布图可被 Runtime 执行。`StartRunRequest` 仍不承载 `orchestrationMode`（C5–C9）。catalog 表是 `006_catalog_definitions`，不改 `005`。
+
+修订：2026-09-11 — 桌面 IPC allowlist 补上只读 `GET /workflows` / `{id}` / `{id}/versions/{versionId}`（Daemon composition 早已返回已发布模板；headed 真窗口读失败是 Electron 代理拒路，不是 Fake-only）。不宣称 headed Electron / live Codex 已在 CI 复验。同日规划冻结 D17 对话生成工作流、D18 双执行模式与[产品沟通历史](communication-history.md)；当时这些 UI/API **尚未实现**。#16 `dependsOn` + `LocalArtifactStore`、#17 画布/自定义 Team 决策文档、#18 IPC 目录放行的已验证结论仍有效。
 
 修订：2026-09-11（本轮，基线 `fdce1b2` + 未提交修复）— 发现并修复 daemon 持久化回归：`dumpWorld` / `dualWriteSqlite` / `loadComposition` / `hydrateWorld` 都没有传递 `world.executionSnapshots`，于是 `SqliteWorldSnapshot.save()` 在 `for..of` 处解引用 `undefined` 抛错，`persist()` 又把该失败静默 `catch` 掉。修复后该字段全链贯通、旧 `world.json` 缺字段回退 `[]`，且投影失败不再静默：实体 repository 已把 2067/1555 映射为 `PersistenceError("conflict")` 并向上抛，真正的静默点是 `persist()` 的 fire-and-forget `catch`（本轮已改为 `console.error`）；`dualWriteSqlite` 外层 `isConstraintError` 分支现已改为上报而不是丢弃，但它只覆盖未被 repository 包装的原始约束错误（实体的 insert / upsert 路径不会走到；`node_instances.update`、`runs.updateStatus` 与 `receipts.putPending` 仍可到达），见 §3「持久化回归修复切片」。本轮另外修掉 `SqliteWorldSnapshot.save()` 的插入顺序缺陷：`project_execution_snapshots` 对 projects / workflow_versions / team_versions 有外键，原实现先插 snapshot 再插父表，任何非空 snapshot 都会 `FOREIGN KEY constraint failed` 并回滚整个事务；现改为在 project / workflow 循环之后插入，并加了回归测试（`packages/database/src/world-snapshot.test.ts`）。证据见 §3「持久化回归修复切片」：基线 `fdce1b2` 上 `apps/daemon/tests/composition.test.ts` 的真实断言失败 `expected 500 to be 202` 已消失，该文件只剩 Windows `fs.rmSync` 拆除期的 EPERM。本轮**不**宣称 D02 confirm/start 拆分、D15 `workflow_versions` 不可变、D17 对话生成或 D18 双执行模式已实现；T04 仍只完成 005 expand。
 
-修订：2026-09-11（UI 设计系统对齐）— renderer 视觉层改为对齐 AgentHub 的设计基线：`packages/ui/src/tokens.ts` 重建为语义 token（四档字号、8/12/16 圆角、浅/深主题、5 主题色、8 浅色画布、Agent 色槽）并生成 CSS 变量，新增 `packages/ui/src/theme.ts` 与 `apps/desktop/src/renderer/app/theme.tsx` 承载主题偏好的读取、持久化与首屏落地；`renderer/styles.css` 与 `renderer/components/` 提供语义 class 层与基础组件，T12/T13 页面改为只组合这些组件，`features/projects/ui.ts` 与 `_t13_client.ts` 中的 inline 样式层已删除。未新增运行依赖（无 Tailwind / Radix / CVA / lucide-react），根 lockfile 与构建链未变。权威文档见 [UI 设计系统](../product-ui/04-design-system.md)。本修订**不**改变任何页面能力、状态机或公共 DTO，也不声称 M7/M8 已实现。
+修订：2026-09-11（UI 设计系统对齐）— renderer 视觉层改为对齐 AgentHub 的设计基线：`packages/ui/src/tokens.ts` 重建为语义 token（四档字号、8/12/16 圆角、浅/深主题、5 主题色、8 浅色画布、Agent 色槽）并生成 CSS 变量，新增 `packages/ui/src/theme.ts` 与 `apps/desktop/src/renderer/app/theme.tsx` 承载主题偏好的读取、持久化与首屏落地；`renderer/styles.css` 与 `renderer/components/` 提供语义 class 层与基础组件，T12/T13 页面改为只组合这些组件，当时删除了 `features/projects/ui.ts` 与 `_t13_client.ts` 中的 inline 样式层。2026-09-12 部分移植为接 T18/T20 画布与作者壳，**重新引入** `features/projects/ui.ts`（仅这些页使用 inline style）。设计系统页与画布/作者面两套皮肤并存，不是「ui.ts 已删除」。未新增运行依赖（无 Tailwind / Radix / CVA / lucide-react）。权威文档见 [UI 设计系统](../product-ui/04-design-system.md)。本修订**不**声称 M7/M8 已实现。
 
 修订：2026-09-11（桌面 Daemon 源码启动修复）— 修掉「用脚本启动程序后提示无法安全连接 / `Daemon state file was not replaced after spawn.`」的根因：`apps/desktop/src/main/smoke-env.ts` 给 TypeScript Daemon 入口加的是 `--experimental-strip-types`，而 strip-only 模式不支持参数属性，Daemon 在 import 阶段就崩溃、从不写 `daemon.json`。现改为 `--experimental-transform-types`（Node ≥ 22.7），新增真实启动回归测试 `apps/desktop/tests/daemon-source-launch.test.ts`，并修正 §6 中「Daemon 单独」命令（原命令同时缺 `--import` 与正确的类型 flag，实测无法启动）。未改协议、状态机、公共 DTO 或 `supervisor` 的 `stdio: "ignore"`。
 
 ## 1. 本轮目标与结果
 
-目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布、自定义 Team 与对话生成是该循环上 **M7 已规划、未实现** 的编排面；按 Agent 双执行模式是 **M8 已规划、未实现**。都不是外挂功能，也**都还没有代码**。
+目标：跑通 **M3 Mock 完整流程**（规划文档 §5），并行补齐 Daemon 真实用例、Electron/React 壳与 P0 页面。产品主对象是 **Project（项目制）**：M3 用预设 Team + 只读工作流目录走完一个项目闭环。画布、自定义 Team 与对话生成是该循环上的 **M7** 编排面；按 Agent 双执行模式是 **M8**。都不是外挂功能。
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
-M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：M7 需完成 TeamVersion/WorkflowDraft/画布与 D17 authoring 闭环，M8 需完成 `workflow_bound`/`direct` 双模式及 capability/Policy/Run 证据。当前两者均未实现。D17/D18 的前置不是「全无代码」：T02 已冻结执行三轴公共契约（`packages/protocol/src/execution.ts` 的 `orchestrationModes` 与 `runExecutionSnapshotSchema`，带测试），T04 已落地 `005_execution_axes_expand` 的 **expand**（5 张新表 + 6 个可空列），S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract 与 snapshot-only contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、新 Run 双写三轴、`authoring_change_sets` 写入方，以及 T16 current-M3 upgrade fixture。
+M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完成**。2026-09-12 起仓库里**已有**部分 M7/M8 切片代码（见 T18–T21），不得再写「都还没有代码」。M7 完成仍需 Team 写 UI、T20 send/Agent、T20-B change-set；M8 完成仍需 `direct` 调度与 Run 轴双写。D17/D18 前置：T02 已冻结执行三轴（`packages/protocol/src/execution.ts`），T04 已落地 `005_execution_axes_expand` 与 **`006_catalog_definitions`**（catalog_workflows / catalog_teams 四表），S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、新 Run 双写三轴到 `runs.orchestration_mode` 列、`authoring_change_sets` 写入方、T16 current-M3 upgrade fixture。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
 | ID | 状态 | 证据 |
 |---|---|---|
-| T00 | 完成（项目制 + M7/M8 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15/D16 画布与自定义 Team；D17 对话生成（M7 planned）；D18 双执行模式（M8 planned）。**未实现**这些 UI/API |
+| T00 | 完成（项目制 + M7/M8 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15–D18 已登记。M7/M8 **未完成**；切片进度见 T18–T21，不以本行代替 03 各卡 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
 | T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；macOS/Linux 未测 |
-| T04 | M3 持久化完成；D17/D18 migration 只完成 expand | migration **001–005** + entity repos；重启以 SQLite 实体表为准（含预算/reservation 与 `policy_grants`），world.json 仅 sidecar。`005_execution_axes_expand` 为纯加法/可空：新表 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots`，加可空列 `projects.execution_snapshot_id`、`workflow_instances.execution_snapshot_id`、`runs.orchestration_mode` / `transport` / `execution_snapshot_id` / `placement_snapshot_json`；**无** `NOT NULL`、**无** workflow_bound/direct 互斥 CHECK、**无** backfill。snapshot backfill、switch/contract、三轴双写与 authoring ChangeSet 写入方仍待实现 |
+| T04 | M3 持久化完成；D17/D18 仍只 expand；catalog 为 006 | migration **001–006** + entity repos；重启以 SQLite 实体表为准。`005_execution_axes_expand` 未改号（drafts / change_sets / snapshots + 可空轴列）。`006_catalog_definitions` 为 catalog_workflows / catalog_workflow_versions / catalog_teams / catalog_team_versions。**无** 005 互斥 CHECK、**无** backfill。三轴双写到 `runs.orchestration_mode` 列与 authoring ChangeSet 写入方仍待实现 |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | 完成库并接入 Mock 主路径 | Developer A/B 独立 git worktree；`integratePatches` 合入固定 baseline |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
@@ -42,17 +44,17 @@ M7/M8 是 V0.1 release gate 的 planned 扩展，不是当前 M3 通过条件：
 | T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；`taskDto()` 填公开 `dependsOn`；Mock 产物经 `LocalArtifactStore` `register`；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳** | Electron + Vite + React + IPC + feature glob；2026-09-11 补齐设计系统：`packages/ui/src/tokens.ts` / `theme.ts`（四档字号、8/12/16 圆角、浅深主题、5 主题色、8 浅色画布、Agent 色槽）、`renderer/styles.css` 语义 class 层、`renderer/components/` 基础组件与图标、`renderer/app/theme.tsx` 主题提供者与首屏 `bootstrapTheme()`。对齐 AgentHub 视觉基线，实现栈刻意不同（无 Tailwind/Radix/lucide 依赖），差异见 [UI 设计系统](../product-ui/04-design-system.md) §7 |
-| T12 | **本轮完成页面** | 项目 / Task / 只读团队 / 只读工作流目录（`GET /workflows` 已发布模板·版本·结构化步骤；空目录诚实空态）。Tasks 展示已发布 `dependsOn` 边。画布与自定义 Team 属 **M7 已规划、未实现**，不是「后置放弃」。项目详情按修订后的 IA §4.3（六标签 + 页头命令 + Settings 绑定） |
+| T12 | **本轮完成页面** | 项目 / Task / 只读团队预设 / 工作流目录。Tasks 展示已发布 `dependsOn` 边。画布入口与写 API 见 T18；自定义 Team **写 API** 见 T19，**页面仍只读桩**。项目详情按 IA §4.3 |
 | T13 | **本轮完成页面** | 工作台 / Run / 产物 / 审批 / 节点 / 设置；运行记录已进入一级导航（仍标 P1） |
 | T14 | 完成 fixture | `mockPlanFixture` 已用于 confirm-plan |
 | T15 | **Process 已接线，live exec 未宣称** | detect/validate + 注入 Process 的 start/stream/cancel（fake Process + fixture 可执行文件）；本机 **没有** live `codex exec` |
-| T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client（`TaskDto`/`TaskDependency` 来自 `@workforce/protocol`，含公开 `dependsOn`）；桌面 happy-dom 页 driver（非真窗口）。current-M3 schema upgrade fixture、迁移恢复和 ChangeSet staged recovery 尚未运行；执行三轴是已冻结的协议 schema，DB 侧只到 005 expand，无 wire/HTTP/UI 面 |
+| T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client；桌面 happy-dom（非真窗口）。current-M3 upgrade fixture 未跑。执行三轴协议已冻结；DB 有 005 expand + 006 catalog。`:start` 可回显 `orchestrationMode`（不进 `StartRunRequest`）。无 headed PASS |
 | T17 | 未开始 | 打包/签名 |
-| T18 | 已规划，未实现 | 可视化工作流画布（D15）。只读目录已接通 `GET /workflows`（含 #18 Desktop IPC allowlist）；画布与写接口未实现 |
-| T19 | 已规划，未实现 | 自定义 Team 编排（D16）。当前 teams 页仍是只读预设 |
-| T20 | 已规划，未实现 | 对话式工作流编排 UI（D17）。无对话入口、无生成用例、无会话协议 |
-| T20-B | 已规划，未实现 | D17 Application authoring use case（T14 owner）。无 proposal/change-set、CAS/staged apply 或会话保留/脱敏实现 |
-| T21 | 已规划，未实现 | 双执行模式（D18）。协议层已存在 `orchestrationModes`（`workflow_bound` / `direct`）与 `runExecutionSnapshotSchema`（`packages/protocol/src/execution.ts`，见 §3）；但 `RunDto` / `ProjectDto` / `TeamDto`、HTTP 与 UI 都**没有** mode 选择面，也没有任何写入 `runs.orchestration_mode` 的路径。M3 缺省模式仍按协议兼容为 `workflow_bound` |
+| T18 | 切片已有代码，未完成、未 headed | 画布页 + `write-client` + catalog 写路由（`POST/PATCH /workflows`、`/versions`、`:publish`）+ IPC 写 allowlist。列表「新建画布」。happy-dom / 包测已跑。**未** headed 验收。未发布图仍不可被 Runtime 执行。皮肤用 `features/projects/ui.ts` inline，未重贴设计系统 |
+| T19 | 写 API 已通；Renderer 仍拒保存 | Daemon/client：`POST/PATCH /teams`、versions、`:publish`、`GET .../versions/{id}`。页面仍 `rejectCustomTeamSave()`，只读预设。不是「完全没有代码」，也不是 Team 写 UI 完成 |
+| T20 | 壳 + DTO 已有；send/Agent 未接线 | `workflow-authoring` hash 入口；`packages/protocol` authoring session/draft DTO；V0.1 传输 Desktop-local，**无** chat HTTP path。禁止假 Agent 成功。T20-B 未做 |
+| T20-B | 已规划，未实现 | 无 Application authoring use case、proposal/change-set、CAS/staged apply |
+| T21 | HTTP 回显切片已有；M8 未完成 | `GET /capabilities.orchestration`；`:start` 可选 `orchestrationMode`；ProjectDto/RunDto **可选回显**；`direct` 无 probe → 422。控件文件在 `features/orchestration/`，**未挂项目详情**。**不**写入 `StartRunRequest`。**不**双写 `runs.orchestration_mode` 列。无 direct 调度 |
 
 ## 3. 实际验证
 
@@ -127,7 +129,7 @@ pnpm lint                                     # 退出 0
    **Electron helper（默认关闭）：** `pnpm --filter @workforce/desktop smoke` 才拉起 Vite + Electron，用 `executeJavaScript` 点同一组 test id。`WORKFORCE_DESKTOP_SMOKE` 未设时**不会**跳过原生目录对话框。该命令不能代替真人在真窗口里点（对话框、SSE / Run 控制台、视觉）。默认 `pnpm test` **跳过** Electron 用例。
 
 5. **工作流只读目录**（`apps/daemon/tests/workflows-catalog.test.ts` + typed client + Desktop IPC allowlist + `apps/desktop/tests/workflows-catalog-proxy.test.ts`）  
-   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET（写接口仍拒）。`proxyConnectedApiRequest`（Electron 主进程同一条代理）对 composed daemon 的 `GET /api/v1/workflows` 必须列出该已发布模板；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义；本切片**未**宣称 headed Electron 已复验。
+   生产 `createComposedAppServices` 与 Fake 都实现 `listWorkflows` / `getWorkflow` / `getWorkflowVersion`，并返回已发布 `software-development-team.feature-delivery`（不是空种子）。Daemon 路由已注册。headed 真窗口曾读失败，是因为 Desktop `API_ROUTE_TEMPLATES` 放行了 teams/nodes/runtimes，却漏了这三条只读路径，IPC 代理在到达 loopback 前抛 allowlist 错误；页面因此进「无法读取 GET /workflows」，不是空目录。现已放行三条 GET。2026-09-12 起 IPC 另放行 catalog **写** path（`POST/PATCH /workflows`、`/versions`、`:publish` 及对应 teams）。只读目录仍必须列出已发布 `software-development-team.feature-delivery`；桌面页走 `listWorkflows` 渲染 `workflow-row-*`，空目录用 `workflow-empty`，读失败用 `workflow-error`，不回退夹具。写接口接通 **不等于** 画布 headed 可用，也不表示 Mock/Codex Runtime 可执行未发布定义；本切片**未**宣称 headed Electron 已复验。
 
 6. **Codex**  
    `runtimes/codex`：PATH/配置探测、能力描述（pause / event.resume = unsupported）。  
@@ -139,7 +141,7 @@ pnpm lint                                     # 退出 0
    本机 Linux **没有**授权 live `codex exec`；未宣称真实 Runtime 可执行。Daemon Host 仍默认 Mock。
 
 7. **UI 设计系统（T11 共享层）**
-   `packages/ui/src/tokens.ts` 以 AgentHub 的语义角色重建 token 真源（四档字号 display/title/body/meta、8/12/16 圆角 + 22% 标记、4/8/12/16/24/32 间距、浅/深主题、5 主题色、8 浅色画布、Agent 色槽），由 `tokensAsCssVariables()` 生成 CSS 变量；`packages/ui/src/theme.ts` 提供 `light`/`dark`/`system`、accent、canvas 的读取/写入/落地并拒绝未知取值。`apps/desktop/src/renderer/styles.css` 提供语义 class 层，`renderer/components/` 提供 `Page`/`Card`/`Button`/`Badge`/`Input`/`Tabs`/`List`/`Notice`/`EmptyState` 等基础组件与内联 SVG 图标，`renderer/app/theme.tsx` 在 React 挂载前同步落地主题避免闪色，设置页新增「外观」卡片（主题三档 + 主题色 + 浅色画布，深色下画布控件禁用并说明原因）。T12/T13 页面改为只组合这些组件，不再写 inline style 或第二套色值（`features/projects/ui.ts` 已删除）。**不新增运行依赖**：未引入 Tailwind / Radix / CVA / lucide-react / class-variance-authority，根 lockfile 与构建链未变。**未实现：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 等复合组件，以及焦点陷阱与减动效的自动化测试。详见 [UI 设计系统](../product-ui/04-design-system.md)。
+   `packages/ui/src/tokens.ts` 以 AgentHub 的语义角色重建 token 真源（四档字号 display/title/body/meta、8/12/16 圆角 + 22% 标记、4/8/12/16/24/32 间距、浅/深主题、5 主题色、8 浅色画布、Agent 色槽），由 `tokensAsCssVariables()` 生成 CSS 变量；`packages/ui/src/theme.ts` 提供 `light`/`dark`/`system`、accent、canvas 的读取/写入/落地并拒绝未知取值。`apps/desktop/src/renderer/styles.css` 提供语义 class 层，`renderer/components/` 提供 `Page`/`Card`/`Button`/`Badge`/`Input`/`Tabs`/`List`/`Notice`/`EmptyState` 等基础组件与内联 SVG 图标，`renderer/app/theme.tsx` 在 React 挂载前同步落地主题避免闪色，设置页新增「外观」卡片（主题三档 + 主题色 + 浅色画布，深色下画布控件禁用并说明原因）。T12/T13 页面改为只组合这些组件。2026-09-12 为接 T18/T20 **再次加入** `features/projects/ui.ts`，仅画布 / 作者壳 / orchestration 控件使用 inline style；其它页仍走 `components/ui.tsx`。两套皮肤并存是已知债，不是「ui.ts 已删除」。**不新增运行依赖**。**未实现：** Dialog / DropdownMenu / Tooltip / Toast / Table / Skeleton 等复合组件，以及把画布页重贴到设计系统。详见 [UI 设计系统](../product-ui/04-design-system.md)。
 
 8. **桌面 Daemon 源码启动（T11 启动链）**  
    `start.cmd` / `pnpm --filter @workforce/desktop dev` 此前连不上 Daemon：`apps/daemon/dist/index.js` 不存在时 supervisor 会回退到源码入口，而 `apps/desktop/src/main/smoke-env.ts` 给 `.ts` 入口加的是 `--experimental-strip-types`（只删类型）。Daemon 依赖图用了参数属性（`apps/daemon/src/modules/errors.ts`、`apps/daemon/src/composition/{persist,policy}.ts`、`packages/database/*` 等），strip-only 模式直接抛 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`，Daemon 在 `startDaemon()` 之前就退出，从不写 `daemon.json`；supervisor 等满 8s 后返回 `Daemon state file was not replaced after spawn.`，UI 按 `packages/ui/src/banners.ts` 渲染成「无法安全连接」。现改为 `--experimental-transform-types`（完整类型转换，需 Node ≥ 22.7），并新增真实启动回归测试 `apps/desktop/tests/daemon-source-launch.test.ts`。证据（2026-09-11，Windows，Node v24.19.0，pnpm 9.4.0）：`pnpm exec vitest run apps/desktop/tests/daemon-source-launch.test.ts apps/desktop/tests/smoke-env.test.ts` → 2 files / 7 tests 通过；把 flag 改回 `--experimental-strip-types` 重跑同一测试 → 失败并在断言消息里给出真实 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` 日志（证明该测试确实是回归闸门）；用真实 `createSupervisorDeps`（已编译 `dist/main`）跑守卫级 E2E：`ensureDaemon` 返回 `{"ok":true,"mode":"spawn","snapshot":{"status":"online",...}}`、`GET /health` 200（该脚本的 `process.execPath` 是 node；electron `ELECTRON_RUN_AS_NODE=1` 变体已单独手工验证可写出 `daemon.json`）；`pnpm --filter @workforce/desktop typecheck` 与 `pnpm check:docs`（52 个 Markdown 文件）均退出 0。**未跑真窗口点击**（本机存在一个 22:33 启动、仍在运行且持有 Electron 单实例锁的**修复前**旧实例；需人工关窗后重跑脚本）；`pnpm --filter @workforce/desktop smoke` 在 Windows 上因 `apps/desktop/scripts/smoke.mjs` 直接 spawn `node_modules/.bin/tsc`（缺 `.cmd`）而 ENOENT，属**既有**缺陷，本轮未修。本切片**不**改变协议、状态机或公共 DTO，也**未**改 supervisor spawn 的 `stdio: "ignore"`；Daemon 崩溃时的 stderr 仍不会出现在桌面侧日志里，该可观测性问题仍待跟进。
@@ -163,17 +165,17 @@ Approval(gate=artifact)                     ✅
 Mock 产物权威                                ✅ LocalArtifactStore；可删 world.json，content 仍可读
 ```
 
-壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」；**当前代码**是只读目录（`GET /workflows` 已接通，数据来自已发布 software-dev feature-delivery 模板；Desktop IPC 已放行这三条 GET，见 #18），不是画布，也不是对话生成，也未接通写接口。不得宣称 Mock/Codex Runtime 可执行这些定义。自定义 Team 写面、对话编排、按 Agent 直接执行同样未实现。
+壳导航按更正后的 [IA §2](../product-ui/01-information-architecture.md)：**P0/P1 是切片深度，一级导航全部 `primary`**。IA 工作流用户目的现为「查看、编辑和发布可复用工作流（含对话生成与画布）」。**当前代码**：只读目录仍接通；另有画布壳、catalog 写 API、作者壳、`:start` orchestrationMode 回显（见 T18–T21）。不得宣称 Mock/Codex Runtime 可执行未发布定义，不得宣称 headed PASS、M7/M8 完成、Agent send 或 `direct` 调度。自定义 Team **页面**仍拒保存。
 
 ## 5. 剩余工作
 
 1. **Headed Electron 真窗口点击验收**：happy-dom / opt-in `executeJavaScript` helper **不能**代替人工。用 `pnpm --filter @workforce/desktop dev` 点目录对话框、SSE、Run 控制台、项目详情六标签与视觉。  
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
-4. **M7 可视化画布（T18）未实现**：只读目录已接通 `GET /workflows`（及模板/版本详情；Desktop IPC allowlist 见 #18）；无画布、无写接口。目录接通不等于画布完成，也不等于 Mock/Codex Runtime 可执行这些定义。  
-5. **M7 自定义 Team 编排（T19）未实现**：AI 团队仍只读预设；无创建/发布 TeamVersion。  
-6. **M7 对话生成工作流（T20/T20-B）未实现**：无对话入口，无 Application authoring use case、proposal/change-set、CAS/staged apply 或生成草稿用例。不得把只读目录或 Mock Planner fixture 写成「对话编排已完成」。
-7. **M8 双执行模式（T21）未实现**：Agent 不能选择 direct；现有 Mock 闭环只是跟随已发布执行图。不得预置假 mode；M3 缺省 mode 仍按协议兼容为 `workflow_bound`。
+4. **T18 剩余**：headed 真窗扫画布保存/刷新；把画布页重贴 `components/ui.tsx`；未发布图仍不得被 `:start` / Runtime 执行。  
+5. **T19 剩余**：换掉 `rejectCustomTeamSave()`，接已存在的 Team 写 API。  
+6. **T20/T20-B 剩余**：无 chat send、无编排 Agent、无 Application authoring use case / change-set。作者壳不得假成功。  
+7. **T21 剩余**：把 `features/orchestration` 控件挂进项目详情；`direct` 调度与 `runs.orchestration_mode` 列双写未做；**禁止**把 mode 写入 `StartRunRequest`。  
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；UI 只读说明，未伪造已接入。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成。
