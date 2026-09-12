@@ -13,8 +13,9 @@ import {
 } from "@workforce/protocol";
 
 /**
- * Desktop-local project binding for in-process authoring sessions.
- * This is not a Daemon project resource and invents no chat HTTP path.
+ * Renderer-only notebook/manual-draft key for in-process authoring sessions.
+ * It is not a Daemon project resource and must never be treated as an Agent
+ * send target. Route-bound project ids are handled separately by the feature.
  */
 export const DESKTOP_LOCAL_AUTHORING_PROJECT_ID = "prj_desktop_local";
 

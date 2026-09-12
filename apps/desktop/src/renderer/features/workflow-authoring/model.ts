@@ -30,6 +30,11 @@ export const CHAT_SESSION_GAP =
 export const AGENT_REPLY_GAP =
   "编排 Agent 回复仍 planned。本页不会生成或渲染假装成功的 Agent 气泡，用户消息也不是 Task/Run 完成。";
 
+export const AGENT_SEND_UNAVAILABLE_NOTE =
+  "Agent send 不可用：本地会话只保存用户消息和结构化草稿，不调用编排 Agent。";
+
+export const AUTHORING_PROPOSAL_PREVIEW_NOTE = "本地结构化预览，非 Agent 输出。";
+
 export const AUTHORING_ROUTE_GAP =
   "T11 路由表与 FEATURE_SLOTS 没有预留 workflow-authoring slot。本特征可导入，由工作流页用 ?authoring=1 挂入，不改 catalog.ts。";
 
@@ -41,6 +46,11 @@ export const CANVAS_ROUTE_NOTE =
 
 export const AUTHORING_QUERY = "authoring";
 export const AUTHORING_PATH = "/workflows?authoring=1";
+
+export interface AuthoringProjectBinding {
+  projectId: string;
+  source: "route" | "desktop-local";
+}
 
 export const WORKER_ROLES = ["planner", "developer", "reviewer", "approver"] as const;
 export type AuthoringWorkerRole = (typeof WORKER_ROLES)[number];
@@ -190,6 +200,44 @@ export function isWorkflowAuthoringHash(hash: string): boolean {
     return false;
   }
   return new URLSearchParams(trimmed.slice(queryIndex + 1)).get(AUTHORING_QUERY) === "1";
+}
+
+/**
+ * The route registry intentionally receives the query-less pathname. Read a
+ * real project binding from route params, the preserved path query, or the
+ * browser hash before falling back to the renderer-only local notebook.
+ */
+export function resolveAuthoringProjectBinding(
+  params: Record<string, string> = {},
+  path = "",
+  hash = "",
+): AuthoringProjectBinding {
+  const candidate = [params.projectId, queryProjectId(path), queryProjectId(hash)]
+    .map((value) => value?.trim())
+    .find((value): value is string => Boolean(value));
+  if (!candidate || candidate === DESKTOP_LOCAL_AUTHORING_PROJECT_ID) {
+    return { projectId: DESKTOP_LOCAL_AUTHORING_PROJECT_ID, source: "desktop-local" };
+  }
+  return { projectId: candidate, source: "route" };
+}
+
+/** A session may be used only while it still belongs to the current binding. */
+export function isAuthoringSessionBoundToProject(
+  session: Pick<AuthoringSessionDto, "projectId"> | null | undefined,
+  projectId: string,
+): boolean {
+  const trimmed = projectId.trim();
+  const expected = trimmed.length > 0 ? trimmed : DESKTOP_LOCAL_AUTHORING_PROJECT_ID;
+  return session?.projectId === expected;
+}
+
+function queryProjectId(value: string): string | undefined {
+  const queryIndex = value.indexOf("?");
+  if (queryIndex < 0) {
+    return undefined;
+  }
+  const query = value.slice(queryIndex + 1).split("#", 1)[0] ?? "";
+  return new URLSearchParams(query).get("projectId") ?? undefined;
 }
 
 export function catalogDraftPath(workflowId: string): string {

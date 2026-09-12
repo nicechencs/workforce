@@ -8,6 +8,8 @@ import { WorkflowAuthoringEntry } from "./entry.js";
 import * as authoringModule from "./index.js";
 import {
   AGENT_REPLY_GAP,
+  AGENT_SEND_UNAVAILABLE_NOTE,
+  AUTHORING_PROPOSAL_PREVIEW_NOTE,
   AUTHORING_ROUTE_GAP,
   CHAT_SESSION_GAP,
   CHAT_SESSION_PROTOCOL_FROZEN,
@@ -16,17 +18,19 @@ import {
   canvasEditLink,
   emptyAuthoringModel,
   isWorkflowAuthoringHash,
+  isAuthoringSessionBoundToProject,
   landedDraftProjection,
   landUnpublishedDraft,
   parseStructuredIntent,
   proposalDraftFromForm,
   reduceAuthoring,
   rejectChatSubmit,
+  resolveAuthoringProjectBinding,
   type AuthoringSessionDto,
   type AuthoringWriteClient,
   type LandedDraft,
 } from "./model.js";
-import { WorkflowAuthoringPage } from "./page.js";
+import { ProposalDraftPreview, WorkflowAuthoringPage } from "./page.js";
 import {
   AUTHORING_SESSION_STORAGE_KEY,
   DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
@@ -113,6 +117,45 @@ describe("workflow-authoring protocol honesty", () => {
     expect(isWorkflowAuthoringHash("#/workflows")).toBe(false);
     expect(isWorkflowAuthoringHash("#/workflows/wfd_1?authoring=1")).toBe(false);
     expect(isWorkflowAuthoringHash("#/projects?authoring=1")).toBe(false);
+  });
+
+  it("keeps the default id local while binding a real project from route query/hash", () => {
+    expect(resolveAuthoringProjectBinding({}, "#/workflows?authoring=1")).toEqual({
+      projectId: DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
+      source: "desktop-local",
+    });
+    expect(
+      resolveAuthoringProjectBinding({}, "/workflows?authoring=1&projectId=prj_route"),
+    ).toEqual({
+      projectId: "prj_route",
+      source: "route",
+    });
+    expect(
+      resolveAuthoringProjectBinding(
+        {},
+        "/workflows?authoring=1",
+        "#/workflows?projectId=prj_hash",
+      ),
+    ).toEqual({
+      projectId: "prj_hash",
+      source: "route",
+    });
+    expect(resolveAuthoringProjectBinding({ projectId: "prj_param" })).toEqual({
+      projectId: "prj_param",
+      source: "route",
+    });
+    expect(
+      resolveAuthoringProjectBinding({}, "/workflows?authoring=1&projectId=prj_desktop_local"),
+    ).toEqual({
+      projectId: DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
+      source: "desktop-local",
+    });
+    expect(
+      resolveAuthoringProjectBinding({}, "#/workflows?authoring=1&projectId=prj_desktop_local"),
+    ).toEqual({
+      projectId: DESKTOP_LOCAL_AUTHORING_PROJECT_ID,
+      source: "desktop-local",
+    });
   });
 });
 
@@ -281,6 +324,17 @@ describe("authoring reducer", () => {
 });
 
 describe("in-process authoring session store", () => {
+  it("does not treat an A session as bound after switching to project B", () => {
+    const store = new InProcessAuthoringSessionStore();
+    const sessionA = store.create({ projectId: "prj_a" });
+    const sessionB = store.create({ projectId: "prj_b" });
+    expect(isAuthoringSessionBoundToProject(sessionA, "prj_a")).toBe(true);
+    expect(isAuthoringSessionBoundToProject(sessionA, "prj_b")).toBe(false);
+    expect(isAuthoringSessionBoundToProject(sessionB, "prj_b")).toBe(true);
+    expect(isAuthoringSessionBoundToProject(sessionA, DESKTOP_LOCAL_AUTHORING_PROJECT_ID)).toBe(
+      false,
+    );
+  });
   it("creates, loads, and appends user messages against the frozen DTO", () => {
     const store = new InProcessAuthoringSessionStore({
       now: () => "2026-09-12T00:00:00.000Z",
@@ -481,6 +535,19 @@ describe("landUnpublishedDraft", () => {
 });
 
 describe("authoring UI", () => {
+  it("renders the existing proposal as a local structured preview, not Agent output", () => {
+    const draft = proposalDraftFromForm(filledForm());
+    expect(draft?.kind).toBe("proposal");
+    if (!draft || draft.kind !== "proposal") {
+      return;
+    }
+    const html = renderToStaticMarkup(createElement(ProposalDraftPreview, { draft }));
+    expect(html).toContain("workflow-authoring-proposal-preview");
+    expect(html).toContain(AUTHORING_PROPOSAL_PREVIEW_NOTE);
+    expect(html).toContain("功能交付");
+    expect(html).not.toContain("Agent 已生成");
+  });
+
   it("renders user-append chrome without a fake Agent reply", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowAuthoringPage, {
@@ -495,6 +562,8 @@ describe("authoring UI", () => {
     expect(html).toContain("disabled");
     expect(html).toContain(CHAT_SESSION_GAP);
     expect(html).toContain(AGENT_REPLY_GAP);
+    expect(html).toContain(AGENT_SEND_UNAVAILABLE_NOTE);
+    expect(html).toContain("本地笔记/手工草稿空间");
     expect(html).toContain("还没有用户消息");
     expect(html).not.toContain("Agent 已生成");
     expect(html).not.toContain("会话已接通");

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, type FormEvent, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
@@ -16,12 +16,17 @@ import {
 } from "../projects/ui.js";
 import {
   AGENT_REPLY_GAP,
+  AGENT_SEND_UNAVAILABLE_NOTE,
+  AUTHORING_PROPOSAL_PREVIEW_NOTE,
   canAppendUserMessage,
   emptyAuthoringModel,
+  isAuthoringSessionBoundToProject,
   landedDraftProjection,
   landUnpublishedDraft,
   proposalDraftFromForm,
+  resolveAuthoringProjectBinding,
   reduceAuthoring,
+  type AuthoringDraftDto,
   type AuthoringFormField,
   type AuthoringSessionMessageDto,
   type LandedDraft,
@@ -32,21 +37,47 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   const client = useWorkforceClient();
   const [model, dispatch] = useReducer(reduceAuthoring, undefined, emptyAuthoringModel);
   const store = getDefaultAuthoringSessionStore();
-  const projectId = resolveAuthoringProjectId(props.params.projectId);
+  const projectBinding = resolveAuthoringProjectBinding(
+    props.params,
+    props.path,
+    typeof window === "undefined" ? "" : window.location.hash,
+  );
+  const projectId = resolveAuthoringProjectId(projectBinding.projectId);
+  const bindingProjectIdRef = useRef(projectId);
+  bindingProjectIdRef.current = projectId;
+  const [hydratedProjectId, setHydratedProjectId] = useState<string | null>(null);
+  const sessionReady =
+    hydratedProjectId === projectId &&
+    model.chat.sessionId !== null &&
+    isAuthoringSessionBoundToProject(model.chat, projectId);
 
   useEffect(() => {
+    setHydratedProjectId(null);
     const existing = store
       .list()
       .find((session) => session.projectId === projectId && session.status === "open");
+    const session = existing ?? store.create({ projectId });
     dispatch({
       type: "sessionHydrated",
-      session: existing ?? store.create({ projectId }),
+      session,
     });
+    setHydratedProjectId(projectId);
   }, [projectId, store]);
+
+  function isCurrentSession(sessionId: string | null): boolean {
+    if (!sessionId || bindingProjectIdRef.current !== projectId) {
+      return false;
+    }
+    return isAuthoringSessionBoundToProject(store.load(sessionId), bindingProjectIdRef.current);
+  }
 
   function persistDraftProjection(sessionId: string, form: typeof model.form): void {
     const current = store.load(sessionId);
-    if (!current || current.draft?.kind === "landed") {
+    if (
+      !current ||
+      !isAuthoringSessionBoundToProject(current, bindingProjectIdRef.current) ||
+      current.draft?.kind === "landed"
+    ) {
       return;
     }
     const proposal = proposalDraftFromForm(form);
@@ -57,6 +88,11 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
   }
 
   function onAppendUser(): void {
+    // The hash can change before React commits the hydration effect. Keep the
+    // old session visible but fail closed until the new project is hydrated.
+    if (!sessionReady || !isCurrentSession(model.chat.sessionId)) {
+      return;
+    }
     const intentEl = document.getElementById("wf-authoring-intent");
     const intentText =
       intentEl instanceof HTMLTextAreaElement ? intentEl.value : model.form.intentText;
@@ -72,11 +108,17 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
       return;
     }
     try {
+      if (!isCurrentSession(appended.sessionId)) {
+        return;
+      }
       const session = store.appendUserMessage({
         sessionId: appended.sessionId,
         role: "user",
         content: appended.content,
       });
+      if (!isAuthoringSessionBoundToProject(session, bindingProjectIdRef.current)) {
+        return;
+      }
       dispatch({ type: "sessionUpdated", session, clearIntent: true });
       persistDraftProjection(session.id, { ...model.form, intentText });
     } catch (error) {
@@ -107,10 +149,23 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
     if (submitted.phase !== "submitting") {
       return;
     }
+    const expectedProjectId = projectId;
     try {
       const draft = await landUnpublishedDraft(client, submitted.form);
-      const sessionId = model.chat.sessionId ?? store.create({ projectId }).id;
+      // A route/hash switch may complete while the write request is in flight.
+      // Do not attach the result to the session from the previous project.
+      if (bindingProjectIdRef.current !== expectedProjectId) {
+        return;
+      }
+      const existing = model.chat.sessionId ? store.load(model.chat.sessionId) : undefined;
+      if (existing && !isAuthoringSessionBoundToProject(existing, expectedProjectId)) {
+        return;
+      }
+      const sessionId = existing?.id ?? store.create({ projectId: expectedProjectId }).id;
       const session = store.attachDraft(sessionId, landedDraftProjection(draft));
+      if (!isAuthoringSessionBoundToProject(session, bindingProjectIdRef.current)) {
+        return;
+      }
       dispatch({ type: "sessionUpdated", session });
       dispatch({ type: "landed", draft });
     } catch (error) {
@@ -138,15 +193,20 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
         explanation={model.chat.explanation}
         intentText={model.form.intentText}
         submitting={model.phase === "submitting"}
-        submitEnabled={model.chat.sessionId !== null && model.phase !== "submitting"}
-        sessionId={model.chat.sessionId}
-        projectId={model.chat.projectId}
-        messages={model.chat.messages}
+        submitEnabled={sessionReady && model.phase !== "submitting"}
+        sessionId={sessionReady ? model.chat.sessionId : null}
+        projectId={sessionReady ? model.chat.projectId : projectId}
+        projectSource={projectBinding.source}
+        messages={sessionReady ? model.chat.messages : []}
         onIntentChange={(value) => dispatch({ type: "change", field: "intentText", value })}
         onAppendUser={onAppendUser}
       />
+      {sessionReady && model.chat.draft?.kind === "proposal" ? (
+        <ProposalDraftPreview draft={model.chat.draft} />
+      ) : null}
       <StructuredDraftForm
         model={model}
+        available={sessionReady}
         onChange={(field, value) => dispatch({ type: "change", field, value })}
         onSubmit={onLandDraft}
       />
@@ -158,7 +218,9 @@ export function WorkflowAuthoringPage(props: FeaturePageProps): ReactNode {
           {model.error}
         </div>
       ) : null}
-      {model.draft ? <LandedDraftCard draft={model.draft} navigate={props.navigate} /> : null}
+      {sessionReady && model.draft ? (
+        <LandedDraftCard draft={model.draft} navigate={props.navigate} />
+      ) : null}
     </main>
   );
 }
@@ -170,6 +232,7 @@ function ConversationPanel(props: {
   submitEnabled: boolean;
   sessionId: string | null;
   projectId: string;
+  projectSource: "route" | "desktop-local";
   messages: readonly AuthoringSessionMessageDto[];
   onIntentChange: (value: string) => void;
   onAppendUser: () => void;
@@ -184,8 +247,8 @@ function ConversationPanel(props: {
       <p style={mutedStyle}>{props.explanation}</p>
       <p style={mutedStyle} data-testid="workflow-authoring-session-id">
         {props.sessionId
-          ? `会话 ${props.sessionId} · 项目 ${props.projectId}（Desktop-local，非 Daemon chat）`
-          : `项目 ${props.projectId}（Desktop-local，正在建立本机会话）`}
+          ? `会话 ${props.sessionId} · ${projectBindingLabel(props.projectId, props.projectSource)}`
+          : projectBindingLabel(props.projectId, props.projectSource)}
       </p>
       <MessageList messages={props.messages} />
       <label style={labelStyle} htmlFor="wf-authoring-intent">
@@ -209,7 +272,36 @@ function ConversationPanel(props: {
         追加用户消息
       </button>
       <p style={mutedStyle} data-testid="workflow-authoring-agent-gap">
-        {AGENT_REPLY_GAP}
+        {AGENT_REPLY_GAP} {AGENT_SEND_UNAVAILABLE_NOTE}
+      </p>
+    </section>
+  );
+}
+
+function projectBindingLabel(projectId: string, source: "route" | "desktop-local"): string {
+  return source === "route"
+    ? `已绑定项目 ${projectId}（仅用于本地会话/草稿归属，Agent send 不可用）`
+    : `本地笔记/手工草稿空间 ${projectId}（不代表 Daemon 项目，Agent send 不可用）`;
+}
+
+export function ProposalDraftPreview(props: {
+  draft: Extract<AuthoringDraftDto, { kind: "proposal" }>;
+}): ReactNode {
+  const workflow = props.draft.workflow;
+  const graph = workflow?.graph;
+  const nodeCount = graph?.nodes?.length ?? graph?.steps?.length ?? 0;
+  return (
+    <section style={cardStyle} data-testid="workflow-authoring-proposal-preview">
+      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>
+        本地 proposal 草稿预览
+      </h2>
+      <p style={mutedStyle} data-testid="workflow-authoring-proposal-preview-note">
+        {AUTHORING_PROPOSAL_PREVIEW_NOTE} 当前仍未发布，也不是 Task/Run。
+      </p>
+      <p data-testid="workflow-authoring-proposal-name">工作流：{workflow?.name ?? "未命名"}</p>
+      {workflow?.description ? <p style={mutedStyle}>{workflow.description}</p> : null}
+      <p style={mutedStyle} data-testid="workflow-authoring-proposal-graph">
+        结构化节点：{nodeCount}
       </p>
     </section>
   );
@@ -259,10 +351,11 @@ function messageRoleLabel(role: AuthoringSessionMessageDto["role"]): string {
 
 function StructuredDraftForm(props: {
   model: ReturnType<typeof emptyAuthoringModel>;
+  available: boolean;
   onChange: (field: AuthoringFormField, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }): ReactNode {
-  const disabled = props.model.phase === "submitting";
+  const disabled = props.model.phase === "submitting" || !props.available;
   return (
     <section style={cardStyle} data-testid="workflow-authoring-structured">
       <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>结构化落草稿</h2>

@@ -7,7 +7,9 @@ export { WorkflowAuthoringEntry } from "./entry.js";
 export { WorkflowAuthoringPage } from "./page.js";
 export {
   AGENT_REPLY_GAP,
+  AGENT_SEND_UNAVAILABLE_NOTE,
   AUTHORING_PATH,
+  AUTHORING_PROPOSAL_PREVIEW_NOTE,
   AUTHORING_ROUTE_GAP,
   CHAT_SESSION_GAP,
   CHAT_SESSION_PROTOCOL_FROZEN,
@@ -18,6 +20,8 @@ export {
   reduceAuthoring,
   rejectAgentGeneration,
   rejectChatSubmit,
+  isAuthoringSessionBoundToProject,
+  resolveAuthoringProjectBinding,
 } from "./model.js";
 export {
   AUTHORING_SESSION_STORAGE_KEY,

@@ -31,13 +31,17 @@ export function WorkflowsPage(props: FeaturePageProps) {
   const [workflows, setWorkflows] = useState<WorkflowTemplateView[]>(initial.workflows);
   const [note, setNote] = useState(initial.note);
   const [source, setSource] = useState<WorkflowCatalogSource>(initial.source);
-  const [authoring, setAuthoring] = useState(() =>
-    typeof window === "undefined" ? false : isWorkflowAuthoringHash(window.location.hash),
-  );
+  const [authoringHash, setAuthoringHash] = useState<string | null>(() => {
+    if (typeof window === "undefined" || !isWorkflowAuthoringHash(window.location.hash)) {
+      return null;
+    }
+    return window.location.hash;
+  });
 
   useEffect(() => {
     const sync = (): void => {
-      setAuthoring(isWorkflowAuthoringHash(window.location.hash));
+      const hash = window.location.hash;
+      setAuthoringHash(isWorkflowAuthoringHash(hash) ? hash : null);
     };
     window.addEventListener("hashchange", sync);
     sync();
@@ -98,8 +102,11 @@ export function WorkflowsPage(props: FeaturePageProps) {
     };
   }, [client, props.params.workflowId]);
 
-  if (authoring) {
-    return <WorkflowAuthoringPage {...props} />;
+  if (authoringHash !== null) {
+    // The full hash is an authoring-session boundary. In particular,
+    // `projectId=prj_a` → `projectId=prj_b` must not retain A's form or
+    // local messages while B hydrates.
+    return <WorkflowAuthoringPage key={authoringHash} {...props} path={authoringHash} />;
   }
   if (openCanvas) {
     return (

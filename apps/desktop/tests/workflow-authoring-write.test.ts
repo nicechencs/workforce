@@ -408,7 +408,7 @@ describe("workflow authoring write path", () => {
         () => document.querySelector('[data-testid="workflow-authoring-session-id"]')?.textContent,
       );
       expect(sessionLabel).toContain("cas_");
-      expect(sessionLabel).toContain("Desktop-local");
+      expect(sessionLabel).toContain("本地笔记/手工草稿空间");
       const sessionId = sessionLabel.match(/cas_[A-Za-z0-9]+/)?.[0];
       expect(sessionId).toBeTruthy();
 
