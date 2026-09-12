@@ -10,7 +10,12 @@ import {
   isWorkflowAuthoringHash,
 } from "../workflow-authoring/index.js";
 import { WorkflowCanvasPage, shouldOpenCanvas } from "./canvas/page.js";
-import { canvasCreatePath } from "./canvas/model.js";
+import {
+  canvasCreatePath,
+  canvasDraftPath,
+  workflowCatalogPath,
+  workflowDetailPath,
+} from "./canvas/model.js";
 import {
   asWorkflowView,
   catalogListCard,
@@ -50,14 +55,19 @@ export function WorkflowsPage(props: FeaturePageProps) {
     };
   }, []);
 
+  const selectedWorkflow =
+    props.params.workflowId === undefined
+      ? null
+      : workflowById(workflows, props.params.workflowId);
   const openCanvas = shouldOpenCanvas({
     workflowId: props.params.workflowId,
     versionId: props.params.versionId,
+    workflow: selectedWorkflow,
   });
 
   useEffect(() => {
     let cancelled = false;
-    if (props.params.workflowId === "new") {
+    if (props.params.workflowId === "new" || props.params.versionId === "draft") {
       return;
     }
     void (async () => {
@@ -100,7 +110,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, props.params.workflowId]);
+  }, [client, props.params.workflowId, props.params.versionId]);
 
   if (authoringHash !== null) {
     // The full hash is an authoring-session boundary. In particular,
@@ -156,7 +166,9 @@ export function WorkflowsPage(props: FeaturePageProps) {
                   key={workflow.id}
                   testId={`workflow-row-${workflow.id}`}
                   title={workflow.name}
-                  meta={`${workflow.id} · 版本 ${version?.version ?? workflow.activeVersionId} · ${
+                  meta={`${workflow.id} · ${
+                    version?.status === "published" ? "已发布" : "草稿"
+                  } ${version?.version ?? workflow.activeVersionId} · ${
                     version?.steps.length ?? 0
                   } 步`}
                   onClick={() => props.navigate(`/workflows/${workflow.id}`)}
@@ -190,7 +202,7 @@ function WorkflowDetailPage(props: {
     return (
       <Page
         title="工作流"
-        actions={<Button onClick={() => props.navigate("/workflows")}>返回工作流</Button>}
+        actions={<Button onClick={() => props.navigate(workflowCatalogPath())}>返回工作流</Button>}
       >
         <Card>
           <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
@@ -200,7 +212,8 @@ function WorkflowDetailPage(props: {
     );
   }
 
-  const selected = versionById(props.workflow, props.versionId);
+  const workflow = props.workflow;
+  const selected = versionById(workflow, props.versionId);
   const canvas = rejectWorkflowCanvas();
   const versionRoute = Boolean(props.versionId);
   const sourceLabel =
@@ -208,38 +221,46 @@ function WorkflowDetailPage(props: {
 
   return (
     <Page
-      title={props.workflow.name}
+      title={workflow.name}
       actions={
-        <Button
-          onClick={() =>
-            props.navigate(versionRoute ? `/workflows/${props.workflow?.id}` : "/workflows")
-          }
-        >
-          {versionRoute ? "返回工作流详情" : "返回工作流"}
-        </Button>
+        <>
+          <Button
+            testId="workflow-fork-canvas"
+            onClick={() => props.navigate(canvasDraftPath(workflow.id))}
+          >
+            复制到画布
+          </Button>
+          <Button
+            onClick={() =>
+              props.navigate(versionRoute ? workflowDetailPath(workflow.id) : workflowCatalogPath())
+            }
+          >
+            {versionRoute ? "返回工作流详情" : "返回工作流"}
+          </Button>
+        </>
       }
     >
       <Card testId="workflow-detail">
         <div className="wf-cluster">
           <Badge tone="muted">只读</Badge>
           <Muted>
-            来源 {sourceLabel} · 活动版本 {props.workflow.activeVersionId}
+            来源 {sourceLabel} · 活动版本 {workflow.activeVersionId}
           </Muted>
         </div>
-        <Muted>{props.workflow.description}</Muted>
+        <Muted>{workflow.description}</Muted>
         <Muted>{props.note}</Muted>
         <Muted>{canvas.reason}</Muted>
         <h2 className="wf-section-title">版本</h2>
         <List>
-          {props.workflow.versions.map((version) => (
+          {workflow.versions.map((version) => (
             <ListRow
               key={version.id}
               testId={`workflow-version-${version.id}`}
               title={`${version.version} · ${version.status === "published" ? "已发布" : "草稿"}`}
-              meta={`不可变 · 入口 ${version.entry} · ${version.steps.length} 步`}
-              onClick={() =>
-                props.navigate(`/workflows/${props.workflow?.id}/versions/${version.id}`)
-              }
+              meta={`${
+                version.status === "published" ? "不可变" : "未发布，Runtime 不会执行"
+              } · 入口 ${version.entry} · ${version.steps.length} 步`}
+              onClick={() => props.navigate(canvasDraftPath(workflow.id, version.id))}
             />
           ))}
         </List>
