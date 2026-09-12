@@ -112,12 +112,7 @@ function problemFromResponse(
     if (isProblemDetails(res.body)) {
       return new ProblemError(res.body, res.status);
     }
-    return problem(
-      "not_found",
-      httpFailureDetail(res.status),
-      res.status,
-      path,
-    );
+    return problem("request_failed", httpFailureDetail(res.status), res.status, path);
   }
   return problem(res.code, httpFailureDetail(res.status, res.message, res.code), res.status, path);
 }
