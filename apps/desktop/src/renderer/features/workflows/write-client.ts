@@ -81,6 +81,9 @@ export const WRITE_API_PARTIAL_NOTE =
 export const WRITE_API_READY_NOTE =
   "草稿保存走 POST/PATCH /workflows 与 unpublished version；发布走 :publish。未发布草稿不会出现在已发布目录，也不会被 Runtime 执行。失败会保留画布内容。";
 
+export const PUBLISHED_GRAPH_IMMUTABLE_NOTE =
+  "已发布版本与活动执行图不可在画布上原地保存。请新建未发布 version。";
+
 export function asWorkflowWriteClient(client: unknown): WorkflowWriteClient {
   return client as WorkflowWriteClient;
 }
@@ -261,6 +264,7 @@ export async function persistWorkflowDraft(
     steps?: unknown;
     revisions?: WorkflowWriteRevisions;
     definitionStatus?: "draft" | "published";
+    versionStatus?: "draft" | "published";
   },
 ): Promise<PersistDraftOutcome> {
   void input.steps;
@@ -284,6 +288,15 @@ export async function persistWorkflowDraft(
   const versionId = isLocalDraftVersion(input.versionId) ? null : input.versionId;
   let definitionRevision = input.revisions?.definitionRevision;
   const versionRevision = input.revisions?.versionRevision;
+
+  if (versionId && input.versionStatus === "published") {
+    return {
+      ok: false,
+      error: PUBLISHED_GRAPH_IMMUTABLE_NOTE,
+      workflowId,
+      versionId,
+    };
+  }
 
   try {
     if (!workflowId) {

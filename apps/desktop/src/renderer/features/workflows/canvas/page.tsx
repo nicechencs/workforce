@@ -15,7 +15,7 @@ import {
 import { useWorkforceClient } from "../../hooks.js";
 import { toGraphPayload } from "../graph/types.js";
 import { asVersionView, asWorkflowView, versionById, type WorkflowTemplateView } from "../model.js";
-import { persistWorkflowDraft, publishWorkflowDraft } from "../write-client.js";
+import { persistWorkflowDraft, publishWorkflowDraft, writeErrorMessage } from "../write-client.js";
 import { WorkflowCanvasEditor } from "./editor.js";
 import { WorkflowCanvasInspector } from "./inspector.js";
 import {
@@ -29,11 +29,14 @@ import {
   CANVAS_DRAFT_VERSION_ID,
   CANVAS_NEW_WORKFLOW_ID,
   canvasDraftPath,
+  isPublishedVersionFrozen,
   persistStatusLabel,
   reduceCanvasSession,
   sessionFromBlank,
   sessionFromDraftVersion,
   sessionFromFork,
+  workflowCatalogPath,
+  workflowDetailPath,
   type CanvasSession,
 } from "./model.js";
 import { canvasDraftSteps } from "./model.js";
@@ -93,6 +96,9 @@ export function WorkflowCanvasPage(props: {
     if (session.draft.definitionStatus !== undefined) {
       persistInput.definitionStatus = session.draft.definitionStatus;
     }
+    if (session.draft.versionStatus !== undefined) {
+      persistInput.versionStatus = session.draft.versionStatus;
+    }
     const result = await persistWorkflowDraft(client, persistInput);
     if (!result.ok) {
       dispatch({
@@ -110,8 +116,12 @@ export function WorkflowCanvasPage(props: {
       definitionRevision: result.revisions.definitionRevision,
       versionRevision: result.revisions.versionRevision,
     });
-    if (props.workflowId !== result.workflowId || props.versionId !== result.versionId) {
-      props.navigate(canvasDraftPath(result.workflowId, result.versionId));
+    const nextPath = canvasDraftPath(result.workflowId);
+    const alreadyOnDraftCanvas =
+      props.workflowId === result.workflowId &&
+      (props.versionId === CANVAS_DRAFT_VERSION_ID || props.versionId === result.versionId);
+    if (!alreadyOnDraftCanvas) {
+      props.navigate(nextPath);
     }
   }
 
@@ -140,6 +150,7 @@ export function WorkflowCanvasPage(props: {
       return;
     }
     dispatch({ type: "publishSucceeded" });
+    props.navigate(workflowCatalogPath());
   }
 
   const title =
@@ -155,8 +166,8 @@ export function WorkflowCanvasPage(props: {
           onClick={() =>
             props.navigate(
               session.draft.workflowId && session.draft.workflowId !== CANVAS_NEW_WORKFLOW_ID
-                ? `/workflows/${session.draft.workflowId}`
-                : "/workflows",
+                ? workflowDetailPath(session.draft.workflowId)
+                : workflowCatalogPath(),
             )
           }
         >
@@ -266,37 +277,56 @@ export async function loadCanvasSession(
   if (workflowId === CANVAS_NEW_WORKFLOW_ID) {
     return sessionFromBlank(client);
   }
-  const dto = await client.getWorkflow(workflowId);
-  const workflow = asWorkflowView(dto);
-  if (!workflow) {
-    return sessionFromBlank(client);
-  }
-  if (versionId === CANVAS_DRAFT_VERSION_ID || versionId === undefined) {
-    const existingDraft = workflow.versions.find((item) => item.status === "draft") ?? null;
-    if (existingDraft && versionId === CANVAS_DRAFT_VERSION_ID) {
-      return sessionFromDraftVersion({
-        client,
-        workflow,
-        version: await hydrateVersionGraph(client, workflow.id, existingDraft),
-      });
+  try {
+    const dto = await client.getWorkflow(workflowId);
+    const workflow = asWorkflowView(dto);
+    if (!workflow) {
+      return sessionLoadError(client, "无法解析工作流定义。");
     }
     if (versionId === CANVAS_DRAFT_VERSION_ID) {
+      const existingDraft = workflow.versions.find((item) => item.status === "draft") ?? null;
+      if (existingDraft) {
+        return sessionFromDraftVersion({
+          client,
+          workflow,
+          version: await hydrateVersionGraph(client, workflow.id, existingDraft),
+        });
+      }
       return sessionFromFork({
         client,
         workflow,
         source: versionById(workflow, workflow.activeVersionId),
       });
     }
+    const selected = versionById(workflow, versionId);
+    if (selected?.status === "draft") {
+      return sessionFromDraftVersion({
+        client,
+        workflow,
+        version: await hydrateVersionGraph(client, workflow.id, selected),
+      });
+    }
+    if (selected && isPublishedVersionFrozen(selected)) {
+      return sessionFromDraftVersion({
+        client,
+        workflow,
+        version: await hydrateVersionGraph(client, workflow.id, selected),
+      });
+    }
+    return sessionFromFork({ client, workflow, source: selected });
+  } catch (error) {
+    return sessionLoadError(client, writeErrorMessage(error));
   }
-  const selected = versionById(workflow, versionId);
-  if (selected?.status === "draft") {
-    return sessionFromDraftVersion({
-      client,
-      workflow,
-      version: await hydrateVersionGraph(client, workflow.id, selected),
-    });
-  }
-  return sessionFromFork({ client, workflow, source: selected });
+}
+
+function sessionLoadError(client: unknown, error: string): CanvasSession {
+  const fallback = sessionFromBlank(client);
+  return {
+    ...fallback,
+    persist: "error",
+    persistError: error,
+    connectError: error,
+  };
 }
 
 async function hydrateVersionGraph(
@@ -335,9 +365,12 @@ export function shouldOpenCanvas(params: {
   if (params.versionId === CANVAS_DRAFT_VERSION_ID) {
     return true;
   }
-  if (params.workflow && params.versionId) {
-    const version = versionById(params.workflow, params.versionId);
-    return version?.status === "draft";
+  if (!params.workflowId || !params.versionId || !params.workflow) {
+    return false;
   }
-  return false;
+  const version = versionById(params.workflow, params.versionId);
+  if (!version || isPublishedVersionFrozen(version) || version.status === "published") {
+    return false;
+  }
+  return version.status === "draft";
 }

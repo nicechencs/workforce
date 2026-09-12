@@ -48,20 +48,9 @@ export function WorkflowCanvasInspector(props: {
                 return;
               }
               props.dispatch({
-                type: "hydrate",
-                session: {
-                  ...session,
-                  draft: {
-                    ...session.draft,
-                    dirty: true,
-                    graph: {
-                      ...session.draft.graph,
-                      edges: session.draft.graph.edges.map((item) =>
-                        item.id === edge.id ? { ...item, waitFor } : item,
-                      ),
-                    },
-                  },
-                },
+                type: "updateEdge",
+                edgeId: edge.id,
+                patch: { waitFor },
               });
             }}
           >
