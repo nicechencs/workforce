@@ -205,7 +205,7 @@ Draft 与 published version 是不同资源和身份。`/teams/{teamId}/versions
 | POST | `/workflows/{workflowId}/drafts/{draftId}:publish` | 校验并产生不可变 WorkflowVersion；写 `workflow.version.published` |
 | GET | `/workflows/{workflowId}/versions/{versionId}` | 读取已发布 WorkflowVersion；不可写 |
 
-这些 M7 写接口仍须由 T02 冻结 DTO/schema 后实现；本节不新增 D17 chat endpoint，也不允许 handler 直连 Runtime。
+这些 M7 写接口仍须由 T02 冻结 DTO/schema 后实现。D17 使用受鉴权、Project-scoped 的 AuthoringSession / Message / Turn 资源，而非泛用 Chat API；HTTP handler 仍只调用 Application，不能直连 Runtime。
 
 ### 10.3 Tasks
 
@@ -300,7 +300,7 @@ Draft 与 published version 是不同资源和身份。`/teams/{teamId}/versions
 
 M3 的 Team/Workflow catalog 只读返回已发布版本；可编辑资源分为 draft 与 published version。Project 计划确认后必须绑定精确 `executionSnapshotId`，WorkflowVersion/TeamVersion 只从该 `ProjectExecutionSnapshot` 读取，不得用 `latest` 或 Project 上的候选字段参与执行。M7 的写接口沿用能力矩阵中的版本资源；未发布草稿不能开始规划或被 Runtime 执行。
 
-D17 对话生成只把结构化 `AuthoringProposal` / `ChangeSet` 的结果写入 Application authoring use case：会话 turn/raw intent 先创建受治理 authoring Task/Run，由 Runtime SPI 执行编排 Agent，proposal 是该 Run 的输出；服务为每个 Team/Task/Workflow 目标携带 `expectedRevision`，以 `If-Match`/CAS 应用，或在跨聚合时使用可恢复的 staged steps。`WorkflowDraft` 始终保持 draft，成功只返回目标的新 revision；作者操作的失败/取消/部分应用/过期状态属于 ChangeSet，不改变 Draft 状态。用户再编辑并发布；生成出的 Workflow 不会因 authoring Run 成功而执行。会话协议和具体 DTO 由 T02 冻结，本文不新增 chat endpoint，也不允许 handler 直连 Runtime。
+D17 对话生成把结构化 `AuthoringProposal` / `ChangeSet` 的结果写入 Application authoring use case：会话 turn/raw intent 先创建受治理 authoring Task/Run，由 Runtime SPI 执行编排 Agent，proposal 是该 Run 的输出；服务为每个 Team/Task/Workflow 目标携带 `expectedRevision`，以 `If-Match`/CAS 应用，或在跨聚合时使用可恢复的 staged steps。`WorkflowDraft` 始终保持 draft，成功只返回目标的新 revision；作者操作的失败/取消/部分应用/过期状态属于 ChangeSet，不改变 Draft 状态。用户再编辑并发布；生成出的 Workflow 不会因 authoring Run 成功而执行。V0.1 提供受鉴权、Project-scoped 的 `AuthoringSession` / `Message` / `Turn` 命令（而非泛用 chat endpoint）；DTO 由 T02 冻结，HTTP handler 仍只调用 Application。
 
 D18 的 canonical Run/StartRunRequest 由 Application 解析三条正交轴：`transport`（`process | sdk | http`）、`placement`（节点/Workspace 位置）和 `orchestrationMode`（`workflow_bound | direct`）。当前严格 `workforce.task/0.1` wire DTO 与本节完整创建 Task 示例不接受 `orchestrationMode`；T02 若保持 `0.1`，只能新增可选字段并在 Application 归一化，否则升级协议版本。解析后的 canonical Run snapshot 才把 mode 作为必填，并包含精确版本、Policy/Budget/Workspace、placement 与 `runSnapshotDigest`。direct 仍创建 ad-hoc Task/Run 并经过 Policy、Workspace、Budget、Approval、Capability；它永不推进 WorkflowInstance 或 Project。若吸收 direct 产物，必须另发 workflow-bound/follow-up command，显式引用精确 ArtifactVersion 并重新验收。字段未冻结前 UI 必须按 capability probe 禁用，不发明 `:direct` 路由。
 

@@ -133,7 +133,7 @@ Renderer 必须启用 `contextIsolation`，关闭 `nodeIntegration`，并通过 
 
 后端流程为：authoring Run 产生 proposal → 校验 proposal → 为每个 Team/Task/Workflow 目标读取其 `expectedRevision`，再以 CAS 原子应用到 `WorkflowDraft`（跨目标无法同事务提交时建立持久化 staged steps，逐项记录 pending/applying/applied/failed/cancelled/expired）→ 返回新的 draft revision → 由用户/画布编辑 → 通过同一发布校验生成不可变 `WorkflowVersion`。`WorkflowDraft` 始终是 draft，作者操作状态只属于 `AuthoringChangeSet`。每次生成、应用、step 状态变化、失败、取消和重试都写 Event，并记录 usage/budget；Policy、Budget、CredentialRef、限流、保留期和脱敏在 Application/Policy 边界执行。对话上下文默认只保存脱敏摘要和引用，原始内容按 Project Policy 保留，不把 Secret 写入 Task、Event 或 Artifact。
 
-该 use case 不发明独立 Runtime 或未冻结的 chat endpoint；API/会话 DTO 由 T02/T10 冻结，HTTP handler 仍只调用 Application。authoring Agent 的 Runtime 失败、取消、超时、预算耗尽或重试必须按普通 Task/Run 治理返回可诊断结果；生成失败或部分 apply 不能回退 Mock 当作成功。
+该 use case 不发明独立 Runtime 或泛用 chat endpoint；API/会话 DTO 由 T02/T10 冻结为受鉴权、Project-scoped 的 `AuthoringSession` / `Message` / `Turn` 资源，HTTP handler 仍只调用 Application。authoring Agent 的 Runtime 失败、取消、超时、预算耗尽或重试必须按普通 Task/Run 治理返回可诊断结果；生成失败或部分 apply 不能回退 Mock 当作成功。
 
 ### 5.2 Project Service
 

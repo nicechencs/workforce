@@ -509,3 +509,19 @@ updated: 2026-09-12
 - **决定：** 作者页以完整 URL hash 作为挂载边界；切换真实 Project 时重建本地作者会话，hydration 完成前不显示旧消息、Proposal 或已落地卡片，也禁止追加和结构化草稿提交。异步手工落稿仍绑定发起时的原项目会话，不能附着到切换后的项目。
 - **文档影响：** [开发任务清单](02-development-task-backlog.md) 与 [实现进度](03-implementation-status.md) 的 T20 本地可见性结论保持不变，并补充其项目隔离实现依据；prompt handoff、typed send 和实际 Agent draft 仍未完成。
 - **状态：** **implemented（T20 project isolation fix）**。Windows 实跑 workflow-authoring 22/22、workflow-authoring + workflows 28/28、Desktop typecheck、`pnpm check:docs` 与 `git diff --check` 通过；未运行 headed Electron，不宣称 Agent/send 或 M7 完成。
+
+---
+
+## 2026-09-12（Asia/Taipei）D17 聊天创建工作流主路径
+
+- **决定：** 用户明确要求可发送聊天，并在聊天中创建工作流。V0.1 不提供泛用 Chat API；改用受鉴权、Project-scoped 的 AuthoringSession / Message / Turn 命令。发送必须走 Policy、Budget、Approval、短生命周期 prompt handoff、受治理 Task/Run 和结构化 Proposal；用户确认后才产生未发布 WorkflowDraft，并可跳到画布继续编辑。桌面本地会话只可保留尚未发送的 composer 草稿，不再是权威会话。
+- **文档影响：** 协议索引、API/系统蓝图、D17 决策、T20/T20-B 任务清单与实现进度同步为专用 Authoring API 主路径；新增会话/Turn 持久化、受保护内容存储、prompt handoff、确认落草稿和画布深链的后续实现范围。
+- **状态：** **implemented（Phase 0 protocol）/ planned（纵向链）**。Phase 0 协议定向测试、类型检查和 29 个受管 schema 门禁已通过；Daemon 持久化/HTTP、Runtime handoff、Application 组合、Renderer、画布和 headed 验收尚需分别验证；不宣称发送聊天或 Agent 生成已可用。
+
+---
+
+## 2026-09-12（Asia/Taipei）T20-B Chat Proposal 确认与 draft 授权切片
+
+- **决定：** Chat Proposal 的确认由 Application 用例在单一事务内完成：严格解析受信 proposal，解析 session/turn/Run 授权后写入 identity、authority、revision 1 draft 与 committed receipt；重放只接受严格解析的 committed receipt，pending/failed 不算成功，key/digest 冲突、跨 scope proof 与 stale CAS 一律拒绝，事件 append 失败回滚全部领域写入并记录诚实失败。SQLite 侧新增 `009_workflow_authoring_scopes`：catalog workflow 必须显式绑定唯一 organization/project 才能被 chat authoring 写入，ChangeSet 状态不授予授权，draft 的 CAS 读取与 append 与授权检查同事务，world snapshot 在 Project 之后、draft 读写之前建立 scope；缺授权的 pre-009 draft fail closed。
+- **文档影响：** [实现进度](03-implementation-status.md) 新增两条修订；本文件追加本条。会话/Turn 持久化、受保护 prompt handoff、typed HTTP、Renderer send 与画布深链仍未实现，不宣称聊天发送或 Agent 生成可用。
+- **状态：** **implemented（Application confirm-chat 用例、`MIGRATION_009_SQL` 与授权/draft repository 切片）**；验证：`pnpm lint`、`pnpm typecheck` 24/24、`pnpm exec vitest run packages/application`（75 passed）、`pnpm protocol:schema:check`（29 files）、`pnpm check:docs`。**已知缺口：** Daemon composition 尚未持久化/创建 `workflowAuthoringScopes`，`apps/daemon/tests/persist-snapshot.test.ts` 的 authoring 恢复用例失败，待消费者接线。

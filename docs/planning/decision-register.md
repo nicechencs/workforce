@@ -27,7 +27,7 @@ updated: 2026-09-12
 
 主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、自定义 Team 写 UI + 草稿 persist、作者壳 + Desktop-local session store（`CHAT_SESSION_PROTOCOL_FROZEN=false`，无 Agent/send）、项目详情挂载 orchestrationMode 控件与 composed start/Run 回传。不发明 chat / `:direct` / enrollment path，也**不**宣称 M7/M8 完成或远程/容器 runner 已实现。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、自定义 Team 写 UI + 草稿 persist、作者壳 + Desktop-local session store（无 Agent/send）、项目详情挂载 orchestrationMode 控件与 composed start/Run 回传。D17 已决定新增受鉴权、Project-scoped 的 AuthoringSession / Message / Turn API；不发明泛用 chat、`:direct` 或 enrollment path，也**不**宣称 M7/M8 完成或远程/容器 runner 已实现。
 
 ## 1. 冻结总表
 
@@ -425,7 +425,7 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 ## 9. 对话生成与双执行模式（M7/M8）
 
-用户决定（2026-09-11，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**产品完成态尚未实现**；本登记不发明 chat 或 `:direct` endpoint。切片进度以 [03-implementation-status.md](03-implementation-status.md) 为准（作者壳 / mode 回显 ≠ D17/D18 完成）。
+用户决定（2026-09-11；2026-09-12 明确聊天为创建主入口，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**产品完成态尚未实现**；D17 提供专用 AuthoringSession / Message / Turn endpoint，而不提供泛用 chat 或 `:direct` endpoint。切片进度以 [03-implementation-status.md](03-implementation-status.md) 为准（作者壳 / mode 回显 ≠ D17/D18 完成）。
 
 D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
 
@@ -441,6 +441,8 @@ D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布
 4. 高度可定制是本条与 D15 的共同产品要求：用户能按项目改角色、步骤与边，而不是只能选预设模板。
 
 Authoring 契约：对话 turn/raw intent 先由 Application 创建受治理 authoring Task/Run，通过 Runtime SPI 执行编排 Agent，`AuthoringProposal` / `ChangeSet` 是该 Run 的输出；Application 再做 schema、Policy、Budget、CredentialRef、DAG 和 Project 边界校验，以 `expectedRevision` 执行 CAS 原子应用，跨 Team/Task/Workflow 无法同事务提交时使用持久化 staged apply。成功只代表草稿 revision 更新，不代表发布或执行生成出的 Workflow。生成、应用、取消、重试、失败与过期事件均保存脱敏摘要/引用；会话原文按 Project retention/redaction policy 管理，禁止进入 Secret、Task、Event 或 Artifact。
+
+V0.1 的会话资源不是泛用 Chat：只允许受鉴权用户在真实 Project 内创建 AuthoringSession、发送 user message，并对 Turn 执行 confirm/cancel/retry/close。发送命令返回引用型 accepted 结果，不能将原文复制进 command receipt；完整会话以有权限的查询读取。Runtime 输入使用受保护、短生命周期的一次性引用，不能写入 `StartRunRequest`、Host handle、Event、ChangeSet 或 receipt。
 
 **M3 Mock 仍允许：**
 

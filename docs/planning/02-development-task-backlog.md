@@ -420,14 +420,14 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 - 「工作流」入口增加对话生成：用户描述 bot/角色、流程 X、任务 Y；Agent 产出未发布草稿。
 - 生成后必须能跳到 T18 画布或结构化编辑；禁止一次生成即锁定。
-- 落草稿复用矩阵已列的 M7 workflow（及可选 Team）写接口；**不发明**未冻结 chat endpoint。
+- 以 T02/T10 冻结的受鉴权、Project-scoped AuthoringSession / Message / Turn API 发送和确认；不发明泛用 chat endpoint，落草稿仍复用 M7 workflow（及可选 Team）写接口。
 - 写接口或会话协议未就绪时，入口不得假成功。
 - 空意图、生成失败、校验失败保留对话上下文，不回退夹具冒充已生成；authoring Task/Run 的 usage、budget、cancel、retry、failure 必须可观察。
 - 对话回复不得写成 Task/Run 完成。
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol；Desktop-local session store + 仅用户 append + renderer `localStorage` 已接线。页面可从 query/hash 绑定真实 Project，否则明确是本地笔记/手工草稿空间；已有 proposal 只显示为本地结构化预览，绝非 Agent 输出。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** Agent/send / chat HTTP。不得把壳写成对话编排完成或 M7 完成。
+**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；Desktop-local session store + 仅用户 append + renderer `localStorage` 已接线，但不再是目标权威。Phase 0 已冻结专用会话/Turn 契约；Daemon 持久化、受保护 prompt handoff、typed API、真实 Agent/send 和聊天内确认草稿仍未完成。页面可从 query/hash 绑定真实 Project，否则明确是本地笔记/手工草稿空间；已有 proposal 只显示为本地结构化预览，绝非 Agent 输出。不得把壳写成对话编排完成或 M7 完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
@@ -441,6 +441,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 - 校验 Project 边界、DAG、引用、Policy、Capability、预算和 CredentialRef（仅引用）。
 - `T20-B-PROMPT-HANDOFF`：为原始 intent 建立受保护、短生命周期的 Runtime 交接。不得把 prompt 放进会被 Host Store / handle / Event / ChangeSet 持久化的 `StartRunRequest`、`snapshotRef` 或 command receipt；Runtime 启动前必须能够按受信引用解析，重启后无法安全恢复时必须 fail-closed 并让会话诚实显示失败。仅完成 `authoring.start` 建 Task/Run 而 Runtime 实际未接收 intent，不得作为 send/Agent 完成。
+- 新增受治理的 `AuthoringSession` / `AuthoringTurn`：一条 user message 产生可追踪 Turn，消息、Task/Run、Proposal/ChangeSet、审批、取消、重试和草稿结果各自有状态；command receipt 只保存引用型 accepted 结果。会话正文使用受保护内容存储，SQLite / world snapshot / Event / Host Store 只保存 ref、hash、脱敏 preview 和 retention 元数据。
 - 为每个 Team/Task/Workflow 目标保存独立 `expectedRevision`；以目标顺序做 CAS 原子应用；跨聚合无法同事务时使用持久化 staged steps，逐项保存 pending/applying/applied/failed/cancelled/expired，崩溃后可恢复并诚实报告部分失败。
 - 保存脱敏会话引用、proposal/change-set 摘要和 authoring Events；支持 usage/budget、cancel/retry/failure/expired；按 Project retention/redaction 管理上下文，不保存 Secret/原始不必要 Prompt。
 - 应用成功只更新 draft revision；发布、WorkflowInstance 和 Runtime 启动仍走 D15/D02/T09。
