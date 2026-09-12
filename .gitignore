@@ -13,3 +13,4 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.local
+out/

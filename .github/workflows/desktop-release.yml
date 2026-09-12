@@ -1,0 +1,55 @@
+name: desktop-release
+
+# Pack unpacked Desktop + bundled Daemon. Does not publish and does not
+# create a GitHub Release. Signing runs only when credentials exist.
+# pnpm deploy is staged in $TMPDIR first: deploying into a workspace path named
+# `out/...` fails with mkdir('/out').
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Comma-separated Electron platforms (linux, win32, darwin, or current)
+        default: linux,win32,darwin
+      skip_sign:
+        description: Set to "1" to skip the signing hook even if credentials exist
+        default: "1"
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Pack
+        env:
+          WORKFORCE_SKIP_PUBLISH: "1"
+        run: >
+          node tooling/release/pack.mjs
+          --platform "${{ inputs.platforms }}"
+          ${{ inputs.skip_sign == '1' && '--skip-sign' || '' }}
+
+      - name: Upload unpacked artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: workforce-unpacked
+          path: |
+            out/pack/artifacts/**
+            out/pack/summary.json
+          if-no-files-found: error

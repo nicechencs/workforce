@@ -21,7 +21,7 @@ docs/
 └── operations/  # Development, release, diagnostics and support guides
 ```
 
-Git does not retain empty directories. The `protocols` and `operations` directories will be added with their first real documents; `adr` already contains accepted decisions.
+Git does not retain empty directories. `docs/operations/` 现有 T17 打包/升级/卸载文档；`adr` already contains accepted decisions.
 
 ## V0.1 Blueprint
 
@@ -62,6 +62,12 @@ Git does not retain empty directories. The `protocols` and `operations` director
 - [开源对标学习笔记](reference/open-source-benchmarks.md) — Eigent / OpenHands 深读指针；对照冻结决策，不表示将采用这些栈
 - [Remote Node Mock compatibility spike](spikes/remote-node-compatibility.md) — in-process protocol evidence only; not a production remote runner
 
+## Operations
+
+- [三平台打包与随包 Daemon](operations/packaging.md) — unpacked packs; `start.cmd` / `dev` are not installers; not a published release
+- [升级、备份与恢复](operations/upgrade-backup-restore.md) — 升级前活动 Run 策略为 `reject`；状态目录备份/恢复
+- [卸载与数据保留](operations/uninstall-data-retention.md) — 卸载保留 `%APPDATA%\Workforce` 等状态目录
+
 ## Document status
 
 All blueprint documents are V0.1 drafts. Protocols and implementation details may change through Architecture Decision Records and reviewed pull requests. Implementation progress is tracked in `docs/planning/03-implementation-status.md`.
@@ -94,4 +100,4 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)
 
-协议草案见 [docs/protocols](protocols/README.md)。`operations` 将在 T17 出现首份真实文件时加入 Git。`pnpm check:docs` 对固定根文档（`AGENTS.md`、根 `README.md`、`CONTRIBUTING.md`）与全部 `docs/**/*.md` 做链接/锚点、CommonMark fenced-block 和 Mermaid fenced-block 完整性检查，仅对已迁移 current 文档强制元数据；历史文档不会因一次性迁移而阻塞。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。
+协议草案见 [docs/protocols](protocols/README.md)。打包、升级与卸载见 [operations](operations/packaging.md)。`pnpm check:docs` 对固定根文档（`AGENTS.md`、根 `README.md`、`CONTRIBUTING.md`）与全部 `docs/**/*.md` 做链接/锚点、CommonMark fenced-block 和 Mermaid fenced-block 完整性检查，仅对已迁移 current 文档强制元数据；历史文档不会因一次性迁移而阻塞。评审意见不自动替代已接受 ADR；实现以决策登记与 ADR 0003 为准。
