@@ -16,6 +16,7 @@ import type {
   TeamDraftDto,
   WorkflowDraftDto,
 } from "@workforce/protocol";
+import type { AuthoringProtectedBodyRecord } from "../authoring/protected-content.js";
 import type {
   Clock,
   CommandReceiptRepository,
@@ -343,6 +344,11 @@ export class MemoryWorld {
   readonly workflowDrafts = new Map<string, WorkflowDraftDto>();
   readonly teamDrafts = new Map<string, TeamDraftDto>();
   readonly authoringChangeSets = new Map<string, AuthoringChangeSetDto>();
+  /**
+   * Process-local authoring bodies. Snapshots, Events, and receipts must not
+   * copy `body`; restart without these entries fail-closes intent recovery.
+   */
+  readonly authoringProtectedBodies = new Map<string, AuthoringProtectedBodyRecord>();
   readonly nodes = new Map<string, NodeInstanceRecord>();
   readonly budgets = new Map<string, BudgetRecord>();
   readonly executionSnapshots = new Map<string, ProjectExecutionSnapshotRecord>();
