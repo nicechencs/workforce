@@ -7,6 +7,12 @@ import type {
   ArtifactDto,
   ArtifactLineageDto,
   ArtifactVersionDto,
+  AuthoringChatProposalDto,
+  AuthoringSessionListQuery,
+  AuthoringSessionPageDto,
+  AuthoringSessionViewDto,
+  AuthoringTurnActionAcceptedDto,
+  AuthoringTurnDto,
   CancelInput,
   CapabilitiesDto,
   CommandAcceptedDto,
@@ -39,6 +45,7 @@ import type {
   RuntimeCapabilitiesDto,
   RuntimeDto,
   SessionDto,
+  SendAuthoringMessageAcceptedDto,
   StartProjectInput,
   TaskDto,
   TeamDto,
@@ -381,6 +388,94 @@ export class DesktopClient {
 
   listEvents(query?: EventListQuery): Promise<PageDto<unknown>> {
     return this.get(paths.events(query));
+  }
+
+  /** Create a project-scoped conversational authoring session. */
+  createAuthoringSession(
+    projectId: string,
+    options: CommandOptions,
+  ): Promise<AuthoringSessionViewDto> {
+    return this.send(
+      "POST",
+      paths.authoringSessionCreate(projectId),
+      options,
+      withOperation({}, options),
+    );
+  }
+
+  listAuthoringSessions(query: AuthoringSessionListQuery): Promise<AuthoringSessionPageDto> {
+    return this.get(paths.authoringSessions(query));
+  }
+
+  getAuthoringSession(sessionId: string): Promise<AuthoringSessionViewDto> {
+    return this.get(paths.authoringSession(sessionId));
+  }
+
+  sendAuthoringMessage(
+    sessionId: string,
+    content: string,
+    options: CommandOptions,
+  ): Promise<SendAuthoringMessageAcceptedDto> {
+    return this.send(
+      "POST",
+      paths.authoringSessionMessages(sessionId),
+      options,
+      withOperation({ content }, options),
+    );
+  }
+
+  getAuthoringTurn(sessionId: string, turnId: string): Promise<AuthoringTurnDto> {
+    return this.get(paths.authoringTurn(sessionId, turnId));
+  }
+
+  getAuthoringProposal(sessionId: string, proposalId: string): Promise<AuthoringChatProposalDto> {
+    return this.get(paths.authoringProposal(sessionId, proposalId));
+  }
+
+  confirmAuthoringTurn(
+    sessionId: string,
+    turnId: string,
+    options: CommandOptions,
+  ): Promise<AuthoringTurnActionAcceptedDto> {
+    return this.authoringTurnAction(sessionId, turnId, "confirm", options);
+  }
+
+  cancelAuthoringTurn(
+    sessionId: string,
+    turnId: string,
+    options: CommandOptions,
+  ): Promise<AuthoringTurnActionAcceptedDto> {
+    return this.authoringTurnAction(sessionId, turnId, "cancel", options);
+  }
+
+  retryAuthoringTurn(
+    sessionId: string,
+    turnId: string,
+    options: CommandOptions,
+  ): Promise<AuthoringTurnActionAcceptedDto> {
+    return this.authoringTurnAction(sessionId, turnId, "retry", options);
+  }
+
+  closeAuthoringTurn(
+    sessionId: string,
+    turnId: string,
+    options: CommandOptions,
+  ): Promise<AuthoringTurnActionAcceptedDto> {
+    return this.authoringTurnAction(sessionId, turnId, "close", options);
+  }
+
+  private authoringTurnAction(
+    sessionId: string,
+    turnId: string,
+    action: "confirm" | "cancel" | "retry" | "close",
+    options: CommandOptions,
+  ): Promise<AuthoringTurnActionAcceptedDto> {
+    return this.send(
+      "POST",
+      paths.authoringTurnCommand(sessionId, turnId, action),
+      options,
+      withOperation({}, options),
+    );
   }
 
   eventsStreamPath(query?: EventListQuery): string {

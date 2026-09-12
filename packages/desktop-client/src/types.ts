@@ -38,10 +38,18 @@ export interface CapabilitiesDto {
 
 export type {
   AppendAuthoringSessionMessageInput,
+  AuthoringChatProposalDto,
+  AuthoringCommandAcceptedDto,
   AuthoringDraftDto,
+  AuthoringSessionPageDto,
   AuthoringSessionDto,
   AuthoringSessionMessageDto,
+  AuthoringSessionSummaryDto,
+  AuthoringSessionViewDto,
+  AuthoringTurnActionAcceptedDto,
+  AuthoringTurnDto,
   CreateAuthoringSessionInput,
+  SendAuthoringMessageAcceptedDto,
   CreateTeamInput,
   CreateTeamVersionInput,
   CreateWorkflowInput,
@@ -59,6 +67,13 @@ export type {
   TeamRoleDto,
   TeamVersionDto,
 } from "@workforce/protocol";
+
+/** Query accepted by the project-scoped authoring session list endpoint. */
+export interface AuthoringSessionListQuery {
+  projectId: string;
+  cursor?: string;
+  limit?: number;
+}
 
 export interface PageDto<T> {
   items: T[];

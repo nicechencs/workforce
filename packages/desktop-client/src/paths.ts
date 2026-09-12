@@ -1,4 +1,4 @@
-import type { EventListQuery, ListQuery } from "./types.js";
+import type { AuthoringSessionListQuery, EventListQuery, ListQuery } from "./types.js";
 
 const SECRET_QUERY =
   /(?:^|[?&])(token|access_token|session|session_token|authorization|secret|password)=/i;
@@ -120,4 +120,23 @@ export const paths = {
       cursor: query?.cursor,
     })}`,
   session: () => "/api/v1/session",
+  authoringSessions: (query?: AuthoringSessionListQuery) =>
+    `/api/v1/authoring-sessions${search({
+      projectId: query?.projectId,
+      cursor: query?.cursor,
+      limit: query?.limit,
+    })}`,
+  authoringSessionCreate: (projectId: string) => `/api/v1/projects/${projectId}/authoring-sessions`,
+  authoringSession: (sessionId: string) => `/api/v1/authoring-sessions/${sessionId}`,
+  authoringSessionMessages: (sessionId: string) =>
+    `/api/v1/authoring-sessions/${sessionId}/messages`,
+  authoringTurn: (sessionId: string, turnId: string) =>
+    `/api/v1/authoring-sessions/${sessionId}/turns/${turnId}`,
+  authoringTurnCommand: (
+    sessionId: string,
+    turnId: string,
+    action: "confirm" | "cancel" | "retry" | "close",
+  ) => `/api/v1/authoring-sessions/${sessionId}/turns/${turnId}/_cmd/${action}`,
+  authoringProposal: (sessionId: string, proposalId: string) =>
+    `/api/v1/authoring-sessions/${sessionId}/proposals/${proposalId}`,
 } as const;
