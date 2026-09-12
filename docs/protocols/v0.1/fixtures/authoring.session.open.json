@@ -1,0 +1,44 @@
+{
+  "id": "cas_01JTESTAUTHORINGSESSION000",
+  "projectId": "prj_01JTESTPROJECT000000000000",
+  "protocolVersion": "0.1",
+  "status": "open",
+  "messages": [
+    {
+      "id": "cam_01JTESTAUTHORINGMESSAGE000",
+      "role": "user",
+      "content": "创建 planner 与 developer，跑功能交付流程",
+      "createdAt": "2026-09-12T00:00:00.000Z"
+    }
+  ],
+  "draft": {
+    "kind": "proposal",
+    "unpublished": true,
+    "workflow": {
+      "name": "功能交付草稿",
+      "description": "对话作者面尚未接线；本夹具只校验 DTO。",
+      "graph": {
+        "entry": "step_1",
+        "nodes": [
+          { "id": "step_1", "kind": "task", "title": "规划", "role": "planner" },
+          { "id": "step_2", "kind": "task", "title": "实现", "role": "developer" }
+        ],
+        "edges": [
+          {
+            "id": "edge_1",
+            "from": "step_1",
+            "to": "step_2",
+            "waitFor": "outputs_ready"
+          }
+        ],
+        "steps": [
+          { "id": "step_1", "kind": "task", "title": "规划", "worker": "planner", "notes": [] },
+          { "id": "step_2", "kind": "task", "title": "实现", "worker": "developer", "notes": [] }
+        ]
+      }
+    }
+  },
+  "stateRevision": 1,
+  "createdAt": "2026-09-12T00:00:00.000Z",
+  "updatedAt": "2026-09-12T00:00:00.000Z"
+}

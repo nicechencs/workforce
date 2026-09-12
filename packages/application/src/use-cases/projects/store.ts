@@ -43,6 +43,8 @@ export interface ProjectRecord {
   planArtifactVersionId?: string;
   /** D02: the confirmed execution snapshot. Written once when the plan is confirmed. */
   executionSnapshotId?: string;
+  /** Echo of requested D18 mode after `:start`. Not a StartRunRequest field. */
+  orchestrationMode?: "workflow_bound" | "direct";
   cancelRequestedAt?: string;
   createdAt: string;
   updatedAt: string;

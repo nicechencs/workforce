@@ -4,7 +4,7 @@ import {
   type WorkflowGraph,
   type WorkflowNodeDefinition,
 } from "@workforce/application";
-import type { WorkflowDto, WorkflowVersionDto } from "@workforce/protocol";
+import type { TeamDto, TeamVersionDto, WorkflowDto, WorkflowVersionDto } from "@workforce/protocol";
 
 import type {
   NodeDto,
@@ -12,7 +12,6 @@ import type {
   ProjectBudgetDto,
   RuntimeCapabilitiesDto,
   RuntimeDto,
-  TeamDto,
 } from "../modules/dto.js";
 
 export const PROTOCOL_VERSION = "0.1" as const;
@@ -83,6 +82,19 @@ export const FEATURE_DELIVERY_WORKFLOW: WorkflowDto = {
           notes: ["绑定 integration digest"],
         },
       ],
+      nodes: [
+        { id: "planning", kind: "task", role: "planner", title: "规划" },
+        { id: "implementation", kind: "task", role: "developer", title: "实现" },
+        { id: "integration", kind: "task", role: "developer", title: "整合" },
+        { id: "review", kind: "task", role: "reviewer", title: "审查" },
+        { id: "acceptance", kind: "approval", role: "approver", title: "验收" },
+      ],
+      edges: [
+        { id: "e_plan_impl", from: "planning", to: "implementation", waitFor: "outputs_ready" },
+        { id: "e_impl_int", from: "implementation", to: "integration", waitFor: "outputs_ready" },
+        { id: "e_int_review", from: "integration", to: "review", waitFor: "outputs_ready" },
+        { id: "e_review_accept", from: "review", to: "acceptance", waitFor: "outputs_ready" },
+      ],
     },
   ],
 };
@@ -108,18 +120,52 @@ export function findPublishedWorkflowVersion(
   );
 }
 
+export const SOFTWARE_TEAM_VERSION: TeamVersionDto = {
+  id: TEAM_VERSION_ID,
+  teamId: TEAM_ID,
+  version: "0.1.0",
+  status: "published",
+  immutable: true,
+  members: [
+    { id: "planner", role: "planner", runtimeProfileId: "mock", quantity: 1 },
+    { id: "developer", role: "developer", runtimeProfileId: "mock", quantity: 2 },
+    { id: "reviewer", role: "reviewer", runtimeProfileId: "mock", quantity: 1 },
+  ],
+};
+
 export const SOFTWARE_TEAM: TeamDto = {
   id: TEAM_ID,
   name: "Software Development Team",
   version: "0.1.0",
   status: "published",
   protocolVersion: PROTOCOL_VERSION,
+  stateRevision: 1,
+  activeVersionId: TEAM_VERSION_ID,
   roles: [
     { id: "planner", role: "planner", version: "0.1.0" },
     { id: "developer", role: "developer", version: "0.1.0" },
     { id: "reviewer", role: "reviewer", version: "0.1.0" },
   ],
+  versions: [SOFTWARE_TEAM_VERSION],
 };
+
+export function findPublishedTeam(id: string): TeamDto | null {
+  return SOFTWARE_TEAM.id === id ? SOFTWARE_TEAM : null;
+}
+
+export function findPublishedTeamVersion(teamId: string, versionId: string): TeamVersionDto | null {
+  if (teamId !== TEAM_ID) {
+    return null;
+  }
+  if (versionId === TEAM_VERSION_ID || versionId === SOFTWARE_TEAM_VERSION.version) {
+    return SOFTWARE_TEAM_VERSION;
+  }
+  return null;
+}
+
+export function isPresetPublishedTeamVersion(versionId: string): boolean {
+  return versionId === TEAM_VERSION_ID || versionId === SOFTWARE_TEAM_VERSION.version;
+}
 
 export const LOCAL_NODE: NodeDto = {
   id: LOCAL_NODE_ID,

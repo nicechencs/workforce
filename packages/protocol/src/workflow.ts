@@ -6,8 +6,30 @@ export type WorkflowStepKind = (typeof workflowStepKinds)[number];
 export const workflowGates = ["plan", "artifact"] as const;
 export type WorkflowGate = (typeof workflowGates)[number];
 
-export const workflowCatalogStatuses = ["published"] as const;
-export type WorkflowCatalogStatus = (typeof workflowCatalogStatuses)[number];
+export const workflowDefinitionStatuses = ["draft", "published"] as const;
+export type WorkflowDefinitionStatus = (typeof workflowDefinitionStatuses)[number];
+
+/** @deprecated Use workflowDefinitionStatuses. Published-only catalog rows still parse. */
+export const workflowCatalogStatuses = workflowDefinitionStatuses;
+export type WorkflowCatalogStatus = WorkflowDefinitionStatus;
+
+export const workflowGraphNodeKinds = ["task", "approval", "condition", "parallel"] as const;
+export type WorkflowGraphNodeKind = (typeof workflowGraphNodeKinds)[number];
+
+export const workflowWorkerRoles = ["planner", "developer", "reviewer", "approver"] as const;
+export type WorkflowWorkerRole = (typeof workflowWorkerRoles)[number];
+
+export const workflowJoinPolicies = ["all_success", "all_terminal", "min_success"] as const;
+export type WorkflowJoinPolicy = (typeof workflowJoinPolicies)[number];
+
+export const workflowUpstreamWaits = [
+  "outputs_ready",
+  "completed",
+  "failed",
+  "cancelled",
+  "any_terminal",
+] as const;
+export type WorkflowUpstreamWait = (typeof workflowUpstreamWaits)[number];
 
 export const workflowStepSchema = z
   .object({
@@ -22,15 +44,66 @@ export const workflowStepSchema = z
 
 export type WorkflowStepDto = z.infer<typeof workflowStepSchema>;
 
+export const workflowGraphBranchSchema = z
+  .object({
+    value: z.string().min(1),
+    isDefault: z.boolean().optional(),
+  })
+  .strict();
+
+export const workflowGraphNodeSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.enum(workflowGraphNodeKinds),
+    title: z.string().min(1).optional(),
+    role: z.enum(workflowWorkerRoles).optional(),
+    joinPolicy: z.enum(workflowJoinPolicies).optional(),
+    minSuccess: z.number().int().min(1).optional(),
+    maxAttempts: z.number().int().min(1).optional(),
+    maxReworkCycles: z.number().int().min(0).optional(),
+    requiresReview: z.boolean().optional(),
+    expectedOutputIds: z.array(z.string().min(1)).optional(),
+    priority: z.number().int().min(0).max(100).optional(),
+    conditionKey: z.string().min(1).optional(),
+    branches: z.array(workflowGraphBranchSchema).optional(),
+  })
+  .strict();
+
+export type WorkflowGraphNodeDto = z.infer<typeof workflowGraphNodeSchema>;
+
+export const workflowGraphInputBindingSchema = z
+  .object({
+    slotId: z.string().min(1),
+    fromOutputId: z.string().min(1),
+  })
+  .strict();
+
+export const workflowGraphEdgeSchema = z
+  .object({
+    id: z.string().min(1),
+    from: z.string().min(1),
+    to: z.string().min(1),
+    waitFor: z.enum(workflowUpstreamWaits).optional(),
+    conditionValue: z.string().min(1).optional(),
+    inputBindings: z.array(workflowGraphInputBindingSchema).optional(),
+  })
+  .strict();
+
+export type WorkflowGraphEdgeDto = z.infer<typeof workflowGraphEdgeSchema>;
+
 export const workflowVersionSchema = z
   .object({
     id: z.string().min(1),
     workflowId: z.string().min(1),
     version: z.string().min(1),
-    status: z.enum(workflowCatalogStatuses),
-    immutable: z.literal(true),
-    entry: z.string().min(1),
-    steps: z.array(workflowStepSchema),
+    status: z.enum(workflowDefinitionStatuses),
+    immutable: z.boolean(),
+    entry: z.string().min(1).optional(),
+    steps: z.array(workflowStepSchema).optional(),
+    nodes: z.array(workflowGraphNodeSchema).optional(),
+    edges: z.array(workflowGraphEdgeSchema).optional(),
+    stateRevision: z.number().int().min(1).optional(),
+    publishedAt: z.string().datetime().optional(),
   })
   .strict();
 
@@ -42,9 +115,11 @@ export const workflowSchema = z
     name: z.string().min(1),
     description: z.string(),
     protocolVersion: z.literal("0.1"),
-    status: z.enum(workflowCatalogStatuses),
-    activeVersionId: z.string().min(1),
+    status: z.enum(workflowDefinitionStatuses),
+    activeVersionId: z.string().min(1).optional(),
     versions: z.array(workflowVersionSchema),
+    stateRevision: z.number().int().min(1).optional(),
+    definitionRevision: z.number().int().min(1).optional(),
   })
   .strict();
 
@@ -64,6 +139,37 @@ export const workflowPageSchema = z
 
 export type WorkflowPageDto = z.infer<typeof workflowPageSchema>;
 
+export const createWorkflowInputSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().optional(),
+  })
+  .strict();
+
+export type CreateWorkflowInput = z.infer<typeof createWorkflowInputSchema>;
+
+export const patchWorkflowInputSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+  })
+  .strict();
+
+export type PatchWorkflowInput = z.infer<typeof patchWorkflowInputSchema>;
+
+export const workflowVersionWriteSchema = z
+  .object({
+    version: z.string().min(1).optional(),
+    entry: z.string().min(1).optional(),
+    steps: z.array(workflowStepSchema).optional(),
+    nodes: z.array(workflowGraphNodeSchema).optional(),
+    edges: z.array(workflowGraphEdgeSchema).optional(),
+  })
+  .strict();
+
+export type CreateWorkflowVersionInput = z.infer<typeof workflowVersionWriteSchema>;
+export type PatchWorkflowVersionInput = z.infer<typeof workflowVersionWriteSchema>;
+
 export function parseWorkflow(input: unknown): WorkflowDto {
   return workflowSchema.parse(input);
 }
@@ -74,4 +180,28 @@ export function parseWorkflowVersion(input: unknown): WorkflowVersionDto {
 
 export function parseWorkflowPage(input: unknown): WorkflowPageDto {
   return workflowPageSchema.parse(input);
+}
+
+export function parseCreateWorkflowInput(input: unknown): CreateWorkflowInput {
+  return createWorkflowInputSchema.parse(input);
+}
+
+export function parsePatchWorkflowInput(input: unknown): PatchWorkflowInput {
+  return patchWorkflowInputSchema.parse(input);
+}
+
+export function parseWorkflowVersionWrite(input: unknown): CreateWorkflowVersionInput {
+  return workflowVersionWriteSchema.parse(input);
+}
+
+export function isPublishedWorkflowVersion(
+  version: Pick<WorkflowVersionDto, "status" | "immutable">,
+): boolean {
+  return version.status === "published" && version.immutable === true;
+}
+
+export function isExecutableWorkflowVersion(
+  version: Pick<WorkflowVersionDto, "status" | "immutable">,
+): boolean {
+  return isPublishedWorkflowVersion(version);
 }

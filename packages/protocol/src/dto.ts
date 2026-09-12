@@ -22,6 +22,9 @@ export const projectDtoSchema = z
     updatedAt: z.string(),
     planArtifactVersionId: z.string().min(1).optional(),
     executionSnapshotId: z.string().min(1).optional(),
+    teamVersionId: z.string().min(1).optional(),
+    /** Echo of requested D18 mode after `:start`. Not a scheduler claim. */
+    orchestrationMode: orchestrationModeSchema.optional(),
   })
   .strict();
 
@@ -58,37 +61,10 @@ export const runDtoSchema = z
 
 export type RunDto = z.infer<typeof runDtoSchema>;
 
-export const teamRoleDtoSchema = z
-  .object({
-    id: z.string().min(1),
-    role: z.string(),
-    version: z.string(),
-  })
-  .strict();
-
-export type TeamRoleDto = z.infer<typeof teamRoleDtoSchema>;
-
-export const teamDtoSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string(),
-    version: z.string(),
-    status: z.literal("published"),
-    protocolVersion: z.literal("0.1"),
-    roles: z.array(teamRoleDtoSchema),
-  })
-  .strict();
-
-export type TeamDto = z.infer<typeof teamDtoSchema>;
-
 export function parseProjectDto(input: unknown): ProjectDto {
   return projectDtoSchema.parse(input);
 }
 
 export function parseRunDto(input: unknown): RunDto {
   return runDtoSchema.parse(input);
-}
-
-export function parseTeamDto(input: unknown): TeamDto {
-  return teamDtoSchema.parse(input);
 }

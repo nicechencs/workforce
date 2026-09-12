@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { parseProjectDto, parseRunDto, parseTeamDto } from "./dto.js";
+import { parseProjectDto, parseRunDto } from "./dto.js";
+import { parseTeam } from "./team.js";
 
 describe("public HTTP DTOs", () => {
   it("parses the current M3 ProjectDto without an execution snapshot", () => {
@@ -79,7 +80,7 @@ describe("public HTTP DTOs", () => {
   });
 
   it("parses a published TeamDto", () => {
-    const parsed = parseTeamDto({
+    const parsed = parseTeam({
       id: "software-development-team",
       name: "Software Development",
       version: "1",

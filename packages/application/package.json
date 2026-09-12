@@ -28,6 +28,7 @@
     "@workforce/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@workforce/workflow-engine": "workspace:*",
     "typescript": "5.9.3"
   }
 }

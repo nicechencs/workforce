@@ -1,6 +1,7 @@
+import { UseCaseError, type CatalogService } from "@workforce/application";
 import type { ApprovalStatus, ProjectStatus, RunStatus, TaskStatus } from "@workforce/domain";
 import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
-import { InvalidTransitionError } from "@workforce/workflow-engine";
+import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 import {
   nextApprovalStatus,
   nextProjectStatus,
@@ -15,12 +16,8 @@ import {
   MOCK_RUNTIME,
   MOCK_RUNTIME_CAPABILITIES,
   MOCK_RUNTIME_ID,
-  SOFTWARE_TEAM,
-  TEAM_ID,
-  findPublishedWorkflow,
-  findPublishedWorkflowVersion,
+  TEAM_VERSION_ID,
   pageOf,
-  publishedWorkflows,
   unknownProjectBudget,
 } from "../composition/catalog.js";
 import type {
@@ -52,14 +49,35 @@ import type {
   StartProjectInput,
   TaskDto,
   TeamDto,
+  TeamVersionDto,
   WorkflowDto,
   WorkflowVersionDto,
   WorkspaceDto,
+  CreateTeamInput,
+  CreateTeamVersionInput,
+  CreateWorkflowInput,
+  CreateWorkflowVersionInput,
+  PatchTeamInput,
+  PatchTeamVersionInput,
+  PatchWorkflowInput,
+  PatchWorkflowVersionInput,
 } from "./dto.js";
 import { AppError } from "./errors.js";
+import { assertStartOrchestrationAllowed } from "./orchestration.js";
 import { createIdFactory, prefixes, type IdFactory } from "./ids.js";
 import type { AppServices, CommandResult } from "./index.js";
 import { paginate } from "./paginate.js";
+import {
+  assertBindableTeamVersionId,
+  createAuthoringCatalog,
+  listedDraftTeams,
+  listedTeams,
+  listedWorkflows,
+  resolveTeam,
+  resolveTeamVersion,
+  resolveWorkflow,
+  resolveWorkflowVersion,
+} from "./authoring-catalog.js";
 
 const ORGANIZATION_ID = "org_local";
 const PROTOCOL_VERSION = "0.1" as const;
@@ -116,6 +134,7 @@ export class FakeAppServices implements AppServices {
   private readonly ids: IdFactory;
   private readonly runInput: boolean;
   private readonly horizon: number;
+  private readonly authoring: CatalogService;
   private readonly projects = new Map<string, ProjectRecord>();
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly runs = new Map<string, RunRecord>();
@@ -129,6 +148,11 @@ export class FakeAppServices implements AppServices {
     this.ids = options.ids ?? createIdFactory();
     this.runInput = options.runInput ?? true;
     this.horizon = options.trimHorizon ?? 0;
+    this.authoring = createAuthoringCatalog({
+      ids: { ulid: (prefix) => this.ids(prefix) },
+      now: () => this.timestamp(),
+      validateWorkflowGraph,
+    }).service;
   }
 
   capabilities(): CapabilitiesDto {
@@ -145,6 +169,10 @@ export class FakeAppServices implements AppServices {
         pause: false,
         resume: false,
         archive: false,
+      },
+      orchestration: {
+        workflowBound: true,
+        direct: false,
       },
     };
   }
@@ -165,26 +193,164 @@ export class FakeAppServices implements AppServices {
     return;
   }
 
-  listTeams(_query: ListQuery): PageDto<TeamDto> {
-    void _query;
-    return pageOf([SOFTWARE_TEAM]);
+  listTeams(query: ListQuery): PageDto<TeamDto> {
+    if (query.status === "draft") {
+      return pageOf(listedDraftTeams(this.authoring));
+    }
+    return pageOf(listedTeams(this.authoring));
   }
 
   getTeam(id: string): TeamDto | null {
-    return id === TEAM_ID ? SOFTWARE_TEAM : null;
+    return resolveTeam(this.authoring, id);
+  }
+
+  getTeamVersion(id: string, versionId: string): TeamVersionDto | null {
+    return resolveTeamVersion(this.authoring, id, versionId);
+  }
+
+  createTeam(ctx: CommandContext, input: CreateTeamInput): CommandResult<TeamDto> {
+    void ctx;
+    const team = this.runCatalog(() => this.authoring.createTeam(input));
+    return {
+      status: 201,
+      body: resolveTeam(this.authoring, team.id)!,
+      revision: team.stateRevision,
+    };
+  }
+
+  patchTeam(ctx: CommandContext, id: string, input: PatchTeamInput): CommandResult<TeamDto> {
+    const team = this.runCatalog(() => this.authoring.patchTeam(id, input, ctx.ifMatch));
+    return {
+      status: 200,
+      body: resolveTeam(this.authoring, team.id)!,
+      revision: team.stateRevision,
+    };
+  }
+
+  createTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateTeamVersionInput,
+  ): CommandResult<TeamVersionDto> {
+    const version = this.runCatalog(() => this.authoring.createTeamVersion(id, input, ctx.ifMatch));
+    return {
+      status: 201,
+      body: resolveTeamVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
+  }
+
+  patchTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchTeamVersionInput,
+  ): CommandResult<TeamVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.patchTeamVersion(id, versionId, input, ctx.ifMatch),
+    );
+    return {
+      status: 200,
+      body: resolveTeamVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
+  }
+
+  publishTeamVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): CommandResult<TeamVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.publishTeamVersion(id, versionId, ctx.ifMatch),
+    );
+    return {
+      status: 200,
+      body: resolveTeamVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
   }
 
   listWorkflows(_query: ListQuery): PageDto<WorkflowDto> {
     void _query;
-    return pageOf(publishedWorkflows());
+    return pageOf(listedWorkflows(this.authoring));
   }
 
   getWorkflow(id: string): WorkflowDto | null {
-    return findPublishedWorkflow(id);
+    return resolveWorkflow(this.authoring, id);
   }
 
   getWorkflowVersion(id: string, versionId: string): WorkflowVersionDto | null {
-    return findPublishedWorkflowVersion(id, versionId);
+    return resolveWorkflowVersion(this.authoring, id, versionId);
+  }
+
+  createWorkflow(ctx: CommandContext, input: CreateWorkflowInput): CommandResult<WorkflowDto> {
+    void ctx;
+    const workflow = this.runCatalog(() => this.authoring.createWorkflow(input));
+    return {
+      status: 201,
+      body: resolveWorkflow(this.authoring, workflow.id)!,
+      revision: workflow.stateRevision,
+    };
+  }
+
+  patchWorkflow(
+    ctx: CommandContext,
+    id: string,
+    input: PatchWorkflowInput,
+  ): CommandResult<WorkflowDto> {
+    const workflow = this.runCatalog(() => this.authoring.patchWorkflow(id, input, ctx.ifMatch));
+    return {
+      status: 200,
+      body: resolveWorkflow(this.authoring, workflow.id)!,
+      revision: workflow.stateRevision,
+    };
+  }
+
+  createWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    input: CreateWorkflowVersionInput,
+  ): CommandResult<WorkflowVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.createWorkflowVersion(id, input, ctx.ifMatch),
+    );
+    return {
+      status: 201,
+      body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
+  }
+
+  patchWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+    input: PatchWorkflowVersionInput,
+  ): CommandResult<WorkflowVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.patchWorkflowVersion(id, versionId, input, ctx.ifMatch),
+    );
+    return {
+      status: 200,
+      body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
+  }
+
+  publishWorkflowVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): CommandResult<WorkflowVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.publishWorkflowVersion(id, versionId, ctx.ifMatch),
+    );
+    return {
+      status: 200,
+      body: resolveWorkflowVersion(this.authoring, id, version.id)!,
+      revision: version.stateRevision,
+    };
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {
@@ -291,10 +457,14 @@ export class FakeAppServices implements AppServices {
         "Project definition can only be patched in draft or planning",
       );
     }
+    if (input.teamVersionId !== undefined) {
+      this.runCatalog(() => assertBindableTeamVersionId(this.authoring, input.teamVersionId!));
+    }
     const next: ProjectDto = {
       ...record.dto,
       name: input.name ?? record.dto.name,
       objective: input.objective ?? record.dto.objective,
+      ...(input.teamVersionId !== undefined ? { teamVersionId: input.teamVersionId } : {}),
       stateRevision: record.dto.stateRevision + 1,
       updatedAt: this.timestamp(),
     };
@@ -309,6 +479,9 @@ export class FakeAppServices implements AppServices {
   startPlanning(ctx: CommandContext, id: string): CommandResult<ProjectDto> {
     const record = this.requireProject(id);
     this.assertMatch(record.dto.stateRevision, ctx.ifMatch);
+    this.runCatalog(() =>
+      assertBindableTeamVersionId(this.authoring, record.dto.teamVersionId ?? TEAM_VERSION_ID),
+    );
     const status = this.transitionProject(record.dto.status, "start-planning");
     const plan = this.createPlanArtifact(record.dto, ctx);
     const next: ProjectDto = {
@@ -385,10 +558,14 @@ export class FakeAppServices implements AppServices {
         "Mock run cost is unknown and cannot enforce a hard currency limit",
       );
     }
+    assertStartOrchestrationAllowed(input.orchestrationMode, this.capabilities());
     const status = this.transitionProject(record.dto.status, "start");
     const next: ProjectDto = {
       ...record.dto,
       status,
+      ...(input.orchestrationMode !== undefined
+        ? { orchestrationMode: input.orchestrationMode }
+        : {}),
       stateRevision: record.dto.stateRevision + 1,
       updatedAt: this.timestamp(),
     };
@@ -477,7 +654,8 @@ export class FakeAppServices implements AppServices {
       updatedAt: ts,
     };
     record.dto = task;
-    const run = this.insertRun(task, ctx, "waiting_input");
+    const project = this.projects.get(task.projectId)?.dto;
+    const run = this.insertRun(task, ctx, "waiting_input", project?.orchestrationMode);
     this.appendEvent("task.retried", "task", task.id, task.projectId, {
       correlationId: ctx.operationId,
       taskId: task.id,
@@ -889,7 +1067,7 @@ export class FakeAppServices implements AppServices {
       dependsOn: [],
     };
     this.tasks.set(task.id, { dto: task });
-    this.insertRun(task, ctx, "waiting_input");
+    this.insertRun(task, ctx, "waiting_input", project.orchestrationMode);
     this.appendEvent("task.created", "task", task.id, project.id, {
       correlationId: ctx.operationId,
       taskId: task.id,
@@ -897,7 +1075,12 @@ export class FakeAppServices implements AppServices {
     });
   }
 
-  private insertRun(task: TaskDto, ctx: CommandContext, status: RunStatus): RunDto {
+  private insertRun(
+    task: TaskDto,
+    ctx: CommandContext,
+    status: RunStatus,
+    orchestrationMode?: "workflow_bound" | "direct",
+  ): RunDto {
     const ts = this.timestamp();
     const dto: RunDto = {
       id: this.ids(prefixes.run),
@@ -913,6 +1096,7 @@ export class FakeAppServices implements AppServices {
       usage: { costMinor: 0, currency: "USD", kind: "unknown" },
       createdAt: ts,
       updatedAt: ts,
+      ...(orchestrationMode !== undefined ? { orchestrationMode } : {}),
     };
     this.runs.set(dto.id, { dto });
     this.appendEvent("run.status_changed", "run", dto.id, dto.projectId, {
@@ -1105,6 +1289,21 @@ export class FakeAppServices implements AppServices {
       return nextApprovalStatus(asApprovalStatus(from), command);
     } catch (error) {
       throw this.wrapTransition(error);
+    }
+  }
+
+  private runCatalog<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (error) {
+      if (error instanceof UseCaseError) {
+        const currentRevision =
+          typeof error.details?.actual === "number" ? error.details.actual : undefined;
+        throw new AppError(error.code, error.message, {
+          ...(currentRevision !== undefined ? { currentRevision } : {}),
+        });
+      }
+      throw error;
     }
   }
 

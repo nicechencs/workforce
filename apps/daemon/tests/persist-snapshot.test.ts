@@ -7,7 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkforceSqlite } from "@workforce/database";
 
 import type { PersistedHostStore, PersistedWorld } from "../src/composition/persist.js";
-import { dualWriteSqlite, loadSnapshot, persistSnapshot, worldPath } from "../src/composition/persist.js";
+import {
+  dualWriteSqlite,
+  loadSnapshot,
+  persistSnapshot,
+  worldPath,
+} from "../src/composition/persist.js";
 
 /**
  * D04: the world.json sidecar must stay readable across upgrades. State written
@@ -99,7 +104,10 @@ describe("composition world sidecar", () => {
         ),
       ).resolves.toBeUndefined();
 
-      expect(report).toHaveBeenCalledWith(expect.stringContaining("constraint failure"), constraint);
+      expect(report).toHaveBeenCalledWith(
+        expect.stringContaining("constraint failure"),
+        constraint,
+      );
     } finally {
       report.mockRestore();
       save.mockRestore();

@@ -3,7 +3,7 @@ title: 产品沟通历史
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # 产品沟通历史
@@ -34,6 +34,30 @@ updated: 2026-09-11
 ```
 
 同一自然日可有多条；后写的条目不得假装改写先写的决定，只能追加澄清。
+
+---
+
+## 2026-09-12（Asia/Taipei）合入 `dev` 前再钉本分支切片边界
+
+- **决定：** 向 `dev` 开 PR 的进度页必须只写本分支实有代码。T18 = 画布 + 草稿写 API（部分 M7 UI）；T19 = 写 API 已通、页面仍 stub；T20 = 作者壳在、`CHAT_SESSION_PROTOCOL_FROZEN=false`、无 Agent/send、无 session store；T21 = 项目 start 的 mode UI 模块 + capability gating 已有，控件未挂详情，composed passthrough 比 main #28 更薄。公共 `orchestrationMode` 权威仍是 `execution.ts`（C5–C9），Daemon `modules/orchestration.ts` 只做 parse/gate。不宣称 M7/M8 完成、headed PASS、Codex direct。不发明 chat / `:direct` / enrollment。未迁 main #20 placements 文档深度、#21 完整 T19 写 UI、#28 passthrough 测试深度、#30/#31 session store + localStorage。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T18–T21 与 §5.4–5.7；[02-development-task-backlog.md](02-development-task-backlog.md) 各卡当前切片；[decision-register.md](decision-register.md) §0 / §9 去掉「可写面尚未实现 / 代码尚未实现」的绝对句；[api-capability-matrix.md](api-capability-matrix.md) M7/M8 行与页面动作表。
+- **状态：** 文档对齐 **implemented**。M7/M8 产品完成仍 **planned**。headed 真窗仍未跑。
+
+---
+
+## 2026-09-12（Asia/Taipei）进度文档与部分移植切片对齐
+
+- **决定：** `task/port-main-m7-t18-t21` 是部分移植，不是 T18–T21 全量。合入 `dev` 前进度真源必须与代码一致：有画布壳 / catalog 写 API / 作者壳 / `:start` 回显，就不得再写「都还没有代码」。同时钉死诚实边界：不宣称 M7/M8 完成、headed PASS、Agent send、`direct` 调度；`StartRunRequest` 不加 `orchestrationMode`；T19 页面仍拒保存；T21 控件未入项目页；画布与设计系统两套皮肤并存。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) 重写 T18–T21 与 §5.4–5.7；[02-development-task-backlog.md](02-development-task-backlog.md) 去掉「T18–T21 代码均未实现」并给各卡加当前切片；[api-capability-matrix.md](api-capability-matrix.md) 写明现切片走 `.../versions` 而非表内 `/drafts` path。
+- **状态：** 文档对齐 **implemented**。M7/M8 产品完成仍 **planned**。headed 真窗仍未跑。
+
+---
+
+## 2026-09-12（Asia/Taipei）把 main 上的 M7 写 API 迁回 dev，保留 C5–C9 契约
+
+- **决定：** 日常集成分支是 `dev`。`main` 上 15c058f 起的 M7 catalog 写 API、D17 authoring DTO、T18–T21 功能要迁回 `dev`，但不得覆盖 `dev` 已裁决的 C5–C9：`StartRunRequest` 不承载 `orchestrationMode`；migration `005_execution_axes_expand` 不改号；catalog 四张表使用 `006_catalog_definitions`。UI 重贴 `dev` 设计系统另切片。
+- **文档影响：** [protocols/README.md](../protocols/README.md) 增加 team / authoring-session / orchestration-mode schema 索引；`orchestration-mode.schema.json` 写明权威在 `execution.ts` 而非 `StartRunRequest`。
+- **状态：** 写 API + protocol DTO + 006 迁移 **implemented**（源码与测试）。T18/T19/T20 页面重贴与 T21 UI **planned**。
 
 ---
 

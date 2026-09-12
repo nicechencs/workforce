@@ -37,7 +37,7 @@ describe("REST proxy", () => {
     expect(safe.path).toBe("/api/v1/projects?limit=20&cursor=abc");
   });
 
-  it("lets the desktop page proxy published workflow catalog reads", () => {
+  it("lets the desktop page proxy workflow catalog reads and writes", () => {
     const listed = assertSafeApiRequest({
       method: "GET",
       path: "/api/v1/workflows?limit=20",
@@ -50,11 +50,11 @@ describe("REST proxy", () => {
     expect(version.path).toBe(
       "/api/v1/workflows/software-development-team.feature-delivery/versions/0.1.0",
     );
-    expect(() =>
+    expect(
       assertSafeApiRequest({
         method: "POST",
         path: "/api/v1/workflows",
-      }),
-    ).toThrow(/not on the Desktop allowlist/);
+      }).path,
+    ).toBe("/api/v1/workflows");
   });
 });

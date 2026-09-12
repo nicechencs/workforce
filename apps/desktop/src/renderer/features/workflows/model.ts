@@ -1,3 +1,6 @@
+import { parseGraphRecord } from "./graph/parse.js";
+import type { CanvasGraph } from "./graph/types.js";
+
 export const FEATURE_DELIVERY_WORKFLOW_ID = "software-development-team.feature-delivery" as const;
 export const FEATURE_DELIVERY_VERSION = "0.1.0" as const;
 
@@ -17,9 +20,12 @@ export interface WorkflowVersionView {
   id: string;
   version: string;
   status: "published" | "draft";
-  immutable: true;
+  immutable: boolean;
   entry: string;
   steps: WorkflowStepView[];
+  graph?: CanvasGraph;
+  executionFrozen: boolean;
+  stateRevision?: number;
 }
 
 export interface WorkflowTemplateView {
@@ -29,6 +35,8 @@ export interface WorkflowTemplateView {
   activeVersionId: string;
   versions: WorkflowVersionView[];
   readonly: true;
+  status?: "draft" | "published";
+  stateRevision?: number;
 }
 
 export const FEATURE_DELIVERY_STEPS: WorkflowStepView[] = [
@@ -76,6 +84,7 @@ export const FEATURE_DELIVERY_VERSION_VIEW: WorkflowVersionView = {
   immutable: true,
   entry: "planning",
   steps: FEATURE_DELIVERY_STEPS,
+  executionFrozen: true,
 };
 
 export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
@@ -156,7 +165,8 @@ export function workflowPageModel(
 export function rejectWorkflowCanvas(): { ok: false; reason: string } {
   return {
     ok: false,
-    reason: "可视化 Workflow 编辑器尚未实现；当前只展示模板、版本和结构化步骤。",
+    reason:
+      "已发布版本与确认计划后的活动执行图不可在画布上原地改（D02）。请新建未发布 version，或从模板复制到画布。",
   };
 }
 
@@ -178,7 +188,7 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
   const fallback = versions[0]?.id ?? "";
   const activeVersionId =
     typeof record.activeVersionId === "string" ? record.activeVersionId : fallback;
-  return {
+  const view: WorkflowTemplateView = {
     id: record.id,
     name,
     description,
@@ -186,9 +196,16 @@ export function asWorkflowView(value: unknown): WorkflowTemplateView | null {
     versions,
     readonly: true,
   };
+  if (record.status === "draft" || record.status === "published") {
+    view.status = record.status;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
+  }
+  return view;
 }
 
-function asVersionView(value: unknown): WorkflowVersionView | null {
+export function asVersionView(value: unknown): WorkflowVersionView | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -204,14 +221,35 @@ function asVersionView(value: unknown): WorkflowVersionView | null {
         .map((item) => asStepView(item))
         .filter((item): item is WorkflowStepView => item !== null)
     : [];
-  return {
+  const graph = parseOptionalGraph(record);
+  const executionFrozen =
+    record.executionFrozen === true || status === "published" || record.immutable === true;
+  const view: WorkflowVersionView = {
     id,
     version,
     status,
-    immutable: true,
+    immutable: status === "published" || record.immutable === true,
     entry: typeof record.entry === "string" ? record.entry : "",
     steps,
+    executionFrozen,
   };
+  if (graph) {
+    view.graph = graph;
+  }
+  if (typeof record.stateRevision === "number" && Number.isInteger(record.stateRevision)) {
+    view.stateRevision = record.stateRevision;
+  }
+  return view;
+}
+
+function parseOptionalGraph(record: Record<string, unknown>): CanvasGraph | undefined {
+  if (record.graph !== undefined) {
+    return parseGraphRecord(record.graph) ?? undefined;
+  }
+  if (Array.isArray(record.nodes) && Array.isArray(record.edges)) {
+    return parseGraphRecord(record) ?? undefined;
+  }
+  return undefined;
 }
 
 function asStepView(value: unknown): WorkflowStepView | null {

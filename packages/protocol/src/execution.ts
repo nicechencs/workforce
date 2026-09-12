@@ -30,6 +30,13 @@ export const orchestrationModeSchema = z.enum(orchestrationModes);
 export type RuntimeTransport = z.infer<typeof runtimeTransportSchema>;
 export type OrchestrationMode = z.infer<typeof orchestrationModeSchema>;
 
+/** Existing M3 Mock / fixtures omit the field; parsed output stays workflow-bound. */
+export const DEFAULT_ORCHESTRATION_MODE = "workflow_bound" as const;
+
+export function isOrchestrationMode(value: string): value is OrchestrationMode {
+  return (orchestrationModes as readonly string[]).includes(value);
+}
+
 /**
  * Request-side placement preference. Never authoritative: the Application still
  * has to pass Policy/Budget/Approval, select a Node and RuntimeInstallation,
