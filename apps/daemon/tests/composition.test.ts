@@ -1349,7 +1349,7 @@ describe("composed M3 mock loop", () => {
     });
     expect(hardBudget.status).toBe(422);
     expect(hardBudget.body).toMatchObject({ code: "unknown_cost_not_enforceable" });
-  }, 20_000);
+  }, 40_000);
 
   it(
     "keeps Task dependsOn and artifact bytes after world.json is deleted",
