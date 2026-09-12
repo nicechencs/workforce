@@ -100,6 +100,11 @@ export const softwareDevelopmentTeamTemplate = {
     developerCompletesWithoutReviewer: true,
     autoPush: false,
     autoPullRequest: false,
+    unboundedSplit: false,
+    plannerVia: "task_run",
+    plannerBypassTaskRun: false,
+    reintegrationInvalidatesApprovals: true,
+    silentOverwrite: false,
   },
   mockPlanFixture: "fixtures/mock-plan.json",
 } as const;

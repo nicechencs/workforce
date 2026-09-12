@@ -10,9 +10,14 @@ entry: planning
 stages:
   - id: planning
     worker: planner
+    via: task_run
+    runtimeCommand: run.start
     output: out_plan
+    schemaRef: urn:workforce:plan-artifact:0.1
     gate: plan
     publishes: workflowVersion
+    confirmAfter: schema_validated
+    unboundedSplit: deny
   - id: implementation
     worker: developer
     parallel: true
@@ -26,6 +31,9 @@ stages:
     provision: workspace.provisionIntegrationWorkspace
     apply: workspace.applyPatch
     onConflict: human
+    silentOverwrite: deny
+    reintegrationInvalidatesApprovals: true
+    bindDigest: [review, artifact_approval]
   - id: review
     worker: reviewer
     onUpstream: outputs_ready
@@ -34,6 +42,11 @@ stages:
     kind: approval
     gate: artifact
     bindDigest: integration
+  - id: export
+    kind: delivery_bundle
+    trace: [runId, artifactVersionId, contentDigest, evaluation]
+    autoPush: false
+    autoPullRequest: false
 failurePolicy:
   type: fail_workflow
 concurrencyPolicy:

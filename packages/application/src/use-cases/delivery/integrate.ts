@@ -6,6 +6,7 @@ import type {
   IntegratePatchesDeps,
   IntegrationOutcome,
   PatchContribution,
+  ReviewDigestBinding,
 } from "./ports.js";
 
 export class PatchConflictError extends Error {
@@ -50,6 +51,13 @@ function contributionDigest(command: IntegratePatchesCommand): string {
   });
 }
 
+function contributionPaths(item: PatchContribution): string[] {
+  if (item.changedPaths.length > 0) {
+    return item.changedPaths;
+  }
+  return parsePatchPaths(item.patch);
+}
+
 function validateCommand(command: IntegratePatchesCommand): ProtocolError | undefined {
   if (command.contributions.length === 0) {
     return protocolError("validation_failed", "at least one patch contribution is required");
@@ -60,6 +68,12 @@ function validateCommand(command: IntegratePatchesCommand): ProtocolError | unde
       return protocolError(
         "validation_failed",
         "each contribution needs nodeId, patch, and baseSha",
+      );
+    }
+    if (!item.runId || !item.artifactVersionId) {
+      return protocolError(
+        "validation_failed",
+        "each contribution needs runId and artifactVersionId",
       );
     }
     if (seen.has(item.nodeId)) {
@@ -73,6 +87,56 @@ function validateCommand(command: IntegratePatchesCommand): ProtocolError | unde
     }
   }
   return undefined;
+}
+
+async function invalidateApprovalsForDigest(input: {
+  deps: IntegratePatchesDeps;
+  projectId: string;
+  workflowVersionId: string;
+  previousDigest: string;
+  now: string;
+}): Promise<string[]> {
+  if (!input.deps.approvals) {
+    return [];
+  }
+  const bindings = await input.deps.approvals.listForWorkflow(
+    input.projectId,
+    input.workflowVersionId,
+  );
+  const invalidated: string[] = [];
+  for (const binding of bindings) {
+    if (binding.gate !== "artifact") {
+      continue;
+    }
+    if (binding.digest !== input.previousDigest) {
+      continue;
+    }
+    if (binding.status === "superseded" || binding.status === "cancelled") {
+      continue;
+    }
+    await input.deps.approvals.supersede(binding.approvalId, input.now);
+    invalidated.push(binding.approvalId);
+  }
+  return invalidated;
+}
+
+function digestBindings(input: {
+  contentDigest: string;
+  workflowVersionId: string;
+  workspaceInstanceId: string;
+  baseSha: string;
+  appliedNodeIds: string[];
+  bindToNodeIds: readonly string[];
+}): ReviewDigestBinding {
+  return {
+    contentDigest: input.contentDigest,
+    gate: "artifact",
+    workflowVersionId: input.workflowVersionId,
+    workspaceInstanceId: input.workspaceInstanceId,
+    baseSha: input.baseSha,
+    appliedNodeIds: input.appliedNodeIds,
+    bindToNodeIds: input.bindToNodeIds,
+  };
 }
 
 export async function integratePatches(
@@ -102,16 +166,47 @@ export async function integratePatches(
   });
 
   const appliedNodeIds: string[] = [];
+  const claimedPaths = new Set<string>();
   for (const contribution of ordered) {
+    const paths = contributionPaths(contribution);
+    const overlappingPaths = paths.filter((path) => claimedPaths.has(path));
+    if (overlappingPaths.length > 0) {
+      const outcome: IntegrationOutcome = {
+        status: "conflict",
+        workspaceInstanceId: instance.workspaceInstanceId,
+        appliedNodeIds,
+        conflict: {
+          nodeId: contribution.nodeId,
+          message: `overlapping paths ${overlappingPaths.join(",")}`,
+          requiresHuman: true,
+          overlappingPaths,
+        },
+        pushed: false,
+        pullRequestCreated: false,
+      };
+      await deps.store.put({
+        projectId: command.projectId,
+        workflowVersionId: command.workflowVersionId,
+        contributionDigest: digest,
+        outcome,
+        superseded: false,
+      });
+      return { ok: true, replayed: false, outcome };
+    }
     try {
       await deps.workspace.applyPatch(instance.workspaceInstanceId, contribution.patch);
       appliedNodeIds.push(contribution.nodeId);
+      for (const path of paths) {
+        claimedPaths.add(path);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "patch apply failed";
-      const overlappingPaths =
+      const applyOverlap =
         err instanceof PatchConflictError
           ? err.overlappingPaths
-          : parsePatchPaths(contribution.patch);
+          : overlappingPaths.length > 0
+            ? overlappingPaths
+            : paths;
       const outcome: IntegrationOutcome = {
         status: "conflict",
         workspaceInstanceId: instance.workspaceInstanceId,
@@ -120,7 +215,7 @@ export async function integratePatches(
           nodeId: contribution.nodeId,
           message,
           requiresHuman: true,
-          ...(overlappingPaths.length > 0 ? { overlappingPaths } : {}),
+          ...(applyOverlap.length > 0 ? { overlappingPaths: applyOverlap } : {}),
         },
         pushed: false,
         pullRequestCreated: false,
@@ -144,6 +239,33 @@ export async function integratePatches(
     appliedNodeIds,
   });
   const bindToNodeIds = options?.bindToNodeIds ?? DEFAULT_BIND_TO;
+  const binding = digestBindings({
+    contentDigest: content,
+    workflowVersionId: command.workflowVersionId,
+    workspaceInstanceId: instance.workspaceInstanceId,
+    baseSha: captured.baseSha,
+    appliedNodeIds,
+    bindToNodeIds,
+  });
+
+  const previousIntegrated = previous.find(
+    (record) => !record.superseded && record.outcome.status === "integrated",
+  );
+  const supersededDigest =
+    previousIntegrated && previousIntegrated.outcome.status === "integrated"
+      ? previousIntegrated.outcome.contentDigest
+      : undefined;
+  const invalidatedApprovalIds =
+    supersededDigest && supersededDigest !== content
+      ? await invalidateApprovalsForDigest({
+          deps,
+          projectId: command.projectId,
+          workflowVersionId: command.workflowVersionId,
+          previousDigest: supersededDigest,
+          now: new Date().toISOString(),
+        })
+      : [];
+
   const outcome: IntegrationOutcome = {
     status: "integrated",
     workspaceInstanceId: instance.workspaceInstanceId,
@@ -152,15 +274,16 @@ export async function integratePatches(
     changedPaths: captured.changedPaths,
     patch: captured.patch,
     baseSha: captured.baseSha,
-    reviewBinding: {
-      contentDigest: content,
-      gate: "artifact",
-      workflowVersionId: command.workflowVersionId,
-      workspaceInstanceId: instance.workspaceInstanceId,
-      baseSha: captured.baseSha,
-      appliedNodeIds,
-      bindToNodeIds,
-    },
+    contributors: ordered.map((item) => ({
+      nodeId: item.nodeId,
+      runId: item.runId,
+      artifactVersionId: item.artifactVersionId,
+    })),
+    reviewBinding: binding,
+    acceptanceBinding: binding,
+    evaluationBinding: { contentDigest: content, required: true, status: "required" },
+    ...(supersededDigest && supersededDigest !== content ? { supersededDigest } : {}),
+    invalidatedApprovalIds,
     pushed: false,
     pullRequestCreated: false,
   };
@@ -182,4 +305,18 @@ export function previousApprovalStillValid(input: {
   currentDigest: string;
 }): boolean {
   return input.approvedDigest === input.currentDigest;
+}
+
+export function sameDigestBinding(input: {
+  reviewDigest: string;
+  acceptanceDigest: string;
+  evaluationDigest?: string;
+}): boolean {
+  if (input.reviewDigest !== input.acceptanceDigest) {
+    return false;
+  }
+  if (input.evaluationDigest !== undefined && input.evaluationDigest !== input.reviewDigest) {
+    return false;
+  }
+  return true;
 }

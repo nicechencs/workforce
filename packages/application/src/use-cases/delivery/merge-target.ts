@@ -45,3 +45,21 @@ export function recordTargetMergeIntent(command: ExplicitTargetMerge): RecordTar
     },
   };
 }
+
+/** Merge intent is only valid for the current integrated digest. */
+export function bindTargetMergeToDigest(
+  command: ExplicitTargetMerge,
+  currentDigest: string,
+): RecordTargetMergeResult {
+  if (command.contentDigest !== currentDigest) {
+    return {
+      ok: false,
+      error: protocolError(
+        "conflict",
+        "target-branch merge digest does not match current integration",
+        { details: { expected: currentDigest, provided: command.contentDigest } },
+      ),
+    };
+  }
+  return recordTargetMergeIntent(command);
+}
