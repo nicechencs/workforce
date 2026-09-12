@@ -9,7 +9,7 @@ updated: 2026-09-12
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-12  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 作者壳 / `:start` 回显已有切片，完成度只认 03。  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 作者壳 + Desktop-local session store / `:start` 回显已有切片，完成度只认 03。  
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -398,7 +398,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** send / 编排 Agent / session store。不得把壳写成对话编排完成。
+**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；会话/草稿 DTO 已在 protocol；Desktop-local session store + 仅用户 append + renderer `localStorage` 已接线。`CHAT_SESSION_PROTOCOL_FROZEN=false`，**无** Agent/send / chat HTTP。不得把壳写成对话编排完成或 M7 完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 

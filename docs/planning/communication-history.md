@@ -37,6 +37,14 @@ updated: 2026-09-12
 
 ---
 
+## 2026-09-12（Asia/Taipei）把 #31 session store 迁到 `dev`，不并进 `main`
+
+- **决定：** 日常线是 `dev`。#31 指向 `main` 且已分叉，不把 #31 合进 `main`。只把 Desktop-local authoring session store、仅用户 append、renderer `localStorage`（跨 Ctrl+R）迁到当前 `dev` tip。`CHAT_SESSION_PROTOCOL_FROZEN` 保持 false；无 Agent/send、无 chat HTTP。不宣称 M7/M8 完成，不照搬 #30/#31 在 main 上的 headed PASS。
+- **文档影响：** [03-implementation-status.md](03-implementation-status.md) T20 与 §5.6；[02-development-task-backlog.md](02-development-task-backlog.md) T20 当前切片；[api-capability-matrix.md](api-capability-matrix.md) 对话生成行；[decision-register.md](decision-register.md) §0 切片一句。
+- **状态：** session store / 仅用户 append / `localStorage` **implemented**（本机 store + 单测）。编排 Agent / send / chat HTTP / M7 完成仍 **planned**。headed 真窗仍未跑。
+
+---
+
 ## 2026-09-12（Asia/Taipei）合入 `dev` 前再钉本分支切片边界
 
 - **决定：** 向 `dev` 开 PR 的进度页必须只写本分支实有代码。T18 = 画布 + 草稿写 API（部分 M7 UI）；T19 = 写 API 已通、页面仍 stub；T20 = 作者壳在、`CHAT_SESSION_PROTOCOL_FROZEN=false`、无 Agent/send、无 session store；T21 = 项目 start 的 mode UI 模块 + capability gating 已有，控件未挂详情，composed passthrough 比 main #28 更薄。公共 `orchestrationMode` 权威仍是 `execution.ts`（C5–C9），Daemon `modules/orchestration.ts` 只做 parse/gate。不宣称 M7/M8 完成、headed PASS、Codex direct。不发明 chat / `:direct` / enrollment。未迁 main #20 placements 文档深度、#21 完整 T19 写 UI、#28 passthrough 测试深度、#30/#31 session store + localStorage。

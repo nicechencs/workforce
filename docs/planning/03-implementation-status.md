@@ -10,7 +10,9 @@ updated: 2026-09-12
 
 日期：2026-09-12  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
-修订：2026-09-12 — `task/port-main-m7-t18-t21` 把 main 上的 M7 catalog 写 API / 画布 + 草稿写路径 / 作者壳 / `:start` orchestrationMode 回显迁到 `dev` 契约上。本文件只记**本分支实有代码**，禁止再写「都还没有代码」。**不**宣称 M7/M8 完成、headed Electron PASS、编排 Agent / chat send、`direct` 调度、Codex direct，或未发布图可被 Runtime 执行。`orchestrationMode` 公共权威仍是 `packages/protocol/src/execution.ts`（C5–C9）；`StartRunRequest` 不加该字段。catalog 表是 `006_catalog_definitions`，不改 `005`。相对 main 隔夜：未迁 #20 placements 文档深度、#21 完整 T19 写 UI、#28 composed passthrough 测试深度、#30/#31 session store + localStorage。
+修订：2026-09-12 — 从 main #31（`43f281e4`）把 Desktop-local authoring session store + 仅用户 append + renderer `localStorage` 快照迁到本 `dev` tip。`CHAT_SESSION_PROTOCOL_FROZEN` **仍为 false**；无 Agent/send、无 chat HTTP。**不**宣称 M7 完成，也**不**照搬 #30/#31 在 main 上的 headed PASS。其余 T18/T19/T21 边界不变。
+
+修订：2026-09-12 — `task/port-main-m7-t18-t21` 把 main 上的 M7 catalog 写 API / 画布 + 草稿写路径 / 作者壳 / `:start` orchestrationMode 回显迁到 `dev` 契约上。本文件只记**本分支实有代码**，禁止再写「都还没有代码」。**不**宣称 M7/M8 完成、headed Electron PASS、编排 Agent / chat send、`direct` 调度、Codex direct，或未发布图可被 Runtime 执行。`orchestrationMode` 公共权威仍是 `packages/protocol/src/execution.ts`（C5–C9）；`StartRunRequest` 不加该字段。catalog 表是 `006_catalog_definitions`，不改 `005`。相对 main 隔夜：未迁 #20 placements 文档深度、#21 完整 T19 写 UI、#28 composed passthrough 测试深度。#31 session store 另见同日后续修订。
 
 修订：2026-09-11 — 桌面 IPC allowlist 补上只读 `GET /workflows` / `{id}` / `{id}/versions/{versionId}`（Daemon composition 早已返回已发布模板；headed 真窗口读失败是 Electron 代理拒路，不是 Fake-only）。不宣称 headed Electron / live Codex 已在 CI 复验。同日规划冻结 D17 对话生成工作流、D18 双执行模式与[产品沟通历史](communication-history.md)；当时这些 UI/API **尚未实现**。#16 `dependsOn` + `LocalArtifactStore`、#17 画布/自定义 Team 决策文档、#18 IPC 目录放行的已验证结论仍有效。
 
@@ -52,7 +54,7 @@ M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完�
 | T17 | 未开始 | 打包/签名 |
 | T18 | 部分 M7 UI：画布 + 草稿写 API 已有，未完成、未 headed | 画布页 + `write-client` + catalog 写路由（`POST/PATCH /workflows`、`/versions`、`:publish`）+ IPC 写 allowlist。列表「新建画布」。happy-dom / 包测已跑。**未** headed 验收。未发布图仍不可被 Runtime 执行。皮肤用 `features/projects/ui.ts` inline，未重贴设计系统。**不**宣称 M7 完成 |
 | T19 | 仍是 stub：写 API 已通，页面只读 | Daemon/client：`POST/PATCH /teams`、versions、`:publish`、`GET .../versions/{id}`。页面仍 `rejectCustomTeamSave()`，只读预设。相对 main #21：**没有**自定义 Team 写 UI / 草稿 reload 持久化。不是「完全没有代码」，也不是 Team 写 UI 完成 |
-| T20 | 作者壳已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；无 Agent/send | `workflow-authoring` 由工作流页 `?authoring=1` 挂入；`packages/protocol` authoring session/draft DTO 已在。旗标 `CHAT_SESSION_PROTOCOL_FROZEN` 为 **false**，发送按钮禁用。V0.1 传输约定 Desktop-local，**无** chat HTTP path，**无** session store / localStorage（#31 未迁）。禁止假 Agent 成功。**不**宣称对话编排完成。T20-B 未做 |
+| T20 | 作者壳 + Desktop-local session store 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；无 Agent/send | `workflow-authoring` 由工作流页 `?authoring=1` 挂入；`packages/protocol` authoring session/draft DTO 已在。本机 `InProcessAuthoringSessionStore` 只追加 `role=user`，快照写入 renderer `localStorage`，Ctrl+R reload 可恢复。旗标 `CHAT_SESSION_PROTOCOL_FROZEN` 为 **false**；「发送给编排 Agent」仍禁用。V0.1 传输约定 Desktop-local，**无** chat HTTP path。禁止假 Agent 成功。**不**宣称对话编排完成或 M7 完成。T20-B 未做 |
 | T20-B | 已规划，未实现 | 无 Application authoring use case、proposal/change-set、CAS/staged apply |
 | T21 | 项目 start 的 mode UI 模块 + capability gating 已有；M8 未完成 | `GET /capabilities.orchestration`；`:start` 可选 `orchestrationMode`；`direct` 无 probe → 422。`features/orchestration/` 控件与 `buildStartProjectInput` 为项目「开始执行」而写，**项目详情尚未挂上**（`startProject` 仍不传 mode）。composed `startProject` 只校验并回写 Project/Run DTO，**不**把 mode 传入 `app.start()`，也**不**双写 `runs.orchestration_mode` 列——比 main #28 更薄。Daemon `modules/orchestration.ts` 只做 parse/gate，公共权威仍是 `execution.ts`。**不**写入 `StartRunRequest`。无 headed PASS、无 Codex direct、无 `direct` 调度、**不**宣称 M8 完成 |
 
@@ -174,7 +176,7 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 3. **T17** 打包。  
 4. **T18 剩余**：headed 真窗扫画布保存/刷新；把画布页重贴 `components/ui.tsx`；未发布图仍不得被 `:start` / Runtime 执行。画布 + 写 API **不等于** M7 完成。  
 5. **T19 剩余**：页面仍是 stub。换掉 `rejectCustomTeamSave()`，接已存在的 Team 写 API；main #21 的草稿 list/reload 未迁。  
-6. **T20/T20-B 剩余**：`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false；无 chat send、无编排 Agent、无 session store、无 Application authoring use case / change-set。作者壳不得假成功，也不得写成对话编排完成。  
+6. **T20/T20-B 剩余**：session store / 仅用户 append / `localStorage` 已在本 tip。`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false；无 chat send、无编排 Agent、无 Application authoring use case / change-set。作者壳不得假成功，也不得写成对话编排完成或 M7 完成。无 headed PASS。  
 7. **T21 剩余**：把 `features/orchestration` 控件挂进项目「开始执行」；加厚 composed passthrough（mode 传入 `app.start()` / Run 记录，见 main #28）；`direct` 调度与 `runs.orchestration_mode` 列双写未做。**禁止**把 mode 写入 `StartRunRequest`。无 headed PASS、无 Codex direct。  
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；UI 只读说明，未伪造已接入。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
