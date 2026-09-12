@@ -1125,6 +1125,7 @@ a {
 }
 
 .wf-skeleton {
+  height: var(--wf-space-12);
   border-radius: var(--wf-radius-btn);
   background: var(--wf-bg-subtle);
   animation: wf-skeleton-pulse 1.6s ease-in-out infinite;
@@ -1297,6 +1298,343 @@ button.wf-list-row:hover {
 
 .wf-timeline-row:last-child {
   border-bottom: 0;
+}
+
+/* ─── 表格 / 骨架 ────────────────────────────────────────────────────────── */
+
+.wf-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.wf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--wf-font-body);
+}
+
+.wf-th,
+.wf-td {
+  padding: var(--wf-space-8) var(--wf-space-8);
+  text-align: left;
+  vertical-align: top;
+}
+
+.wf-th {
+  border-bottom: 1px solid var(--wf-border);
+  background: var(--wf-bg-subtle);
+  font-size: var(--wf-font-meta);
+  font-weight: 500;
+  color: var(--wf-text-muted);
+}
+
+.wf-td {
+  border-bottom: 1px solid var(--wf-border);
+  color: var(--wf-text-primary);
+}
+
+.wf-tr:last-child .wf-td {
+  border-bottom: 0;
+}
+
+.wf-skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-space-8);
+}
+
+.wf-skeleton-stack .wf-skeleton:last-child {
+  width: 62%;
+}
+
+.wf-check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wf-space-8);
+  font-size: var(--wf-font-meta);
+  color: var(--wf-text-secondary);
+}
+
+.wf-check {
+  width: auto;
+  height: auto;
+  margin: 0;
+  accent-color: var(--wf-accent);
+}
+
+/* ─── Dialog / 菜单 / 提示 / Toast ─────────────────────────────────────── */
+
+.wf-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--wf-space-24);
+  background: color-mix(in srgb, var(--wf-bg-canvas) 55%, transparent);
+}
+
+.wf-dialog {
+  width: min(32rem, 100%);
+  max-height: min(80vh, 40rem);
+  overflow: auto;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-card);
+  background: var(--wf-bg-panel);
+  box-shadow: var(--wf-shadow-lg);
+}
+
+.wf-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wf-space-8);
+  padding: var(--wf-space-12) var(--wf-space-16);
+}
+
+.wf-dialog-title {
+  margin: 0;
+  font-size: var(--wf-font-body);
+  font-weight: 600;
+  color: var(--wf-text-primary);
+}
+
+.wf-dialog-body {
+  padding: 0 var(--wf-space-16) var(--wf-space-16);
+  font-size: var(--wf-font-body);
+  color: var(--wf-text-secondary);
+}
+
+.wf-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--wf-space-8);
+  border-top: 1px solid var(--wf-border);
+  padding: var(--wf-space-12) var(--wf-space-16);
+}
+
+.wf-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.wf-menu {
+  position: absolute;
+  top: calc(100% + var(--wf-space-4));
+  left: 0;
+  z-index: 30;
+  min-width: 12rem;
+  margin: 0;
+  padding: var(--wf-space-4);
+  list-style: none;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-card);
+  background: var(--wf-bg-panel);
+  box-shadow: var(--wf-shadow-md);
+}
+
+.wf-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border: 0;
+  border-radius: var(--wf-radius-btn);
+  background: transparent;
+  padding: var(--wf-space-8) var(--wf-space-8);
+  font-size: var(--wf-font-body);
+  color: var(--wf-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wf-menu-item:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+}
+
+.wf-menu-item:disabled {
+  cursor: not-allowed;
+  color: var(--wf-text-disabled);
+}
+
+.wf-menu-item-danger {
+  color: var(--wf-danger);
+}
+
+.wf-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.wf-tooltip-content {
+  position: absolute;
+  bottom: calc(100% + var(--wf-space-4));
+  left: 50%;
+  z-index: 20;
+  display: none;
+  width: max-content;
+  max-width: 16rem;
+  padding: var(--wf-space-4) var(--wf-space-8);
+  border-radius: var(--wf-radius-btn);
+  background: var(--wf-bg-raised);
+  box-shadow: var(--wf-shadow-md);
+  color: var(--wf-text-primary);
+  font-size: var(--wf-font-meta);
+  transform: translateX(-50%);
+}
+
+.wf-tooltip:hover .wf-tooltip-content,
+.wf-tooltip:focus-within .wf-tooltip-content {
+  display: block;
+}
+
+.wf-toast-region {
+  position: fixed;
+  right: var(--wf-space-16);
+  bottom: var(--wf-space-16);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-space-8);
+}
+
+.wf-toast {
+  display: flex;
+  min-width: 16rem;
+  max-width: 22rem;
+  align-items: flex-start;
+  gap: var(--wf-space-8);
+  border: 1px solid var(--wf-border);
+  border-left-width: 3px;
+  border-radius: var(--wf-radius-card);
+  background: var(--wf-bg-panel);
+  padding: var(--wf-space-12);
+  box-shadow: var(--wf-shadow-md);
+  font-size: var(--wf-font-meta);
+  color: var(--wf-text-secondary);
+}
+
+.wf-toast-info {
+  border-left-color: var(--wf-accent);
+}
+.wf-toast-warning {
+  border-left-color: var(--wf-warning);
+}
+.wf-toast-danger {
+  border-left-color: var(--wf-danger);
+}
+
+.wf-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── 工作流画布（共享层，页面只组合 class） ─────────────────────────────── */
+
+.wf-canvas-frame {
+  position: relative;
+  min-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-card);
+  background: var(--wf-bg-subtle);
+}
+
+.wf-canvas-empty {
+  margin: 0;
+  padding: var(--wf-space-16);
+  color: var(--wf-text-muted);
+  font-size: var(--wf-font-meta);
+}
+
+.wf-canvas-node,
+.wf-canvas-hit {
+  cursor: pointer;
+}
+
+.wf-canvas-node-shape {
+  stroke-width: 1.5;
+}
+
+.wf-canvas-node-task {
+  fill: var(--wf-info-subtle);
+  stroke: var(--wf-info);
+}
+
+.wf-canvas-node-approval {
+  fill: var(--wf-warning-subtle);
+  stroke: var(--wf-warning);
+}
+
+.wf-canvas-node-condition {
+  fill: var(--wf-accent-subtle);
+  stroke: var(--wf-accent);
+}
+
+.wf-canvas-node-parallel {
+  fill: var(--wf-success-subtle);
+  stroke: var(--wf-success);
+}
+
+.wf-canvas-node-delivery {
+  fill: var(--wf-bg-panel);
+  stroke: var(--wf-text-secondary);
+}
+
+.wf-canvas-node-shape.is-selected {
+  stroke: var(--wf-text-primary);
+  stroke-width: 2.5;
+}
+
+.wf-canvas-node-shape.is-connecting {
+  stroke: var(--wf-danger);
+  stroke-width: 2.5;
+}
+
+.wf-canvas-node-kind,
+.wf-canvas-node-id {
+  fill: var(--wf-text-muted);
+  font-size: var(--wf-font-meta);
+}
+
+.wf-canvas-node-title {
+  fill: var(--wf-text-primary);
+  font-size: var(--wf-font-body);
+  font-weight: 600;
+}
+
+.wf-canvas-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.wf-canvas-edge {
+  fill: none;
+  stroke: var(--wf-text-muted);
+  stroke-width: 1.5;
+}
+
+.wf-canvas-edge.is-selected {
+  stroke: var(--wf-accent);
+  stroke-width: 2.5;
+}
+
+.wf-canvas-arrow {
+  fill: var(--wf-text-muted);
+}
+
+.wf-canvas-inspector {
+  min-width: 16rem;
+  max-width: 22rem;
+}
+
+.wf-validation-list {
+  margin: 0;
+  padding-left: var(--wf-space-16);
+  color: var(--wf-danger);
+  font-size: var(--wf-font-meta);
 }
 
 /* ─── 响应式 ────────────────────────────────────────────────────────────── */

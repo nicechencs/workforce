@@ -1,56 +1,70 @@
 import type { CSSProperties } from "react";
 
+/**
+ * T18/T20/T21 尚未改组合前的兼容再导出。
+ *
+ * 只引用 `packages/ui` 注入的 `--wf-*` 语义变量，不再携带第二套
+ * `--wf-color-*` 名称或 hex 回退。新页面请直接组合 `components/ui.tsx`。
+ */
+
 export const pageStyle: CSSProperties = {
-  fontFamily: "system-ui, sans-serif",
-  fontSize: "var(--wf-font-body, 16px)",
-  color: "var(--wf-color-text, #111827)",
-  background: "var(--wf-color-page, #e8edf2)",
-  padding: "var(--wf-space-xl, 24px)",
+  fontFamily: "inherit",
+  fontSize: "var(--wf-font-body)",
+  color: "var(--wf-text-primary)",
+  background: "var(--wf-bg-canvas)",
+  padding: "var(--wf-space-12)",
   minHeight: "100%",
 };
 
 export const cardStyle: CSSProperties = {
-  background: "var(--wf-color-card, #ffffff)",
-  border: "1px solid var(--wf-color-border, #d1d5db)",
-  borderRadius: "var(--wf-radius-md, 6px)",
-  padding: "var(--wf-space-lg, 16px)",
-  marginBottom: "var(--wf-space-lg, 16px)",
+  background: "var(--wf-bg-panel)",
+  border: "1px solid var(--wf-border)",
+  borderRadius: "var(--wf-radius-card)",
+  padding: "var(--wf-space-16)",
+  boxShadow: "var(--wf-shadow-xs)",
 };
 
 export const titleStyle: CSSProperties = {
-  fontSize: "var(--wf-font-title, 20px)",
-  margin: "0 0 var(--wf-space-md, 12px)",
+  fontSize: "var(--wf-font-title)",
+  fontWeight: 600,
+  color: "var(--wf-text-primary)",
+  margin: "0 0 var(--wf-space-12)",
 };
 
 export const labelStyle: CSSProperties = {
   display: "block",
-  fontSize: "var(--wf-font-label, 14px)",
-  color: "var(--wf-color-text-muted, #4b5563)",
-  marginBottom: "var(--wf-space-xs, 4px)",
+  fontSize: "var(--wf-font-meta)",
+  fontWeight: 500,
+  color: "var(--wf-text-secondary)",
+  marginBottom: "var(--wf-space-4)",
 };
 
 export const inputStyle: CSSProperties = {
   display: "block",
   width: "100%",
   boxSizing: "border-box",
-  fontSize: "var(--wf-font-body, 16px)",
-  padding: "var(--wf-space-sm, 8px)",
-  border: "1px solid var(--wf-color-border, #d1d5db)",
-  borderRadius: "var(--wf-radius-sm, 4px)",
-  marginBottom: "var(--wf-space-md, 12px)",
+  height: "var(--wf-control-h-lg)",
+  fontSize: "var(--wf-font-body)",
+  color: "var(--wf-text-primary)",
+  background: "var(--wf-bg-panel)",
+  padding: "0 var(--wf-space-8)",
+  border: "1px solid var(--wf-border-control)",
+  borderRadius: "var(--wf-radius-btn)",
+  marginBottom: "var(--wf-space-12)",
 };
 
 export const mutedStyle: CSSProperties = {
-  color: "var(--wf-color-text-muted, #4b5563)",
-  fontSize: "var(--wf-font-label, 14px)",
+  color: "var(--wf-text-muted)",
+  fontSize: "var(--wf-font-meta)",
+  margin: 0,
 };
 
 export const rowStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: "var(--wf-space-sm, 8px)",
+  gap: "var(--wf-space-8)",
   alignItems: "center",
-  marginBottom: "var(--wf-space-md, 12px)",
+  marginBottom: "var(--wf-space-12)",
 };
 
 export const listStyle: CSSProperties = {
@@ -60,8 +74,8 @@ export const listStyle: CSSProperties = {
 };
 
 export const listItemStyle: CSSProperties = {
-  borderBottom: "1px solid var(--wf-color-border, #d1d5db)",
-  padding: "var(--wf-space-md, 12px) 0",
+  borderBottom: "1px solid var(--wf-border)",
+  padding: "var(--wf-space-12) 0",
   cursor: "pointer",
 };
 
@@ -70,54 +84,60 @@ export type ButtonKind = "primary" | "secondary" | "danger";
 export function buttonStyle(kind: ButtonKind, disabled = false): CSSProperties {
   const background =
     kind === "primary"
-      ? "var(--wf-color-primary, #1d4ed8)"
+      ? "var(--wf-accent)"
       : kind === "danger"
-        ? "var(--wf-color-danger, #b91c1c)"
-        : "var(--wf-color-card, #ffffff)";
+        ? "var(--wf-danger)"
+        : "var(--wf-bg-hover)";
   const color =
-    kind === "secondary"
-      ? "var(--wf-color-text, #111827)"
-      : "var(--wf-color-primary-text, #ffffff)";
+    kind === "secondary" ? "var(--wf-text-primary)" : "var(--wf-accent-foreground)";
   return {
-    fontSize: "var(--wf-font-label, 14px)",
-    padding: "var(--wf-space-sm, 8px) var(--wf-space-md, 12px)",
-    borderRadius: "var(--wf-radius-sm, 4px)",
-    border: kind === "secondary" ? "1px solid var(--wf-color-border, #d1d5db)" : "none",
+    display: "inline-flex",
+    alignItems: "center",
+    height: "var(--wf-control-h)",
+    fontSize: "var(--wf-font-body)",
+    fontWeight: 500,
+    padding: "0 var(--wf-space-12)",
+    borderRadius: "var(--wf-radius-btn)",
+    border: kind === "secondary" ? "1px solid var(--wf-border)" : "1px solid transparent",
     background,
-    color,
+    color: kind === "danger" ? "var(--wf-danger-foreground)" : color,
     cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.55 : 1,
+    opacity: disabled ? 0.5 : 1,
   };
 }
 
 export const errorStyle: CSSProperties = {
   ...cardStyle,
-  borderColor: "var(--wf-color-danger, #b91c1c)",
-  color: "var(--wf-color-danger, #b91c1c)",
+  borderColor: "var(--wf-danger)",
+  color: "var(--wf-danger)",
 };
 
 export const warningStyle: CSSProperties = {
   ...cardStyle,
-  borderColor: "var(--wf-color-warning, #c2410c)",
-  color: "var(--wf-color-warning, #c2410c)",
+  borderColor: "var(--wf-warning)",
+  color: "var(--wf-warning)",
 };
 
 export const tabListStyle: CSSProperties = {
-  display: "flex",
+  display: "inline-flex",
   flexWrap: "wrap",
-  gap: "var(--wf-space-xs, 4px)",
-  borderBottom: "1px solid var(--wf-color-border, #d1d5db)",
-  marginBottom: "var(--wf-space-lg, 16px)",
+  gap: 2,
+  borderRadius: "var(--wf-radius-card)",
+  background: "var(--wf-bg-hover)",
+  padding: 2,
+  marginBottom: "var(--wf-space-12)",
 };
 
 export function tabButtonStyle(active: boolean): CSSProperties {
   return {
-    fontSize: "var(--wf-font-label, 14px)",
-    padding: "var(--wf-space-sm, 8px) var(--wf-space-md, 12px)",
+    fontSize: "var(--wf-font-body)",
+    padding: "var(--wf-space-4) var(--wf-space-8)",
     border: "none",
-    borderBottom: active ? "2px solid var(--wf-color-primary, #1d4ed8)" : "2px solid transparent",
-    background: "transparent",
-    color: active ? "var(--wf-color-primary, #1d4ed8)" : "var(--wf-color-text, #111827)",
+    borderRadius: "var(--wf-radius-btn)",
+    background: active ? "var(--wf-bg-raised)" : "transparent",
+    color: active ? "var(--wf-text-primary)" : "var(--wf-text-secondary)",
+    fontWeight: active ? 500 : 400,
+    boxShadow: active ? "var(--wf-shadow-sm)" : "none",
     cursor: "pointer",
   };
 }
@@ -125,18 +145,21 @@ export function tabButtonStyle(active: boolean): CSSProperties {
 export const badgeStyle = (tone: "health" | "warning" | "danger" | "muted"): CSSProperties => {
   const color =
     tone === "health"
-      ? "var(--wf-color-health, #15803d)"
+      ? "var(--wf-success)"
       : tone === "warning"
-        ? "var(--wf-color-warning, #c2410c)"
+        ? "var(--wf-warning)"
         : tone === "danger"
-          ? "var(--wf-color-danger, #b91c1c)"
-          : "var(--wf-color-text-muted, #4b5563)";
+          ? "var(--wf-danger)"
+          : "var(--wf-text-secondary)";
   return {
-    display: "inline-block",
-    fontSize: "var(--wf-font-label, 14px)",
+    display: "inline-flex",
+    alignItems: "center",
+    fontSize: "var(--wf-font-meta)",
+    fontWeight: 500,
     color,
-    border: `1px solid ${color}`,
-    borderRadius: "var(--wf-radius-sm, 4px)",
-    padding: "0 var(--wf-space-sm, 8px)",
+    background: "var(--wf-bg-subtle)",
+    border: "1px solid transparent",
+    borderRadius: "var(--wf-radius-full)",
+    padding: "1px var(--wf-space-8)",
   };
 };

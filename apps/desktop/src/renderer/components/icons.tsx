@@ -203,3 +203,20 @@ export function IconChevronRight(props: IconProps): ReactNode {
     </Icon>
   );
 }
+
+export function IconChevronDown(props: IconProps): ReactNode {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
+export function IconX(props: IconProps): ReactNode {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
+  );
+}

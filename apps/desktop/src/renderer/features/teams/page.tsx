@@ -1,23 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
 
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorText,
+  Field,
+  Input,
+  List,
+  ListRow,
+  Muted,
+  Notice,
+  Page,
+  Select,
+  Skeleton,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { asCatalogClient, hasCatalogMethod, useWorkforceClient } from "../hooks.js";
 import { errorMessage, isRevisionConflict } from "../projects/command.js";
-import {
-  badgeStyle,
-  buttonStyle,
-  cardStyle,
-  errorStyle,
-  inputStyle,
-  labelStyle,
-  listItemStyle,
-  listStyle,
-  mutedStyle,
-  pageStyle,
-  titleStyle,
-  warningStyle,
-} from "../projects/ui.js";
 import {
   addDraftMember,
   canBindTeamVersion,
@@ -144,58 +151,44 @@ export function TeamsPage(props: FeaturePageProps) {
 
   if (creating) {
     return (
-      <main style={pageStyle}>
-        <BackButton onClick={() => props.navigate("/teams")} />
-        <TeamEditor
-          client={client}
-          writeSupport={writeSupport}
-          runtimes={runtimes}
-          onPersisted={openTeam}
-          onPublished={openTeam}
-        />
-      </main>
+      <TeamEditor
+        client={client}
+        writeSupport={writeSupport}
+        runtimes={runtimes}
+        onBack={() => props.navigate("/teams")}
+        onPersisted={openTeam}
+        onPublished={openTeam}
+      />
     );
   }
 
   if (teamId) {
     return (
-      <main style={pageStyle}>
-        <BackButton onClick={() => props.navigate("/teams")} />
-        <TeamDetailRoute
-          teamId={teamId}
-          catalog={teams}
-          note={note}
-          source={source}
-          writeSupport={writeSupport}
-          runtimes={runtimes}
-          client={client}
-          onPersisted={openTeam}
-          onPublished={openTeam}
-        />
-      </main>
+      <TeamDetailRoute
+        teamId={teamId}
+        catalog={teams}
+        note={note}
+        source={source}
+        writeSupport={writeSupport}
+        runtimes={runtimes}
+        client={client}
+        onBack={() => props.navigate("/teams")}
+        onPersisted={openTeam}
+        onPublished={openTeam}
+      />
     );
   }
 
   const create = createTeamButton(writeSupport);
   return (
-    <main style={pageStyle}>
-      <h1 style={titleStyle}>AI 团队</h1>
-      {note ? <p style={mutedStyle}>{note}</p> : null}
-      <p style={mutedStyle}>
-        围着项目编排数字员工。预设 Software Development Team
-        只读保留；自定义团队必须发布后才能绑定。
-      </p>
-      {listError ? (
-        <p style={errorStyle} data-testid="team-list-error">
-          {listError}
-        </p>
-      ) : null}
-      <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-        <button
-          type="button"
-          data-testid={create.testId}
+    <Page
+      title="AI 团队"
+      subtitle="围着项目编排数字员工。预设 Software Development Team 只读保留；自定义团队必须发布后才能绑定。"
+      actions={
+        <Button
+          variant="primary"
+          testId={create.testId}
           disabled={!create.enabled}
-          style={buttonStyle("primary", !create.enabled)}
           onClick={() => {
             if (!create.enabled) {
               return;
@@ -204,44 +197,38 @@ export function TeamsPage(props: FeaturePageProps) {
           }}
         >
           {create.label}
-        </button>
-      </div>
-      {create.reason ? (
-        <p style={mutedStyle} data-testid="team-write-api-missing">
-          {create.reason}
-        </p>
+        </Button>
+      }
+    >
+      {note ? <Muted>{note}</Muted> : null}
+      {listError ? (
+        <div data-testid="team-list-error">
+          <ErrorText>{listError}</ErrorText>
+        </div>
       ) : null}
-      <section style={cardStyle}>
-        <ul style={listStyle}>
+      {create.reason ? (
+        <Muted>
+          <span data-testid="team-write-api-missing">{create.reason}</span>
+        </Muted>
+      ) : null}
+      <Card>
+        <List>
           {teams.map((team) => (
-            <li
+            <ListRow
               key={team.id}
-              style={listItemStyle}
-              data-testid={`team-row-${team.id}`}
+              testId={`team-row-${team.id}`}
+              title={team.name}
+              meta={`${team.kind === "preset" ? "预设" : "自定义"} · ${
+                team.status === "published" ? "已发布" : "草稿"
+              } · ${team.members.map((member) => `${member.role}×${member.quantity}`).join(" / ")} · ${
+                team.runtime.label
+              }`}
               onClick={() => props.navigate(`/teams/${team.id}`)}
-            >
-              <strong>{team.name}</strong>
-              <div style={mutedStyle}>
-                {team.kind === "preset" ? "预设" : "自定义"} ·{" "}
-                {team.status === "published" ? "已发布" : "草稿"} ·{" "}
-                {team.members.map((member) => `${member.role}×${member.quantity}`).join(" / ")} ·{" "}
-                {team.runtime.label}
-              </div>
-            </li>
+            />
           ))}
-        </ul>
-      </section>
-    </main>
-  );
-}
-
-function BackButton(props: { onClick: () => void }) {
-  return (
-    <p>
-      <button type="button" style={buttonStyle("secondary")} onClick={props.onClick}>
-        返回 AI 团队
-      </button>
-    </p>
+        </List>
+      </Card>
+    </Page>
   );
 }
 
@@ -253,6 +240,7 @@ function TeamDetailRoute(props: {
   writeSupport: TeamWriteSupport;
   runtimes: string[];
   client: DesktopClient;
+  onBack: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -277,10 +265,28 @@ function TeamDetailRoute(props: {
   }, [props.client, props.teamId, props.catalog]);
 
   if (loading && !team) {
-    return <p style={mutedStyle}>加载团队…</p>;
+    return (
+      <Page
+        title="AI 团队"
+        actions={
+          <Button onClick={props.onBack}>返回 AI 团队</Button>
+        }
+      >
+        <Skeleton lines={4} />
+      </Page>
+    );
   }
   if (!team) {
-    return <p data-testid="team-not-found">{loadError ?? "未找到该团队。"}</p>;
+    return (
+      <Page
+        title="AI 团队"
+        actions={
+          <Button onClick={props.onBack}>返回 AI 团队</Button>
+        }
+      >
+        <p data-testid="team-not-found">{loadError ?? "未找到该团队。"}</p>
+      </Page>
+    );
   }
   return (
     <TeamDetail
@@ -290,6 +296,7 @@ function TeamDetailRoute(props: {
       writeSupport={props.writeSupport}
       runtimes={props.runtimes}
       client={props.client}
+      onBack={props.onBack}
       onPersisted={props.onPersisted}
       onPublished={props.onPublished}
     />
@@ -303,6 +310,7 @@ function TeamDetail(props: {
   writeSupport: TeamWriteSupport;
   runtimes: string[];
   client: DesktopClient;
+  onBack: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -317,6 +325,7 @@ function TeamDetail(props: {
         writeSupport={writeSupport}
         runtimes={props.runtimes}
         initial={draftFormFromTeam(team)}
+        onBack={props.onBack}
         onPersisted={props.onPersisted}
         onPublished={props.onPublished}
       />
@@ -330,6 +339,7 @@ function TeamDetail(props: {
       writeSupport={writeSupport}
       onForked={writeSupport.create ? props.onPersisted : undefined}
       client={props.client}
+      onBack={props.onBack}
     />
   );
 }
@@ -341,12 +351,21 @@ function TeamCard(props: {
   writeSupport: TeamWriteSupport;
   onForked?: ((team: TeamView) => void) | undefined;
   client: DesktopClient;
+  onBack: () => void;
 }) {
   const [forkError, setForkError] = useState<string | null>(null);
   const [forking, setForking] = useState(false);
   const save = rejectCustomTeamSave(props.writeSupport);
   const publish = publishTeamButton(props.writeSupport);
   const bindable = canBindTeamVersion(props.team);
+  const badgeTone =
+    props.team.status === "published" ? "success" : "muted";
+  const badgeLabel =
+    props.team.kind === "preset"
+      ? "预设只读"
+      : props.team.status === "published"
+        ? "已发布"
+        : "草稿";
 
   async function forkDraft() {
     if (!props.writeSupport.create || !teamWriteMethodsPresent(props.client)) {
@@ -379,53 +398,46 @@ function TeamCard(props: {
   }
 
   return (
-    <section
-      style={cardStyle}
-      data-testid={props.team.kind === "preset" ? "team-preset-card" : "team-card"}
+    <Page
+      title={props.team.name}
+      actions={
+        <Button onClick={props.onBack}>返回 AI 团队</Button>
+      }
     >
-      <h1 style={titleStyle}>{props.team.name}</h1>
-      <div style={{ marginBottom: "var(--wf-space-md, 12px)" }}>
-        <span style={badgeStyle(props.team.status === "published" ? "health" : "muted")}>
-          {props.team.kind === "preset"
-            ? "预设只读"
-            : props.team.status === "published"
-              ? "已发布"
-              : "草稿"}
-        </span>
-      </div>
-      <p style={mutedStyle}>
-        版本 {props.team.version} · 运行时 {props.team.runtime.label} · 来源{" "}
-        {props.source === "live" ? "GET /teams" : "预设副本"}
-      </p>
-      {props.note ? <p style={mutedStyle}>{props.note}</p> : null}
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>Workers</h2>
-      <MemberList members={props.team.members} />
-      {props.team.kind === "preset" ? <p style={mutedStyle}>{save.reason}</p> : null}
-      {!bindable ? (
-        <p style={mutedStyle} data-testid="team-unpublished-bind">
-          未发布草稿不能绑定到项目，也不能启用开始规划。
-        </p>
-      ) : null}
-      {props.team.kind === "custom" && props.team.status === "published" ? (
-        <p>
-          <button
-            type="button"
-            data-testid="team-new-draft"
+      <Card testId={props.team.kind === "preset" ? "team-preset-card" : "team-card"}>
+        <Badge tone={badgeTone}>{badgeLabel}</Badge>
+        <Muted>
+          版本 {props.team.version} · 运行时 {props.team.runtime.label} · 来源{" "}
+          {props.source === "live" ? "GET /teams" : "预设副本"}
+        </Muted>
+        {props.note ? <Muted>{props.note}</Muted> : null}
+        <h2 className="wf-section-title">Workers</h2>
+        <MemberList members={props.team.members} />
+        {props.team.kind === "preset" ? <Muted>{save.reason}</Muted> : null}
+        {!bindable ? (
+          <Muted>
+            <span data-testid="team-unpublished-bind">
+              未发布草稿不能绑定到项目，也不能启用开始规划。
+            </span>
+          </Muted>
+        ) : null}
+        {props.team.kind === "custom" && props.team.status === "published" ? (
+          <Button
+            testId="team-new-draft"
             disabled={!props.writeSupport.create || forking}
-            style={buttonStyle("secondary", !props.writeSupport.create || forking)}
             onClick={() => void forkDraft()}
           >
             基于此版本新建草稿
-          </button>
-        </p>
-      ) : null}
-      {!props.writeSupport.publish ? (
-        <p style={mutedStyle} data-testid="team-publish-disabled">
-          {publish.reason}
-        </p>
-      ) : null}
-      {forkError ? <p style={errorStyle}>{forkError}</p> : null}
-    </section>
+          </Button>
+        ) : null}
+        {!props.writeSupport.publish ? (
+          <Muted>
+            <span data-testid="team-publish-disabled">{publish.reason}</span>
+          </Muted>
+        ) : null}
+        <ErrorText>{forkError}</ErrorText>
+      </Card>
+    </Page>
   );
 }
 
@@ -434,6 +446,7 @@ function TeamEditor(props: {
   writeSupport: TeamWriteSupport;
   runtimes: string[];
   initial?: TeamDraftForm;
+  onBack: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -506,7 +519,7 @@ function TeamEditor(props: {
           teamId: persisted.teamId,
           versionId: persisted.versionId,
           ...(persisted.versionStateRevision !== undefined
-            ? { versionStateRevision: persisted.versionStateRevision }
+            ? { versionRevision: persisted.versionStateRevision }
             : {}),
         },
         writeOptions,
@@ -549,91 +562,102 @@ function TeamEditor(props: {
   }
 
   return (
-    <section style={cardStyle} data-testid="team-editor">
-      <h1 style={titleStyle}>{form.teamId ? "编辑团队草稿" : "新建团队草稿"}</h1>
-      <p style={mutedStyle}>
-        成员包含 role、RuntimeProfile 与 quantity。发布后不可变，编辑必须新建版本。
-      </p>
-      {!props.writeSupport.create ? (
-        <p style={warningStyle} data-testid="team-write-api-missing">
-          {create.reason}
-        </p>
-      ) : null}
-      <label style={labelStyle} htmlFor="wf-team-name">
-        名称
-      </label>
-      <input
-        id="wf-team-name"
-        data-testid="team-name-input"
-        style={inputStyle}
-        value={form.name}
-        onChange={(event) =>
-          setForm((current) =>
-            reduceTeamDraftForm(current, { type: "changeName", value: event.target.value }),
+    <Page
+      title={form.teamId ? "编辑团队草稿" : "新建团队草稿"}
+      actions={
+        <Button onClick={props.onBack}>返回 AI 团队</Button>
+      }
+    >
+      <Card testId="team-editor">
+        <Muted>成员包含 role、RuntimeProfile 与 quantity。发布后不可变，编辑必须新建版本。</Muted>
+        {!props.writeSupport.create ? (
+          <Notice tone="warning">
+            <span data-testid="team-write-api-missing">{create.reason}</span>
+          </Notice>
+        ) : null}
+        <Field label="名称" htmlFor="wf-team-name">
+          <Input
+            id="wf-team-name"
+            testId="team-name-input"
+            value={form.name}
+            onChange={(event) =>
+              setForm((current) =>
+                reduceTeamDraftForm(current, { type: "changeName", value: event.target.value }),
+              )
+            }
+          />
+        </Field>
+        <MemberEditor
+          members={form.members}
+          runtimes={props.runtimes}
+          disabled={!props.writeSupport.create}
+          onChange={(members) =>
+            setForm((current) => reduceTeamDraftForm(current, { type: "setMembers", members }))
+          }
+        />
+        <div className="wf-cluster">
+          <Button
+            testId="team-save-draft"
+            disabled={!canSave}
+            onClick={() => void run("save")}
+          >
+            保存草稿
+          </Button>
+          <Button
+            variant="primary"
+            testId={publish.testId}
+            disabled={!canPublish}
+            onClick={() => void run("publish")}
+          >
+            {publish.label}
+          </Button>
+        </div>
+        {form.published ? (
+          <Muted>
+            <span data-testid="team-published">
+              已发布不可变 TeamVersion {form.versionId}。
+            </span>
+          </Muted>
+        ) : null}
+        {form.error ? (
+          form.needsRefresh ? (
+            <Notice tone="warning">
+              <span data-testid="team-editor-error">{form.error}</span>
+            </Notice>
+          ) : (
+            <div data-testid="team-editor-error">
+              <ErrorText>{form.error}</ErrorText>
+            </div>
           )
-        }
-      />
-      <MemberEditor
-        members={form.members}
-        runtimes={props.runtimes}
-        disabled={!props.writeSupport.create}
-        onChange={(members) =>
-          setForm((current) => reduceTeamDraftForm(current, { type: "setMembers", members }))
-        }
-      />
-      <p>
-        <button
-          type="button"
-          data-testid="team-save-draft"
-          disabled={!canSave}
-          style={buttonStyle("secondary", !canSave)}
-          onClick={() => void run("save")}
-        >
-          保存草稿
-        </button>{" "}
-        <button
-          type="button"
-          data-testid={publish.testId}
-          disabled={!canPublish}
-          style={buttonStyle("primary", !canPublish)}
-          onClick={() => void run("publish")}
-        >
-          {publish.label}
-        </button>
-      </p>
-      {form.published ? (
-        <p style={mutedStyle} data-testid="team-published">
-          已发布不可变 TeamVersion {form.versionId}。
-        </p>
-      ) : null}
-      {form.error ? (
-        <p style={form.needsRefresh ? warningStyle : errorStyle} data-testid="team-editor-error">
-          {form.error}
-        </p>
-      ) : null}
-      {form.needsRefresh ? (
-        <p style={mutedStyle}>已保留输入。刷新后再提交，不会假装已保存。</p>
-      ) : null}
-    </section>
+        ) : null}
+        {form.needsRefresh ? <Muted>已保留输入。刷新后再提交，不会假装已保存。</Muted> : null}
+      </Card>
+    </Page>
   );
 }
 
 function MemberList(props: { members: TeamMemberView[] }) {
   return (
-    <ul style={listStyle}>
-      {props.members.map((member) => (
-        <li
-          key={member.id}
-          style={{ ...listItemStyle, cursor: "default" }}
-          data-testid={`team-member-${member.id}`}
-        >
-          <strong>{member.title}</strong>
-          <div style={mutedStyle}>
-            角色 {member.role} · RuntimeProfile {member.runtimeProfile} · 数量 {member.quantity}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <Table>
+      <THead>
+        <TR>
+          <TH>成员</TH>
+          <TH>角色</TH>
+          <TH>RuntimeProfile</TH>
+          <TH>数量</TH>
+        </TR>
+      </THead>
+      <TBody>
+        {props.members.map((member) => (
+          <TR key={member.id} testId={`team-member-${member.id}`}>
+            <TD>{member.title}</TD>
+            <TD>{member.role}</TD>
+            <TD>{member.runtimeProfile}</TD>
+            <TD>{member.quantity}</TD>
+          </TR>
+        ))}
+      </TBody>
+    </Table>
   );
 }
 
@@ -649,100 +673,100 @@ function MemberEditor(props: {
   );
   return (
     <div data-testid="team-member-editor">
-      <h2 style={{ ...titleStyle, fontSize: "var(--wf-font-body, 16px)" }}>成员</h2>
-      {props.members.map((member, index) => (
-        <div
-          key={`${member.id}-${index}`}
-          data-testid="team-member-row"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 2fr 1fr auto",
-            gap: "var(--wf-space-sm, 8px)",
-            marginBottom: "var(--wf-space-md, 12px)",
-            alignItems: "end",
-          }}
-        >
-          <label style={labelStyle}>
-            角色
-            <select
-              style={inputStyle}
-              disabled={props.disabled}
-              value={member.role}
-              onChange={(event) =>
-                props.onChange(
-                  updateDraftMember(props.members, index, { role: event.target.value }),
-                )
-              }
-            >
-              {TEAM_ROLES.includes(member.role as (typeof TEAM_ROLES)[number]) ? null : (
-                <option value={member.role}>{member.role}</option>
-              )}
-              {TEAM_ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            RuntimeProfile
-            <select
-              style={inputStyle}
-              disabled={props.disabled}
-              value={member.runtimeProfile}
-              onChange={(event) =>
-                props.onChange(
-                  updateDraftMember(props.members, index, { runtimeProfile: event.target.value }),
-                )
-              }
-            >
-              {runtimeOptions.includes(member.runtimeProfile) ? null : (
-                <option value={member.runtimeProfile}>{member.runtimeProfile}</option>
-              )}
-              {runtimeOptions.map((runtime) => (
-                <option key={runtime} value={runtime}>
-                  {runtime}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            数量
-            <input
-              type="number"
-              min={1}
-              step={1}
-              style={inputStyle}
-              disabled={props.disabled}
-              value={member.quantity}
-              onChange={(event) =>
-                props.onChange(
-                  updateDraftMember(props.members, index, {
-                    quantity: Number.parseInt(event.target.value, 10) || 0,
-                  }),
-                )
-              }
-            />
-          </label>
-          <button
-            type="button"
-            style={buttonStyle("secondary", props.disabled || props.members.length <= 1)}
-            disabled={props.disabled || props.members.length <= 1}
-            onClick={() => props.onChange(removeDraftMember(props.members, index))}
-          >
-            移除
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        data-testid="team-add-member"
-        style={buttonStyle("secondary", props.disabled)}
+      <h2 className="wf-section-title">成员</h2>
+      <Table>
+        <THead>
+          <TR>
+            <TH>角色</TH>
+            <TH>RuntimeProfile</TH>
+            <TH>数量</TH>
+            <TH>
+              <span className="wf-sr-only">操作</span>
+            </TH>
+          </TR>
+        </THead>
+        <TBody>
+          {props.members.map((member, index) => (
+            <TR key={`${member.id}-${index}`} testId="team-member-row">
+              <TD>
+                <Select
+                  disabled={props.disabled}
+                  value={member.role}
+                  onChange={(event) =>
+                    props.onChange(
+                      updateDraftMember(props.members, index, { role: event.target.value }),
+                    )
+                  }
+                >
+                  {TEAM_ROLES.includes(member.role as (typeof TEAM_ROLES)[number]) ? null : (
+                    <option value={member.role}>{member.role}</option>
+                  )}
+                  {TEAM_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </Select>
+              </TD>
+              <TD>
+                <Select
+                  disabled={props.disabled}
+                  value={member.runtimeProfile}
+                  onChange={(event) =>
+                    props.onChange(
+                      updateDraftMember(props.members, index, {
+                        runtimeProfile: event.target.value,
+                      }),
+                    )
+                  }
+                >
+                  {runtimeOptions.includes(member.runtimeProfile) ? null : (
+                    <option value={member.runtimeProfile}>{member.runtimeProfile}</option>
+                  )}
+                  {runtimeOptions.map((runtime) => (
+                    <option key={runtime} value={runtime}>
+                      {runtime}
+                    </option>
+                  ))}
+                </Select>
+              </TD>
+              <TD>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  disabled={props.disabled}
+                  value={member.quantity}
+                  onChange={(event) =>
+                    props.onChange(
+                      updateDraftMember(props.members, index, {
+                        quantity: Number.parseInt(event.target.value, 10) || 0,
+                      }),
+                    )
+                  }
+                />
+              </TD>
+              <TD>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={props.disabled || props.members.length <= 1}
+                  onClick={() => props.onChange(removeDraftMember(props.members, index))}
+                >
+                  移除
+                </Button>
+              </TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+      <Button
+        testId="team-add-member"
         disabled={props.disabled}
         onClick={() => props.onChange(addDraftMember(props.members))}
       >
         添加成员
-      </button>
+      </Button>
     </div>
   );
 }
@@ -765,68 +789,66 @@ export function ProjectTeamBindingField(props: {
   const canBind = props.writeSupport.bind && customSelected && !props.disabled && !props.busy;
   return (
     <div data-testid="project-team-binding">
-      <label style={labelStyle} htmlFor="wf-project-team">
-        团队（已发布 TeamVersion）
-      </label>
-      <select
-        id="wf-project-team"
-        data-testid="project-team-select"
-        style={inputStyle}
-        disabled={props.disabled}
-        value={selected.id}
-        onChange={(event) => {
-          const next = published.find((team) => team.id === event.target.value);
-          if (next) {
-            props.onSelect(next);
-          }
-        }}
-      >
-        {published.map((team) => (
-          <option key={team.id} value={team.id}>
-            {team.name}
-            {team.kind === "preset" ? "（预设）" : ""} · {team.version}
-          </option>
-        ))}
-      </select>
+      <Field label="团队（已发布 TeamVersion）" htmlFor="wf-project-team">
+        <Select
+          id="wf-project-team"
+          testId="project-team-select"
+          disabled={props.disabled}
+          value={selected.id}
+          onChange={(event) => {
+            const next = published.find((team) => team.id === event.target.value);
+            if (next) {
+              props.onSelect(next);
+            }
+          }}
+        >
+          {published.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+              {team.kind === "preset" ? "（预设）" : ""} · {team.version}
+            </option>
+          ))}
+        </Select>
+      </Field>
       {drafts.length > 0 ? (
-        <p style={mutedStyle} data-testid="project-team-unpublished">
-          {drafts.length} 个未发布草稿不可绑定，也不会启用开始规划。
-        </p>
+        <Muted>
+          <span data-testid="project-team-unpublished">
+            {drafts.length} 个未发布草稿不可绑定，也不会启用开始规划。
+          </span>
+        </Muted>
       ) : null}
       {customSelected ? (
-        <p>
-          <button
-            type="button"
-            data-testid="project-bind-team"
-            disabled={!canBind}
-            style={buttonStyle("secondary", !canBind)}
-            onClick={() => {
-              if (!canBind) {
-                return;
-              }
-              props.onBind();
-            }}
-          >
-            绑定已发布自定义 TeamVersion
-          </button>
-        </p>
+        <Button
+          testId="project-bind-team"
+          disabled={!canBind}
+          onClick={() => {
+            if (!canBind) {
+              return;
+            }
+            props.onBind();
+          }}
+        >
+          绑定已发布自定义 TeamVersion
+        </Button>
       ) : (
-        <p style={mutedStyle}>预设 Software Development Team 可直接用于开始规划（M3 主路径）。</p>
+        <Muted>预设 Software Development Team 可直接用于开始规划（M3 主路径）。</Muted>
       )}
       {!props.writeSupport.bind && customSelected ? (
-        <p style={mutedStyle} data-testid="project-bind-team-disabled">
-          {TEAM_WRITE_API_MISSING}
-        </p>
+        <Muted>
+          <span data-testid="project-bind-team-disabled">{TEAM_WRITE_API_MISSING}</span>
+        </Muted>
       ) : null}
       {customSelected && props.projectTeamVersionId !== selected.versionId ? (
-        <p style={mutedStyle} data-testid="project-team-unconfirmed">
-          自定义绑定尚未被服务端回传 teamVersionId，开始规划保持禁用。
-        </p>
+        <Muted>
+          <span data-testid="project-team-unconfirmed">
+            自定义绑定尚未被服务端回传 teamVersionId，开始规划保持禁用。
+          </span>
+        </Muted>
       ) : null}
       {props.error ? (
-        <p style={errorStyle} data-testid="project-team-bind-error">
-          {props.error}
-        </p>
+        <div data-testid="project-team-bind-error">
+          <ErrorText>{props.error}</ErrorText>
+        </div>
       ) : null}
     </div>
   );

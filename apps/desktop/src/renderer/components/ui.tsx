@@ -530,6 +530,16 @@ export function Split(props: { children: ReactNode }): ReactNode {
 
 /* ─── 导航图标映射 ──────────────────────────────────────────────────────── */
 
+export {
+  Dialog,
+  DropdownMenu,
+  Toast,
+  ToastRegion,
+  Tooltip,
+} from "./overlays.js";
+export type { DropdownItem, OverlayTone } from "./overlays.js";
+export { Skeleton, Table, TBody, TD, TH, THead, TR } from "./table.js";
+
 export function NavIcon(props: IconProps & { slot: string }): ReactNode {
   const { slot, ...rest } = props;
   switch (slot) {

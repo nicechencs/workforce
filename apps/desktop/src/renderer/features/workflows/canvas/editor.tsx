@@ -1,33 +1,9 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { CANVAS_NODE_SIZE } from "../graph/operations.js";
 import type { CanvasEdge, CanvasGraph, CanvasNode, CanvasNodeKind } from "../graph/types.js";
+import { cn } from "../../../components/cn.js";
 import type { CanvasSession } from "./model.js";
-
-const KIND_FILL: Record<CanvasNodeKind, string> = {
-  task: "#dbeafe",
-  approval: "#fef3c7",
-  condition: "#ede9fe",
-  parallel: "#d1fae5",
-  delivery: "#e0e7ff",
-};
-
-const KIND_STROKE: Record<CanvasNodeKind, string> = {
-  task: "#1d4ed8",
-  approval: "#c2410c",
-  condition: "#6d28d9",
-  parallel: "#047857",
-  delivery: "#4338ca",
-};
-
-const canvasFrame: CSSProperties = {
-  position: "relative",
-  minHeight: 420,
-  background: "var(--wf-color-page, #e8edf2)",
-  border: "1px solid var(--wf-color-border, #d1d5db)",
-  borderRadius: "var(--wf-radius-md, 6px)",
-  overflow: "auto",
-};
 
 export function WorkflowCanvasEditor(props: {
   session: CanvasSession;
@@ -38,15 +14,9 @@ export function WorkflowCanvasEditor(props: {
   const { graph } = props.session.draft;
   const bounds = canvasBounds(graph);
   return (
-    <div style={canvasFrame} data-testid="workflow-canvas">
+    <div className="wf-canvas-frame" data-testid="workflow-canvas">
       {graph.nodes.length === 0 ? (
-        <p
-          style={{
-            padding: "var(--wf-space-lg, 16px)",
-            color: "var(--wf-color-text-muted, #4b5563)",
-          }}
-          data-testid="workflow-canvas-empty"
-        >
+        <p className="wf-canvas-empty" data-testid="workflow-canvas-empty">
           画布是空的。从工具栏添加节点。未发布，Runtime 不会执行此图。
         </p>
       ) : null}
@@ -72,7 +42,7 @@ export function WorkflowCanvasEditor(props: {
             markerHeight="7"
             orient="auto-start-reverse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563" />
+            <path className="wf-canvas-arrow" d="M 0 0 L 10 5 L 0 10 z" />
           </marker>
         </defs>
         {graph.edges.map((edge) => (
@@ -120,9 +90,9 @@ function NodeRect(props: {
   onClick: () => void;
 }): ReactNode {
   const { node } = props;
-  const stroke = props.connecting ? "#b91c1c" : props.selected ? "#111827" : KIND_STROKE[node.kind];
   return (
     <g
+      className="wf-canvas-node"
       data-testid={`workflow-canvas-node-${node.id}`}
       data-kind={node.kind}
       transform={`translate(${node.layout.x} ${node.layout.y})`}
@@ -130,24 +100,26 @@ function NodeRect(props: {
         event.stopPropagation();
         props.onClick();
       }}
-      style={{ cursor: "pointer" }}
     >
       <rect
+        className={cn(
+          "wf-canvas-node-shape",
+          `wf-canvas-node-${node.kind}`,
+          props.selected && "is-selected",
+          props.connecting && "is-connecting",
+        )}
         width={CANVAS_NODE_SIZE.width}
         height={CANVAS_NODE_SIZE.height}
         rx={8}
-        fill={KIND_FILL[node.kind]}
-        stroke={stroke}
-        strokeWidth={props.selected || props.connecting ? 2.5 : 1.5}
       />
-      <text x={12} y={22} fontSize={11} fill="#4b5563">
+      <text className="wf-canvas-node-kind" x={12} y={22}>
         {kindLabel(node.kind)}
         {props.isEntry ? " · 入口" : ""}
       </text>
-      <text x={12} y={44} fontSize={14} fontWeight={600} fill="#111827">
+      <text className="wf-canvas-node-title" x={12} y={44}>
         {truncate(node.title, 14)}
       </text>
-      <text x={12} y={64} fontSize={11} fill="#4b5563">
+      <text className="wf-canvas-node-id" x={12} y={64}>
         {node.id}
         {node.role ? ` · ${node.role}` : ""}
       </text>
@@ -179,16 +151,10 @@ function EdgePath(props: {
         event.stopPropagation();
         props.onSelect();
       }}
-      style={{ cursor: "pointer" }}
+      className="wf-canvas-hit"
     >
-      <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
-      <path
-        d={d}
-        fill="none"
-        stroke={props.selected ? "#1d4ed8" : "#4b5563"}
-        strokeWidth={props.selected ? 2.5 : 1.5}
-        markerEnd="url(#wf-edge-arrow)"
-      />
+      <path className="wf-canvas-edge-hit" d={d} />
+      <path className={cn("wf-canvas-edge", props.selected && "is-selected")} d={d} markerEnd="url(#wf-edge-arrow)" />
     </g>
   );
 }

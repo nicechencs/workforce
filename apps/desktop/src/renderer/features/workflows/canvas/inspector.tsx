@@ -1,5 +1,6 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
+import { Field, Input, Muted, Select } from "../../../components/ui.js";
 import {
   JOIN_POLICIES,
   UPSTREAM_WAITS,
@@ -10,13 +11,7 @@ import {
   type CanvasUpstreamWait,
   type CanvasWorkerRole,
 } from "../graph/types.js";
-import { inputStyle, labelStyle, mutedStyle } from "../../projects/ui.js";
 import type { CanvasAction, CanvasSession } from "./model.js";
-
-const box: CSSProperties = {
-  minWidth: 260,
-  maxWidth: 320,
-};
 
 export function WorkflowCanvasInspector(props: {
   session: CanvasSession;
@@ -29,56 +24,54 @@ export function WorkflowCanvasInspector(props: {
 
   if (!node && !edge) {
     return (
-      <aside style={box} data-testid="workflow-canvas-inspector">
-        <p style={mutedStyle}>选中节点或边以编辑属性。画布只编排未发布草稿。</p>
+      <aside className="wf-canvas-inspector" data-testid="workflow-canvas-inspector">
+        <Muted>选中节点或边以编辑属性。画布只编排未发布草稿。</Muted>
       </aside>
     );
   }
 
   if (edge) {
     return (
-      <aside style={box} data-testid="workflow-canvas-inspector">
-        <p style={labelStyle}>边 {edge.id}</p>
-        <p style={mutedStyle}>
+      <aside className="wf-canvas-inspector" data-testid="workflow-canvas-inspector">
+        <p className="wf-label">边 {edge.id}</p>
+        <Muted>
           {edge.from} → {edge.to}
-        </p>
-        <label style={labelStyle} htmlFor="wf-edge-wait">
-          上游等待
-        </label>
-        <select
-          id="wf-edge-wait"
-          style={inputStyle}
-          disabled={frozen}
-          value={edge.waitFor ?? "outputs_ready"}
-          onChange={(event) => {
-            const waitFor = event.target.value as CanvasUpstreamWait;
-            if (!(UPSTREAM_WAITS as readonly string[]).includes(waitFor)) {
-              return;
-            }
-            props.dispatch({
-              type: "hydrate",
-              session: {
-                ...session,
-                draft: {
-                  ...session.draft,
-                  dirty: true,
-                  graph: {
-                    ...session.draft.graph,
-                    edges: session.draft.graph.edges.map((item) =>
-                      item.id === edge.id ? { ...item, waitFor } : item,
-                    ),
+        </Muted>
+        <Field label="上游等待" htmlFor="wf-edge-wait">
+          <Select
+            id="wf-edge-wait"
+            disabled={frozen}
+            value={edge.waitFor ?? "outputs_ready"}
+            onChange={(event) => {
+              const waitFor = event.target.value as CanvasUpstreamWait;
+              if (!(UPSTREAM_WAITS as readonly string[]).includes(waitFor)) {
+                return;
+              }
+              props.dispatch({
+                type: "hydrate",
+                session: {
+                  ...session,
+                  draft: {
+                    ...session.draft,
+                    dirty: true,
+                    graph: {
+                      ...session.draft.graph,
+                      edges: session.draft.graph.edges.map((item) =>
+                        item.id === edge.id ? { ...item, waitFor } : item,
+                      ),
+                    },
                   },
                 },
-              },
-            });
-          }}
-        >
-          {UPSTREAM_WAITS.map((wait) => (
-            <option key={wait} value={wait}>
-              {wait}
-            </option>
-          ))}
-        </select>
+              });
+            }}
+          >
+            {UPSTREAM_WAITS.map((wait) => (
+              <option key={wait} value={wait}>
+                {wait}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </aside>
     );
   }
@@ -88,29 +81,28 @@ export function WorkflowCanvasInspector(props: {
   }
 
   return (
-    <aside style={box} data-testid="workflow-canvas-inspector">
-      <p style={labelStyle}>节点 {node.id}</p>
-      <label style={labelStyle} htmlFor="wf-node-title">
-        标题
-      </label>
-      <input
-        id="wf-node-title"
-        style={inputStyle}
-        disabled={frozen}
-        value={node.title}
-        onChange={(event) =>
-          props.dispatch({
-            type: "updateNode",
-            nodeId: node.id,
-            patch: { title: event.target.value },
-          })
-        }
-      />
+    <aside className="wf-canvas-inspector" data-testid="workflow-canvas-inspector">
+      <p className="wf-label">节点 {node.id}</p>
+      <Field label="标题" htmlFor="wf-node-title">
+        <Input
+          id="wf-node-title"
+          disabled={frozen}
+          value={node.title}
+          onChange={(event) =>
+            props.dispatch({
+              type: "updateNode",
+              nodeId: node.id,
+              patch: { title: event.target.value },
+            })
+          }
+        />
+      </Field>
       <RoleField node={node} frozen={frozen} dispatch={props.dispatch} />
       <GateField node={node} frozen={frozen} dispatch={props.dispatch} />
       <JoinField node={node} frozen={frozen} dispatch={props.dispatch} />
-      <label style={{ ...labelStyle, display: "flex", gap: 8, alignItems: "center" }}>
+      <label className="wf-check-row">
         <input
+          className="wf-check"
           type="checkbox"
           disabled={frozen}
           checked={session.draft.graph.entryNodeIds.includes(node.id)}
@@ -131,13 +123,9 @@ function RoleField(props: {
     return null;
   }
   return (
-    <>
-      <label style={labelStyle} htmlFor="wf-node-role">
-        角色
-      </label>
-      <select
+    <Field label="角色" htmlFor="wf-node-role">
+      <Select
         id="wf-node-role"
-        style={inputStyle}
         disabled={props.frozen}
         value={props.node.role ?? ""}
         onChange={(event) => {
@@ -159,8 +147,8 @@ function RoleField(props: {
             {role}
           </option>
         ))}
-      </select>
-    </>
+      </Select>
+    </Field>
   );
 }
 
@@ -173,13 +161,9 @@ function GateField(props: {
     return null;
   }
   return (
-    <>
-      <label style={labelStyle} htmlFor="wf-node-gate">
-        Gate
-      </label>
-      <select
+    <Field label="Gate" htmlFor="wf-node-gate">
+      <Select
         id="wf-node-gate"
-        style={inputStyle}
         disabled={props.frozen}
         value={props.node.gate ?? "artifact"}
         onChange={(event) => {
@@ -194,8 +178,8 @@ function GateField(props: {
             {gate}
           </option>
         ))}
-      </select>
-    </>
+      </Select>
+    </Field>
   );
 }
 
@@ -205,13 +189,9 @@ function JoinField(props: {
   dispatch: (action: CanvasAction) => void;
 }): ReactNode {
   return (
-    <>
-      <label style={labelStyle} htmlFor="wf-node-join">
-        汇合策略
-      </label>
-      <select
+    <Field label="汇合策略" htmlFor="wf-node-join">
+      <Select
         id="wf-node-join"
-        style={inputStyle}
         disabled={props.frozen}
         value={props.node.joinPolicy ?? ""}
         onChange={(event) => {
@@ -233,7 +213,7 @@ function JoinField(props: {
             {policy}
           </option>
         ))}
-      </select>
-    </>
+      </Select>
+    </Field>
   );
 }
