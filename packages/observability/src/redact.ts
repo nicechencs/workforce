@@ -66,6 +66,16 @@ export class SecretRedactor {
     return { applied: false, policyVersion: this.policyVersion, categories: [], replacements: 0 };
   }
 
+  holdWindow(): number {
+    let longest = 0;
+    for (const secret of this.knownSecrets) {
+      if (secret.length > longest) {
+        longest = secret.length;
+      }
+    }
+    return Math.max(this.lookbehind, longest);
+  }
+
   redactText(text: string): RedactionResult<string> {
     const categories = new Set<string>();
     let replacements = 0;
@@ -196,7 +206,7 @@ export class RedactionStream {
   push(chunk: string): string {
     this.buffer += chunk;
     const redacted = this.redactor.redactText(this.buffer).value;
-    const hold = Math.min(this.redactor.lookbehind, redacted.length);
+    const hold = Math.min(this.redactor.holdWindow(), redacted.length);
     const safeEnd = redacted.length - hold;
     if (safeEnd <= this.emitted) {
       return "";

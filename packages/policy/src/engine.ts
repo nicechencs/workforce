@@ -3,6 +3,7 @@ import type { ApprovalGate } from "@workforce/domain";
 import { createCanonicalAction } from "./digest.js";
 import { capabilitiesForRuntime, evaluateEnforcement } from "./enforcement.js";
 import { InMemoryGrantStore } from "./grants.js";
+import { probeCredentialCapabilities } from "./os-secret-store.js";
 import { authorizeWorkspacePath } from "./paths.js";
 import type {
   ApprovalGrant,
@@ -54,6 +55,7 @@ export interface InMemoryPolicyEngineOptions {
   workspaceGrants?: readonly WorkspaceGrant[];
   allowedCommands?: readonly string[];
   capabilities?: Readonly<Record<string, readonly CapabilityRecord[]>>;
+  credentialCapabilities?: readonly CapabilityRecord[];
 }
 
 export class InMemoryPolicyEngine implements PolicyEngine {
@@ -65,6 +67,7 @@ export class InMemoryPolicyEngine implements PolicyEngine {
   private readonly workspaceGrants: readonly WorkspaceGrant[];
   private readonly allowedCommands: readonly string[];
   private readonly capabilities: Readonly<Record<string, readonly CapabilityRecord[]>>;
+  private readonly credentialCapabilities: readonly CapabilityRecord[];
 
   constructor(options: InMemoryPolicyEngineOptions = {}) {
     this.principalId = options.principalId ?? "usr_local";
@@ -78,6 +81,7 @@ export class InMemoryPolicyEngine implements PolicyEngine {
       mock: capabilitiesForRuntime("mock"),
       codex: capabilitiesForRuntime("codex"),
     };
+    this.credentialCapabilities = options.credentialCapabilities ?? probeCredentialCapabilities();
   }
 
   async decide(action: CanonicalAction): Promise<PolicyDecision> {
@@ -137,7 +141,10 @@ export class InMemoryPolicyEngine implements PolicyEngine {
     params?: unknown;
     resource?: string;
   }): Promise<PolicyDecision> {
-    const capabilities = this.capabilities[input.runtime] ?? capabilitiesForRuntime(input.runtime);
+    const capabilities = [
+      ...this.credentialCapabilities,
+      ...(this.capabilities[input.runtime] ?? capabilitiesForRuntime(input.runtime)),
+    ];
     const enforcement = evaluateEnforcement({
       requested: input.requested,
       capabilities,

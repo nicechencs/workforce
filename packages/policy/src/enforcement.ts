@@ -22,6 +22,9 @@ export const MOCK_CAPABILITIES: readonly CapabilityRecord[] = [
   { name: CONSTRAINT.concurrencyLimit, status: "enforceable", owner: "T09" },
   { name: CONSTRAINT.usageTokens, status: "enforceable", owner: "T05" },
   { name: CONSTRAINT.commandApproval, status: "enforceable", owner: "T07" },
+  { name: CONSTRAINT.credentialCopyEnv, status: "unsupported", owner: "T07" },
+  { name: CONSTRAINT.credentialCopyAuthJson, status: "unsupported", owner: "T07" },
+  { name: CONSTRAINT.credentialMinimalInject, status: "enforceable", owner: "T07" },
 ];
 
 /**
@@ -38,6 +41,9 @@ export const CODEX_WINDOWS_CAPABILITIES: readonly CapabilityRecord[] = [
   { name: CONSTRAINT.commandApproval, status: "observable", owner: "T07" },
   { name: CONSTRAINT.usageTokens, status: "observable", owner: "T15" },
   { name: CONSTRAINT.timeLimit, status: "enforceable", owner: "T06" },
+  { name: CONSTRAINT.credentialCopyEnv, status: "unsupported", owner: "T07" },
+  { name: CONSTRAINT.credentialCopyAuthJson, status: "unsupported", owner: "T07" },
+  { name: CONSTRAINT.credentialMinimalInject, status: "observable", owner: "T07" },
 ];
 
 export function capabilitiesForRuntime(runtime: string): readonly CapabilityRecord[] {

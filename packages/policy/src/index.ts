@@ -17,15 +17,28 @@ export { DEFAULT_RULES, InMemoryPolicyEngine } from "./engine.js";
 export type { InMemoryPolicyEngineOptions } from "./engine.js";
 export { InMemoryGrantStore } from "./grants.js";
 export {
+  CredentialBroker,
   CredentialBrokerError,
   InMemoryCredentialBroker,
   InMemorySecretStore,
+  createCredentialBroker,
 } from "./credentials.js";
 export type {
   CredentialBrokerErrorCode,
   CredentialBrokerOptions,
   SecretStore,
 } from "./credentials.js";
+export {
+  OsSecretStore,
+  createOsSecretStore,
+  probeCredentialCapabilities,
+  probeOsSecretStore,
+} from "./os-secret-store.js";
+export type {
+  OsSecretBackend,
+  OsSecretStoreOptions,
+  OsSecretStoreProbe,
+} from "./os-secret-store.js";
 export { authorizeWorkspacePath, normalizeLogicalPath, pathInsideGrant } from "./paths.js";
 export { CONSTRAINT, DEFAULT_POLICY_VERSION } from "./types.js";
 export type {

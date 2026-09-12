@@ -1,25 +1,14 @@
 import type { Clock, CredentialRef, InjectRequest, MinimalInjection } from "./types.js";
+import {
+  CredentialBrokerError,
+  type CredentialBrokerErrorCode,
+  type SecretStore,
+} from "./secret-store.js";
+import { createOsSecretStore } from "./os-secret-store.js";
 
-export type CredentialBrokerErrorCode =
-  "not_found" | "revoked" | "expired" | "forbidden_copy" | "invalid_request";
+export { CredentialBrokerError, type CredentialBrokerErrorCode, type SecretStore };
 
-export class CredentialBrokerError extends Error {
-  readonly code: CredentialBrokerErrorCode;
-
-  constructor(code: CredentialBrokerErrorCode, message: string) {
-    super(message);
-    this.name = "CredentialBrokerError";
-    this.code = code;
-  }
-}
-
-export interface SecretStore {
-  get(externalSecretId: string): Promise<string | undefined>;
-  put(externalSecretId: string, secret: string): Promise<void>;
-  delete(externalSecretId: string): Promise<void>;
-}
-
-/** In-memory fake of an OS/keychain store. Never a copy of the user env. */
+/** In-memory fake of an OS/keychain store. Tests only. Never a copy of the user env. */
 export class InMemorySecretStore implements SecretStore {
   private readonly secrets = new Map<string, string>();
 
@@ -54,16 +43,18 @@ export interface CredentialBrokerOptions {
 
 /**
  * Resolves CredentialRef to a one-key or stdin injection.
- * Refuses to copy process.env or auth.json (D12).
+ * Production default is the probed OS store; it refuses to copy process.env
+ * or auth.json (D12).
  */
-export class InMemoryCredentialBroker {
+export class CredentialBroker {
   private readonly clock: Clock;
   private readonly secrets: SecretStore;
   private readonly refs = new Map<string, StoredRef>();
+  private readonly redactionSecrets = new Set<string>();
 
   constructor(options: CredentialBrokerOptions = {}) {
     this.clock = options.clock ?? { now: () => new Date() };
-    this.secrets = options.secrets ?? new InMemorySecretStore();
+    this.secrets = options.secrets ?? createOsSecretStore();
   }
 
   async register(
@@ -78,6 +69,7 @@ export class InMemoryCredentialBroker {
     const secretId = externalSecretId ?? ref.id;
     await this.secrets.put(secretId, secret);
     this.refs.set(ref.id, { ref: stored, externalSecretId: secretId });
+    this.redactionSecrets.add(secret);
     return cloneRef(stored);
   }
 
@@ -122,6 +114,7 @@ export class InMemoryCredentialBroker {
     if (secret === undefined) {
       throw new CredentialBrokerError("not_found", `secret missing for ${request.credentialRefId}`);
     }
+    this.redactionSecrets.add(secret);
 
     if (request.mode === "stdin") {
       return { credentialRefId: request.credentialRefId, mode: "stdin", stdinSecret: secret };
@@ -150,10 +143,13 @@ export class InMemoryCredentialBroker {
   }
 
   secretsForRedaction(): string[] {
-    if (this.secrets instanceof InMemorySecretStore) {
-      return this.secrets.values();
+    return [...this.redactionSecrets];
+  }
+
+  bindRedaction(redactor: { registerSecret(secret: string): void }): void {
+    for (const secret of this.redactionSecrets) {
+      redactor.registerSecret(secret);
     }
-    return [];
   }
 
   requestCopyUserEnv(): never {
@@ -176,6 +172,26 @@ export class InMemoryCredentialBroker {
     }
     return this.clock.now().getTime() >= Date.parse(ref.expiresAt);
   }
+}
+
+/**
+ * Test/fake broker. Production callers should use {@link createCredentialBroker}
+ * so secrets land in the probed OS store instead of this memory map.
+ */
+export class InMemoryCredentialBroker extends CredentialBroker {
+  constructor(options: CredentialBrokerOptions = {}) {
+    super({
+      ...options,
+      secrets: options.secrets ?? new InMemorySecretStore(),
+    });
+  }
+}
+
+export function createCredentialBroker(options: CredentialBrokerOptions = {}): CredentialBroker {
+  return new CredentialBroker({
+    ...options,
+    secrets: options.secrets ?? createOsSecretStore(),
+  });
 }
 
 function cloneRef(ref: CredentialRef): CredentialRef {
