@@ -93,6 +93,60 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     expect((await host.inspect(timeout)).status).toBe("failed");
   });
 
+  it("persists only protocol-shaped authoring proposals and rejects raw output", async () => {
+    const { host, scheduler, store } = await createMockRuntime();
+    const proposalHandle = await host.start(
+      createStartRunRequest({
+        operationId: "op_authoring_proposal",
+        snapshotRef: "mock:authoring_proposal",
+      }),
+    );
+    await settle(scheduler);
+
+    const proposalEvents = await collectEvents(host.stream(proposalHandle));
+    const proposalEvent = proposalEvents.find(
+      (event) => event.type === "runtime.authoring.proposal",
+    );
+    expect(proposalEvent?.data).toMatchObject({
+      proposal: {
+        id: expect.stringMatching(/^apr_/),
+        projectId: "prj_mock_authoring",
+        sourceRunId: "run_mock_authoring",
+        targets: [
+          {
+            targetType: "workflow",
+            targetId: "wf_mock_authoring",
+            expectedRevision: 1,
+            patchRef: "arv_mock_authoring_patch",
+          },
+        ],
+      },
+    });
+    const storedProposal = (await store.listEvents(proposalHandle.handleId)).find(
+      (event) => event.type === "runtime.authoring.proposal",
+    );
+    expect(Object.keys(storedProposal?.data ?? {}).sort()).toEqual(["adapterSequence", "proposal"]);
+
+    const invalidHandle = await host.start(
+      createStartRunRequest({
+        operationId: "op_authoring_proposal_invalid",
+        attempt: 2,
+        snapshotRef: "mock:authoring_proposal_invalid",
+      }),
+    );
+    await settle(scheduler);
+    const invalidEvents = await collectEvents(host.stream(invalidHandle));
+    expect(invalidEvents).toContainEqual(
+      expect.objectContaining({
+        type: "runtime.authoring.proposal.rejected",
+        data: expect.objectContaining({ reason: "invalid_authoring_proposal" }),
+      }),
+    );
+    expect(JSON.stringify(await store.listEvents(invalidHandle.handleId))).not.toContain(
+      "must-not-reach-host-storage",
+    );
+  });
+
   it("returns the same handle for the same operation and conflicts on payload reuse", async () => {
     const { host } = await createMockRuntime();
     const request = createStartRunRequest({ snapshotRef: "mock:waiting_input" });

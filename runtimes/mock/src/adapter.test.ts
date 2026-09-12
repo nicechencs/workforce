@@ -16,6 +16,8 @@ describe("MockRuntimeAdapter", () => {
     expect(parseMockScenario("mock:waiting_input")).toBe("waiting_input");
     expect(parseMockScenario("mock:timeout")).toBe("timeout");
     expect(parseMockScenario("mock:failure")).toBe("failure");
+    expect(parseMockScenario("mock:authoring_proposal")).toBe("authoring_proposal");
+    expect(parseMockScenario("authoring:proposal")).toBe("authoring_proposal");
   });
 
   it("declares pause and event cursor resume unsupported", async () => {
@@ -31,6 +33,11 @@ describe("MockRuntimeAdapter", () => {
           name: "usage.reporting",
           available: true,
           constraints: { money: false, tokens: true },
+        }),
+        expect.objectContaining({
+          name: "authoring.proposal",
+          available: true,
+          constraints: { structured: true, rawIntent: false },
         }),
       ]),
     );

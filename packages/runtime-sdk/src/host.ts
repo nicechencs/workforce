@@ -1,4 +1,9 @@
-import { parseStartRunRequest, type ReceiptScope, type StartRunRequest } from "@workforce/protocol";
+import {
+  parseAuthoringProposal,
+  parseStartRunRequest,
+  type ReceiptScope,
+  type StartRunRequest,
+} from "@workforce/protocol";
 import type {
   EventCursor,
   InputReceipt,
@@ -531,15 +536,16 @@ export class LocalNodeHost implements RuntimeAdapter {
   }
 
   private async ingest(handle: RuntimeHandle, event: RuntimeEvent): Promise<void> {
+    const sanitized = sanitizeRuntimeEvent(event);
     const hostEvent = await this.enqueueWrite(async () => {
       const stored = await this.store.getHandle(handle.handleId);
       if (!stored) {
         return undefined;
       }
-      if (event.sourceCursor) {
+      if (sanitized.sourceCursor) {
         const duplicate = await this.store.findEventByAdapterCursor(
           handle.handleId,
-          event.sourceCursor,
+          sanitized.sourceCursor,
         );
         if (duplicate) {
           return undefined;
@@ -548,7 +554,7 @@ export class LocalNodeHost implements RuntimeAdapter {
 
       const existing = await this.store.listEvents(handle.handleId);
       const last = existing[existing.length - 1];
-      const adapterSequence = asNumber(event.data["adapterSequence"]);
+      const adapterSequence = asNumber(sanitized.data["adapterSequence"]);
       const eventGap =
         stored.eventGap === true ||
         (last !== undefined &&
@@ -561,20 +567,22 @@ export class LocalNodeHost implements RuntimeAdapter {
       const sequence = (last?.sequence ?? 0) + 1;
       const nextEvent: HostRuntimeEvent = {
         id: this.ids.ulid("evt_"),
-        type: event.type,
-        time: event.time,
-        data: event.data,
+        type: sanitized.type,
+        time: sanitized.time,
+        data: sanitized.data,
         handleId: handle.handleId,
         runId: handle.runId,
         sequence,
         fencingToken: stored.binding.fencingToken,
         auditOnly,
         sourceCursor: hostEventCursor(sequence),
-        ...(event.sourceCursor ? { adapterCursor: event.sourceCursor } : {}),
+        ...(sanitized.sourceCursor ? { adapterCursor: sanitized.sourceCursor } : {}),
       };
       await this.store.appendEvent(nextEvent);
 
-      const nextStatus = auditOnly ? stored.status : (statusFromEvent(event.type) ?? stored.status);
+      const nextStatus = auditOnly
+        ? stored.status
+        : (statusFromEvent(sanitized.type) ?? stored.status);
       await this.store.putHandle({
         ...stored,
         status: nextStatus,
@@ -583,7 +591,7 @@ export class LocalNodeHost implements RuntimeAdapter {
         ...(auditOnly
           ? {}
           : {
-              lastTrustedFactAt: event.time,
+              lastTrustedFactAt: sanitized.time,
             }),
         ...(eventGap ? { eventGap: true } : {}),
         ...(stored.cancelAcceptedAt ? { cancelAcceptedAt: stored.cancelAcceptedAt } : {}),
@@ -598,7 +606,7 @@ export class LocalNodeHost implements RuntimeAdapter {
     if (tails) {
       for (const tail of tails) {
         tail.push(hostEvent);
-        if (!hostEvent.auditOnly && isTerminalLifecycle(event.type)) {
+        if (!hostEvent.auditOnly && isTerminalLifecycle(sanitized.type)) {
           tail.close();
         }
       }
@@ -662,6 +670,36 @@ export class LocalNodeHost implements RuntimeAdapter {
 
   private nowIso(): string {
     return this.clock.now().toISOString();
+  }
+}
+
+/** Validate before persistence so generic RuntimeEvent data cannot smuggle raw authoring input. */
+function sanitizeRuntimeEvent(event: RuntimeEvent): RuntimeEvent {
+  if (event.type !== "runtime.authoring.proposal") {
+    return event;
+  }
+  const adapterSequence = asNumber(event.data["adapterSequence"]);
+  try {
+    const proposal = parseAuthoringProposal(event.data["proposal"]);
+    return {
+      type: event.type,
+      time: event.time,
+      ...(event.sourceCursor ? { sourceCursor: event.sourceCursor } : {}),
+      data: {
+        proposal,
+        ...(adapterSequence === undefined ? {} : { adapterSequence }),
+      },
+    };
+  } catch {
+    return {
+      type: "runtime.authoring.proposal.rejected",
+      time: event.time,
+      ...(event.sourceCursor ? { sourceCursor: event.sourceCursor } : {}),
+      data: {
+        reason: "invalid_authoring_proposal",
+        ...(adapterSequence === undefined ? {} : { adapterSequence }),
+      },
+    };
   }
 }
 

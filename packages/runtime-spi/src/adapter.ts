@@ -1,4 +1,4 @@
-import type { RuntimeTransport, StartRunRequest } from "@workforce/protocol";
+import type { AuthoringProposalDto, RuntimeTransport, StartRunRequest } from "@workforce/protocol";
 
 export type { RuntimeTransport };
 
@@ -83,6 +83,16 @@ export interface RuntimeEvent {
   time: string;
   data: Record<string, unknown>;
   sourceCursor?: string;
+}
+
+/**
+ * The only Runtime event allowed to carry a structured authoring proposal.
+ * It contains protocol-validated references and summaries, never prompt text,
+ * agent message text, command output, file contents, or credentials.
+ */
+export interface RuntimeAuthoringProposalEvent extends RuntimeEvent {
+  type: "runtime.authoring.proposal";
+  data: { proposal: AuthoringProposalDto; adapterSequence?: number };
 }
 
 export interface ReconciliationResult {

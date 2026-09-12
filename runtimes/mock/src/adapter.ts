@@ -29,14 +29,30 @@ import {
 export const MOCK_ADAPTER_ID = "mock";
 export const MOCK_ADAPTER_VERSION = "0.1.0";
 
-export type MockScenarioName = "success" | "failure" | "waiting_input" | "timeout";
+export type MockScenarioName =
+  | "success"
+  | "failure"
+  | "waiting_input"
+  | "timeout"
+  | "authoring_proposal"
+  | "authoring_proposal_invalid";
 
 export function parseMockScenario(snapshotRef: string): MockScenarioName {
+  if (snapshotRef === "authoring:proposal") {
+    return "authoring_proposal";
+  }
   const prefixed = snapshotRef.startsWith("mock:")
     ? snapshotRef.slice("mock:".length)
     : snapshotRef;
   const name = prefixed.split(":")[0];
-  if (name === "success" || name === "failure" || name === "waiting_input" || name === "timeout") {
+  if (
+    name === "success" ||
+    name === "failure" ||
+    name === "waiting_input" ||
+    name === "timeout" ||
+    name === "authoring_proposal" ||
+    name === "authoring_proposal_invalid"
+  ) {
     return name;
   }
   return "success";
@@ -296,6 +312,8 @@ class MockExecution {
     this.emit("runtime.started");
     switch (this.scenario) {
       case "success":
+      case "authoring_proposal":
+      case "authoring_proposal_invalid":
         this.scheduler.schedule(this.completeAfterMs, () => this.succeed());
         break;
       case "failure":
@@ -360,6 +378,29 @@ class MockExecution {
       return;
     }
     this.emit("runtime.usage.updated", { tokens: 12 });
+    if (this.scenario === "authoring_proposal") {
+      this.emit("runtime.authoring.proposal", {
+        proposal: {
+          id: `apr_${this.handle.handleId}`,
+          projectId: "prj_mock_authoring",
+          sourceRunId: "run_mock_authoring",
+          summary: "Mock authoring proposal",
+          targets: [
+            {
+              targetType: "workflow",
+              targetId: "wf_mock_authoring",
+              expectedRevision: 1,
+              patchRef: "arv_mock_authoring_patch",
+            },
+          ],
+        },
+      });
+    }
+    if (this.scenario === "authoring_proposal_invalid") {
+      this.emit("runtime.authoring.proposal", {
+        proposal: { rawPrompt: "must-not-reach-host-storage" },
+      });
+    }
     this.emit("runtime.message", { text: "mock completed" });
     this.status = "succeeded";
     this.emit("runtime.completed", { outcome: "succeeded" });
@@ -417,6 +458,12 @@ function mockCapabilities(): RuntimeCapability[] {
       version: "1.0",
       available: true,
       constraints: { money: false, tokens: true },
+    },
+    {
+      name: "authoring.proposal",
+      version: "0.1",
+      available: true,
+      constraints: { structured: true, rawIntent: false },
     },
     { name: "lifecycle.pause", version: "1.0", available: false },
     { name: "event.resume", version: "1.0", available: false },
