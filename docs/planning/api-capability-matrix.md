@@ -12,6 +12,8 @@ updated: 2026-09-12
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+修订：2026-09-12 — T20 Desktop-local session store + 仅用户 append 已接线（renderer `localStorage`）；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false，无 Agent/send、无 chat HTTP。**不**宣称 M7 完成或 headed PASS。
+
 修订：2026-09-12 — catalog 写切片已接通现有 `POST/PATCH /workflows|/teams`、`/versions`、`:publish`（**不是** 下表 `/drafts` path）。画布 + 草稿写路径是部分 M7 UI，**不是** M7 完成。T19 页面仍 stub。T20 作者壳在，`CHAT_SESSION_PROTOCOL_FROZEN=false`，无 Agent/send。`:start` 可带可选 `orchestrationMode` 并做 capability gating；项目 start 的 mode UI 模块已有但未挂详情；composed passthrough 比 main #28 更薄。**不发明** chat 或 `:direct` path。`orchestrationMode` 权威在 `packages/protocol/src/execution.ts`；`StartRunRequest` 不加该字段。无 headed PASS、无 Codex direct。  
 修订：2026-09-11 — 主对象是 Project。画布与自定义 Team 从 `later` 迁出，列入 **M7**，作为项目循环（Team → Tasks → Workflow）的必达环节，不是外挂页。只读 `GET /workflows` 是已接通的 M3/P1 过渡目录（不是 Mock 闭环硬依赖，也不是可执行 Runtime）。同日补公开 Task DTO 的 `dependsOn` 与 Artifact 权威存储规则（`LocalArtifactStore`）；未发明可写项目策略或远程 enrollment。同日冻结 D17 对话生成（**M7 planned**）与 D18 双执行模式（**M8 planned**）；**不发明** chat / execution-mode endpoint，待 T02 再写入 path。
 
@@ -239,7 +241,7 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 | 选择仓库 | 项目详情 Settings → 原生 dialog → `POST .../workspaces` | draft |
 | 选预设团队/Mock Runtime/预算 | PATCH project 或专用 config（T02 定一个） | draft |
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
-| 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话 DTO 已冻结，`CHAT_SESSION_PROTOCOL_FROZEN=false` | M7 planned（D17）。作者壳已有，**无** Agent/send，**无** chat path。**不**宣称对话编排完成 |
+| 对话生成工作流草稿 | 复用上列 M7 写接口落草稿；会话 DTO 已冻结，Desktop-local session store 只追加用户消息；`CHAT_SESSION_PROTOCOL_FROZEN=false` | M7 planned（D17）。作者壳 + 本机会话已有，**无** Agent/send，**无** chat path。**不**宣称对话编排完成 |
 | 发布工作流版本 | `/workflows/{id}/drafts/{draftId}:publish` | M7；有限 DAG 校验通过 |
 | 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。gating + DTO 回显已有；控件未挂项目页；无 `direct` 调度。**不**宣称 M8 完成 |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿不得 `:start-planning` |
@@ -263,4 +265,4 @@ M8 必达——双执行模式（**完成态未实现**；本分支只有 start 
 - 路由由 T11 注册；本矩阵的页面入口由 T11 挂到 shell
 - 不支持的能力：按钮不渲染为可点击成功态
 - T18/T19：画布 + catalog 写 path 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；T19 Renderer 仍拒保存（stub）
-- T20/T21：作者壳与 `:start` gating 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；不得实现假 Agent send 或假 `direct` 成功；控件未入页不得写成桌面模式选择可用；composed passthrough 更薄，不得写成 main #28 已迁入
+- T20/T21：作者壳、Desktop-local session store（仅用户 append）与 `:start` gating 已有；`CHAT_SESSION_PROTOCOL_FROZEN=false`；不得实现假 Agent send 或假 `direct` 成功；控件未入页不得写成桌面模式选择可用；composed passthrough 更薄，不得写成 main #28 已迁入

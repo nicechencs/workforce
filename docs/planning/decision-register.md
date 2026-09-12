@@ -27,7 +27,7 @@ updated: 2026-09-12
 
 主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、作者壳（`CHAT_SESSION_PROTOCOL_FROZEN=false`）、`:start` orchestrationMode 回显与 capability gating；自定义 Team **页面仍是 stub**。不发明 chat / `:direct` / enrollment path。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、作者壳 + Desktop-local session store（`CHAT_SESSION_PROTOCOL_FROZEN=false`，无 Agent/send）、`:start` orchestrationMode 回显与 capability gating；自定义 Team **页面仍是 stub**。不发明 chat / `:direct` / enrollment path。
 
 ## 1. 冻结总表
 
