@@ -164,8 +164,6 @@ export interface CompleteAuthoringTurnInput {
 }
 
 export class SqliteAuthoringProjectRepository {
-  constructor(_db: DatabaseSync) {}
-
   getInTransaction(tx: Tx, projectId: string): AuthoringProjectRecord | null {
     const row = sqliteDbOf(tx)
       .prepare("SELECT id, organization_id FROM projects WHERE id = ?")
@@ -176,8 +174,6 @@ export class SqliteAuthoringProjectRepository {
 
 /** Resolves a Run through its Task so project and organization are authoritative. */
 export class SqliteAuthoringSourceRunRepository {
-  constructor(_db: DatabaseSync) {}
-
   getInTransaction(tx: Tx, sourceRunId: string): AuthoringSourceRunRecord | null {
     const row = sqliteDbOf(tx)
       .prepare(
@@ -346,7 +342,7 @@ export class SqliteAuthoringTurnRepository {
   constructor(
     private readonly db: DatabaseSync,
     private readonly sessions = new SqliteAuthoringSessionRepository(db),
-    private readonly sourceRuns = new SqliteAuthoringSourceRunRepository(db),
+    private readonly sourceRuns = new SqliteAuthoringSourceRunRepository(),
   ) {}
 
   getInTransaction(tx: Tx, turnId: string): AuthoringTurnRecord | null {
@@ -506,7 +502,7 @@ export class SqliteAuthoringProposalRepository {
     private readonly db: DatabaseSync,
     private readonly sessions = new SqliteAuthoringSessionRepository(db),
     private readonly turns = new SqliteAuthoringTurnRepository(db, sessions),
-    private readonly sourceRuns = new SqliteAuthoringSourceRunRepository(db),
+    private readonly sourceRuns = new SqliteAuthoringSourceRunRepository(),
   ) {}
 
   create(tx: Tx, input: CreateAuthoringProposalInput): void {

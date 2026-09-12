@@ -121,7 +121,7 @@ export class WorkforceSqlite {
       this.authoringTurns,
     );
     this.authoringPatches = new SqliteAuthoringChatPatchRepository(this.authoringProposals);
-    this.authoringSourceRuns = new SqliteAuthoringSourceRunRepository(connection);
+    this.authoringSourceRuns = new SqliteAuthoringSourceRunRepository();
   }
 
   static open(path: string, options?: OpenWorkforceDbOptions): WorkforceSqlite {
