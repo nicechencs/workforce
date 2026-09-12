@@ -584,11 +584,17 @@ describe("composed M3 mock loop", () => {
       }),
     });
     expect(confirmed.status).toBe(200);
+    const authoringOperationId = "op_start_authoring_proposal";
+    const authoringIntent = "sensitive intent must remain transient";
+    harness.services.host.setInitialInput(`${authoringOperationId}:run`, {
+      operationId: `${authoringOperationId}:input`,
+      text: authoringIntent,
+    });
     const started = await harness.services.app.startAuthoring({
-      operationId: "op_start_authoring_proposal",
+      operationId: authoringOperationId,
       idempotencyKey: "start-authoring-proposal",
       projectId: project.id,
-      intent: "sensitive intent must remain transient",
+      intent: authoringIntent,
     });
 
     const changeSet = await poll(async () =>
@@ -603,18 +609,18 @@ describe("composed M3 mock loop", () => {
       steps: [
         expect.objectContaining({
           targetType: "workflow",
-          patchRef: "arv_mock_authoring_patch",
+          patchRef: expect.stringMatching(/^arv_mock_authoring_[0-9a-f]{16}$/),
         }),
       ],
     });
     const sourceRun = harness.services.app.world.runs.get(started.runId);
     expect(sourceRun?.handleId).toBeTruthy();
-    expect(
-      harness.services.sqlite.inbox.seen(
-        "daemon.authoring-proposal",
-        `${sourceRun!.handleId}:host:4`,
-      ),
-    ).toBe(true);
+    const proposalReceipts = harness.services.sqlite.connection
+      .prepare("SELECT message_id FROM inbox_receipts WHERE consumer = ? AND message_id LIKE ?")
+      .all("daemon.authoring-proposal", `${sourceRun!.handleId}:host:%`) as Array<{
+      message_id: string;
+    }>;
+    expect(proposalReceipts.length).toBeGreaterThan(0);
     await (
       harness.services as unknown as {
         handleAuthoringProposal(event: {
@@ -668,6 +674,67 @@ describe("composed M3 mock loop", () => {
     expect(JSON.stringify(harness.services.app.world.events.events)).not.toContain(
       "sensitive intent must remain transient",
     );
+  });
+
+  it("creates and confirms a project-scoped workflow through the authoring chat API", async () => {
+    const harness = await startInjected(undefined, 5);
+    const started = await startRunningRun(harness, "chat-authoring");
+    const sessionCreated = await injectJson(
+      harness,
+      `/api/v1/projects/${started.projectId}/authoring-sessions`,
+      {
+        method: "POST",
+        headers: commandHeaders(harness.auth, "chat-session"),
+        body: JSON.stringify({ operationId: "op_chat_session" }),
+      },
+    );
+    expect(sessionCreated.status).toBe(201);
+    const session = sessionCreated.body as { id: string; stateRevision: number };
+    const sent = await injectJson(harness, `/api/v1/authoring-sessions/${session.id}/messages`, {
+      method: "POST",
+      headers: commandHeaders(harness.auth, "chat-message", session.stateRevision),
+      body: JSON.stringify({ content: "Create a workflow for the feature" }),
+    });
+    expect(sent.status).toBe(202);
+    const accepted = sent.body as { turnId: string; revision: number };
+    const awaiting = await poll(async () => {
+      const response = await injectJson(harness, `/api/v1/authoring-sessions/${session.id}`, {
+        headers: harness.auth,
+      });
+      const body = response.body as {
+        turns: Array<{ id: string; status: string; revision: number }>;
+      };
+      const turn = body.turns.find((item) => item.id === accepted.turnId);
+      return turn?.status === "awaiting_confirmation" ? turn : undefined;
+    });
+    expect(awaiting.revision).toBeGreaterThan(accepted.revision - 1);
+
+    const confirmed = await injectJson(
+      harness,
+      `/api/v1/authoring-sessions/${session.id}/turns/${accepted.turnId}/_cmd/confirm`,
+      {
+        method: "POST",
+        headers: commandHeaders(harness.auth, "chat-confirm", awaiting.revision),
+        body: JSON.stringify({ operationId: "op_chat_confirm" }),
+      },
+    );
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body).toMatchObject({ action: "confirm", turnId: accepted.turnId });
+    expect(
+      harness.services.sqlite.connection
+        .prepare("SELECT COUNT(*) AS count FROM workflow_drafts")
+        .get(),
+    ).toMatchObject({ count: 1 });
+    expect(
+      harness.services.sqlite.connection
+        .prepare("SELECT COUNT(*) AS count FROM authoring_messages WHERE content_ref LIKE 'mem:%'")
+        .get(),
+    ).toMatchObject({ count: 1 });
+    expect(
+      JSON.stringify(
+        harness.services.sqlite.connection.prepare("SELECT * FROM authoring_messages").all(),
+      ),
+    ).not.toContain("Create a workflow");
   });
 
   it("preserves a pending cancellation through restart without dispatching another run", async () => {

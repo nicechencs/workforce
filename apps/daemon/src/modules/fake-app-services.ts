@@ -177,6 +177,43 @@ export class FakeAppServices implements AppServices {
     };
   }
 
+  createAuthoringSession(_ctx: CommandContext, _projectId: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  listAuthoringSessions(_projectId: string, _query: ListQuery): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  getAuthoringSession(_sessionId: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  getAuthoringTurn(_sessionId: string, _turnId: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  getAuthoringProposal(_sessionId: string, _proposalId: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  sendAuthoringMessage(_ctx: CommandContext, _sessionId: string, _content: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  confirmAuthoringTurn(_ctx: CommandContext, _sessionId: string, _turnId: string): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
+  authoringTurnAction(
+    _ctx: CommandContext,
+    _sessionId: string,
+    _turnId: string,
+    _action: "cancel" | "retry" | "close",
+  ): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
   getOperation(operationId: string, principalId: string): CommandReceipt | null {
     const receipt = this.operations.get(operationId);
     if (!receipt || receipt.scope.principalId !== principalId) {

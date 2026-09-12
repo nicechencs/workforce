@@ -1,4 +1,14 @@
-import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
+import type {
+  AuthoringSessionPageDto,
+  AuthoringSessionViewDto,
+  AuthoringTurnDto,
+  AuthoringChatProposalDto,
+  AuthoringCommandAcceptedDto,
+  AuthoringTurnActionName,
+  AuthoringTurnActionAcceptedDto,
+  CommandReceipt,
+  WorkforceEvent,
+} from "@workforce/protocol";
 
 import type {
   ApprovalDecisionInput,
@@ -178,6 +188,34 @@ export interface AppServices {
     input: RunInputBody,
   ): MaybeAsync<CommandResult<RunDto>>;
   listRunEvents(runId: string, query: EventListQuery): PageDto<WorkforceEvent>;
+
+  createAuthoringSession(
+    ctx: CommandContext,
+    projectId: string,
+  ): MaybeAsync<CommandResult<AuthoringSessionViewDto>>;
+  listAuthoringSessions(projectId: string, query: ListQuery): MaybeAsync<AuthoringSessionPageDto>;
+  getAuthoringSession(sessionId: string): MaybeAsync<AuthoringSessionViewDto | null>;
+  getAuthoringTurn(sessionId: string, turnId: string): MaybeAsync<AuthoringTurnDto | null>;
+  getAuthoringProposal(
+    sessionId: string,
+    proposalId: string,
+  ): MaybeAsync<AuthoringChatProposalDto | null>;
+  sendAuthoringMessage(
+    ctx: CommandContext,
+    sessionId: string,
+    content: string,
+  ): MaybeAsync<CommandResult<AuthoringCommandAcceptedDto & { turnId: string }>>;
+  confirmAuthoringTurn(
+    ctx: CommandContext,
+    sessionId: string,
+    turnId: string,
+  ): MaybeAsync<CommandResult<AuthoringTurnActionAcceptedDto>>;
+  authoringTurnAction(
+    ctx: CommandContext,
+    sessionId: string,
+    turnId: string,
+    action: Exclude<AuthoringTurnActionName, "confirm">,
+  ): MaybeAsync<CommandResult<AuthoringTurnActionAcceptedDto>>;
 
   listApprovals(query: ListQuery): PageDto<ApprovalDto>;
   getApproval(id: string): ApprovalDto | null;

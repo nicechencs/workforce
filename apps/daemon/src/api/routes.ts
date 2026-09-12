@@ -390,6 +390,122 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
   });
 
+  app.post("/api/v1/projects/:id/authoring-sessions", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /projects/{id}/authoring-sessions",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.createAuthoringSession(ctx, param(request, "id"));
+      },
+    );
+  });
+
+  app.get("/api/v1/authoring-sessions", async (request) => {
+    const projectId = requiredString(request.query as Record<string, unknown>, "projectId");
+    return deps.services.listAuthoringSessions(projectId, listQuery(request));
+  });
+
+  app.get("/api/v1/authoring-sessions/:id", async (request, reply) => {
+    const session = await deps.services.getAuthoringSession(param(request, "id"));
+    sendDto(
+      reply,
+      200,
+      requireFound(session, "Authoring session not found"),
+      session?.stateRevision,
+    );
+  });
+
+  app.get("/api/v1/authoring-sessions/:sessionId/turns/:turnId", async (request, reply) => {
+    const turn = await deps.services.getAuthoringTurn(
+      param(request, "sessionId"),
+      param(request, "turnId"),
+    );
+    void reply.code(200).send(requireFound(turn, "Authoring turn not found"));
+  });
+
+  app.get("/api/v1/authoring-sessions/:sessionId/proposals/:proposalId", async (request, reply) => {
+    const proposal = await deps.services.getAuthoringProposal(
+      param(request, "sessionId"),
+      param(request, "proposalId"),
+    );
+    void reply.code(200).send(requireFound(proposal, "Authoring proposal not found"));
+  });
+
+  app.post("/api/v1/authoring-sessions/:id/messages", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /authoring-sessions/{id}/messages",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["content", "operationId"]);
+        return deps.services.sendAuthoringMessage(
+          ctx,
+          param(request, "id"),
+          requiredString(body, "content"),
+        );
+      },
+    );
+  });
+
+  app.post(
+    "/api/v1/authoring-sessions/:sessionId/turns/:turnId/_cmd/confirm",
+    async (request, reply) => {
+      await cmd(
+        request,
+        reply,
+        {
+          canonicalOperation: "POST /authoring-sessions/{sessionId}/turns/{turnId}:confirm",
+          resource: (req) => `${param(req, "sessionId")}:${param(req, "turnId")}`,
+          requireIfMatch: true,
+        },
+        (ctx, body) => {
+          rejectUnknownFields(body, ["operationId"]);
+          return deps.services.confirmAuthoringTurn(
+            ctx,
+            param(request, "sessionId"),
+            param(request, "turnId"),
+          );
+        },
+      );
+    },
+  );
+
+  for (const action of ["cancel", "retry", "close"] as const) {
+    app.post(
+      `/api/v1/authoring-sessions/:sessionId/turns/:turnId/_cmd/${action}`,
+      async (request, reply) => {
+        await cmd(
+          request,
+          reply,
+          {
+            canonicalOperation: `POST /authoring-sessions/{sessionId}/turns/{turnId}:${action}`,
+            resource: (req) => `${param(req, "sessionId")}:${param(req, "turnId")}`,
+            requireIfMatch: true,
+          },
+          (ctx, body) => {
+            rejectUnknownFields(body, ["operationId"]);
+            return deps.services.authoringTurnAction(
+              ctx,
+              param(request, "sessionId"),
+              param(request, "turnId"),
+              action,
+            );
+          },
+        );
+      },
+    );
+  }
+
   app.get("/api/v1/approvals", async (request) => deps.services.listApprovals(listQuery(request)));
   app.get("/api/v1/approvals/:id", async (request, reply) => {
     const approval = requireFound(

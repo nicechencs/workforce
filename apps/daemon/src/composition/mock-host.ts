@@ -9,7 +9,11 @@ import {
   type AuthoringProposalDto,
 } from "@workforce/protocol";
 import { MockRuntimeAdapter } from "@workforce/runtime-mock";
-import { LocalNodeHost, type RuntimeHostStore } from "@workforce/runtime-sdk";
+import {
+  LocalNodeHost,
+  type RuntimeHostStore,
+  type TransientInitialInput,
+} from "@workforce/runtime-sdk";
 import type { RuntimeHandle } from "@workforce/runtime-spi";
 
 import { LOCAL_NODE_ID, MOCK_RUNTIME_ID } from "./catalog.js";
@@ -49,6 +53,7 @@ export class ComposedMockHost implements RuntimeHostPort {
   private readonly watching = new Set<string>();
   private readonly replayScheduled = new Set<string>();
   private readonly handles = new Map<string, RuntimeHandle>();
+  private readonly initialInputs = new Map<string, TransientInitialInput>();
   private disposed = false;
 
   constructor(options: ComposedMockHostOptions) {
@@ -82,10 +87,19 @@ export class ComposedMockHost implements RuntimeHostPort {
       },
       snapshotRef: request.snapshotRef || "mock:success",
     });
-    const handle = await this.host.start(parsed);
+    const initialInput = this.initialInputs.get(parsed.operationId);
+    this.initialInputs.delete(parsed.operationId);
+    const handle = initialInput
+      ? await this.host.startWithInitialInput(parsed, initialInput)
+      : await this.host.start(parsed);
     this.handles.set(handle.handleId, handle);
     this.watch(handle);
     return { handleId: handle.handleId, runId: handle.runId };
+  }
+
+  /** Queue one protected authoring handoff for the next matching Application start. */
+  setInitialInput(operationId: string, input: TransientInitialInput): void {
+    this.initialInputs.set(operationId, structuredClone(input));
   }
 
   async pause(_handleId: string): Promise<{ accepted: boolean }> {

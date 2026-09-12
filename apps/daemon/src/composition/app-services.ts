@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   CatalogService,
+  confirmAuthoringChatProposal,
   HostCapabilityError,
   MOCK_PLAN_DOCUMENT,
   UseCaseError,
@@ -15,6 +16,7 @@ import {
   type ProjectRecord,
   type RunRecord,
   type TaskRecord,
+  type ConfirmChatProposalDeps,
 } from "@workforce/application";
 import {
   KIND_MEDIA_TYPES,
@@ -28,6 +30,13 @@ import { WorkforceSqlite } from "@workforce/database";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import {
   DEFAULT_ORCHESTRATION_MODE,
+  type AuthoringSessionPageDto,
+  type AuthoringSessionViewDto,
+  type AuthoringTurnDto,
+  type AuthoringChatProposalDto,
+  type AuthoringCommandAcceptedDto,
+  type AuthoringTurnActionName,
+  type AuthoringTurnActionAcceptedDto,
   type CommandReceipt,
   type WorkforceEvent,
 } from "@workforce/protocol";
@@ -165,6 +174,8 @@ export class ComposedAppServices implements AppServices {
   private readonly decisionReasons = new Map<string, string>();
   private readonly synced = { eventIds: new Set<string>(), operationIds: new Set<string>() };
   private readonly integrations = new MemoryIntegrationStore();
+  /** Raw user content is process-bound only; SQLite stores its opaque ref/hash. */
+  private readonly authoringContent = new Map<string, string>();
   private writeChain: Promise<void> = Promise.resolve();
   private sqliteWrite: Promise<void> = Promise.resolve();
   private closed = false;
@@ -1068,6 +1079,420 @@ export class ComposedAppServices implements AppServices {
     return this.listEvents({ ...query, runId, stream: `run:${runId}` });
   }
 
+  async createAuthoringSession(
+    _ctx: CommandContext,
+    projectId: string,
+  ): Promise<CommandResult<AuthoringSessionViewDto>> {
+    return this.exclusive(async () => {
+      const project = this.requireProject(projectId);
+      await this.persistDurably();
+      const now = this.app.world.nowIso();
+      const id = this.app.world.ids.ulid("cas_");
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        this.sqlite.authoringSessions.create(tx, {
+          id,
+          organizationId: project.organizationId,
+          projectId,
+          protocolVersion: PROTOCOL_VERSION,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+      return { status: 201, body: this.authoringSessionView(id)! };
+    });
+  }
+
+  listAuthoringSessions(projectId: string, query: ListQuery): AuthoringSessionPageDto {
+    this.requireProject(projectId);
+    const rows = this.sqlite.connection
+      .prepare(
+        `SELECT id, project_id, protocol_version, status, state_revision, created_at, updated_at
+           FROM authoring_sessions WHERE project_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(projectId, query.limit) as Record<string, unknown>[];
+    const items = rows.map((row) => ({
+      id: String(row.id),
+      projectId: String(row.project_id),
+      protocolVersion: "0.1" as const,
+      status: String(row.status) as "open" | "failed" | "closed",
+      stateRevision: Number(row.state_revision),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    }));
+    return { items, page: { nextCursor: null, hasMore: false } };
+  }
+
+  getAuthoringSession(sessionId: string): AuthoringSessionViewDto | null {
+    return this.authoringSessionView(sessionId);
+  }
+
+  getAuthoringTurn(sessionId: string, turnId: string): AuthoringTurnDto | null {
+    const view = this.authoringSessionView(sessionId);
+    return view?.turns.find((turn) => turn.id === turnId) ?? null;
+  }
+
+  getAuthoringProposal(sessionId: string, proposalId: string): AuthoringChatProposalDto | null {
+    const proposal = this.sqlite.authoringProposals.get(proposalId);
+    if (!proposal || proposal.sessionId !== sessionId) return null;
+    return {
+      id: proposal.id,
+      projectId: proposal.projectId,
+      sessionId: proposal.sessionId,
+      turnId: proposal.turnId,
+      sourceRunId: proposal.sourceRunId,
+      summary: proposal.redactedPreview ?? "Workflow proposal ready",
+      targets: proposal.targets.map((target) =>
+        target.operation === "create"
+          ? {
+              targetType: target.targetType,
+              operation: "create" as const,
+              patchRef: target.patchRef,
+            }
+          : {
+              targetType: target.targetType,
+              operation: "update" as const,
+              targetId: target.targetId!,
+              expectedRevision: target.expectedRevision!,
+              patchRef: target.patchRef,
+            },
+      ),
+    };
+  }
+
+  async sendAuthoringMessage(
+    ctx: CommandContext,
+    sessionId: string,
+    content: string,
+  ): Promise<CommandResult<AuthoringCommandAcceptedDto & { turnId: string }>> {
+    return this.exclusive(async () => {
+      const session = this.sqlite.authoringSessions.get(sessionId);
+      if (!session) throw new AppError("not_found", "Authoring session not found");
+      const project = this.requireProject(session.projectId);
+      if (session.status !== "open") {
+        throw new AppError("invalid_transition", "Authoring session is not open");
+      }
+      this.assertMatch(session.stateRevision, ctx.ifMatch);
+      if (!content.trim()) throw new AppError("validation_failed", "content is required");
+
+      const authoringOperationId = `${ctx.operationId}:authoring`;
+      // startAuthoring derives the governed Runtime operation as `:run`.
+      // Queue the transient handoff against that concrete Host operation so
+      // LocalNodeHost can deliver it during startWithInitialInput.
+      this.host.setInitialInput(`${authoringOperationId}:run`, {
+        operationId: `${ctx.operationId}:input`,
+        text: content,
+      });
+      const started = await this.app.startAuthoring({
+        operationId: authoringOperationId,
+        idempotencyKey: authoringOperationId,
+        projectId: project.id,
+        intent: content,
+      });
+      await this.persistDurably();
+      const run = this.app.world.runs.get(started.runId);
+      if (!run?.handleId) throw new AppError("conflict", "Authoring run has no Host handle");
+
+      const now = this.app.world.nowIso();
+      const messageId = this.app.world.ids.ulid("cam_");
+      const turnId = this.app.world.ids.ulid("cat_");
+      const contentRef = `mem:authoring:${messageId}`;
+      this.authoringContent.set(contentRef, content);
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        this.sqlite.authoringMessages.create(tx, {
+          id: messageId,
+          sessionId,
+          role: "user",
+          contentRef,
+          contentHash: sha256Hex(content),
+          redactedPreview: "[user message retained in process memory]",
+          createdAt: now,
+        });
+        this.sqlite.authoringTurns.create(tx, {
+          id: turnId,
+          sessionId,
+          organizationId: project.organizationId,
+          projectId: project.id,
+          sourceRunId: started.runId,
+          protocolVersion: PROTOCOL_VERSION,
+          status: "running",
+          taskId: started.taskId,
+          runId: started.runId,
+          createdAt: now,
+          updatedAt: now,
+        });
+        this.sqlite.connection
+          .prepare(
+            `UPDATE authoring_sessions SET state_revision = state_revision + 1, updated_at = ? WHERE id = ?`,
+          )
+          .run(now, sessionId);
+      });
+      await this.host.sendInput(run.handleId, {
+        operationId: `${ctx.operationId}:input`,
+        text: content,
+      });
+      const current = this.sqlite.authoringSessions.get(sessionId);
+      return {
+        status: 202,
+        body: {
+          operationId: ctx.operationId,
+          acceptedAt: now,
+          sessionId,
+          turnId,
+          revision: current?.stateRevision ?? session.stateRevision + 1,
+        },
+        revision: current?.stateRevision ?? session.stateRevision + 1,
+      };
+    });
+  }
+
+  async confirmAuthoringTurn(
+    ctx: CommandContext,
+    sessionId: string,
+    turnId: string,
+  ): Promise<CommandResult<AuthoringTurnActionAcceptedDto>> {
+    return this.exclusive(async () => {
+      const turn = this.sqlite.authoringTurns.get(turnId);
+      if (!turn || turn.sessionId !== sessionId) {
+        throw new AppError("not_found", "Authoring turn not found");
+      }
+      if (ctx.ifMatch === undefined)
+        throw new AppError("validation_failed", "If-Match is required");
+      await confirmAuthoringChatProposal(
+        {
+          action: "confirm",
+          operationId: ctx.operationId,
+          idempotencyKey: ctx.operationId,
+          sessionId,
+          turnId,
+          expectedRevision: ctx.ifMatch,
+        },
+        this.confirmChatDeps(),
+      );
+      await this.persistDurably();
+      const current = this.sqlite.authoringTurns.get(turnId);
+      return {
+        status: 200,
+        body: {
+          operationId: ctx.operationId,
+          acceptedAt: this.app.world.nowIso(),
+          sessionId,
+          turnId,
+          action: "confirm",
+          revision: current?.stateRevision ?? turn.stateRevision + 1,
+        },
+        revision: current?.stateRevision ?? turn.stateRevision + 1,
+      };
+    });
+  }
+
+  async authoringTurnAction(
+    ctx: CommandContext,
+    sessionId: string,
+    turnId: string,
+    action: Exclude<AuthoringTurnActionName, "confirm">,
+  ): Promise<CommandResult<AuthoringTurnActionAcceptedDto>> {
+    return this.exclusive(async () => {
+      if (action === "retry") {
+        throw new AppError("unsupported_capability", "authoring turn retry is not implemented");
+      }
+      const turn = this.sqlite.authoringTurns.get(turnId);
+      if (!turn || turn.sessionId !== sessionId) {
+        throw new AppError("not_found", "Authoring turn not found");
+      }
+      this.assertMatch(turn.stateRevision, ctx.ifMatch);
+      const expectedRevision = ctx.ifMatch;
+      if (expectedRevision === undefined)
+        throw new AppError("validation_failed", "If-Match is required");
+      if (action === "cancel" && turn.runId) {
+        const run = this.app.world.runs.get(turn.runId);
+        if (run?.handleId) {
+          await this.host.cancel(run.handleId, "authoring turn cancelled");
+        }
+      }
+      const nextStatus = action === "cancel" ? "cancelled" : "closed";
+      const now = this.app.world.nowIso();
+      await this.sqlite.uow.withTransaction(async (_tx) => {
+        const changed = this.sqlite.connection
+          .prepare(
+            `UPDATE authoring_turns SET status = ?, state_revision = state_revision + 1, updated_at = ?
+              WHERE id = ? AND session_id = ? AND state_revision = ?`,
+          )
+          .run(nextStatus, now, turnId, sessionId, expectedRevision);
+        if (Number(changed.changes) === 0) {
+          const currentRevision = this.sqlite.authoringTurns.get(turnId)?.stateRevision;
+          throw new AppError(
+            "revision_conflict",
+            "Authoring turn revision changed",
+            currentRevision === undefined ? {} : { currentRevision },
+          );
+        }
+      });
+      const current = this.sqlite.authoringTurns.get(turnId)!;
+      return {
+        status: 200,
+        body: {
+          operationId: ctx.operationId,
+          acceptedAt: now,
+          sessionId,
+          turnId,
+          action,
+          revision: current.stateRevision,
+        },
+        revision: current.stateRevision,
+      };
+    });
+  }
+
+  private authoringSessionView(sessionId: string): AuthoringSessionViewDto | null {
+    const session = this.sqlite.authoringSessions.get(sessionId);
+    if (!session) return null;
+    const messageRows = this.sqlite.connection
+      .prepare(
+        `SELECT id, role, content_ref, redacted_preview, created_at
+           FROM authoring_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(sessionId) as Record<string, unknown>[];
+    const messages = messageRows.map((row) => {
+      const ref = row.content_ref === null ? undefined : String(row.content_ref);
+      return {
+        id: String(row.id),
+        role: "user" as const,
+        content: (ref && this.authoringContent.get(ref)) ?? "[message unavailable after restart]",
+        createdAt: String(row.created_at),
+      };
+    });
+    const turnRows = this.sqlite.connection
+      .prepare(
+        `SELECT id, session_id, protocol_version, status, state_revision,
+                task_id, run_id, workflow_draft_id, created_at, updated_at
+           FROM authoring_turns WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(sessionId) as Record<string, unknown>[];
+    const turns: AuthoringTurnDto[] = turnRows.map((row, index) => {
+      const refs: AuthoringTurnDto["refs"] = {};
+      if (row.task_id !== null) refs.taskId = String(row.task_id);
+      if (row.run_id !== null) refs.runId = String(row.run_id);
+      if (row.workflow_draft_id !== null) refs.workflowDraftId = String(row.workflow_draft_id);
+      const message = messages[index] ?? {
+        id: `cam_missing_${String(row.id)}`,
+        role: "user" as const,
+        content: "[message unavailable after restart]",
+        createdAt: String(row.created_at),
+      };
+      return {
+        id: String(row.id),
+        sessionId,
+        protocolVersion: "0.1" as const,
+        status: String(row.status) as AuthoringTurnDto["status"],
+        userMessage: message,
+        refs,
+        revision: Number(row.state_revision),
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+      };
+    });
+    const lastTurn = turns.at(-1);
+    const draft = lastTurn?.refs.workflowDraftId
+      ? (() => {
+          const stored = this.sqlite.workflowDrafts.get(lastTurn.refs.workflowDraftId!);
+          return stored
+            ? {
+                kind: "landed" as const,
+                unpublished: true as const,
+                workflowDraftId: stored.id,
+                workflowId: stored.workflowId,
+                revision: stored.revision,
+              }
+            : undefined;
+        })()
+      : lastTurn?.status === "awaiting_confirmation"
+        ? { kind: "proposal" as const, unpublished: true as const, workflow: {} }
+        : undefined;
+    return {
+      id: session.id,
+      projectId: session.projectId,
+      protocolVersion: "0.1",
+      status: session.status,
+      messages,
+      ...(draft ? { draft } : {}),
+      stateRevision: session.stateRevision,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      turns,
+    };
+  }
+
+  private confirmChatDeps(): ConfirmChatProposalDeps {
+    return {
+      clock: this.app.world.clock,
+      ids: this.app.world.ids,
+      uow: this.sqlite.uow,
+      events: this.sqlite.events,
+      receipts: this.sqlite.receipts,
+      projects: this.sqlite.projects,
+      sourceRuns: this.sqlite.authoringSourceRuns,
+      sessions: this.sqlite.authoringSessions,
+      turns: this.sqlite.authoringTurns,
+      patches: this.sqlite.authoringPatches,
+      workflowIdentities: this.sqlite.catalogWorkflows,
+      workflowAuthorities: this.sqlite.workflowAuthoringScopes,
+      workflowDrafts: this.sqlite.workflowDrafts,
+      proposals: {
+        getInTransaction: (tx, proposalId) => {
+          const stored = this.sqlite.authoringProposals.getInTransaction(tx, proposalId);
+          if (!stored) return null;
+          return {
+            ...stored,
+            targets: stored.targets.map((target, ordinal) =>
+              target.operation === "create"
+                ? {
+                    ordinal,
+                    targetType: target.targetType,
+                    operation: "create" as const,
+                    patchRef: target.patchRef,
+                  }
+                : {
+                    ordinal,
+                    targetType: target.targetType,
+                    operation: "update" as const,
+                    targetId: target.targetId!,
+                    expectedRevision: target.expectedRevision!,
+                    patchRef: target.patchRef,
+                  },
+            ),
+          };
+        },
+      },
+      resolver: {
+        resolveWorkflowGraph: ({
+          proposalId,
+          projectId,
+          sourceRunId,
+          operation,
+          patchRef,
+          workflowId,
+          expectedRevision,
+        }) => ({
+          graph: authoringGraphDefinition(),
+          binding: {
+            organizationId: ORGANIZATION_ID,
+            projectId,
+            sessionId: this.sqlite.authoringProposals.get(proposalId)?.sessionId ?? "",
+            turnId: this.sqlite.authoringProposals.get(proposalId)?.turnId ?? "",
+            sourceRunId,
+            patchRef,
+            ...(operation === "update" && workflowId !== undefined ? { workflowId } : {}),
+            ...(operation === "update" && expectedRevision !== undefined
+              ? { expectedRevision }
+              : {}),
+          },
+        }),
+      },
+      principalId: this.app.ctx.principalId,
+      clientId: this.app.ctx.clientId,
+    };
+  }
+
   listApprovals(query: ListQuery): PageDto<ApprovalDto> {
     return paginate(
       this.filter(
@@ -1264,6 +1689,10 @@ export class ComposedAppServices implements AppServices {
       if (!run) {
         return false;
       }
+      const chatTurn = this.chatTurnForRun(run.id);
+      if (chatTurn) {
+        return this.handleChatAuthoringProposal(event, run.id, chatTurn.id, messageId);
+      }
       const operationId = `runtime.authoring.proposal:${event.handleId}:${event.sourceCursor}`;
       const priorProjection = this.app.world.events.events.find(
         (record) =>
@@ -1296,6 +1725,95 @@ export class ComposedAppServices implements AppServices {
       });
       return true;
     });
+  }
+
+  private chatTurnForRun(runId: string): { id: string; sessionId: string } | null {
+    const row = this.sqlite.connection
+      .prepare(
+        "SELECT id, session_id FROM authoring_turns WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(runId) as Record<string, unknown> | undefined;
+    return row ? { id: String(row.id), sessionId: String(row.session_id) } : null;
+  }
+
+  private async handleChatAuthoringProposal(
+    event: RunAuthoringProposalEvent,
+    sourceRunId: string,
+    turnId: string,
+    messageId: string,
+  ): Promise<boolean> {
+    const existing = this.sqlite.authoringTurns.get(turnId);
+    if (!existing) return false;
+    const proposalId = event.proposal.id;
+    const target = event.proposal.targets[0];
+    if (!target) return false;
+    const now = this.app.world.nowIso();
+    const project = this.requireProject(existing.projectId);
+    await this.sqlite.uow.withTransaction(async (tx) => {
+      if (!this.sqlite.authoringProposals.getInTransaction(tx, proposalId)) {
+        this.sqlite.authoringProposals.create(tx, {
+          id: proposalId,
+          sessionId: existing.sessionId,
+          turnId,
+          organizationId: project.organizationId,
+          projectId: existing.projectId,
+          sourceRunId,
+          proposalRef: proposalId,
+          proposalHash: sha256Hex(canonicalJson({ id: proposalId, patchRef: target.patchRef })),
+          redactedPreview: "[workflow proposal ready]",
+          targets: [
+            {
+              ordinal: 1,
+              targetType: "workflow",
+              operation: "create",
+              patchRef: target.patchRef,
+            },
+          ],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      this.sqlite.connection
+        .prepare(
+          `UPDATE authoring_turns
+              SET status = 'awaiting_confirmation', state_revision = state_revision + 1,
+                  proposal_id = ?, patch_refs_json = ?, updated_at = ?
+            WHERE id = ? AND status IN ('accepted', 'running', 'awaiting_confirmation')`,
+        )
+        .run(proposalId, JSON.stringify([target.patchRef]), now, turnId);
+      const eventRecord: WorkforceEvent = {
+        specVersion: "0.1",
+        id: this.app.world.ids.ulid("evt_"),
+        type: "workflow.authoring.chat.proposed",
+        source: "workforce.daemon.authoring-chat",
+        subject: { type: "authoring_chat_proposal", id: proposalId },
+        time: now,
+        recordedAt: now,
+        organizationId: project.organizationId,
+        projectId: project.id,
+        runId: sourceRunId,
+        actor: { type: "service", id: "daemon" },
+        stream: `authoring_session:${existing.sessionId}`,
+        correlationId: messageId,
+        dataContentType: "application/json",
+        dataSchema: "urn:workforce:event:workflow.authoring.chat.proposed:0.1",
+        data: {
+          sessionId: existing.sessionId,
+          turnId,
+          proposalId,
+          sourceRunId,
+          targets: [{ targetType: "workflow", operation: "create", patchRef: target.patchRef }],
+        },
+        sensitivity: "internal",
+      };
+      await this.sqlite.events.append(tx, eventRecord);
+      await this.app.world.events.append({ kind: "tx" }, eventRecord);
+    });
+    await this.persistDurably();
+    await this.sqlite.uow.withTransaction(async (tx) => {
+      this.sqlite.inbox.record(tx, AUTHORING_PROPOSAL_CONSUMER, messageId, now);
+    });
+    return true;
   }
 
   private async dispatchReadyTasks(projectId: string): Promise<void> {
@@ -2233,6 +2751,27 @@ function asRegistrableKind(kind: string, slotId: string, mediaType: string): Reg
 
 function mediaTypeForKind(kind: RegistrableKind, fallback: string): string {
   return KIND_MEDIA_TYPES[kind] ?? fallback;
+}
+
+function authoringGraphDefinition() {
+  return {
+    entryNodeIds: ["authoring"],
+    nodes: [
+      {
+        id: "authoring",
+        kind: "task" as const,
+        title: "Authoring workflow",
+        role: "developer" as const,
+        expectedOutputIds: [],
+      },
+    ],
+    edges: [],
+    failurePolicy: { default: "fail" as const },
+    concurrencyPolicy: {
+      runWorktree: "isolated" as const,
+      integrationWorktree: "disabled" as const,
+    },
+  };
 }
 
 function isCanonicalMockPlan(value: unknown): boolean {
