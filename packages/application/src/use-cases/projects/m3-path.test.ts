@@ -138,6 +138,13 @@ describe("M3 workflow path", () => {
     });
     expect(confirmed.project.status).toBe("ready");
     expect(app.world.approvals.get(planning.approvalId)?.status).toBe("consumed");
+    expect(confirmed.project.workflowInstanceId).toBeUndefined();
+    expect(confirmed.project.executionSnapshotId).toMatch(/^snp_/);
+    expect(app.world.workflows).toHaveLength(0);
+    expect(app.world.tasks).toHaveLength(0);
+    const snapshot = app.world.executionSnapshots.get(confirmed.project.executionSnapshotId!);
+    expect(snapshot?.workflowVersionId).toBe("wfv_m3");
+    expect(snapshot?.contentHash).toMatch(/^canonical-json:/);
 
     const started = await app.start({
       operationId: "op_start",
@@ -146,6 +153,9 @@ describe("M3 workflow path", () => {
       expectedStateRevision: confirmed.project.stateRevision,
     });
     expect(started.project.status).toBe("running");
+    expect(
+      app.world.workflows.get(started.project.workflowInstanceId ?? "")?.executionSnapshotId,
+    ).toBe(confirmed.project.executionSnapshotId);
 
     const replayStart = await app.start({
       operationId: "op_start",

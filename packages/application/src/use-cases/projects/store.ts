@@ -7,7 +7,13 @@ import type {
   TaskStatus,
   WorkflowInstanceStatus,
 } from "@workforce/domain";
-import type { OrchestrationMode, RunExecutionSnapshot } from "@workforce/protocol";
+import type {
+  AuthoringChangeSetDto,
+  OrchestrationMode,
+  RunExecutionSnapshot,
+  TeamDraftDto,
+  WorkflowDraftDto,
+} from "@workforce/protocol";
 import type {
   Clock,
   CommandReceiptRepository,
@@ -304,6 +310,16 @@ export class MemoryWorld {
   readonly approvals = new Map<string, ApprovalRecord>();
   readonly artifacts = new Map<string, ArtifactRecord>();
   readonly workflows = new Map<string, WorkflowInstanceRecord>();
+  /**
+   * Canonical published execution graphs for the in-memory Application slice.
+   * Workflow instances only reference these versions; SQLite supplies the
+   * durable equivalent through `workflow_versions`.
+   */
+  readonly workflowVersions = new Map<string, WorkflowGraph>();
+  /** T20-B in-memory projection; SQLite authoring repositories remain the durable adapter. */
+  readonly workflowDrafts = new Map<string, WorkflowDraftDto>();
+  readonly teamDrafts = new Map<string, TeamDraftDto>();
+  readonly authoringChangeSets = new Map<string, AuthoringChangeSetDto>();
   readonly nodes = new Map<string, NodeInstanceRecord>();
   readonly budgets = new Map<string, BudgetRecord>();
   readonly executionSnapshots = new Map<string, ProjectExecutionSnapshotRecord>();

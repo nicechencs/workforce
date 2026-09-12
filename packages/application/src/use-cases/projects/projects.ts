@@ -6,7 +6,11 @@ import type { WorkflowGraph } from "./engine-port.js";
 import { notFound, validationFailed } from "./errors.js";
 import { appendEvent } from "./events.js";
 import { digestOf, withIdempotency } from "./idempotency.js";
-import type { ProjectRecord, WorkflowInstanceRecord } from "./store.js";
+import type {
+  ProjectExecutionSnapshotRecord,
+  ProjectRecord,
+  WorkflowInstanceRecord,
+} from "./store.js";
 
 export interface CreateProjectInput {
   operationId: string;
@@ -254,29 +258,57 @@ export async function confirmPlan(
 
         const next = ctx.engine.nextProjectStatus(project.status, "confirm-plan");
         const now = ctx.world.nowIso();
-        project.status = next;
-        project.workflowVersionId = input.graph.id;
-        touch(project, now);
-
-        const instanceId = ctx.world.ids.ulid("wfi_");
-        ctx.world.workflows.set(instanceId, {
-          id: instanceId,
+        if (!project.teamVersionId) {
+          throw validationFailed("confirm-plan requires a published team version");
+        }
+        const existingGraph = ctx.world.workflowVersions.get(input.graph.id);
+        if (existingGraph && digestOf(existingGraph) !== digestOf(input.graph)) {
+          throw validationFailed(`workflow version ${input.graph.id} is immutable`);
+        }
+        const graph = cloneGraph(input.graph);
+        ctx.world.workflowVersions.set(graph.id, graph);
+        const budget = project.budgetId ? ctx.world.budgets.get(project.budgetId) : undefined;
+        const snapshotId = ctx.world.ids.ulid("snp_");
+        const snapshot: ProjectExecutionSnapshotRecord = {
+          id: snapshotId,
           projectId: project.id,
-          workflowVersionId: input.graph.id,
-          graph: input.graph,
-          status: "created",
-          stateRevision: 1,
-        });
-        project.workflowInstanceId = instanceId;
+          workflowVersionId: graph.id,
+          teamVersionId: project.teamVersionId,
+          contentHash: executionSnapshotContentHash({
+            graph,
+            teamVersionId: project.teamVersionId,
+            budget,
+          }),
+          // M3 has no PolicySnapshot port yet. An explicit empty object denotes
+          // unavailable policy facts; it is not a fabricated policy decision.
+          policySnapshot: {},
+          ...(budget
+            ? {
+                budgetSnapshot: {
+                  id: budget.id,
+                  currency: budget.currency,
+                  limitMinor: budget.limitMinor,
+                  reservedMinor: budget.reservedMinor,
+                  settledMinor: budget.settledMinor,
+                  authorizationVersion: budget.authorizationVersion,
+                },
+              }
+            : {}),
+          createdAt: now,
+        };
+        ctx.world.executionSnapshots.set(snapshot.id, snapshot);
+        project.status = next;
+        project.workflowVersionId = graph.id;
+        project.executionSnapshotId = snapshot.id;
+        touch(project, now);
 
         await appendEvent(ctx.world, tx, {
           type: "project.plan_confirmed",
           subjectType: "project",
           subjectId: project.id,
           projectId: project.id,
-          workflowInstanceId: instanceId,
           correlationId: input.operationId,
-          data: { to: next, workflowVersionId: input.graph.id },
+          data: { to: next, workflowVersionId: graph.id, executionSnapshotId: snapshot.id },
         });
         return { project };
       },
@@ -309,27 +341,41 @@ export async function startExecution(
         expectRevision(project, input.expectedStateRevision);
         const nextStatus = ctx.engine.nextProjectStatus(project.status, "start");
         project.orchestrationMode = orchestrationMode;
-        if (!project.workflowInstanceId) {
-          throw validationFailed("project has no published workflow");
+        if (!project.executionSnapshotId) {
+          throw validationFailed("project has no execution snapshot");
         }
-        const workflow = ctx.world.workflows.get(project.workflowInstanceId);
-        if (!workflow) {
-          throw notFound("workflow", project.workflowInstanceId);
+        const snapshot = ctx.world.executionSnapshots.get(project.executionSnapshotId);
+        if (!snapshot || snapshot.projectId !== project.id) {
+          throw validationFailed("project execution snapshot is unavailable");
+        }
+        const graph = ctx.world.workflowVersions.get(snapshot.workflowVersionId);
+        if (!graph) {
+          throw validationFailed("published workflow graph is unavailable");
         }
         const active = [...ctx.world.workflows.values()].find(
           (item) =>
             item.projectId === project.id &&
             item.status !== "completed" &&
             item.status !== "failed" &&
-            item.status !== "cancelled" &&
-            item.id !== workflow.id,
+            item.status !== "cancelled",
         );
         if (active) {
           throw validationFailed("project already has an active workflow instance");
         }
 
         const now = ctx.world.nowIso();
+        const workflow: WorkflowInstanceRecord = {
+          id: ctx.world.ids.ulid("wfi_"),
+          projectId: project.id,
+          workflowVersionId: snapshot.workflowVersionId,
+          executionSnapshotId: snapshot.id,
+          graph,
+          status: "created",
+          stateRevision: 1,
+        };
+        ctx.world.workflows.set(workflow.id, workflow);
         project.status = nextStatus;
+        project.workflowInstanceId = workflow.id;
         touch(project, now);
 
         workflow.status = ctx.engine.nextWorkflowStatus(workflow.status, "validate");
@@ -511,19 +557,54 @@ function instantiateGraph(
       stateRevision: 1,
     });
   }
-  for (const edge of workflow.graph.edges) {
+  for (const projection of projectTaskDependencies(workflow.graph, nodeToTask)) {
+    const task = ctx.world.tasks.get(projection.taskId);
+    task?.dependsOn.push(...projection.dependsOn);
+  }
+}
+
+/**
+ * Public Task dependencies represent only unconditional task-to-task
+ * prerequisites. Condition/routing edges are workflow control flow, not a
+ * requirement for a Task to wait for another Task's terminal result.
+ */
+export function projectTaskDependencies(
+  graph: WorkflowGraph,
+  nodeToTask: ReadonlyMap<string, string>,
+): Array<{
+  taskId: string;
+  dependsOn: Array<{ taskId: string; waitFor: "outputs_ready" | "completed" }>;
+}> {
+  const dependenciesByTask = new Map<
+    string,
+    Array<{ taskId: string; waitFor: "outputs_ready" | "completed" }>
+  >();
+  for (const edge of graph.edges) {
     const fromTask = nodeToTask.get(edge.from);
     const toTask = nodeToTask.get(edge.to);
-    if (!fromTask || !toTask) {
+    if (!fromTask || !toTask || edge.conditionValue !== undefined) {
       continue;
     }
-    const task = ctx.world.tasks.get(toTask);
-    if (!task) {
+    const waitFor = edge.waitFor ?? "outputs_ready";
+    if (waitFor !== "outputs_ready" && waitFor !== "completed") {
       continue;
     }
-    task.dependsOn.push({
-      taskId: fromTask,
-      waitFor: edge.waitFor === "completed" ? "completed" : "outputs_ready",
-    });
+    const dependencies = dependenciesByTask.get(toTask) ?? [];
+    if (!dependencies.some((dependency) => dependency.taskId === fromTask)) {
+      dependencies.push({ taskId: fromTask, waitFor });
+    }
+    dependenciesByTask.set(toTask, dependencies);
   }
+  return [...dependenciesByTask.entries()].map(([taskId, dependsOn]) => ({ taskId, dependsOn }));
+}
+
+function cloneGraph(graph: WorkflowGraph): WorkflowGraph {
+  return JSON.parse(JSON.stringify(graph)) as WorkflowGraph;
+}
+
+function executionSnapshotContentHash(value: unknown): string {
+  // Application deliberately has no Node crypto dependency. Durable SQLite
+  // publication computes the cryptographic graph hash; this in-memory slice
+  // keeps a canonical-content fingerprint until that source is wired through.
+  return `canonical-json:${digestOf(value)}`;
 }

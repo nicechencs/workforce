@@ -27,3 +27,4 @@ export type {
 } from "./use-cases/planning/index.js";
 export * from "./use-cases/delivery/index.js";
 export * from "./use-cases/catalog/index.js";
+export * from "./use-cases/authoring/index.js";
