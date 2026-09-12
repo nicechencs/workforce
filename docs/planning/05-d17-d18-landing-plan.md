@@ -16,12 +16,12 @@ updated: 2026-09-11
 
 文档改动看起来是「M7 画布 + M8 双执行模式」，但真正卡住整个 D15–D18 的不是画布，而是**三条被文档埋在执行面里的前置不变量**。在它们落地前，画布、对话生成、双执行模式任何一条都无法诚实实现：
 
-0. **SQLite 现在不是权威，也没有权威到能承载这些不变量。** 实际写入链是「Application 内存 world → `dumpWorld` → 写 `world.json` → 之后才异步投影进 SQLite」，且这次投影**吞掉 `isConstraintError` 覆盖的约束错误与 `revision_conflict`**（`apps/daemon/src/composition/persist.ts:552-556, 591-595`；2026-09-11 起非约束类失败已由 `persist()` 经 `console.error` 报出，约束类仍被吞）。文档的 migration expand → backfill → switch → contract 假设 SQLite 是事实来源；要让它成为事实，`switch` 阶段就不只是加列，而是一次「谁来负责不变量」的架构切换。在没做这个切换前，任何 NOT NULL/CHECK 收紧都可能**静默不生效**——见 §3.6。
+0. **SQLite 尚未承载全部业务不变量，但新的投影已不可静默失败。** 现写入链先将内存 world 投影进 SQLite；只有事务提交后才发布 `world.json` sidecar。原始约束错误和 `revision_conflict` 都会向调用方传播，故失败不会产生新的超前 sidecar。migration 的 expand → backfill → switch → contract 仍需完成「谁负责不变量」的架构切换；旧 sidecar 不会被本切片自动修复，任何 NOT NULL/CHECK 收紧前仍需 T16 恢复证据——见 §3.6。
 1. **迁移是公共前置，不是 D18 的收尾工作。** 文档把 `orchestration_mode`、`transport`、`placement_snapshot_json`、`execution_snapshot_id` 的目标形态定义为 `NOT NULL` + 互斥 `CHECK`，同时要求「现行 M3 Run 先 nullable」。这意味着 expand 阶段必须**先于**任何会写 Run 的 D17/D18 代码——否则新代码要么写不进库，要么必须写一个立刻要拆掉的临时分支。
 2. **映射必须显式，而当前 Run 的 placement 语义是倒的。** `StartRunRequest` 现在要求调用方**先给出** `executionNodeId` / `runtimeInstallationId` / `workspaceInstanceId`；文档冻结的顺序是先解析 placement intent，再选 Node/Runtime、拿 Lease、建 WorkspaceInstance，**最后**组装唯一 `PlacementSnapshot`。wire 契约与执行顺序互相矛盾，必须先解决再写调度。另外 `runs.snapshot_ref` 现在的取值是 Mock 场景名字面量（`"mock:success"`），与 `execution_snapshot_id` **不是同一个概念**，不能复用。
 3. **`ProjectExecutionSnapshot` 的写入时机和归属都要挪。** 文档要求计划确认只创建 snapshot 并进入 `ready`，`workflow.start` 才创建 `WorkflowInstance`；当前 `confirmPlan` 直接创建 `WorkflowInstance` 并把 `project.workflowInstanceId` 写死。这是 M3 主路径的真实行为改动，牵动 daemon、typed client、桌面页 driver 与集成测试。
 
-另外三个**文档没写、但会直接决定 D15–D18 正确性**的代码事实：公开 Task 的 `dependsOn` 从 `task_dependencies` 投影，而该表**全库无生产写入方**；`workflow_versions.definition_json` 每次写实例都被 upsert 覆盖，等价于**可变版本表**；D15/D18 要新增字段的 `RunDto`/`ProjectDto`/`TeamDto` **不在 `packages/protocol`**，而是 daemon 与 desktop-client 两处手写副本。这三条不是措辞问题，而是实现路径上的硬约束，见 §3.5 与 §4。
+另外一个仍会直接决定 D15–D18 正确性的事实：`task_dependencies` 已由世界快照在所有 Task 行落库后同步普通 `dependsOn` 边，但 confirm-plan 仍不是从已发布 canonical graph 取图。`workflow_versions` 的 repository 覆写缺陷已修复：真实版本为稳定 SHA-256 的 insert-once，实例读回也以版本表为准；只有历史空 FK placeholder 能一次提升。Application 发布与图源切换仍未完成。D15/D18 要新增字段的 `RunDto`/`ProjectDto`/`TeamDto` **不在 `packages/protocol`**，而是 daemon 与 desktop-client 两处手写副本。这些不是措辞问题，而是实现路径上的硬约束，见 §3.5 与 §4。
 
 ## 2. 基线事实（已实际读取）
 
@@ -31,7 +31,7 @@ updated: 2026-09-11
 > 2. **T04 已落地 `005_execution_axes_expand`（仅 expand）**：新增 `team_drafts` / `workflow_drafts` / `authoring_change_sets` / `authoring_change_set_steps` / `project_execution_snapshots` 5 张表与 6 个**可空**列，无 `NOT NULL`、无互斥 CHECK、无 backfill。因此下文 2.2 的「4 个 migration」与「缺失表」清单只适用于 `c613609`；backfill / switch / contract 仍未实现。
 > 3. **S2a 已落地 `SqliteProjectExecutionSnapshotRepository`**（insert-once，无 update）与 `MemoryWorld.executionSnapshots`。但 `confirmPlan` 仍直接创建 `WorkflowInstance`，D02「确认时只写 snapshot、启动时才建实例」**未实现**。
 >
-> 仍成立的行为结论：2.3 的「SQLite 是事实上的事后投影」与 2.4 的 `confirmPlan` 语义、2.6 的 `workflow_versions` 被 upsert 覆写且 `content_hash` 恒为 `sha256:empty`。2.3 中「投影失败被吞掉」已在两轮内收口：实体 repository 早已把 2067/1555 映射为 `PersistenceError("conflict")` 向上抛，真正静默的只是 `persist()` 的 fire-and-forget `catch`（已改为 `console.error`）；`dualWriteSqlite` 外层 `isConstraintError` 分支也已改为上报，但它只覆盖未被 repository 包装的原始约束错误（实体的 insert / upsert 路径不会走到；`node_instances.update`、`runs.updateStatus` 与 `receipts.putPending` 仍可到达）。本页 §6 验收与测试矩阵的「投影失败可见性」现已满足其字面要求（失败可被观测）；更强的「可阻断 / 可对账」仍属 planned。见 [03-implementation-status.md](03-implementation-status.md) §3 持久化回归修复切片；SQLite 仍是投影而非权威。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
+> 仍成立的行为结论：2.4 的 `confirmPlan` 语义。2.6 的 `workflow_versions` 覆写与恒定 `sha256:empty` 已由后续 T04 repository 切片修复：真实版本使用稳定 SHA-256 insert-once，实例读图从版本表取得；只有历史空 FK placeholder 允许一次升级。Application 发布/图源 switch 尚未完成。2.3 中「投影失败被吞掉」已被后续 T04 对账切片修复：`dualWriteSqlite` 向上传播原始约束错误和 CAS conflict，sidecar 仅在 SQLite commit 后发布。本页 §6 的「投影失败可见性」已升级为新的写入可阻断；旧 sidecar 的恢复对账、完整 authority switch 和 T16 故障注入仍 planned。见 [03-implementation-status.md](03-implementation-status.md)；SQLite 实体表仍是 restart authority。本轮落地的 expand 与 S2a 的当前状态以 [03-implementation-status.md](03-implementation-status.md) 为准。
 
 ### 2.1 公共契约现状
 
@@ -43,13 +43,13 @@ updated: 2026-09-11
 | `RunDto` / `ProjectDto` / `TeamDto` | **不在 `packages/protocol`**：daemon 与 desktop-client 各手写一份（同一事实两个来源） | `apps/daemon/src/modules/dto.ts:42-74,196-203`；`packages/desktop-client/src/types.ts:42,56,215` |
 | `ProjectDto` 的 team 绑定 | 既无 `teamId` 也无 `teamVersionId`（内部 `ProjectRecord.teamVersionId` 存在但不出公开面） | `dto.ts:42-54`；`packages/application/src/use-cases/projects/store.ts:34` |
 | `orchestrationMode` / `transport` / `placementSnapshot` / `executionSnapshotId` | 协议与 domain 均无；grep 全库 0 命中 | `packages/protocol/src/index.ts:4-11` |
-| `WorkflowDraft` / `TeamDraft` / `AuthoringChangeSet` / `ProjectExecutionSnapshot` | 类型、表、DTO 全无 | 同上 |
+| `WorkflowDraft` / `TeamDraft` / `AuthoringChangeSet` / `ProjectExecutionSnapshot` | `packages/protocol` 已有 Draft / ChangeSet DTO，SQLite 005 已有对应表；Application repository 与 staged-apply use case 尚无。`ProjectExecutionSnapshot` 公开 DTO 与 SQLite 投影已另有切片。 | `packages/protocol/src/authoring.ts`；`packages/database/src/schema.ts`；`packages/protocol/src/execution-snapshot.ts` |
 | 品牌 ID | `packages/domain/src/ids.ts` 有 17 个 Id，**缺** `WorkflowId`/`WorkflowVersionId`/`WorkflowDraftId`/`TeamId`/`TeamVersionId`/`TeamDraftId`/`ExecutionSnapshotId`/`SnapshotRef` | `packages/domain/src/ids.ts:21-39` |
 | `NodeInstanceStatus` | **重复定义两处** | `packages/workflow-engine/src/types.ts:3-14`；`packages/application/src/use-cases/projects/engine-port.ts:9-20` |
-| 图定义（引擎层） | 已存在 `WorkflowGraph{id,workflowId,version,entryNodeIds,nodes[],edges[],terminalNodeIds?}`，节点/边种类齐备；`validateWorkflowGraph` 已覆盖环、端点、入口可达、joinPolicy、绑定、condition 默认分支 | `packages/workflow-engine/src/types.ts:16-56`；`packages/workflow-engine/src/dag.ts:60-150` |
-| JSON Schema 生成 | **不存在 codegen**。`docs/protocols/v0.1/*.schema.json` 是手写副本，与 zod 无自动校验，漂移不可发现 | 根 `package.json:11-20`；`docs/protocols/README.md:3,34` |
+| 图定义（protocol + engine） | `WorkflowGraphDefinition` 已是画布/作者/发布的公开严格 DAG，覆盖重复 ID、端点、入口和环；引擎 `validateWorkflowGraph` 仍负责运行时 join、binding 与 condition 语义。 | `packages/protocol/src/workflow.ts`；`packages/workflow-engine/src/dag.ts` |
+| JSON Schema 生成 | 当前 14 个 V0.1 公开 schema 由显式 Zod registry 生成；`protocol:schema:check` 检查缺失、额外和内容漂移。JSON Schema 不替代 `superRefine` 等运行时语义测试 | `packages/protocol/src/json-schema-registry.ts`；`tooling/protocol/generate-schemas.mjs`；根 `package.json` |
 
-结论：**canonical graph 只在引擎层存在，公开协议里只有目录投影**。D15 的「画布保存与对话生成必须落到同一 canonical graph」需要把引擎图提升为协议对象，并且要处理公开 catalog schema 是 `.strict()` 这一事实——加字段不是纯新增，而是协议变更，且现有 protocol 测试**显式拒绝** `status:"draft"` 与 `canvas` 字段（`packages/protocol/src/workflow.test.ts:47-71`）。文档 [api-capability-matrix.md](api-capability-matrix.md) §2 Workflows 行要求「同一路径返回已发布图（nodes/edges）」，与该 strict schema 冲突，T02 必须显式选择：升协议版本，或把目录投影与 canonical graph 拆成两个 DTO。
+结论：**canonical graph 已提升为独立 protocol DTO，目录投影仍不是执行图。** `WorkflowGraphDefinition` 供画布、作者和发布复用；`WorkflowDto` 保持严格的目录投影，不能把草稿或运行态字段塞回 catalog。Application 尚未把该对象作为 published 版本的唯一执行图源，也尚未实现 ChangeSet staged apply，因此 D15/T14/T09 仍有后续接线工作。
 
 ### 2.2 持久化现状
 
@@ -88,8 +88,8 @@ HTTP command
   → WorkforceApp 用例改的是内存 MemoryWorld（app-services.ts）
   → this.persist()                       app-services.ts:1367-1377
   → dumpWorld()                          persist.ts:272-311
-  → persistSnapshot() 写 world.json      persist.ts:391-395   ← 先落盘
-  → dualWriteSqlite()（异步）             persist.ts:504-596
+→ dualWriteSqlite()（串行、可传播失败）  persist.ts
+→ persistSnapshot() 写 world.json        app-services.ts     ← SQLite commit 后
   → SqliteWorldSnapshot.save()           world-snapshot.ts:93-166   ← 全实体 upsert
 ```
 
@@ -156,9 +156,9 @@ D18 的 direct 与 workflow-bound 在文档里共用同一条治理链，只在�
 两者都可行，但**不能选「字段留着、行为按文档走」**：那会让 wire 上出现一个调用方以为自己在选节点、实际被覆盖的字段，属于文档禁止的「映射不显式」。
 
 ### 3.5 三个新暴露的实现陷阱
-**(a) `TaskDto.dependsOn` 的来源与写入路径不一致。** 公开投影按 [decision-register.md](decision-register.md) D08 必须含 `dependsOn`，[03-implementation-status.md](03-implementation-status.md) §3 记录它来自已发布执行 DAG，并有 `composition.test.ts` 覆盖。但 `confirmPlan` 只写 `project` 与 `workflowInstance`，没有写 `task_dependencies`。因此一旦执行图的来源从「请求体 `input.graph`」换成「已发布 `WorkflowVersion`」，DAG 边的落库必须一并补上；否则换个图来源就会静默丢掉依赖边，而 UI 的「依赖：无」回退文案会掩盖它。这条要有 contract test 覆盖投影与落库两侧。
+**(a) `TaskDto.dependsOn` 的图源尚未切换。** 公开投影按 [decision-register.md](decision-register.md) D08 必须含 `dependsOn`。世界快照现已在同一 SQLite 事务中、在所有 Task 行落库后同步标准化 `task_dependencies`，避免 JSON 与表投影丢边或节点乱序 FK 失败；但 `confirmPlan` 仍从现有 `input.graph` 建实例，而非已发布 `WorkflowVersion`。图源切换时必须继续让普通 prerequisite 边进入该投影，并证明 routing/condition 等非 Task prerequisite 边不被误投影；否则 UI 的「依赖：无」回退文案会掩盖问题。这条仍要有跨模块 contract test 覆盖。
 
-**(b) 版本表当前可变。** `workflows.ts:54` 的 `upsertWorkflowVersion` 会在插入实例时按需创建/覆盖 `workflow_versions.definition_json`。这与 D15「已发布版本不可变」、以及 `docs/blueprint/10-database-schema.md` §4.2「一旦被引用禁止 UPDATE/DELETE」冲突。做 D15 发布路径时，这个 upsert 必须收敛为「发布时 insert once」，并给已发布版本加不可变约束（或至少在 repository 层拒绝 UPDATE）；否则画布发布的「新版本」可能悄悄改写历史版本。
+**(b) repository 写入侧已收紧，发布路径仍未接线。** `SqliteWorkflowInstanceRepository` 现以稳定 JSON SHA-256 将版本 insert-once；同内容只能重用、不同图为 conflict，实例读图也从 `workflow_versions` 获取。为兼容旧 M3 Project 的 FK 预建行，唯一可变例外是 `sha256:empty` / `{}` placeholder 的一次提升；真实版本绝不更新。D15 发布流程仍必须以此 repository 作为唯一写入方，并让 Application 从 published graph 而非请求体取得图。
 
 **(c) 公开 DTO 有两个手写来源。** `RunDto`/`ProjectDto`/`TeamDto` 不在 `packages/protocol`，而是 `apps/daemon/src/modules/dto.ts` 与 `packages/desktop-client/src/types.ts` 各一份。D18 要给 Run 加 `orchestrationMode`/`transport`/`executionSnapshotId`，就必须同时改两处并且无法被 schema 单测发现漂移。**[AGENTS.md](../../AGENTS.md) 禁止「绕过 `packages/protocol` 复制第二套规则」**，所以这三个 DTO 的归属必须在 S0 里一并裁决：要么迁入 `packages/protocol`，要么明确写出它们的权威方与校验方式。不裁决就直接加字段，等于把 D18 的字段冻结在两个不受检查器约束的地方。
 
@@ -197,7 +197,7 @@ D18 的 direct 与 workflow-bound 在文档里共用同一条治理链，只在�
 | C8 | 唯一 `PlacementSnapshot` 形状（nodeId/nodeSessionId/runtimeInstallationId/workspaceInstanceId/lease/fencing） | `StartRunRequest.placement` 三 ID + `ProviderPlacementSnapshot` | 改已有契约 | 07 §4、10 §18 |
 | C9 | `placement` intent 的 wire 语义（或移除） | 现为必填已解析 binding | 改已有契约 | §3.4 |
 | C10 | `WorkflowInstance.executionSnapshotId`（替代直接 `workflowVersionId`） | 实例直接存 version + graph | 需迁移 | 10 §4.3、state-matrix §3 |
-| C11 | `dependsOn` 投影规则与落库约定（普通 prerequisite 边 vs 路由边） | 投影已存在、落库缺失 | 改已有契约（配 contract test） | 08 §2.3、api-capability-matrix §2 |
+| C11 | `dependsOn` 投影规则与落库约定（普通 prerequisite 边 vs 路由边） | 普通 `dependsOn` 已同步入库；图源仍是现有实例图，routing/condition 分离仍缺跨模块 contract test | 改已有契约（配 contract test） | 08 §2.3、api-capability-matrix §2 |
 | C12 | 能力探针输出（哪些 mode 可选）与 `unsupported_capability` 的判定点 | `GET /capabilities` 存在但是硬编码静态对象（`app-services.ts:279-295`），无 mode 维度 | 纯新增 | decision-register D18.3 |
 | C13 | `RunDto`/`ProjectDto`/`TeamDto` 的归属与单一来源 | daemon 与 desktop-client 各手写一份；protocol 只有 `TaskDto`/`WorkflowDto` | 改已有契约（结构性问题） | §3.5c、AGENTS.md 红线 |
 
@@ -238,7 +238,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 
 **取舍记录：** 原计划的 A 方案（把 `StartRunRequest.placement` 降级为可选 intent）经读码后放弃——它会波及 `packages/runtime-sdk` 的 `assertNode`/`bindingFor`、mock/codex 两个 adapter 与 5 个测试文件，属于顺手重写运行时而非冻结契约。改为**加法式**：`StartRunRequest` 定位为 **Adapter SPI 边界请求**（必须带已解析绑定，键集合由回归测试锁定），三轴走独立协议对象。因此 §3.4 的 A/B 二选一**只剩一件事待定**：是否新增一条 wire 入口在请求里携带 `placementIntent`（HTTP 层），还是让 mode/intent 从 Task/Project 配置推导、`POST /tasks/{id}/runs` 不带这些字段。见 §9.1。
 
-仍待冻结：C1–C4（作者面图与草稿 DTO）、C10（`WorkflowInstance.executionSnapshotId`）、C11（`dependsOn` 落库约定）、C12（mode 维度 probe）、C13（`RunDto`/`ProjectDto`/`TeamDto` 归属）。
+已冻结：C1–C4（作者面图、草稿、Proposal/ChangeSet DTO）。仍待接线或冻结：C10（`WorkflowInstance.executionSnapshotId` 的唯一图源切换）、C11（`dependsOn` 的 published-graph 投影）、C12（mode 维度 probe）、C13（`RunDto`/`ProjectDto`/`TeamDto` 归属）。
 
 **本切片验证**：`tsc -p packages/protocol/tsconfig.json --noEmit` 退出 0；含新测试文件的定向 typecheck 退出 0；`node tooling/docs/check-docs.mjs` 通过（50 文件）；14 条断言以纯 Node 复算全部通过。**vitest 未跑**（本环境 Node→子进程 spawn 全部 EPERM）；`turbo run typecheck` 的 2 个 `TS2307` 经 `git stash` 复测确认为基线既有。
 
@@ -306,6 +306,7 @@ S5 contract 收紧 + upgrade fixture 验收（T04/T16）
 
 ### S3 — backfill → switch（T04，与 S2 并行验证）
 
+- **已落地的审计前置（008，非 backfill）：** `execution_axis_migration_items` 为无 Run FK 的 append-only ledger。它只读历史 Run，记录 canonical / repair / quarantine 分类及字段存在性、来源摘要；未知历史列、placement、sidecar 或外部 evidence 的原文均不得复制，且没有经验证的 Project/transport/placement 关系时不得标记 eligible。该切片不更新 Run、不创建 snapshot，quarantine 也不会因旧 source 再现而自动解除。
 - **backfill**：历史 M3 Run 归一化为 `workflow_bound`；依据既有精确 WorkflowVersion/TeamVersion 与 Project/租户关系创建唯一 `ProjectExecutionSnapshot` 并回填；`transport` 只能从既有 RuntimeProfile/adapter 事实解析；`placement_snapshot_json` 只能从既有 Local Node、Workspace、Run 三列重建，并标注 legacy snapshot schema version。缺失或冲突行走 repair/quarantine，**不猜测版本、不伪造远程能力**。
 - **switch**：repository/Application 改为只从 snapshot 读 WorkflowVersion/TeamVersion；新 Run 双写 mode/transport/placement；旧三列降为迁移审计只读。
 - **验收**：backfill 后 `execution_snapshot_id` 无空值（workflow_bound 行）；quarantine 行可枚举、可审计、不被下游消费；switch 后删除旧列读取仍能跑通 M3 主路径。
@@ -383,7 +384,7 @@ Renderer 侧目前有**两套并行的 client 装配**（`features/_t13_client.t
 | 计划确认/启动拆分打破既有 M3 断言 | 桌面 driver 与集成测试红；可能被误判为回归 | 同一 PR 内同步更新精确断言并记录行为变更；headed 验收另行安排 |
 | `:confirm-plan` 的审批消费事务不可嵌套 | `nested database transactions are not supported`，或 snapshot 与审批不一致 | S2a 先定事务边界（§3.7a），不把 `consumeGrant` 包进外层事务 |
 | `task_dependencies` 落库缺失被 UI 回退文案掩盖 | 换图来源后静默丢依赖边 | contract test 同时覆盖投影与落库；不允许「依赖：未返回」作为通过条件 |
-| `workflow_versions` upsert 改写已发布版本 | 历史版本被静默覆写，审计链断裂 | 发布只 insert once；repository 拒绝 UPDATE；`content_hash` 真实计算；加不可变测试 |
+| `workflow_versions` 覆写已发布版本 | 历史版本被静默覆写，审计链断裂 | **repository 切片已实施：** 真实内容的稳定 SHA-256 insert-once、不同图 conflict、实例读图回到版本表；Application 发布/历史 backfill 仍待接线 |
 | 目录 / fixture / 执行图三者不一致 | 画布编辑的对象与真正执行的图不是同一个 | S2a 先收敛为「已发布 `WorkflowVersion` 是唯一执行图来源」，再做画布 |
 | SQLite 收紧 CHECK 需要重建表 | 迁移时间长；重建期间「一 Task 一活动 Run」部分唯一索引短暂消失 | 按 D04 分批回填；启动先备份并校验 checksum；重建期间禁止并发启动 |
 | 双执行模式出现两条准入路径 | direct 少走守卫，治理被绕过 | §3.2 的单一准入不变量 + 共用契约测试 |

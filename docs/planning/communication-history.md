@@ -357,3 +357,43 @@ updated: 2026-09-12
 - **决定：** 不以新的平行 T 卡稀释所有权；将从当前落地方案、状态页和源码交叉确认的缺口归入既有 owner：T09 的 canonical DAG dependency 持久化与 placement/lease 接线，T04 的 SQLite/world 投影对账，T02 的 protocol JSON Schema 生成/漂移门禁，T11 的 Renderer typed client 唯一化。
 - **文档影响：** [开发任务清单](02-development-task-backlog.md) §3.1 新增 `T09-DAG-DEPENDENCY-PERSISTENCE`、`T04-PROJECTION-RECONCILIATION`、`T02-PROTOCOL-SCHEMA-GENERATION`、`T11-RENDERER-CLIENT-CANONICALIZATION` 与 `T09-PLACEMENT-LEASE-WIRING`，并写入依赖和验收边界。
 - **状态：** **planned**。本条只登记已由源码/文档证据确认的工作，不宣称 DAG、投影对账、schema codegen、client 收口或 lease 生命周期已实现。
+
+---
+
+## 2026-09-12（Asia/Taipei）T04 历史执行轴迁移审计分类
+
+- **决定：** 在自动 backfill 前先交付安全的 `008_execution_axis_migration_audit`。它只读 `runs`，并在与未来 Run 表重建解耦的 append-only ledger 中记录分类；任何 DB 轴列、placement、sidecar 或外部 evidence 只允许字段存在性和 SHA-256 摘要入账，绝不复制原文。未验证精确 Project、transport 与 placement 关系时，外部 evidence 只能是 `repair_required`，不得生成 `eligible`；quarantine 以稳定 origin 摘要保持隔离，旧 source 重现不得静默提升。
+- **文档影响：** [数据库蓝图](../blueprint/10-database-schema.md)、[D17/D18 落地计划](05-d17-d18-landing-plan.md) 与 [实现进度](03-implementation-status.md) 同步为“审计分类已实现，backfill/switch/contract 未实现”。
+- **状态：** **implemented（audit-only slice）**。独立审查通过；`pnpm exec vitest run packages/database/src/execution-axis-migration.test.ts packages/database/src/persistence.test.ts` 为 29 passed，`pnpm --filter @workforce/database typecheck`、Prettier 与 `git diff --check` 通过。未修改 Run，不创建 ProjectExecutionSnapshot；真实 current-M3 upgrade fixture、回填、切换、约束收紧仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T04 投影写入对账与 T02 Schema 漂移门禁
+
+- **决定：** SQLite 投影失败不得再被吞掉或让 `world.json` 超前：所有 raw constraint 与 CAS conflict 均向调用方传播，sidecar 只在 SQLite commit 后发布。当前写入侧切片不自动修复旧 sidecar，也不替代 backfill/switch/contract。协议层以显式、受限的 Zod registry 作为当前 10 个 V0.1 JSON Schema 的唯一生成输入；未登记的协议面不因内部 export 而自动公开，JSON Schema 也不代替 `superRefine` 语义测试。
+- **文档影响：** [实现进度](03-implementation-status.md)、[D17/D18 落地计划](05-d17-d18-landing-plan.md) 记录投影 fail-fast 的真实边界；[协议说明](../protocols/README.md) 写明生成/检查命令和手改禁令。
+- **状态：** **implemented（T04 写入侧 reconciliation slice；T02 V0.1 Schema generation/check）**。验证：Daemon typecheck；T04 定向 5 个 persistence 测试和取消失败集成用例通过；`pnpm protocol:schema:generate`、`pnpm protocol:schema:check`、protocol typecheck、49 个 protocol 测试及 `pnpm check:docs` 通过。旧 sidecar repair、OpenAPI、未登记 schema、backfill/switch/contract 与 T16 真实升级恢复仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T09 标准化任务依赖投影
+
+- **决定：** 不再只把 `TaskRecord.dependsOn` 留在 `depends_on_json`。世界快照在插入/更新全部 Task 后，在同一 SQLite 事务同步 `task_dependencies`；这让任意 snapshot 节点顺序均满足依赖外键，也会删除已不属于当前图的旧边。普通 `dependsOn.waitFor` 写为 `required_status`；未定义的 routing/condition/failure/cancel 语义不得凭空映射为 Task prerequisite。
+- **文档影响：** [实现进度](03-implementation-status.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将“无生产写入方”更正为已实现的标准化投影，并保留 canonical published graph 图源切换和跨模块验收为未完成。
+- **状态：** **implemented（T09 normalized persistence slice）**。`pnpm --filter @workforce/database typecheck` 与 `pnpm exec vitest run packages/database/src/world-snapshot.test.ts`（10 passed）通过。D02 confirm/start 拆分、已发布 graph 作为唯一来源、direct/lease 和 T16 端到端验收仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T02 canonical graph 与 Authoring ChangeSet 协议
+
+- **决定：** 把 `WorkflowGraphDefinition` 从仅引擎内部的形状提升为画布、作者与发布共用的公开严格有限 DAG；`WorkflowDraft`、`TeamDraft`、结构化 `AuthoringProposal`、`AuthoringChangeSet` 和逐目标 CAS step 同时成为唯一作者态契约。Proposal/ChangeSet 仅承载脱敏摘要和 Artifact 引用，严格拒绝未定义字段；应用 ChangeSet 不代表发布或执行生成的 Workflow。
+- **文档影响：** [协议说明](../protocols/README.md) 列出新增的四个版本化 Schema；[实现进度](03-implementation-status.md)、[开发任务清单](02-development-task-backlog.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将协议层完成与 Application/SQLite/Daemon 未接线的边界分开记录。
+- **状态：** **implemented（T02 protocol slice）**。`pnpm --filter @workforce/protocol typecheck`、`pnpm protocol:schema:generate`、`pnpm protocol:schema:check` 和协议测试 53 passed 通过。Authoring Task/Run、Runtime 调用、ChangeSet repository、staged apply/recovery、Daemon/Renderer send 仍为 **planned**。
+
+---
+
+## 2026-09-12（Asia/Taipei）T04 D15 不可变执行图版本
+
+- **决定：** `workflow_versions` 的真实执行图以稳定 JSON SHA-256 insert-once 持久化；实例只引用并从版本表读取图，不再能通过 instance 更新改写历史版本。为兼容历史 M3 的 FK 预建行，只有 `sha256:empty` 与 `{}` 的 placeholder 可在首次真实引用时升级一次；一旦为真实版本即不能改变。
+- **文档影响：** [开发任务清单](02-development-task-backlog.md)、[实现进度](03-implementation-status.md) 与 [D17/D18 落地计划](05-d17-d18-landing-plan.md) 将 D15 repository 收口与尚未完成的 Application 发布、图源切换、backfill/contract 分开记录。
+- **状态：** **implemented（T04 repository slice）**。`pnpm --filter @workforce/database typecheck` 与 `pnpm exec vitest run packages/database/src/entities.test.ts packages/database/src/world-snapshot.test.ts`（17 passed）通过。D02 confirm/start 拆分、Application published-graph 图源、历史回填与 T16 升级恢复验收仍为 **planned**。

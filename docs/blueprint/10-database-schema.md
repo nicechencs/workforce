@@ -374,14 +374,14 @@ CREATE TABLE events (
 - 大表回填分批执行；协议 payload 保留原 schema version，由读取层升级解释。
 - SQLite → PostgreSQL 迁移按主键复制、校验行数和内容哈希，再切换写入端；不依赖数据库自增序列。
 
-### T04 D17/D18 schema migration（expand 已落地；backfill/switch/contract planned）
+### T04 D17/D18 schema migration（expand 与审计分类已落地；backfill/switch/contract planned）
 
 1. **Expand：** 新增 `authoring_change_sets`、`authoring_change_set_steps`；为现行 M3 `runs` 新增 nullable `orchestration_mode`、`execution_snapshot_id`、`transport`、`placement_snapshot_json`。保留历史 `workflow_version_id`/`team_version_id` 兼容读取，不能在此阶段直接套用目标 `NOT NULL/CHECK`。（已落地的 `005_execution_axes_expand` 沿用本步骤，并一并建 `team_drafts`、`workflow_drafts`、`project_execution_snapshots` 与 `projects`/`workflow_instances` 的 `execution_snapshot_id` 可空列。）
 2. **Backfill：** 现行 M3 历史 Run 归一化为 `workflow_bound`。依据已有精确 WorkflowVersion、TeamVersion 和 Project/租户关系创建唯一 `ProjectExecutionSnapshot` 并回填 `execution_snapshot_id`；`transport` 只能从既有 RuntimeProfile/adapter 事实解析，`placement_snapshot_json` 只能从既有 Local Node、Workspace 与 Run binding 重建并标注 legacy snapshot schema version。缺失或冲突的 row 进入可审计 repair/quarantine，不猜测版本、不伪造远程能力；保留原 digest，并以 migration record 关联新的 canonical snapshot。D18 上线后产生的历史 direct Run 保持无 execution snapshot 引用。
 3. **Switch：** Application/Repository 改为只从 `ProjectExecutionSnapshot` 读取 WorkflowVersion/TeamVersion，并对新 Run 双写已解析的 `orchestration_mode`、`transport`、`placement_snapshot_json`；新写入先完成 Placement，再原子创建 Run/snapshot/Event/Outbox，authoring step 只通过 ChangeSet 表恢复。旧 version 列只读用于迁移审计。
 4. **Contract：** 回填审计和恢复演练通过后，删除 WorkflowInstance/Run 的冗余 version 列；将 `orchestration_mode`、`transport`、`placement_snapshot_json` 收紧为目标 `NOT NULL/CHECK`，并施加 workflow-bound 必有 `execution_snapshot_id`、direct 必为 `NULL` 的互斥 CHECK，最后关闭旧列读取。
 
-该 migration 方案属于 T04 设计与验收范围。**expand 已落地**：`005_execution_axes_expand` 已建 5 张表（`team_drafts`、`workflow_drafts`、`authoring_change_sets`、`authoring_change_set_steps`、`project_execution_snapshots`）与 6 个**可空**列（`projects.execution_snapshot_id`、`workflow_instances.execution_snapshot_id`、`runs.orchestration_mode` / `transport` / `execution_snapshot_id` / `placement_snapshot_json`），**不加** `NOT NULL`、**不加** workflow_bound/direct 互斥 CHECK、不做 backfill。**backfill / switch / contract 仍未实现**；不得把本节的目标 DDL（尤其是 `NOT NULL/CHECK`）当作已执行 migration。作者面写入方（`authoring_change_sets`）与执行三轴写路径同样未接线。
+该 migration 方案属于 T04 设计与验收范围。**expand 已落地**：`005_execution_axes_expand` 已建 5 张表（`team_drafts`、`workflow_drafts`、`authoring_change_sets`、`authoring_change_set_steps`、`project_execution_snapshots`）与 6 个**可空**列（`projects.execution_snapshot_id`、`workflow_instances.execution_snapshot_id`、`runs.orchestration_mode` / `transport` / `execution_snapshot_id` / `placement_snapshot_json`），**不加** `NOT NULL`、**不加** workflow_bound/direct 互斥 CHECK、不做 backfill。`008_execution_axis_migration_audit` 另建无 `runs` FK 的 append-only 分类账本：它只读 Run，以字段存在性和 SHA-256 摘要记录 `already_canonical`、`repair_required` 或 `quarantined`，不得复制 placement、sidecar、外部 evidence 或历史脏列的原文；在精确 Project/transport/placement 关系已验证前不得产生 `eligible`。它不更新 Run、不建 snapshot，quarantine 不会因旧 source 重现而自动解除。**backfill / switch / contract 仍未实现**；不得把本节的目标 DDL（尤其是 `NOT NULL/CHECK`）当作已执行 migration。作者面写入方（`authoring_change_sets`）与执行三轴写路径同样未接线。
 
 ### Retention
 

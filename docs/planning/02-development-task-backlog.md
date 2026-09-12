@@ -104,9 +104,9 @@ flowchart TD
 
 | 子任务 | 所属/唯一 owner | 范围与验收 | 前置依赖 |
 |---|---|---|---|
-| `T02-CANONICAL-GRAPH-CONTRACT` | T02 | 将 `WorkflowGraphDefinition`、Draft/CAS、TeamVersion、AuthoringProposal/ChangeSet 冻结为 `packages/protocol` 的唯一图契约；节点、边、failure/concurrency policy 与非法 DAG fixture 可校验，画布与 authoring 复用同一 DTO。 | C5–C9 已冻结；阻塞 T18、T20-SEND、T14-AUTH。 |
+| `T02-CANONICAL-GRAPH-CONTRACT` | T02 | **协议切片已实现：** `WorkflowGraphDefinition`、Draft/CAS、TeamVersion、AuthoringProposal/ChangeSet 已冻结为 `packages/protocol` 的唯一图契约；节点、边、failure/concurrency policy 与非法 DAG fixture 可校验，画布与 authoring 复用同一 DTO。Application/SQLite/Daemon 消费者仍待后续任务接线。 | C5–C9 已冻结；解除 T18、T20-SEND、T14-AUTH 的协议阻塞。 |
 | `T02-RUN-WIRE-CONTRACT` | T02 | 冻结 `POST /tasks/{id}/runs`、placement intent、mode 归一化和 capability mode 维度；Run/Project/Team DTO 只保留一个权威来源，并覆盖幂等、CAS、无能力组合 fixture。 | 阻塞 T09-DIRECT 与 T10 接线。 |
-| `T04-D15-PUBLISH` | T04（迁移/repository）与 T09（发布校验）顺序交接 | 以真实内容 hash insert-once 已发布执行图；实例只能引用版本，禁止 `workflow_instances` 写入时隐式 upsert/改写 `workflow_versions`；对历史兼容、已发布版本更新拒绝和图源可读取做测试。不得复用 catalog DTO 当执行图。 | `T02-CANONICAL-GRAPH-CONTRACT`；完成后解除 T09-D02 的版本图源阻塞。 |
+| `T04-D15-PUBLISH` | T04（迁移/repository）与 T09（发布校验）顺序交接 | **repository 切片已实现：** 以稳定 SHA-256 insert-once 已发布执行图；实例只能引用版本，禁止 `workflow_instances` 写入时隐式 upsert/改写 `workflow_versions`；旧空 FK placeholder 只能一次提升，真实版本更新拒绝且读图回到版本表。Application 发布、历史 backfill 和 T09 图源切换仍待接线。不得复用 catalog DTO 当执行图。 | `T02-CANONICAL-GRAPH-CONTRACT`；repository 阻塞已解除，T09-D02 仍等待发布/图源接线。 |
 | `T09-D02-SNAPSHOT-START` | T09 | `confirm-plan` 只创建一次 `ProjectExecutionSnapshot` 并进入 `ready`；`:start` 从 snapshot 创建带同一 ID 的实例，再实例化 Node/Task。覆盖 ready 无实例、失败可重试、幂等重放、Project/租户一致性；审批消费与 SQLite 投影的事务/补偿边界必须先定。 | `T04-D15-PUBLISH`、T10 审批边界、T16 场景。 |
 | `T10-EVENT-REPLAY-SSE` | T10 | `/events` 与 SSE 从持久 Event Store 补拉，cursor/high-water/retention 跨重启有效；断线、重复、缺口、过滤变化和 `410 event_cursor_expired` 有契约/集成测试。 | T04 Event Store，T16 验收。 |
 | `T08-M5-EVALUATION-RETENTION` | T08 | Evaluation 绑定精确 ArtifactVersion/digest；缺产物、完整性或测试失败不得 completed；quarantine 可审计且不被消费；retention 清理原文而保留摘要。 | T04、T06、T07、T09。 |

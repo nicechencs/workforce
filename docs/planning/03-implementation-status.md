@@ -10,9 +10,21 @@ updated: 2026-09-12
 
 日期：2026-09-12  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
+修订：2026-09-12 — T02 完成 **canonical graph / authoring operation 协议切片**：`WorkflowGraphDefinition` 成为画布、作者和发布共用的严格有限 DAG，拒绝悬空引用、重复 ID 与环；新增 `WorkflowDraft`、`TeamDraft`、结构化 `AuthoringProposal`、`AuthoringChangeSet` 与逐目标 CAS step DTO。Proposal/ChangeSet 只保存摘要或 Artifact 引用，不接受 raw prompt 字段；ChangeSet 应用也不代表发布或执行。14 个版本化 JSON Schema 由 registry 生成并受门禁检查，协议完整测试 53/53 通过。Application authoring use case、Runtime 调用、SQLite repository、staged apply/recovery 和 Daemon 接线仍未实现。
+
+修订：2026-09-12 — T04 完成 D15 **不可变 WorkflowVersion 写入切片**：实例首次引用版本时以稳定 JSON 的 SHA-256 写入 `workflow_versions`；真实版本只允许同内容重用，后续不同图会以 conflict 拒绝，实例读回图也以版本表为准而非 instance `graph_json`。旧 M3 仅为 FK 创建的空 `{}` placeholder 可一次性提升为真实版本，不能覆盖已有真实版本。数据库 typecheck 与实体/world snapshot 定向测试 17/17 通过。Application 的 published graph 发布流程、D02 snapshot/start 拆分、历史 backfill/contract 与 T16 跨模块验收仍未完成。
+
 修订：2026-09-12 — Test-bot headed 真窗口对 PR #34 head `06e6b659` 的 T19（自定义 Team 写 UI / 草稿 persist）与 T21（项目详情 `orchestrationMode` + start）记 **PASS**。报告路径 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`（Test-bot workspace，未必入库）。#34 已 squash 进本 `dev` tip `ae0f4e6`。**不**宣称 M7/M8 完成，**不**宣称 T20 Agent/send；`CHAT_SESSION_PROTOCOL_FROZEN` 仍为 false。T18 画布 headed 仍未在本 tip 复验。
 
 修订：2026-09-12 — T04 完成 D18 的**运行快照 SQLite 投影切片**：新增可空 `007_runtime_profile_transport_expand`；完整 `RunExecutionSnapshot` 由 `@workforce/protocol` 严格解析后，在普通、幂等和 world snapshot Run 写入口原子写入四轴，并能跨 reopen 读回；部分列、替换和 `null` 等伪值 fail closed，旧 M3 Run 仍为四轴全 `NULL`。Windows 实跑数据库定向 30/30、数据库/Application/Daemon/Desktop typecheck 与桌面 smoke 5/5 均通过，独立审查通过。**不**宣称生产编排已构造并传入该快照、D18 direct 调度、backfill/switch/contract、D02 confirm/start 拆分或 M8 完成。
+
+修订：2026-09-12 — T04 增加 **008 execution-axis migration audit**：只读分类所有历史 `runs`，向独立、无 Run FK 的 append-only ledger 写入 `already_canonical` / `repair_required` / `quarantined` 观察记录。账本只保留字段存在性和 SHA-256 摘要；即使历史 DB 列或外部 evidence 含未知值、路径或 secret，均不复制原文。外部 evidence 一律仍为 `repair_required`，不能生成 `eligible`；quarantine 保持隔离，旧 source 重现也不会静默提升。定向数据库测试 29/29、数据库 typecheck 和独立审查通过。**不**写 Run、不创建 ProjectExecutionSnapshot，故这不是 backfill、switch 或 contract。
+
+修订：2026-09-12 — T04 完成 SQLite/world **projection reconciliation** 的写入侧切片：`dualWriteSqlite()` 的原始约束错误和 CAS `revision_conflict` 均向调用方传播；`world.json` / host sidecar 只在 SQLite 事务提交后发布，因此失败投影不会使新的 sidecar 超前。定向测试覆盖 raw constraint、CAS 与取消写入失败后的 sidecar，Daemon typecheck 通过。旧版本已留下的 sidecar 不做自动修复；完整 backfill/switch/contract 和 T16 故障注入恢复验收仍未完成。
+
+修订：2026-09-12 — T02 完成 V0.1 **JSON Schema 生成与漂移门禁**：显式 Zod registry 生成 14 个已发布 `docs/protocols/v0.1/*.schema.json`；`pnpm protocol:schema:generate` 更新生成物，`pnpm protocol:schema:check` 拒绝缺失、额外或漂移文件。JSON Schema 只表达跨语言结构；`superRefine` 等运行时不变量继续由 protocol fixture/tests 负责。协议 typecheck、53 项协议测试、生成/check 与文档检查通过；OpenAPI 和未登记的新协议面仍未实现。
+
+修订：2026-09-12 — T09 完成 **task dependency normalized projection**：世界快照在所有 Task 行已写入后，同一 SQLite 事务同步 `task_dependencies`；普通 `dependsOn` 映射为 `required_status`，旧边会被替换，节点在 snapshot 中乱序也不会触发 FK 失败。定向数据库测试覆盖乱序依赖与移除旧边，数据库 typecheck 通过。当前 confirm-plan 仍使用现有执行图来源，D02 confirm/start 拆分、已发布 canonical graph 作为唯一来源、条件/失败/取消路由语义和 T16 跨模块验收仍未完成。
 
 修订：2026-09-12 — T11 完成 TypeScript Daemon 源码入口的 Node 版本 preflight：仅源码入口在 Node <22.7 时拒绝 spawn 并说明要求；已有可重连 Daemon 与分发 JS 入口不受影响。曾尝试以 Desktop-owned stderr pipe 报告启动错误，独立审查证实关闭父端 pipe 会让 detached Daemon 后续 stderr 写入 EPIPE 并可能退出，故已完整撤回；Daemon 崩溃、端口冲突、结构化 sidecar/状态诊断、诊断导出和三平台真机证据仍是 `T11-DAEMON-CRASH-OBSERVABILITY` 的 planned 工作。
 
@@ -40,7 +52,7 @@ updated: 2026-09-12
 
 **HTTP Mock 闭环已通过（headless）。** 桌面项目页有 happy-dom 点击 driver（默认 `pnpm test`）；这不是真实 Electron 窗口。真窗口人工点击仍需要。Codex **未**做 live `exec`。
 
-M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完成**。2026-09-12 起仓库里**已有**部分 M7/M8 切片代码（见 T18–T21），不得再写「都还没有代码」。M7 完成仍需 T20 send/Agent、T20-B change-set、自定义 Team 发布/绑定闭环；T19 写 UI headed 已 PASS，不等于 M7 完成。M8 完成仍需 `direct` 调度，以及生产编排构造并传入运行快照。T21 项目详情 start headed 已 PASS，不等于 M8 完成。D17/D18 前置：T02 已冻结执行三轴（`packages/protocol/src/execution.ts`），T04 已落地 `005_execution_axes_expand`、**`006_catalog_definitions`**（catalog_workflows / catalog_teams 四表）与运行快照投影用的可空 **`007_runtime_profile_transport_expand`**，S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、生产 Run 快照组装与接线、`authoring_change_sets` 写入方、T16 current-M3 upgrade fixture。
+M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完成**。2026-09-12 起仓库里**已有**部分 M7/M8 切片代码（见 T18–T21），不得再写「都还没有代码」。M7 完成仍需 T20 send/Agent、T20-B change-set、自定义 Team 发布/绑定闭环；T19 写 UI headed 已 PASS，不等于 M7 完成。M8 完成仍需 `direct` 调度，以及生产编排构造并传入运行快照。T21 项目详情 start headed 已 PASS，不等于 M8 完成。D17/D18 前置：T02 已冻结执行三轴（`packages/protocol/src/execution.ts`），T04 已落地 `005_execution_axes_expand`、**`006_catalog_definitions`**（catalog_workflows / catalog_teams 四表）、运行快照投影用的可空 **`007_runtime_profile_transport_expand`** 与只读分类用 **`008_execution_axis_migration_audit`**，S2a 已落地 `SqliteProjectExecutionSnapshotRepository`（insert-once）。**仍未实现**：backfill / switch / contract、`:confirm-plan` 只建 snapshot 而 `:start` 才建 `WorkflowInstance` 的拆分、生产 Run 快照组装与接线、`authoring_change_sets` 写入方、T16 current-M3 upgrade fixture。
 
 ## 2. 任务状态（对照实现，不是旧清单）
 
@@ -48,14 +60,14 @@ M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完�
 |---|---|---|
 | T00 | 完成（项目制 + M7/M8 决策已补写） | M0–M3 冻结仍有效；§0 项目制；D15–D18 已登记。M7/M8 **未完成**；切片进度见 T18–T21，不以本行代替 03 各卡 |
 | T01 | 完成 | pnpm + turbo monorepo；本轮补了 Electron/React/Vite lockfile |
-| T02 | 完成（M3 字段） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord` |
+| T02 | 完成（M3 字段 + 图/Authoring 契约 + V0.1 Schema 门禁） | `packages/protocol` 公开 `TaskDto` / `task.schema.json`；`dependsOn` 是公开契约（`GET /tasks`、`GET /tasks/{id}`、typed client 再导出），不是内部-only `TaskRecord`。`WorkflowGraphDefinition` 是严格有限 DAG，`WorkflowDraft` / `TeamDraft` / `AuthoringProposal` / `AuthoringChangeSet` 为唯一公开作者契约；显式 Zod registry 生成当前 14 个公开 JSON Schema，`protocol:schema:check` 阻止漂移。Application 的 authoring use case、持久化与 Daemon 接线仍不由本行宣称完成；OpenAPI 和未登记协议面仍未实现 |
 | T03 | 完成（Windows 证据） | `docs/spikes/*`；新增 Remote Node Mock 兼容性测试证明现有 Host 可在不改 Domain/Task/Event schema 下绑定 synthetic remote node，并在 replacement 后隔离旧 binding 的写入和迟到事件；它不是网络远程 runner。macOS/Linux 未测 |
-| T04 | M3 持久化完成；D17/D18 为 expand + Run 快照投影切片 | migration **001–007** + entity repos；重启以 SQLite 实体表为准。`005_execution_axes_expand` 未改号（drafts / change_sets / snapshots + 可空轴列）；`006_catalog_definitions` 为 catalog 四表；`007_runtime_profile_transport_expand` 新增可空、受约束的 profile transport。数据库 Run repository / world snapshot 能严格校验、原子读写、跨重启读回完整执行快照；旧 Run 保持全空轴。**无** backfill / switch / contract，生产编排尚未构造该快照，authoring ChangeSet 写入方仍待实现 |
+| T04 | M3 持久化完成；D17/D18 为 expand + Run 快照投影 + 审计分类 + 写入侧对账 + D15 不可变版本切片 | migration **001–008** + entity repos；重启以 SQLite 实体表为准。`005_execution_axes_expand` 未改号（drafts / change_sets / snapshots + 可空轴列）；`006_catalog_definitions` 为 catalog 四表；`007_runtime_profile_transport_expand` 新增可空、受约束的 profile transport；`008_execution_axis_migration_audit` 是无 Run FK、只存摘要的 append-only 历史分类账本，**不会**回填或提升记录。真实 `workflow_versions` 使用稳定 JSON SHA-256 insert-once，实例从版本读图；仅旧空 FK placeholder 可一次升级。新 sidecar 仅在 SQLite commit 后发布，raw constraint/CAS conflict fail-fast；旧 sidecar 不自动修复。数据库 Run repository / world snapshot 能严格校验、原子读写、跨重启读回完整执行快照；旧 Run 保持全空轴。**无** backfill / switch / contract，生产编排尚未构造该快照，authoring ChangeSet 写入方仍待实现 |
 | T05 | 完成库并接入 Daemon | Mock adapter + LocalNodeHost；composition 订阅终态 |
 | T06 | POSIX captured-process 终态切片已实现；Windows capture 仍 fail-closed | `CapturedProcess.wait()` 在 POSIX 上等待 root exit、stdout/stderr EOF 与已验证的受管进程组终结；output overflow、提前放弃、截断关闭、I/O、取消与不可验证树均映射 `ProcessControllerError`，不伪造 exit result。当前 Windows 环境包测通过但 POSIX 进程树用例跳过；macOS/Linux 真机与 Windows Job capture 仍未验证/未实现 |
 | T07 | 完成库并接入 composition | Policy/redaction 单测通过；生产 composition 用 `decideStart` 做启动前拒绝，审批 create/consume 用 `createCanonicalAction` digest；`GrantStore` 为 `SqliteGrantStore`（`policy_grants`），进程内 `InMemoryGrantStore` 仅测试默认 |
 | T08 | 完成库并接入 Mock composition（本切片权威） | 所有权仍是 `packages/artifacts`（不是 Daemon 私有第二套规则）。composition 以 `LocalArtifactStore` 为 Mock 产物字节/元数据权威；公开 content 读精确 `artifactVersionId`。**不是**未开始，也**不是** world.json / `bodyBase64` 权威 |
-| T09 | 完成 in-memory 用例 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp` |
+| T09 | in-memory 用例 + task dependency normalized projection 切片 | `m3-path.test.ts`；Daemon 已调用 `WorkforceApp`。`SqliteWorldSnapshot` 在所有 Task 落行后同步 `task_dependencies`，以 `required_status` 保留普通依赖并替换过时边；当前仍未把已发布 canonical graph、D02 confirm/start、direct 调度或 lease 生命周期接线完成 |
 | T10 | **本轮完成 composition** | 生产 `main()` 用真实服务；`taskDto()` 填公开 `dependsOn`；Mock 产物经 `LocalArtifactStore` `register`；测试默认 Fake 仍绿 |
 | T11 | **本轮完成壳；源码入口 Node preflight 已接线** | Electron + Vite + React + IPC + feature glob；2026-09-11 补齐设计系统：`packages/ui/src/tokens.ts` / `theme.ts`（四档字号、8/12/16 圆角、浅深主题、5 主题色、8 浅色画布、Agent 色槽）、`renderer/styles.css` 语义 class 层、`renderer/components/` 基础组件与图标、`renderer/app/theme.tsx` 主题提供者与首屏 `bootstrapTheme()`。2026-09-12 Supervisor 仅对 TypeScript 源码入口执行 Node ≥22.7 preflight；stderr pipe 已撤回，崩溃/端口冲突的结构化诊断、运行期诊断导出和三平台证据仍 planned。对齐 AgentHub 视觉基线，实现栈刻意不同（无 Tailwind/Radix/lucide 依赖），差异见 [UI 设计系统](../product-ui/04-design-system.md) §7 |
 | T12 | **本轮完成页面** | 项目 / Task / 团队目录 / 工作流目录。Tasks 展示已发布 `dependsOn` 边。画布入口与写 API 见 T18；自定义 Team 写 UI 见 T19。项目详情按 IA §4.3，并挂 T21 执行模式控件 |
