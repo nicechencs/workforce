@@ -3,12 +3,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import "./fastify-augment.js";
 
 import {
+  parseChatClassifyInput,
   parseCreateTeamInput,
+  parseCreateWorkerInput,
   parseCreateWorkflowInput,
+  parseListWorkersInput,
   parsePatchTeamInput,
+  parsePatchWorkerInput,
   parsePatchWorkflowInput,
   parseStartTaskRunInput,
   parseTeamVersionWrite,
+  parseWorkerDraftWrite,
   parseWorkflowVersionWrite,
 } from "@workforce/protocol";
 
@@ -29,7 +34,12 @@ import {
   requiredString,
 } from "./body.js";
 import { executeCommand, type CommandOutcome, type CommandSpec } from "./commands.js";
-import { commandRoute, nestedVersionCommandRoute } from "./rewrite.js";
+import {
+  collectionCommandRoute,
+  commandRoute,
+  nestedVersionCommandRoute,
+  workerNestedCommandRoute,
+} from "./rewrite.js";
 
 interface RouteDeps {
   services: AppServices;
@@ -154,6 +164,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     requireFound(deps.services.getTeam(param(request, "id")), "Team not found"),
   );
   registerCatalogWrites(app, cmd, deps);
+  registerWorkerLibrary(app, cmd, deps);
   app.get("/api/v1/workflows", async (request) => deps.services.listWorkflows(listQuery(request)));
   app.get("/api/v1/workflows/:id/versions/:versionId", async (request) =>
     requireFound(
@@ -183,6 +194,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     );
     sendDto(reply, 200, project, project.stateRevision);
   });
+
+  app.get("/api/v1/projects/:id/progress", async (request) =>
+    deps.services.queryProjectProgress(param(request, "id")),
+  );
 
   app.get("/api/v1/projects/:id/budget", async (request) =>
     requireFound(deps.services.getProjectBudget(param(request, "id")), "Project not found"),
@@ -430,6 +445,25 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       (ctx, body) => {
         rejectUnknownFields(body, ["operationId"]);
         return deps.services.createAuthoringSession(ctx, param(request, "id"));
+      },
+    );
+  });
+
+  app.post(collectionCommandRoute("chat-intents", "classify"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /chat-intents:classify",
+        resource: () => "chat-intents",
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        void ctx;
+        return {
+          status: 200,
+          body: deps.services.classifyChatIntent(parseProtocol(parseChatClassifyInput, body)),
+        };
       },
     );
   });
@@ -783,6 +817,193 @@ function registerCatalogWrites(app: FastifyInstance, cmd: CommandFn, deps: Route
       },
     );
   });
+}
+
+function registerWorkerLibrary(app: FastifyInstance, cmd: CommandFn, deps: RouteDeps): void {
+  app.get("/api/v1/workers", async (request) =>
+    deps.services.listWorkers(listWorkersQuery(request)),
+  );
+  app.get("/api/v1/workers/:id", async (request) =>
+    requireFound(await deps.services.getWorker(param(request, "id")), "Worker not found"),
+  );
+  app.get("/api/v1/workers/:id/versions/:versionId", async (request) =>
+    requireFound(
+      await deps.services.getWorkerVersion(param(request, "id"), param(request, "versionId")),
+      "Worker version not found",
+    ),
+  );
+  app.get("/api/v1/workers/:id/versions/:versionId/references", async (request) =>
+    requireFound(
+      await deps.services.listWorkerVersionReferences(
+        param(request, "id"),
+        param(request, "versionId"),
+      ),
+      "Worker version not found",
+    ),
+  );
+  app.get("/api/v1/workers/:id/drafts/:draftId", async (request) =>
+    requireFound(
+      await deps.services.getWorkerDraft(param(request, "id"), param(request, "draftId")),
+      "Worker draft not found",
+    ),
+  );
+
+  app.post("/api/v1/workers", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      { canonicalOperation: "POST /workers", resource: () => "workers", requireIfMatch: false },
+      (ctx, body) => deps.services.createWorker(ctx, parseProtocol(parseCreateWorkerInput, body)),
+    );
+  });
+  app.patch("/api/v1/workers/:id", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /workers/{id}",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchWorker(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parsePatchWorkerInput, body),
+        ),
+    );
+  });
+  app.post("/api/v1/workers/:id/drafts", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workers/{id}/drafts",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: false,
+      },
+      (ctx, body) =>
+        deps.services.createWorkerDraft(
+          ctx,
+          param(request, "id"),
+          parseProtocol(parseWorkerDraftWrite, body),
+        ),
+    );
+  });
+  app.patch("/api/v1/workers/:id/drafts/:draftId", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "PATCH /workers/{id}/drafts/{draftId}",
+        resource: (req) => `${param(req, "id")}/drafts/${param(req, "draftId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) =>
+        deps.services.patchWorkerDraft(
+          ctx,
+          param(request, "id"),
+          param(request, "draftId"),
+          parseProtocol(parseWorkerDraftWrite, body),
+        ),
+    );
+  });
+  app.post(workerNestedCommandRoute("drafts", "publish"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workers/{id}/drafts/{draftId}:publish",
+        resource: (req) => `${param(req, "id")}/drafts/${param(req, "draftId")}`,
+        requireIfMatch: true,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.publishWorkerDraft(
+          ctx,
+          param(request, "id"),
+          param(request, "draftId"),
+        );
+      },
+    );
+  });
+  app.post(workerNestedCommandRoute("versions", "archive"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workers/{id}/versions/{versionId}:archive",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.archiveWorkerVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+        );
+      },
+    );
+  });
+  app.post(workerNestedCommandRoute("versions", "fork"), async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /workers/{id}/versions/{versionId}:fork",
+        resource: (req) => `${param(req, "id")}/versions/${param(req, "versionId")}`,
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, ["operationId"]);
+        return deps.services.forkWorkerVersion(
+          ctx,
+          param(request, "id"),
+          param(request, "versionId"),
+        );
+      },
+    );
+  });
+}
+
+function listWorkersQuery(request: FastifyRequest): ReturnType<typeof parseListWorkersInput> {
+  const query = request.query as Record<string, unknown>;
+  const input: Record<string, unknown> = {};
+  const q = queryString(query.q);
+  const status = queryString(query.status);
+  const cursor = queryString(query.cursor);
+  const includeArchived = queryBoolean(query.includeArchived);
+  const limit = query.limit === undefined ? undefined : Number(query.limit);
+  if (q !== undefined) input.q = q;
+  if (status !== undefined) input.status = status;
+  if (cursor !== undefined) input.cursor = cursor;
+  if (includeArchived !== undefined) input.includeArchived = includeArchived;
+  if (limit !== undefined && Number.isInteger(limit)) input.limit = limit;
+  try {
+    return parseListWorkersInput(input);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Request query failed schema validation";
+    throw new AppError("validation_failed", message);
+  }
+}
+
+function queryBoolean(raw: unknown): boolean | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw === "boolean") {
+    return raw;
+  }
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === "true" || value === "1") {
+    return true;
+  }
+  if (value === "false" || value === "0") {
+    return false;
+  }
+  throw new AppError("validation_failed", "includeArchived must be a boolean");
 }
 
 function registerProjectCommand(

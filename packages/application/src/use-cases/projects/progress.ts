@@ -6,7 +6,7 @@ import {
   type ProtocolError,
 } from "@workforce/protocol";
 
-import { isBindableTeamVersion } from "../catalog/index.js";
+import { isBindableTeamVersion, type WorkerVersionBindLookup } from "../catalog/index.js";
 import type { AppContext } from "./context.js";
 import { invalidTransition, notFound } from "./errors.js";
 
@@ -15,6 +15,8 @@ export type BindableTeamVersion = Parameters<typeof isBindableTeamVersion>[0];
 
 export interface BindableTeamVersionLookup {
   findTeamVersion(versionId: string): BindableTeamVersion | undefined;
+  /** T10 wires catalog worker versions. Absent → member workerVersionId is required but not resolved. */
+  findWorkerVersion?: WorkerVersionBindLookup;
 }
 
 const EVENT_READ_LIMIT = 10_000;
@@ -99,7 +101,7 @@ export function bindTeamVersionGuardError(
       details: { id: versionId },
     });
   }
-  if (!isBindableTeamVersion(version)) {
+  if (!isBindableTeamVersion(version, (id) => lookup.findWorkerVersion?.(id))) {
     return protocolError(
       "invalid_transition",
       "TeamVersion members must reference a published workerVersionId to bind or start planning",

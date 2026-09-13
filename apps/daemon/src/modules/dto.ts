@@ -38,21 +38,34 @@ export interface CapabilitiesDto {
 }
 
 export type {
+  ChatClassifyInput,
+  ChatClassifyResultDto,
   CreateTeamInput,
   CreateTeamVersionInput,
+  CreateWorkerInput,
   CreateWorkflowInput,
   CreateWorkflowVersionInput,
+  ForkWorkerVersionAcceptedDto,
+  ListWorkersInput,
   PatchTeamInput,
   PatchTeamVersionInput,
+  PatchWorkerInput,
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
   ProjectDto,
+  ProjectProgressProjectionDto,
   RunDto,
   TaskDependency,
   TaskDto,
   TeamDto,
   TeamRoleDto,
   TeamVersionDto,
+  WorkerDraftDto,
+  WorkerDraftWrite,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
 } from "@workforce/protocol";
 
 export interface PageDto<T> {

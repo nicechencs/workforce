@@ -1,4 +1,9 @@
-import type { AuthoringSessionListQuery, EventListQuery, ListQuery } from "./types.js";
+import type {
+  AuthoringSessionListQuery,
+  EventListQuery,
+  ListQuery,
+  ListWorkersInput,
+} from "./types.js";
 
 const SECRET_QUERY =
   /(?:^|[?&])(token|access_token|session|session_token|authorization|secret|password)=/i;
@@ -16,10 +21,14 @@ export function assertSafePath(path: string): string {
   return path;
 }
 
-function search(query: Record<string, string | number | undefined | string[]>): string {
+function search(query: Record<string, string | number | boolean | undefined | string[]>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) {
+      continue;
+    }
+    if (typeof value === "boolean") {
+      params.set(key, value ? "true" : "false");
       continue;
     }
     if (Array.isArray(value)) {
@@ -63,6 +72,28 @@ export const paths = {
   projectExport: (id: string) => `/api/v1/projects/${id}:export`,
   projectBudget: (id: string) => `/api/v1/projects/${id}/budget`,
   projectWorkspaces: (id: string) => `/api/v1/projects/${id}/workspaces`,
+  projectProgress: (id: string) => `/api/v1/projects/${id}/progress`,
+  workers: (query?: ListWorkersInput) =>
+    `/api/v1/workers${search({
+      q: query?.q,
+      status: query?.status,
+      includeArchived: query?.includeArchived,
+      cursor: query?.cursor,
+      limit: query?.limit,
+    })}`,
+  worker: (id: string) => `/api/v1/workers/${id}`,
+  workerVersion: (id: string, versionId: string) => `/api/v1/workers/${id}/versions/${versionId}`,
+  workerVersionReferences: (id: string, versionId: string) =>
+    `/api/v1/workers/${id}/versions/${versionId}/references`,
+  workerDrafts: (id: string) => `/api/v1/workers/${id}/drafts`,
+  workerDraft: (id: string, draftId: string) => `/api/v1/workers/${id}/drafts/${draftId}`,
+  workerDraftPublish: (id: string, draftId: string) =>
+    `/api/v1/workers/${id}/drafts/${draftId}:publish`,
+  workerVersionArchive: (id: string, versionId: string) =>
+    `/api/v1/workers/${id}/versions/${versionId}:archive`,
+  workerVersionFork: (id: string, versionId: string) =>
+    `/api/v1/workers/${id}/versions/${versionId}:fork`,
+  chatIntentsClassify: () => "/api/v1/chat-intents:classify",
   teams: (query?: ListQuery) => `/api/v1/teams${listSearch(query)}`,
   team: (id: string) => `/api/v1/teams/${id}`,
   teamVersions: (id: string) => `/api/v1/teams/${id}/versions`,
