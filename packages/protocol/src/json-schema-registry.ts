@@ -24,7 +24,12 @@ import {
   sendAuthoringMessageAcceptedSchema,
   sendAuthoringMessageInputSchema,
 } from "./authoring-chat.js";
-import { chatClassifyResultDtoSchema, projectProgressProjectionDtoSchema } from "./chat-intent.js";
+import {
+  chatClassifyInputSchema,
+  chatClassifyResultDtoSchema,
+  chatIntentDtoSchema,
+  projectProgressProjectionDtoSchema,
+} from "./chat-intent.js";
 import {
   startDirectTaskRunAcceptedSchema,
   startDirectTaskRunInputSchema,
@@ -38,8 +43,11 @@ import { moneySchema } from "./money.js";
 import { taskDtoSchema } from "./task.js";
 import { teamSchema } from "./team.js";
 import {
+  createWorkerInputSchema,
   forkWorkerVersionAcceptedDtoSchema,
+  workerCardFieldsDtoSchema,
   workerDraftDtoSchema,
+  workerDraftWriteSchema,
   workerDtoSchema,
   workerPageDtoSchema,
   workerVersionDtoSchema,
@@ -75,9 +83,24 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     schema: authoringCommandAcceptedSchema,
   },
   {
+    fileName: "chat-classify-input.schema.json",
+    title: "ChatClassifyInput",
+    schema: chatClassifyInputSchema,
+  },
+  {
     fileName: "chat-classify-result.schema.json",
     title: "ChatClassifyResultDto",
     schema: chatClassifyResultDtoSchema,
+  },
+  {
+    fileName: "chat-intent.schema.json",
+    title: "ChatIntentDto",
+    schema: chatIntentDtoSchema,
+  },
+  {
+    fileName: "create-worker-input.schema.json",
+    title: "CreateWorkerInput",
+    schema: createWorkerInputSchema,
   },
   {
     fileName: "fork-worker-version-accepted.schema.json",
@@ -95,9 +118,19 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     schema: workerDtoSchema,
   },
   {
+    fileName: "worker-card-fields.schema.json",
+    title: "WorkerCardFieldsDto",
+    schema: workerCardFieldsDtoSchema,
+  },
+  {
     fileName: "worker-draft.schema.json",
     title: "WorkerDraftDto",
     schema: workerDraftDtoSchema,
+  },
+  {
+    fileName: "worker-draft-write.schema.json",
+    title: "WorkerDraftWrite",
+    schema: workerDraftWriteSchema,
   },
   {
     fileName: "worker-page.schema.json",

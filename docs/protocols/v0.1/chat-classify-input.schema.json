@@ -1,0 +1,41 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/chat-classify-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "projectId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "runId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerDraftId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerVersionId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "ChatClassifyInput",
+  "type": "object"
+}

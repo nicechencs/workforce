@@ -171,7 +171,7 @@ interface WorkerLibraryRepository {
 }
 ```
 
-DTO 只从 `@workforce/protocol` 导入。归档版本仍可出现在已有 TeamVersion 引用里，但 `isSelectableWorkerVersion` 为 false。
+DTO 只从 `@workforce/protocol` 导入。`WorkerVersionDto` / `WorkerDraftDto` 携带可选卡片 `who` / `how` / `skills`。空闲说话复用 `saveDraft` / `forkToDraft`，不新 port，不写 IM。归档版本仍可出现在已有 TeamVersion 引用里，但 `isSelectableWorkerVersion` 为 false。`runtimeProfileId` 不是卡片必填。
 
 ## 实现归属
 

@@ -1,0 +1,36 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/create-worker-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "how": {
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "role": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "runtimeProfileId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "skills": {
+      "type": "string"
+    },
+    "who": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "CreateWorkerInput",
+  "type": "object"
+}

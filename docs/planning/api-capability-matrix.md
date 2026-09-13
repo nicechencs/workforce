@@ -12,6 +12,7 @@ updated: 2026-09-13
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned；角色版本库与全局 Chat 契约 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+修订：2026-09-13 — WV-T02-CARD-INTENT：冻结角色卡片 `who` / `how` / `skills`；ChatIntent expand `update_worker` / `invite_team`；认不出 → `need_clarification`，禁止默成 `discuss_work`。空闲写卡复用 `PATCH /workers/{id}/drafts/{draftId}` 与 `:fork`。**不**发明 `/workers/{id}/remarks`、`/chat/inbox`、`/workers/{id}/messages`、Marketplace path。Runtime/Policy **不是**卡片必填。  
 修订：2026-09-13 — WV-T02-CONTRACT：冻结 WorkerVersion / 角色库 / `TeamMember.workerVersionId` / ChatIntent 公开契约。下列库与 Chat path **planned**，Daemon 未实现。**不**发明 `/workers/{id}/messages`、`/chat/inbox`、`:direct`。Marketplace DTO 不进本矩阵。  
 修订：2026-09-12 — T00-DOC-ALIGN：对照 `dev` tip 源码。`CHAT_SESSION_PROTOCOL_FROZEN=true`；Daemon AuthoringSession HTTP 与 typed send 已接线；Electron allowlist **仍缺**该 path。`RunDto`/`ProjectDto` 在 `packages/protocol`。受管 Run 启动现构造 `RunExecutionSnapshot`。**不**发明泛用 Chat API 或 `:direct` path。**不**宣称 M7/M8 完成或 T20 headed PASS。
 
@@ -195,24 +196,24 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 
 ### 角色版本库（WorkerVersion）
 
-契约已冻结；HTTP **planned**。列表与搜索共用 `GET /workers`（query `q`），不另开 search path。归档后不可被**新** Team 选用；已引用的 TeamVersion 仍有效。fork 产生新 Worker identity + 新草稿，不改源版本。
+契约已冻结；HTTP **planned**。列表与搜索共用 `GET /workers`（query `q`），不另开 search path。归档后不可被**新** Team 选用；已引用的 TeamVersion 仍有效。fork 产生新 Worker identity + 新草稿，不改源版本。卡片三字段 `who` / `how` / `skills` 为可选；旧记录缺字段仍能 parse。`runtimeProfileId` 保持可选，**不是**卡片必印。已发布 + `immutable` 不可改这些字段；写已发布版本必须 `:fork`，不发明 UPDATE-published path。
 
-**禁止：** `GET/POST /workers/{id}/messages`、Marketplace 上架/安装 path、以 `workerId` 为会话对端。
+**禁止：** `GET/POST /workers/{id}/messages`、`/workers/{id}/remarks`、Marketplace 上架/安装 path、以 `workerId` 为会话对端。
 
 | Method | Path | 阶段 | 说明 |
 |---|---|---|---|
 | GET | `/workers` | planned | 列表/搜。query：`q`、`status`、`includeArchived`、`cursor`、`limit` |
 | GET | `/workers/{id}` | planned | Worker identity + 版本投影 |
-| GET | `/workers/{id}/versions/{versionId}` | planned | 精确 WorkerVersion |
+| GET | `/workers/{id}/versions/{versionId}` | planned | 精确 WorkerVersion（含可选卡片三字段） |
 | GET | `/workers/{id}/versions/{versionId}/references` | planned | 引用该版本的 TeamVersion |
-| POST | `/workers` | planned | 创建 identity + 初始草稿 |
-| PATCH | `/workers/{id}` | planned | 未发布 identity 元数据 |
+| POST | `/workers` | planned | 创建 identity + 初始草稿；body 可带 `who` / `how` / `skills`；`projectId` 不是必填 |
+| PATCH | `/workers/{id}` | planned | 未发布 identity 元数据（name/description；不是卡片） |
 | POST | `/workers/{id}/drafts` | planned | 创建/保存 `WorkerDraft` |
 | GET | `/workers/{id}/drafts/{draftId}` | planned | 读取草稿 revision |
-| PATCH | `/workers/{id}/drafts/{draftId}` | planned | CAS 编辑草稿；已发布不可改该版本 |
+| PATCH | `/workers/{id}/drafts/{draftId}` | planned | CAS 编辑草稿，含卡片三字段；已发布不可改该版本 |
 | POST | `/workers/{id}/drafts/{draftId}:publish` | planned | 发布不可变 WorkerVersion |
 | POST | `/workers/{id}/versions/{versionId}:archive` | planned | 归档；新 Team 不可再选 |
-| POST | `/workers/{id}/versions/{versionId}:fork` | planned | fork → 新 identity + 新草稿 |
+| POST | `/workers/{id}/versions/{versionId}:fork` | planned | fork → 新 identity + 新草稿（拷贝源版本卡片） |
 
 ### Workflows
 
@@ -246,22 +247,22 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 | POST | `/authoring-sessions/{id}/messages` | M7 | 发送用户消息；创建 Turn + 受治理 authoring Run；走 transient handoff |
 | GET | `/authoring-sessions/{sessionId}/turns/{turnId}` | M7 | 读取 Turn |
 | GET | `/authoring-sessions/{sessionId}/proposals/{proposalId}` | M7 | 读取结构化提案 |
-| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:confirm` | M7 | 确认提案。Workflow 草稿已接线。`targetType=worker` 落未发布 `workerDraftId`（planned） |
+| POST | `/authoring-sessions/{sessionId}/turns/{turnId}:confirm` | M7 | 确认提案。Workflow 草稿已接线。Chat 建角色不走这条（`POST /workers`）。`targetType=team` 成员须已发布 `workerVersionId` |
 | POST | `/authoring-sessions/{sessionId}/turns/{turnId}:cancel` | M7 | 取消 Turn |
 | POST | `/authoring-sessions/{sessionId}/turns/{turnId}:retry` | M7 | Daemon 现返回 `unsupported_capability` |
 | POST | `/authoring-sessions/{sessionId}/turns/{turnId}:close` | M7 | 关闭 Turn |
 
 ### 全局 Chat（语言入口，不是 IM）
 
-分类结果不是完成态。创建类仍走现有 Project-scoped AuthoringSession。问进度只读已有 Task / Run / Event / Artifact。交流工作有 `runId` 时走已冻 `POST /runs/{id}:input`。
+分类结果不是完成态。`create_worker` 走 `POST /workers`（`projectId` 可选，不经 AuthoringSession）。`update_worker` 空闲写卡复用 `PATCH .../drafts/{draftId}`；已发布则先 `:fork`。`invite_team` 落到现有 Team 成员写入（已发布 `workerVersionId`）。建流程仍 `POST /projects/{id}/authoring-sessions`。问进度只读已有 Task / Run / Event / Artifact。交流工作有 `runId` 时走已冻 `POST /runs/{id}:input`。认不出 → `need_clarification`（带要问的问题），**禁止**默成 `discuss_work`。一句话多意图允许一次返回 `intents` 列表，不强制三张确认卡。
 
-**禁止：** `/chat/inbox`、`/workers/{id}/messages`、无项目聊天室、以 `workerId` 为会话对端、发明 `:direct` URL。「去做」本批只允许诚实 `unsupported_capability`。
+**禁止：** `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、无项目聊天室、以 `workerId` 为会话对端、发明 `:direct` URL。「去做」本批只允许诚实 `unsupported_capability`。
 
 | Method | Path | 阶段 | 说明 |
 |---|---|---|---|
-| POST | `/chat-intents:classify` | planned | 四类 `ChatIntent`：`create_worker` / `create_workflow` / `query_progress` / `discuss_work`。不落 IM |
+| POST | `/chat-intents:classify` | planned | `ChatIntent`：`create_worker` / `update_worker` / `invite_team` / `create_workflow` / `query_progress` / `discuss_work`。认不出 `need_clarification`。`need_context.missing`：`projectId` \| `runId` \| `workerId`。不落 IM |
 | GET | `/projects/{id}/progress` | planned | 只读投影。无记录则 `empty=true` 且文案「还没有记录」；不得编造 completed |
-| POST | `/projects/{id}/authoring-sessions` | M7 | `create_worker` / `create_workflow` 创建类；已有 |
+| POST | `/projects/{id}/authoring-sessions` | M7 | 仅项目内建流程 / 从零组队；**不是**建角色或空闲写卡 |
 | POST | `/runs/{id}:input` | Mock 必须 | `discuss_work` 在已有 `runId` 时的写入口；不新开聊天室 path |
 
 ## 3. 错误与并发（T02 生成）
@@ -312,9 +313,11 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 | 审批代码 | `approvals/:approve` gate=artifact | 精确 version + digest |
 | 要求修改 | `:request-changes` | waiting_review |
 | 导出 | T14 query/command（T02 列入 protocol） | 最终 digest 已批准 |
-| 打开角色版本库 | `GET /workers`（planned） | 库页；未接通不得画已创建成功 |
-| 归档/fork 角色版本 | `:archive` / `:fork`（planned） | 已发布不可原地改 |
-| 全局 Chat 分类 | `POST /chat-intents:classify`（planned） | 四类意图；不是完成 |
+| 打开角色版本库 | `GET /workers`（planned） | 库页；卡片可见 `who` / `how` / `skills`；未接通不得画已创建成功 |
+| 归档/fork 角色版本 | `:archive` / `:fork`（planned） | 已发布不可原地改卡片；要改走 fork |
+| 全局 Chat 分类 | `POST /chat-intents:classify`（planned） | 六类意图 + `need_clarification`；不是完成；禁止默成交流工作 |
+| 空闲对角色说话 | `PATCH .../drafts/{draftId}` 或先 `:fork` | `update_worker`；不新建 Task/Run；不开 IM |
+| 请角色进项目 | 现有 Team 成员写入 | `invite_team`；已发布 `workerVersionId`；缺项目先问 |
 | 问进度 | `GET /projects/{id}/progress`（planned） | 无记录说还没有记录 |
 | 交流进行中的工作 | `POST /runs/{id}:input` | 必填 `projectId`；执行中再挂 `runId` |
 | 「去做」/direct | 无新 path；`unsupported_capability` | 本批不实现 T09-DIRECT |
@@ -330,4 +333,4 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 - 不支持的能力：按钮不渲染为可点击成功态
 - T18/T19：画布 + catalog 写 path + 自定义 Team 写 UI 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；无假 publish/bind
 - T20/T21：作者壳走 Daemon 会话与 typed send、项目详情 mode 控件与 composed passthrough 已有；`CHAT_SESSION_PROTOCOL_FROZEN=true`；allowlist 未放行作者 path 前不得宣称真窗口 send；不得实现假 Agent 完成或假 `direct` 成功；**禁止**把 mode 写入 `StartRunRequest`
-- 角色库 / 全局 Chat：WorkerVersion 与 ChatIntent 只从 `@workforce/protocol` 导入。库 path 与 `POST /chat-intents:classify`、`GET /projects/{id}/progress` 为 **planned**。不实现 `/chat/inbox`、`/workers/{id}/messages`、Marketplace DTO、`:direct`
+- 角色库 / 全局 Chat：WorkerVersion 卡片 `who` / `how` / `skills` 与 ChatIntent 只从 `@workforce/protocol` 导入。库 path 与 `POST /chat-intents:classify`、`GET /projects/{id}/progress` 为 **planned**。不实现 `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、Marketplace DTO、`:direct`。Runtime/Policy 不是卡片必填

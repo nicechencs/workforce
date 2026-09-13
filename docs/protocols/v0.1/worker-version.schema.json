@@ -17,6 +17,9 @@
       "minLength": 1,
       "type": "string"
     },
+    "how": {
+      "type": "string"
+    },
     "id": {
       "minLength": 1,
       "type": "string"
@@ -40,6 +43,9 @@
       "minLength": 1,
       "type": "string"
     },
+    "skills": {
+      "type": "string"
+    },
     "stateRevision": {
       "minimum": 1,
       "type": "integer"
@@ -53,6 +59,9 @@
     },
     "version": {
       "minLength": 1,
+      "type": "string"
+    },
+    "who": {
       "type": "string"
     },
     "workerId": {
