@@ -1122,6 +1122,100 @@ CREATE INDEX idx_projection_reconciliation_unresolved
   WHERE classification IN ('projection_failed', 'repair_failed', 'partial_projection');
 `;
 
+/**
+ * Role version library. Forward-only: do not rewrite 001–014.
+ *
+ * 001 `worker_versions` remains the execution FK stub (runs.worker_version_id).
+ * It is not the library: identity, immutable published versions, draft CAS,
+ * archive, and fork copies live in catalog_workers / catalog_worker_versions /
+ * worker_drafts. Team references are queried from catalog_team_versions JSON.
+ */
+export const MIGRATION_015_SQL = `
+CREATE TABLE catalog_workers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  protocol_version TEXT NOT NULL CHECK (protocol_version = '0.1'),
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  definition_revision INTEGER NOT NULL CHECK (definition_revision > 0),
+  active_version_id TEXT,
+  forked_from_worker_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE catalog_worker_versions (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL REFERENCES catalog_workers(id),
+  version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','published')),
+  immutable INTEGER NOT NULL CHECK (immutable IN (0,1)),
+  archived INTEGER NOT NULL CHECK (archived IN (0,1)),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL,
+  runtime_profile_id TEXT,
+  forked_from_worker_version_id TEXT,
+  state_revision INTEGER NOT NULL CHECK (state_revision > 0),
+  published_at TEXT,
+  archived_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (worker_id, version),
+  CHECK (
+    (status = 'published' AND immutable = 1)
+    OR (status = 'draft' AND immutable = 0)
+  ),
+  CHECK (
+    (archived = 0 AND archived_at IS NULL)
+    OR (archived = 1 AND archived_at IS NOT NULL)
+  )
+);
+
+CREATE TABLE worker_drafts (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL REFERENCES catalog_workers(id),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  status TEXT NOT NULL CHECK (status = 'draft'),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL,
+  runtime_profile_id TEXT,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  UNIQUE (worker_id, revision)
+);
+
+CREATE INDEX idx_catalog_workers_status
+  ON catalog_workers(status, updated_at, id);
+CREATE INDEX idx_catalog_worker_versions_worker
+  ON catalog_worker_versions(worker_id, status, archived);
+CREATE INDEX idx_worker_drafts_worker
+  ON worker_drafts(worker_id, revision);
+
+CREATE TRIGGER catalog_worker_versions_immutable_update
+BEFORE UPDATE ON catalog_worker_versions
+FOR EACH ROW
+WHEN OLD.immutable = 1
+BEGIN
+  SELECT RAISE(ABORT, 'published worker version is immutable')
+  WHERE NEW.id IS NOT OLD.id
+     OR NEW.worker_id IS NOT OLD.worker_id
+     OR NEW.version IS NOT OLD.version
+     OR NEW.status IS NOT OLD.status
+     OR NEW.immutable IS NOT OLD.immutable
+     OR NEW.name IS NOT OLD.name
+     OR NEW.description IS NOT OLD.description
+     OR NEW.role IS NOT OLD.role
+     OR NEW.runtime_profile_id IS NOT OLD.runtime_profile_id
+     OR NEW.forked_from_worker_version_id IS NOT OLD.forked_from_worker_version_id
+     OR NEW.state_revision IS NOT OLD.state_revision
+     OR NEW.published_at IS NOT OLD.published_at;
+END;
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -1137,4 +1231,5 @@ export const MIGRATIONS = [
   { version: "012_execution_axes_switch", sql: MIGRATION_012_SQL },
   { version: "013_execution_axes_contract", sql: MIGRATION_013_SQL },
   { version: "014_projection_reconciliation", sql: MIGRATION_014_SQL },
+  { version: "015_worker_library", sql: MIGRATION_015_SQL },
 ] as const;

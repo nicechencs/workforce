@@ -24,6 +24,7 @@ import { SqliteTimerRepository } from "./timers.js";
 import { SqliteUnitOfWork } from "./uow.js";
 import { SqliteWorkflowInstanceRepository } from "./workflows.js";
 import { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
+import { SqliteWorkerLibraryRepository } from "./workers.js";
 import { SqliteWorldSnapshot } from "./world-snapshot.js";
 import { SqliteExecutionAxisMigrationRepository } from "./execution-axis-migration.js";
 import { SqliteProjectionReconciliationRepository } from "./projection-reconciliation.js";
@@ -68,6 +69,7 @@ export class WorkforceSqlite {
   readonly grants: SqliteGrantStore;
   readonly catalogWorkflows: SqliteWorkflowCatalogRepository;
   readonly catalogTeams: SqliteTeamCatalogRepository;
+  readonly workers: SqliteWorkerLibraryRepository;
   readonly executionAxisMigration: SqliteExecutionAxisMigrationRepository;
   readonly projectionReconciliation: SqliteProjectionReconciliationRepository;
   readonly workflowDrafts: SqliteWorkflowDraftRepository;
@@ -106,6 +108,7 @@ export class WorkforceSqlite {
     this.grants = new SqliteGrantStore(connection, this.uow);
     this.catalogWorkflows = new SqliteWorkflowCatalogRepository(connection);
     this.catalogTeams = new SqliteTeamCatalogRepository(connection);
+    this.workers = new SqliteWorkerLibraryRepository(connection);
     this.executionAxisMigration = new SqliteExecutionAxisMigrationRepository(connection);
     this.projectionReconciliation = new SqliteProjectionReconciliationRepository(connection);
     this.workflowAuthoringScopes = new SqliteWorkflowAuthoringScopeRepository(connection);

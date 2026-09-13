@@ -138,4 +138,13 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
     recovery:
       "query projection_failed / repair_failed / partial_projection; restart always loads SQLite entities; old sidecar is repaired into SQLite or ignored when stale",
   },
+  {
+    record: "Worker library identity / version / draft",
+    location:
+      "catalog_workers + catalog_worker_versions + worker_drafts (015; not 001 worker_versions)",
+    uniqueness:
+      "PK catalog_workers.id; PK catalog_worker_versions.id UNIQUE(worker_id, version); worker_drafts PK id UNIQUE(worker_id, revision); published version insert-once + immutable trigger",
+    recovery:
+      "load catalog_workers after restart; published rows stay insert-once; draft CAS is MAX(revision); archive is queryable; fork inserts a new identity and does not mutate the source; TeamVersion refs are json_each(catalog_team_versions.definition_json members.workerVersionId)",
+  },
 ];

@@ -57,6 +57,7 @@ export {
   MIGRATION_012_SQL,
   MIGRATION_013_SQL,
   MIGRATION_014_SQL,
+  MIGRATION_015_SQL,
 } from "./schema.js";
 export {
   EXECUTION_AXIS_MIGRATION_CLASSIFICATIONS,
@@ -86,6 +87,7 @@ export {
   type RecordProjectionReconciliationInput,
 } from "./projection-reconciliation.js";
 export { SqliteTeamCatalogRepository, SqliteWorkflowCatalogRepository } from "./catalog.js";
+export { SqliteWorkerLibraryRepository } from "./workers.js";
 export {
   SqliteAuthoringChatPatchRepository,
   SqliteAuthoringMessageRepository,
