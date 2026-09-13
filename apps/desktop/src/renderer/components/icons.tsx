@@ -220,3 +220,19 @@ export function IconX(props: IconProps): ReactNode {
     </Icon>
   );
 }
+
+export function IconChat(props: IconProps): ReactNode {
+  return (
+    <Icon {...props}>
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+    </Icon>
+  );
+}
+
+export function IconRoleLibrary(props: IconProps): ReactNode {
+  return (
+    <Icon {...props}>
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+    </Icon>
+  );
+}

@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import type { BannerModel, ShellView } from "@workforce/ui";
+import { CHAT_PATH, SHELL_CHAT, type BannerModel, type ShellView } from "@workforce/ui";
 
 import { nextThemeMode, themeModeLabel, useTheme } from "../app/theme.js";
 import { cn } from "./cn.js";
-import { IconMoon, IconPanelClose, IconPanelOpen, IconSun, IconSystem } from "./icons.js";
+import { IconChat, IconMoon, IconPanelClose, IconPanelOpen, IconSun, IconSystem } from "./icons.js";
 import { PageChromeProvider, usePageChrome } from "./page-chrome.js";
 import { Button, NavIcon, Notice, StatusText } from "./ui.js";
 
@@ -36,6 +36,8 @@ export interface ShellFrameProps {
   view: ShellView;
   onNavigate: (path: string) => void;
   onBannerAction?: ((action: NonNullable<BannerModel["action"]>["id"]) => void) | undefined;
+  /** Global Chat chrome. Always openable; `/chat` is an empty unwired shell until the feature page registers. */
+  chatCurrent?: boolean | undefined;
   children: ReactNode;
 }
 
@@ -57,6 +59,7 @@ export function ShellFrame(props: ShellFrameProps): ReactNode {
         }}
         onNavigate={onNavigate}
         onBannerAction={onBannerAction}
+        chatCurrent={props.chatCurrent}
       >
         {children}
       </ShellFrameLayout>
@@ -152,6 +155,20 @@ function ShellFrameLayout(
               <span className="wf-topbar-workspace">本机</span>
             </div>
             <div className="wf-topbar-actions">
+              <Button
+                variant={props.chatCurrent === true ? "outline" : "ghost"}
+                size="sm"
+                testId="shell-open-chat"
+                aria-label="打开 Chat"
+                aria-current={props.chatCurrent === true ? "page" : undefined}
+                title={SHELL_CHAT.label}
+                onClick={() => {
+                  onNavigate(CHAT_PATH);
+                }}
+              >
+                <IconChat size={16} />
+                Chat
+              </Button>
               <StatusText tone={connectionTone(view.connection.status)}>
                 {connectionLabel(view.connection.status)}
               </StatusText>

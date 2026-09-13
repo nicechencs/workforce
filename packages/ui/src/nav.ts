@@ -3,17 +3,22 @@ export const FEATURE_SLOTS = [
   "projects",
   "tasks",
   "teams",
+  "role-library",
   "runs",
   "workflows",
   "artifacts",
   "approvals",
   "nodes",
   "settings",
+  "chat",
 ] as const;
 
 export type FeatureSlot = (typeof FEATURE_SLOTS)[number];
 
-export type FeatureOwner = "t12" | "t13";
+export type FeatureOwner = "t11" | "t12" | "t13";
+
+export const ROLE_LIBRARY_PATH = "/role-library";
+export const CHAT_PATH = "/chat";
 
 export type NavPriority = "p0" | "p1";
 
@@ -57,6 +62,15 @@ export const SHELL_NAV_ITEMS: readonly ShellNavItem[] = [
     slot: "teams",
     owner: "t12",
     priority: "p0",
+    primary: true,
+  },
+  {
+    id: "role-library",
+    path: ROLE_LIBRARY_PATH,
+    label: "角色库",
+    slot: "role-library",
+    owner: "t11",
+    priority: "p1",
     primary: true,
   },
   {
@@ -112,4 +126,26 @@ export function primaryNavItems(): ShellNavItem[] {
 
 export function navItemByPath(path: string): ShellNavItem | undefined {
   return SHELL_NAV_ITEMS.find((item) => item.path === path);
+}
+
+/**
+ * Global Chat is a shell chrome action + `/chat` route, not a 一级导航
+ * row and not a per-worker private inbox.
+ */
+export const SHELL_CHAT = {
+  id: "chat",
+  path: CHAT_PATH,
+  label: "Chat",
+  slot: "chat",
+  owner: "t11",
+} as const satisfies {
+  id: string;
+  path: typeof CHAT_PATH;
+  label: string;
+  slot: FeatureSlot;
+  owner: FeatureOwner;
+};
+
+export function isChatPath(path: string): boolean {
+  return path === CHAT_PATH;
 }
