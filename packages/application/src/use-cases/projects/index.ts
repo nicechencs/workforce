@@ -47,6 +47,13 @@ export {
   type StartPlanningInput,
 } from "./projects.js";
 export {
+  assertBindableTeamVersionForPlanning,
+  bindTeamVersionGuardError,
+  queryProjectProgress,
+  type BindableTeamVersion,
+  type BindableTeamVersionLookup,
+} from "./progress.js";
+export {
   absorbDirectArtifact,
   createAdHocTask,
   findAdHocTask,

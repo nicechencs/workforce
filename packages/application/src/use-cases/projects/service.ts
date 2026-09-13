@@ -4,6 +4,8 @@ import { MemoryWorld } from "./store.js";
 import type { AppContext } from "./context.js";
 import { FakeRuntimeHost, type RuntimeHostPort } from "../runs/host.js";
 import { LocalNodePlacementScheduler } from "../runs/placement.js";
+import type { BindableTeamVersionLookup } from "./progress.js";
+import { queryProjectProgress } from "./progress.js";
 import {
   cancelProject,
   confirmPlan,
@@ -57,6 +59,7 @@ export interface WorkforceAppOptions {
   placement?: PlacementScheduler;
   principalId?: string;
   clientId?: string;
+  teamVersions?: BindableTeamVersionLookup;
 }
 
 /**
@@ -76,10 +79,12 @@ export class WorkforceApp {
       placement: options.placement ?? new LocalNodePlacementScheduler(),
       principalId: options.principalId ?? "usr_local",
       clientId: options.clientId ?? "cli_local",
+      ...(options.teamVersions ? { teamVersions: options.teamVersions } : {}),
     };
   }
 
   createProject = (input: Parameters<typeof createProject>[1]) => createProject(this.ctx, input);
+  queryProjectProgress = (projectId: string) => queryProjectProgress(this.ctx, projectId);
   startPlanning = (input: Parameters<typeof startPlanning>[1]) => startPlanning(this.ctx, input);
   confirmPlan = (input: Parameters<typeof confirmPlan>[1]) => confirmPlan(this.ctx, input);
   start = (input: Parameters<typeof startExecution>[1]) => startExecution(this.ctx, input);

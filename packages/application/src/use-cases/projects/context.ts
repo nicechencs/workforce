@@ -1,5 +1,6 @@
 import type { PlacementScheduler } from "../../ports/index.js";
 import type { EnginePort } from "./engine-port.js";
+import type { BindableTeamVersionLookup } from "./progress.js";
 import type { MemoryWorld } from "./store.js";
 import type { RuntimeHostPort } from "../runs/host.js";
 import { revisionConflict } from "./errors.js";
@@ -11,6 +12,8 @@ export interface AppContext {
   placement: PlacementScheduler;
   principalId: string;
   clientId: string;
+  /** Catalog lookup for bind/start-planning. Absent → bind guard is a no-op. */
+  teamVersions?: BindableTeamVersionLookup;
 }
 
 export function expectRevision(
