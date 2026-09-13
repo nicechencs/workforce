@@ -217,6 +217,44 @@ function bodyHasForbiddenKeys(value: unknown, depth: number): boolean {
   return false;
 }
 
+export function readApiRequest(payload: unknown): ApiRequest {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new Error("API request is not on the Desktop allowlist: invalid payload");
+  }
+  const record = payload as Record<string, unknown>;
+  if (
+    (record.method !== "GET" && record.method !== "POST" && record.method !== "PATCH") ||
+    typeof record.path !== "string"
+  ) {
+    throw new Error(
+      `API request is not on the Desktop allowlist: ${String(record.method)} ${String(record.path)}`,
+    );
+  }
+  const request: ApiRequest = { method: record.method, path: record.path };
+  if (record.headers !== undefined) {
+    if (
+      typeof record.headers !== "object" ||
+      record.headers === null ||
+      Array.isArray(record.headers)
+    ) {
+      throw new Error("API request headers are invalid");
+    }
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(record.headers as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        headers[key] = value;
+      }
+    }
+    if (Object.keys(headers).length > 0) {
+      request.headers = headers;
+    }
+  }
+  if ("body" in record) {
+    request.body = record.body;
+  }
+  return request;
+}
+
 export function assertSafeApiRequest(request: ApiRequest): ApiRequest {
   if (!isAllowedApiRequest(request)) {
     throw new Error(

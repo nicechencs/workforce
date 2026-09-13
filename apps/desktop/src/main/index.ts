@@ -29,7 +29,11 @@ export {
   WorkspaceGrantStore,
 } from "./ipc/index.js";
 export { requiredCoordinatorDependencies } from "./required-dependencies.js";
-export { assertSecureWebPreferences, createRendererWebPreferences } from "./security.js";
+export {
+  assertSecureWebPreferences,
+  createRendererWebPreferences,
+  isAllowedRendererNavigationUrl,
+} from "./security.js";
 export {
   createStateBackup,
   decideDaemonUpgrade,

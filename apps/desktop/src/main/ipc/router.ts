@@ -1,4 +1,4 @@
-import type { ApiRequest, ConnectionSnapshot, EventSubscribeRequest } from "@workforce/ui";
+import type { ApiRequest, ConnectionSnapshot } from "@workforce/ui";
 
 import {
   assertAllowedIpcInvokeChannel,
@@ -6,7 +6,13 @@ import {
   IpcAccessDeniedError,
   type IpcInvokeChannel,
 } from "../../preload/contracts.js";
-import type { EventSubscribeInput, LiveSubscription } from "./subscriptions.js";
+import { readApiRequest } from "./allowlist.js";
+import {
+  parseEventSubscribeInput,
+  readSubscriptionId,
+  type EventSubscribeInput,
+  type LiveSubscription,
+} from "./subscriptions.js";
 import {
   pickWorkspaceDirectory,
   type DirectoryDialog,
@@ -49,15 +55,14 @@ export async function dispatchIpc(
     case IPC_INVOKE_CHANNELS.connectionReconnect:
       return deps.reconnect();
     case IPC_INVOKE_CHANNELS.apiRequest:
-      return deps.requestApi(payload as ApiRequest);
+      return deps.requestApi(readApiRequest(payload));
     case IPC_INVOKE_CHANNELS.eventsSubscribe: {
-      const input = (payload ?? {}) as EventSubscribeRequest;
-      const { subscription } = deps.subscriptions.subscribe(input);
+      const { subscription } = deps.subscriptions.subscribe(parseEventSubscribeInput(payload));
       return { subscriptionId: subscription.subscriptionId };
     }
     case IPC_INVOKE_CHANNELS.eventsUnsubscribe: {
-      const id = (payload as { subscriptionId?: string } | null)?.subscriptionId;
-      if (typeof id === "string") {
+      const id = readSubscriptionId(payload);
+      if (id !== undefined) {
         deps.subscriptions.unsubscribe(id);
       }
       return { ok: true };

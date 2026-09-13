@@ -9,6 +9,7 @@ export interface BrowserWindowSpec {
   height: number;
   show: boolean;
   autoHideMenuBar: boolean;
+  navigateOnDragDrop: false;
   webPreferences: RendererWebPreferences;
 }
 
@@ -23,6 +24,7 @@ export function createMainWindowSpec(
     height: 800,
     show: options.show ?? true,
     autoHideMenuBar: true,
+    navigateOnDragDrop: false,
     webPreferences,
   };
 }

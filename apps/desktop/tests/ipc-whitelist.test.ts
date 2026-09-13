@@ -31,6 +31,24 @@ describe("IPC whitelist", () => {
     );
   });
 
+  it("rejects malformed api request payloads before proxying", async () => {
+    await expect(dispatchIpc("workforce:api:request", null, deps())).rejects.toThrow(/allowlist/);
+    await expect(dispatchIpc("workforce:api:request", "GET /health", deps())).rejects.toThrow(
+      /allowlist/,
+    );
+  });
+
+  it("ignores non-array event subscribe types instead of spreading a string", async () => {
+    const d = deps();
+    const result = await dispatchIpc(
+      "workforce:events:subscribe",
+      { types: "run.status_changed" },
+      d,
+    );
+    expect(result).toEqual({ subscriptionId: "sub_1" });
+    expect(d.subscriptions.list()[0]?.types).toEqual([]);
+  });
+
   it("allows only capability-matrix API paths", () => {
     expect(isAllowedApiRequest({ method: "GET", path: "/health" })).toBe(true);
     expect(isAllowedApiRequest({ method: "GET", path: "/api/v1/projects" })).toBe(true);

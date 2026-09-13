@@ -49,4 +49,29 @@ describe("SSE bridge", () => {
     );
     bridge.stop();
   });
+
+  it("does not reject when the live stream is aborted", async () => {
+    const bridge = createDaemonSseBridge({
+      getTarget: () => ({ port: 3456, session: { sessionToken: "secret" } }),
+      send: () => undefined,
+      fetchImpl: async (_url, init) => {
+        await new Promise<void>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        });
+        throw new Error("unreachable");
+      },
+    });
+    const started = bridge.start({
+      subscriptionId: "sub_1",
+      key: "*#",
+      cursor: "",
+      types: [],
+    });
+    bridge.stop();
+    await expect(started).resolves.toBeUndefined();
+  });
 });

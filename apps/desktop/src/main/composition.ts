@@ -7,7 +7,6 @@ import { desktopUiSingleInstancePolicy } from "./app-lifecycle/ui-lock.js";
 import { IPC_INVOKE_CHANNELS, IPC_PUSH_CHANNELS } from "../preload/contracts.js";
 import { dispatchIpc, type IpcRouterDeps } from "./ipc/router.js";
 import { proxyApiRequest, type SessionSecrets } from "./ipc/rest-proxy.js";
-import type { BrowserWindowSpec } from "./windows/factory.js";
 
 export interface RendererLoadTarget {
   kind: "url" | "file";
@@ -98,11 +97,4 @@ export async function proxyConnectedApiRequest(
     };
   }
   return proxyApiRequest(input, { port: target.port }, target.session, fetchImpl);
-}
-
-export function windowSpecWithPreload(
-  createSpec: (preloadPath: string) => BrowserWindowSpec,
-  preloadPath: string,
-): BrowserWindowSpec {
-  return createSpec(preloadPath);
 }

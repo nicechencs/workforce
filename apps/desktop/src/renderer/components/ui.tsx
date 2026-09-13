@@ -2,6 +2,7 @@ import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
+  Ref,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
@@ -258,24 +259,35 @@ export function Field(props: {
 }
 
 export function Input(
-  props: InputHTMLAttributes<HTMLInputElement> & { testId?: string | undefined },
+  props: InputHTMLAttributes<HTMLInputElement> & {
+    testId?: string | undefined;
+    ref?: Ref<HTMLInputElement>;
+  },
 ): ReactNode {
-  const { className, testId, ...rest } = props;
-  return <input {...rest} data-testid={testId} className={cn("wf-input", className)} />;
+  const { className, testId, ref, ...rest } = props;
+  return <input {...rest} ref={ref} data-testid={testId} className={cn("wf-input", className)} />;
 }
 
 export function Textarea(
-  props: TextareaHTMLAttributes<HTMLTextAreaElement> & { testId?: string | undefined },
+  props: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+    testId?: string | undefined;
+    ref?: Ref<HTMLTextAreaElement>;
+  },
 ): ReactNode {
-  const { className, testId, ...rest } = props;
-  return <textarea {...rest} data-testid={testId} className={cn("wf-textarea", className)} />;
+  const { className, testId, ref, ...rest } = props;
+  return (
+    <textarea {...rest} ref={ref} data-testid={testId} className={cn("wf-textarea", className)} />
+  );
 }
 
 export function Select(
-  props: SelectHTMLAttributes<HTMLSelectElement> & { testId?: string | undefined },
+  props: SelectHTMLAttributes<HTMLSelectElement> & {
+    testId?: string | undefined;
+    ref?: Ref<HTMLSelectElement>;
+  },
 ): ReactNode {
-  const { className, testId, ...rest } = props;
-  return <select {...rest} data-testid={testId} className={cn("wf-select", className)} />;
+  const { className, testId, ref, ...rest } = props;
+  return <select {...rest} ref={ref} data-testid={testId} className={cn("wf-select", className)} />;
 }
 
 /* ─── Tabs ──────────────────────────────────────────────────────────────── */
@@ -532,13 +544,7 @@ export function Split(props: { children: ReactNode }): ReactNode {
 
 /* ─── 导航图标映射 ──────────────────────────────────────────────────────── */
 
-export {
-  Dialog,
-  DropdownMenu,
-  Toast,
-  ToastRegion,
-  Tooltip,
-} from "./overlays.js";
+export { Dialog, DropdownMenu, Toast, ToastRegion, Tooltip } from "./overlays.js";
 export type { DropdownItem, OverlayTone } from "./overlays.js";
 export { Skeleton, Table, TBody, TD, TH, THead, TR } from "./table.js";
 

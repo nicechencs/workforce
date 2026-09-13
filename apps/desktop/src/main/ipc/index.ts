@@ -4,12 +4,18 @@ export {
   assertSafeApiRequest,
   isAllowedApiRequest,
   normalizeApiPath,
+  readApiRequest,
 } from "./allowlist.js";
 export { buildLoopbackUrl, proxyApiRequest } from "./rest-proxy.js";
 export type { LoopbackTarget, SessionSecrets } from "./rest-proxy.js";
 export { dispatchIpc } from "./router.js";
 export type { EventSubscriptionPort, IpcRouterDeps } from "./router.js";
-export { EventSubscriptionHub, subscriptionKey } from "./subscriptions.js";
+export {
+  EventSubscriptionHub,
+  parseEventSubscribeInput,
+  readSubscriptionId,
+  subscriptionKey,
+} from "./subscriptions.js";
 export type { EventSubscribeInput, LiveSubscription } from "./subscriptions.js";
 export {
   appendSseChunk,

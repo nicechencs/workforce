@@ -15,6 +15,29 @@ export function subscriptionKey(input: EventSubscribeInput): string {
   return `${types}#${input.cursor ?? ""}`;
 }
 
+export function parseEventSubscribeInput(payload: unknown): EventSubscribeInput {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return {};
+  }
+  const record = payload as Record<string, unknown>;
+  const input: EventSubscribeInput = {};
+  if (typeof record.cursor === "string") {
+    input.cursor = record.cursor;
+  }
+  if (Array.isArray(record.types)) {
+    input.types = record.types.filter((item): item is string => typeof item === "string");
+  }
+  return input;
+}
+
+export function readSubscriptionId(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const id = (payload as { subscriptionId?: unknown }).subscriptionId;
+  return typeof id === "string" ? id : undefined;
+}
+
 export class EventSubscriptionHub {
   readonly #byKey = new Map<string, LiveSubscription>();
   readonly #byId = new Map<string, LiveSubscription>();

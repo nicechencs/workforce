@@ -166,6 +166,8 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
   });
   windowPort = options.ports.createWindow(spec);
   windowPort.onClosed(() => {
+    sse.stop();
+    hub.clear();
     windowPort = null;
   });
 

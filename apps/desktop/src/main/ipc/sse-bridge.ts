@@ -123,39 +123,45 @@ export function createDaemonSseBridge(input: {
       if (subscription.cursor.length > 0) {
         headers["last-event-id"] = subscription.cursor;
       }
-      const res = await fetchImpl(buildLoopbackUrl(target.port, eventsStreamPath(subscription)), {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-      });
-      if (!res.ok || !res.body) {
-        if (!controller.signal.aborted) {
-          stop();
-        }
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       try {
-        while (!controller.signal.aborted) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          const next = appendSseChunk(buffer, decoder.decode(value, { stream: true }));
-          buffer = next.buffer;
-          for (const message of next.events) {
-            input.send(decodeSsePayload(message));
-          }
-        }
-      } catch (error) {
+        const res = await fetchImpl(buildLoopbackUrl(target.port, eventsStreamPath(subscription)), {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
         if (controller.signal.aborted) {
           return;
         }
-        throw error;
-      } finally {
-        reader.releaseLock();
+        if (!res.ok || !res.body) {
+          if (!controller.signal.aborted) {
+            stop();
+          }
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        try {
+          while (!controller.signal.aborted) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            const next = appendSseChunk(buffer, decoder.decode(value, { stream: true }));
+            buffer = next.buffer;
+            for (const message of next.events) {
+              input.send(decodeSsePayload(message));
+            }
+          }
+        } finally {
+          try {
+            reader.releaseLock();
+          } catch {
+            // Abort can already release the reader.
+          }
+        }
+      } catch {
+        return;
       }
     },
     stop,
