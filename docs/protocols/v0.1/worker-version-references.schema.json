@@ -1,0 +1,46 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/worker-version-references.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "teamVersions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "type": "string"
+          },
+          "teamId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "teamVersionId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "teamId",
+          "teamVersionId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workerVersionId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "workerVersionId",
+    "teamVersions"
+  ],
+  "title": "WorkerVersionReferencesDto",
+  "type": "object"
+}

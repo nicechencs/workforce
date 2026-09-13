@@ -53,12 +53,22 @@ const authoringDraftTeamProposalSchema = z
   })
   .strict();
 
+const authoringDraftWorkerProposalSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    role: z.string().min(1).optional(),
+    runtimeProfileId: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const authoringDraftProposalSchema = z
   .object({
     kind: z.literal("proposal"),
     unpublished: z.literal(true),
     workflow: authoringDraftWorkflowProposalSchema.optional(),
     team: authoringDraftTeamProposalSchema.optional(),
+    worker: authoringDraftWorkerProposalSchema.optional(),
   })
   .strict();
 
@@ -66,10 +76,12 @@ export const authoringDraftLandedSchema = z
   .object({
     kind: z.literal("landed"),
     unpublished: z.literal(true),
-    workflowId: z.string().min(1),
-    workflowVersionId: z.string().min(1),
+    workflowId: z.string().min(1).optional(),
+    workflowVersionId: z.string().min(1).optional(),
     teamId: z.string().min(1).optional(),
     teamVersionId: z.string().min(1).optional(),
+    workerId: z.string().min(1).optional(),
+    workerDraftId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -108,7 +120,7 @@ export const teamDraftSchema = z
   .strict();
 export type TeamDraftDto = z.infer<typeof teamDraftSchema>;
 
-export const authoringChangeTargetTypes = ["team", "task", "workflow"] as const;
+export const authoringChangeTargetTypes = ["team", "task", "workflow", "worker"] as const;
 export type AuthoringChangeTargetType = (typeof authoringChangeTargetTypes)[number];
 
 export const authoringChangeSetStatuses = [
@@ -278,8 +290,19 @@ export function parseAuthoringSessionMessage(input: unknown): AuthoringSessionMe
 }
 
 function assertAuthoringDraftPayload(draft: AuthoringDraftDto): void {
-  if (draft.kind === "proposal" && draft.workflow === undefined && draft.team === undefined) {
-    throw new Error("proposal draft needs workflow or team");
+  if (
+    draft.kind === "proposal" &&
+    draft.workflow === undefined &&
+    draft.team === undefined &&
+    draft.worker === undefined
+  ) {
+    throw new Error("proposal draft needs workflow or team or worker");
+  }
+  if (draft.kind === "landed") {
+    const hasWorkflow = draft.workflowId !== undefined && draft.workflowVersionId !== undefined;
+    if (!hasWorkflow && draft.workerDraftId === undefined && draft.teamId === undefined) {
+      throw new Error("landed draft needs workflow, workerDraftId, or team");
+    }
   }
 }
 

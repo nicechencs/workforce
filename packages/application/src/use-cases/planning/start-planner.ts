@@ -1,6 +1,7 @@
 import type { CommandReceipt, ProtocolError, WorkforceEvent } from "@workforce/protocol";
 import { protocolError } from "@workforce/protocol";
 
+import { bindTeamVersionGuardError } from "../projects/progress.js";
 import { contentDigest } from "./digest.js";
 import type { StartPlannerDeps } from "./ports.js";
 import {
@@ -154,6 +155,10 @@ export async function startPlanner(
   const placementError = placementReady(project);
   if (placementError) {
     return fail(placementError);
+  }
+  const bindError = bindTeamVersionGuardError(project.teamVersionId, deps.teamVersions);
+  if (bindError) {
+    return fail(bindError);
   }
 
   const existingTask = await deps.tasks.getByProject(command.projectId);

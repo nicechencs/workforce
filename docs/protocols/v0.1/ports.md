@@ -148,6 +148,31 @@ type ProcessControllerErrorCode =
 
 公开 `TaskDto.dependsOn` 由 `packages/protocol` 的 Task 契约定义，Application 从已发布执行 DAG 的 `TaskRecord.dependsOn` 映射，HTTP 层不得丢弃该字段。
 
+## WorkerLibraryRepository
+
+角色版本库持久化 port。实现归 T04（SQLite）与 APP-LIBRARY（Memory）。禁止 Marketplace 与 IM 收件箱。
+
+```ts
+interface WorkerLibraryRepository {
+  list(input: ListWorkersInput): Promise<WorkerPageDto>;
+  getWorker(workerId: string): Promise<WorkerDto | null>;
+  getVersion(workerVersionId: string): Promise<WorkerVersionDto | null>;
+  getDraft(workerDraftId: string): Promise<WorkerDraftDto | null>;
+  listReferences(workerVersionId: string): Promise<WorkerVersionReferencesDto>;
+  insertIdentity(tx: Tx, worker: WorkerDto, draft: WorkerDraftDto): Promise<void>;
+  saveDraft(tx: Tx, draft: WorkerDraftDto, expectedRevision: number): Promise<WorkerDraftDto>;
+  publishVersion(tx: Tx, version: WorkerVersionDto): Promise<WorkerVersionDto>;
+  archiveVersion(tx: Tx, workerVersionId: string): Promise<WorkerVersionDto>;
+  forkToDraft(
+    tx: Tx,
+    sourceWorkerVersionId: string,
+    next: { worker: WorkerDto; draft: WorkerDraftDto },
+  ): Promise<ForkWorkerVersionAcceptedDto>;
+}
+```
+
+DTO 只从 `@workforce/protocol` 导入。归档版本仍可出现在已有 TeamVersion 引用里，但 `isSelectableWorkerVersion` 为 false。
+
 ## 实现归属
 
 | Port | 实现任务 |
@@ -157,5 +182,6 @@ type ProcessControllerErrorCode =
 | Workspace / Process | T06 |
 | Policy | T07 |
 | ArtifactStore / Evaluation | T08 |
+| WorkerLibraryRepository | T04 实现；T02 冻结签名 |
 | 状态机用例 | T09 |
 | HTTP 映射 | T10 |

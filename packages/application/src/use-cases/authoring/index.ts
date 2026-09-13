@@ -38,6 +38,7 @@ export {
   type ConfirmAuthoringChatProposalResult,
   type ConfirmedAuthoringTaskPatchRef,
   type ConfirmedAuthoringTeamDraftRef,
+  type ConfirmedAuthoringWorkerDraftRef,
   type ConfirmedAuthoringWorkflowDraftRef,
   type RecordAuthoringProposalInput,
   type StartAuthoringInput,

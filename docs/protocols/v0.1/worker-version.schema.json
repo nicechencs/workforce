@@ -1,0 +1,75 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/worker-version.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archived": {
+      "type": "boolean"
+    },
+    "archivedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "forkedFromWorkerVersionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "immutable": {
+      "type": "boolean"
+    },
+    "name": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "role": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "runtimeProfileId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "stateRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "published"
+      ],
+      "type": "string"
+    },
+    "version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workerId",
+    "version",
+    "status",
+    "immutable",
+    "archived",
+    "name",
+    "role"
+  ],
+  "title": "WorkerVersionDto",
+  "type": "object"
+}

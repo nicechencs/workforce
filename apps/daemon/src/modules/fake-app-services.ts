@@ -1,6 +1,11 @@
 import { UseCaseError, type CatalogService } from "@workforce/application";
 import type { ApprovalStatus, ProjectStatus, RunStatus, TaskStatus } from "@workforce/domain";
-import type { CommandReceipt, WorkforceEvent } from "@workforce/protocol";
+import {
+  PROJECT_PROGRESS_NO_RECORDS_MESSAGE,
+  parseProjectProgressProjection,
+  type CommandReceipt,
+  type WorkforceEvent,
+} from "@workforce/protocol";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 import {
   nextApprovalStatus,
@@ -57,10 +62,23 @@ import type {
   CreateTeamVersionInput,
   CreateWorkflowInput,
   CreateWorkflowVersionInput,
+  CreateWorkerInput,
+  ChatClassifyInput,
+  ChatClassifyResultDto,
+  ForkWorkerVersionAcceptedDto,
+  ListWorkersInput,
   PatchTeamInput,
   PatchTeamVersionInput,
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
+  PatchWorkerInput,
+  ProjectProgressProjectionDto,
+  WorkerDraftDto,
+  WorkerDraftWrite,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
 } from "./dto.js";
 import { AppError } from "./errors.js";
 import { assertStartOrchestrationAllowed } from "./orchestration.js";
@@ -69,12 +87,18 @@ import type { AppServices, CommandResult } from "./index.js";
 import { paginate } from "./paginate.js";
 import {
   assertBindableTeamVersionId,
+  classifyChatIntent,
   createAuthoringCatalog,
   listedDraftTeams,
   listedTeams,
+  listedWorkers,
   listedWorkflows,
   resolveTeam,
   resolveTeamVersion,
+  resolveWorker,
+  resolveWorkerDraft,
+  resolveWorkerVersion,
+  resolveWorkerVersionReferences,
   resolveWorkflow,
   resolveWorkflowVersion,
 } from "./authoring-catalog.js";
@@ -383,6 +407,152 @@ export class FakeAppServices implements AppServices {
       body: resolveWorkflowVersion(this.authoring, id, version.id)!,
       revision: version.stateRevision,
     };
+  }
+
+  listWorkers(query: ListWorkersInput): WorkerPageDto {
+    return listedWorkers(this.authoring, query);
+  }
+
+  getWorker(id: string): WorkerDto | null {
+    return resolveWorker(this.authoring, id);
+  }
+
+  getWorkerVersion(id: string, versionId: string): WorkerVersionDto | null {
+    return resolveWorkerVersion(this.authoring, id, versionId);
+  }
+
+  getWorkerDraft(id: string, draftId: string): WorkerDraftDto | null {
+    return resolveWorkerDraft(this.authoring, id, draftId);
+  }
+
+  listWorkerVersionReferences(id: string, versionId: string): WorkerVersionReferencesDto | null {
+    return resolveWorkerVersionReferences(this.authoring, id, versionId);
+  }
+
+  createWorker(ctx: CommandContext, input: CreateWorkerInput): CommandResult<WorkerDto> {
+    void ctx;
+    const created = this.runCatalog(() => this.authoring.createWorker(input));
+    return {
+      status: 201,
+      body: resolveWorker(this.authoring, created.worker.id)!,
+      revision: created.worker.stateRevision ?? 1,
+    };
+  }
+
+  patchWorker(ctx: CommandContext, id: string, input: PatchWorkerInput): CommandResult<WorkerDto> {
+    const worker = this.runCatalog(() => this.authoring.patchWorker(id, input, ctx.ifMatch));
+    return {
+      status: 200,
+      body: resolveWorker(this.authoring, id)!,
+      revision: worker.stateRevision ?? 1,
+    };
+  }
+
+  createWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    input: WorkerDraftWrite,
+  ): CommandResult<WorkerDraftDto> {
+    void ctx;
+    const draft = this.runCatalog(() => this.authoring.createWorkerDraft(id, input));
+    return { status: 201, body: draft, revision: draft.revision };
+  }
+
+  patchWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+    input: WorkerDraftWrite,
+  ): CommandResult<WorkerDraftDto> {
+    const draft = this.runCatalog(() =>
+      this.authoring.patchWorkerDraft(id, draftId, input, ctx.ifMatch),
+    );
+    return { status: 200, body: draft, revision: draft.revision };
+  }
+
+  publishWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+  ): CommandResult<WorkerVersionDto> {
+    const version = this.runCatalog(() =>
+      this.authoring.publishWorkerDraft(id, draftId, ctx.ifMatch),
+    );
+    return { status: 200, body: version, revision: version.stateRevision ?? 1 };
+  }
+
+  archiveWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): CommandResult<WorkerVersionDto> {
+    void ctx;
+    const version = this.runCatalog(() => this.authoring.archiveWorkerVersion(id, versionId));
+    return { status: 200, body: version, revision: version.stateRevision ?? 1 };
+  }
+
+  forkWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): CommandResult<ForkWorkerVersionAcceptedDto> {
+    void ctx;
+    const accepted = this.runCatalog(() => this.authoring.forkWorkerVersion(id, versionId));
+    return { status: 201, body: accepted };
+  }
+
+  classifyChatIntent(input: ChatClassifyInput): ChatClassifyResultDto {
+    return classifyChatIntent(input);
+  }
+
+  queryProjectProgress(projectId: string): ProjectProgressProjectionDto {
+    this.requireProject(projectId);
+    const tasks = [...this.tasks.values()]
+      .filter((item) => item.dto.projectId === projectId)
+      .map((item) => ({
+        id: item.dto.id,
+        title: item.dto.title,
+        status: item.dto.status,
+        updatedAt: item.dto.updatedAt,
+      }));
+    const runs = [...this.runs.values()]
+      .filter((item) => item.dto.projectId === projectId)
+      .map((item) => ({
+        id: item.dto.id,
+        taskId: item.dto.taskId,
+        status: item.dto.status,
+        updatedAt: item.dto.updatedAt,
+      }));
+    const events = this.events
+      .filter((event) => event.projectId === projectId)
+      .map((event) => ({
+        id: event.id,
+        type: event.type,
+        time: event.time,
+        ...(event.taskId !== undefined ? { taskId: event.taskId } : {}),
+        ...(event.runId !== undefined ? { runId: event.runId } : {}),
+      }));
+    const artifacts = [...this.artifacts.values()]
+      .filter((item) => item.dto.projectId === projectId)
+      .flatMap((item) =>
+        item.dto.versions.map((version) => ({
+          id: item.dto.id,
+          versionId: version.id,
+          status: version.status,
+        })),
+      );
+    const empty =
+      tasks.length === 0 && runs.length === 0 && events.length === 0 && artifacts.length === 0;
+    return parseProjectProgressProjection({
+      projectId,
+      generatedAt: this.timestamp(),
+      empty,
+      tasks,
+      runs,
+      events,
+      artifacts,
+      ...(empty ? { emptyDisplay: PROJECT_PROGRESS_NO_RECORDS_MESSAGE } : {}),
+    });
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {

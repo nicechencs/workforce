@@ -14,6 +14,7 @@ import { notFound, validationFailed } from "./errors.js";
 import { appendEvent } from "./events.js";
 import { digestOf, withIdempotency } from "./idempotency.js";
 import { captureProjectPolicySnapshot } from "./policy-snapshot.js";
+import { assertBindableTeamVersionForPlanning } from "./progress.js";
 import type {
   ProjectExecutionSnapshotRecord,
   ProjectRecord,
@@ -151,6 +152,7 @@ export async function startPlanning(
         if (!input.workspaceId || !input.teamVersionId || !input.runtimeId || !input.budgetId) {
           throw validationFailed("workspace, team, runtime, and budget are required");
         }
+        assertBindableTeamVersionForPlanning(input.teamVersionId, ctx.teamVersions);
         const next = ctx.engine.nextProjectStatus(project.status, "start-planning");
         const now = ctx.world.nowIso();
         project.workspaceId = input.workspaceId;

@@ -134,7 +134,8 @@
                   "enum": [
                     "team",
                     "task",
-                    "workflow"
+                    "workflow",
+                    "worker"
                   ],
                   "type": "string"
                 }
@@ -228,7 +229,8 @@
                       "enum": [
                         "team",
                         "task",
-                        "workflow"
+                        "workflow",
+                        "worker"
                       ],
                       "type": "string"
                     }
@@ -265,7 +267,8 @@
                       "enum": [
                         "team",
                         "task",
-                        "workflow"
+                        "workflow",
+                        "worker"
                       ],
                       "type": "string"
                     }
@@ -353,6 +356,11 @@
             "const": true,
             "type": "boolean"
           },
+          "workerDraftId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
           "workflowDraftId": {
             "maxLength": 256,
             "minLength": 1,
@@ -366,8 +374,7 @@
         },
         "required": [
           "kind",
-          "unpublished",
-          "workflowDraftId"
+          "unpublished"
         ],
         "title": "AuthoringLandedDraft",
         "type": "object"
@@ -412,7 +419,8 @@
                   "enum": [
                     "team",
                     "task",
-                    "workflow"
+                    "workflow",
+                    "worker"
                   ],
                   "type": "string"
                 }
@@ -463,7 +471,8 @@
                 "enum": [
                   "team",
                   "task",
-                  "workflow"
+                  "workflow",
+                  "worker"
                 ],
                 "type": "string"
               }
@@ -500,7 +509,8 @@
                 "enum": [
                   "team",
                   "task",
-                  "workflow"
+                  "workflow",
+                  "worker"
                 ],
                 "type": "string"
               }
@@ -558,11 +568,14 @@
                             "runtimeProfileId": {
                               "minLength": 1,
                               "type": "string"
+                            },
+                            "workerVersionId": {
+                              "minLength": 1,
+                              "type": "string"
                             }
                           },
                           "required": [
                             "role",
-                            "runtimeProfileId",
                             "quantity"
                           ],
                           "type": "object"
@@ -579,6 +592,27 @@
                   "unpublished": {
                     "const": true,
                     "type": "boolean"
+                  },
+                  "worker": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "runtimeProfileId": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
                   },
                   "workflow": {
                     "additionalProperties": false,
@@ -839,6 +873,14 @@
                     "const": true,
                     "type": "boolean"
                   },
+                  "workerDraftId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workerId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "workflowId": {
                     "minLength": 1,
                     "type": "string"
@@ -850,9 +892,7 @@
                 },
                 "required": [
                   "kind",
-                  "unpublished",
-                  "workflowId",
-                  "workflowVersionId"
+                  "unpublished"
                 ],
                 "type": "object"
               }
@@ -1098,11 +1138,14 @@
                             "runtimeProfileId": {
                               "minLength": 1,
                               "type": "string"
+                            },
+                            "workerVersionId": {
+                              "minLength": 1,
+                              "type": "string"
                             }
                           },
                           "required": [
                             "role",
-                            "runtimeProfileId",
                             "quantity"
                           ],
                           "type": "object"
@@ -1119,6 +1162,27 @@
                   "unpublished": {
                     "const": true,
                     "type": "boolean"
+                  },
+                  "worker": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "runtimeProfileId": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
                   },
                   "workflow": {
                     "additionalProperties": false,
@@ -1375,6 +1439,11 @@
                     "const": true,
                     "type": "boolean"
                   },
+                  "workerDraftId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "workflowDraftId": {
                     "maxLength": 256,
                     "minLength": 1,
@@ -1388,8 +1457,7 @@
                 },
                 "required": [
                   "kind",
-                  "unpublished",
-                  "workflowDraftId"
+                  "unpublished"
                 ],
                 "type": "object"
               }
@@ -1485,6 +1553,11 @@
                       "type": "string"
                     },
                     "taskId": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "workerDraftId": {
                       "maxLength": 256,
                       "minLength": 1,
                       "type": "string"
@@ -1616,6 +1689,11 @@
                 "type": "string"
               },
               "taskId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "workerDraftId": {
                 "maxLength": 256,
                 "minLength": 1,
                 "type": "string"
@@ -1917,6 +1995,174 @@
         ],
         "title": "AuthoringTurnActionCommand"
       },
+      "ChatClassifyResultDto": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "intent": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "create_worker",
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "summary": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "workerDraftId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "create_workflow",
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "summary": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "workflowDraftId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "projectId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "query_progress",
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "projectId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "discuss_work",
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "runId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "projectId"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "outcome": {
+                "const": "intent",
+                "type": "string"
+              }
+            },
+            "required": [
+              "outcome",
+              "intent"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "missing": {
+                "enum": [
+                  "projectId",
+                  "runId"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "const": "need_context",
+                "type": "string"
+              }
+            },
+            "required": [
+              "outcome",
+              "missing"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "direct",
+                  "im"
+                ],
+                "type": "string"
+              },
+              "code": {
+                "const": "unsupported_capability",
+                "type": "string"
+              },
+              "outcome": {
+                "const": "unsupported",
+                "type": "string"
+              }
+            },
+            "required": [
+              "outcome",
+              "code",
+              "action"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "ChatClassifyResultDto"
+      },
       "CreateAuthoringSessionAccepted": {
         "additionalProperties": false,
         "properties": {
@@ -2039,6 +2285,30 @@
           "required"
         ],
         "title": "ExpectedOutput",
+        "type": "object"
+      },
+      "ForkWorkerVersionAcceptedDto": {
+        "additionalProperties": false,
+        "properties": {
+          "forkedFromWorkerVersionId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workerDraftId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workerId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workerId",
+          "workerDraftId",
+          "forkedFromWorkerVersionId"
+        ],
+        "title": "ForkWorkerVersionAcceptedDto",
         "type": "object"
       },
       "Money": {
@@ -2187,6 +2457,154 @@
           "createdAt"
         ],
         "title": "ProjectExecutionSnapshot",
+        "type": "object"
+      },
+      "ProjectProgressProjectionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "status": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "versionId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "versionId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "empty": {
+            "type": "boolean"
+          },
+          "emptyDisplay": {
+            "const": "还没有记录",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "runId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "taskId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "time": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "type": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "time"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "projectId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "taskId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "taskId",
+                "status",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "status",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projectId",
+          "generatedAt",
+          "empty",
+          "tasks",
+          "runs",
+          "events",
+          "artifacts"
+        ],
+        "title": "ProjectProgressProjectionDto",
         "type": "object"
       },
       "RunDto": {
@@ -2688,11 +3106,14 @@
                       "runtimeProfileId": {
                         "minLength": 1,
                         "type": "string"
+                      },
+                      "workerVersionId": {
+                        "minLength": 1,
+                        "type": "string"
                       }
                     },
                     "required": [
                       "role",
-                      "runtimeProfileId",
                       "quantity"
                     ],
                     "type": "object"
@@ -2777,11 +3198,14 @@
                 "runtimeProfileId": {
                   "minLength": 1,
                   "type": "string"
+                },
+                "workerVersionId": {
+                  "minLength": 1,
+                  "type": "string"
                 }
               },
               "required": [
                 "role",
-                "runtimeProfileId",
                 "quantity"
               ],
               "type": "object"
@@ -2820,6 +3244,460 @@
           "updatedBy"
         ],
         "title": "TeamDraft",
+        "type": "object"
+      },
+      "WorkerDraftDto": {
+        "additionalProperties": false,
+        "properties": {
+          "contentHash": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runtimeProfileId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "const": "draft",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedBy": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workerId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workerId",
+          "revision",
+          "status",
+          "name",
+          "role",
+          "contentHash",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "title": "WorkerDraftDto",
+        "type": "object"
+      },
+      "WorkerDto": {
+        "additionalProperties": false,
+        "properties": {
+          "activeVersionId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "definitionRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": "0.1",
+            "type": "string"
+          },
+          "stateRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "boolean"
+                },
+                "archivedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "forkedFromWorkerVersionId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "immutable": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "role": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "runtimeProfileId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "stateRevision": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "status": {
+                  "enum": [
+                    "draft",
+                    "published"
+                  ],
+                  "type": "string"
+                },
+                "version": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "workerId",
+                "version",
+                "status",
+                "immutable",
+                "archived",
+                "name",
+                "role"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "protocolVersion",
+          "status"
+        ],
+        "title": "WorkerDto",
+        "type": "object"
+      },
+      "WorkerPageDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "activeVersionId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "definitionRevision": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "protocolVersion": {
+                  "const": "0.1",
+                  "type": "string"
+                },
+                "stateRevision": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "status": {
+                  "enum": [
+                    "draft",
+                    "published"
+                  ],
+                  "type": "string"
+                },
+                "versions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "archived": {
+                        "type": "boolean"
+                      },
+                      "archivedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "forkedFromWorkerVersionId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "immutable": {
+                        "type": "boolean"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "publishedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "role": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "runtimeProfileId": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "stateRevision": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "draft",
+                          "published"
+                        ],
+                        "type": "string"
+                      },
+                      "version": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "workerId": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "workerId",
+                      "version",
+                      "status",
+                      "immutable",
+                      "archived",
+                      "name",
+                      "role"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "protocolVersion",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "page": {
+            "additionalProperties": false,
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "nextCursor",
+              "hasMore"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "WorkerPageDto",
+        "type": "object"
+      },
+      "WorkerVersionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "archivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "forkedFromWorkerVersionId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "immutable": {
+            "type": "boolean"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runtimeProfileId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "stateRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workerId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workerId",
+          "version",
+          "status",
+          "immutable",
+          "archived",
+          "name",
+          "role"
+        ],
+        "title": "WorkerVersionDto",
+        "type": "object"
+      },
+      "WorkerVersionReferencesDto": {
+        "additionalProperties": false,
+        "properties": {
+          "teamVersions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "draft",
+                    "published"
+                  ],
+                  "type": "string"
+                },
+                "teamId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "teamVersionId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "teamId",
+                "teamVersionId",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "workerVersionId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workerVersionId",
+          "teamVersions"
+        ],
+        "title": "WorkerVersionReferencesDto",
         "type": "object"
       },
       "Workflow": {

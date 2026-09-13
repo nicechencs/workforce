@@ -23,11 +23,16 @@ import type {
   CreateTeamVersionInput,
   CreateWorkflowInput,
   CreateWorkflowVersionInput,
+  CreateWorkerInput,
+  ChatClassifyInput,
+  ChatClassifyResultDto,
   CreateWorkspaceInput,
   EventListQuery,
   ExportBundleDto,
+  ForkWorkerVersionAcceptedDto,
   HealthDto,
   ListQuery,
+  ListWorkersInput,
   NodeDto,
   OperationDto,
   PageDto,
@@ -36,9 +41,11 @@ import type {
   PatchTeamVersionInput,
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
+  PatchWorkerInput,
   ProblemDetails,
   ProjectBudgetDto,
   ProjectDto,
+  ProjectProgressProjectionDto,
   ReadyDto,
   RunDto,
   RunInputBody,
@@ -52,6 +59,12 @@ import type {
   TeamDto,
   TeamVersionDto,
   VersionDto,
+  WorkerDraftDto,
+  WorkerDraftWrite,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
   WorkflowDto,
   WorkflowVersionDto,
   WorkspaceDto,
@@ -203,6 +216,102 @@ export class DesktopClient {
     );
   }
 
+  listWorkers(query?: ListWorkersInput): Promise<WorkerPageDto> {
+    return this.get(paths.workers(query));
+  }
+
+  getWorker(id: string): Promise<WorkerDto> {
+    return this.get(paths.worker(id));
+  }
+
+  getWorkerVersion(id: string, versionId: string): Promise<WorkerVersionDto> {
+    return this.get(paths.workerVersion(id, versionId));
+  }
+
+  getWorkerVersionReferences(id: string, versionId: string): Promise<WorkerVersionReferencesDto> {
+    return this.get(paths.workerVersionReferences(id, versionId));
+  }
+
+  getWorkerDraft(id: string, draftId: string): Promise<WorkerDraftDto> {
+    return this.get(paths.workerDraft(id, draftId));
+  }
+
+  createWorker(input: CreateWorkerInput, options: CommandOptions): Promise<WorkerDto> {
+    return this.send("POST", paths.workers(), options, withOperation(input, options));
+  }
+
+  patchWorker(id: string, input: PatchWorkerInput, options: CommandOptions): Promise<WorkerDto> {
+    return this.send("PATCH", paths.worker(id), options, withOperation(input, options));
+  }
+
+  createWorkerDraft(
+    id: string,
+    input: WorkerDraftWrite,
+    options: CommandOptions,
+  ): Promise<WorkerDraftDto> {
+    return this.send("POST", paths.workerDrafts(id), options, withOperation(input, options));
+  }
+
+  patchWorkerDraft(
+    id: string,
+    draftId: string,
+    input: WorkerDraftWrite,
+    options: CommandOptions,
+  ): Promise<WorkerDraftDto> {
+    return this.send(
+      "PATCH",
+      paths.workerDraft(id, draftId),
+      options,
+      withOperation(input, options),
+    );
+  }
+
+  publishWorkerDraft(
+    id: string,
+    draftId: string,
+    options: CommandOptions,
+  ): Promise<WorkerVersionDto> {
+    return this.send(
+      "POST",
+      paths.workerDraftPublish(id, draftId),
+      options,
+      withOperation({}, options),
+    );
+  }
+
+  archiveWorkerVersion(
+    id: string,
+    versionId: string,
+    options: CommandOptions,
+  ): Promise<WorkerVersionDto> {
+    return this.send(
+      "POST",
+      paths.workerVersionArchive(id, versionId),
+      options,
+      withOperation({}, options),
+    );
+  }
+
+  forkWorkerVersion(
+    id: string,
+    versionId: string,
+    options: CommandOptions,
+  ): Promise<ForkWorkerVersionAcceptedDto> {
+    return this.send(
+      "POST",
+      paths.workerVersionFork(id, versionId),
+      options,
+      withOperation({}, options),
+    );
+  }
+
+  classifyChatIntent(
+    input: ChatClassifyInput,
+    options: CommandOptions,
+  ): Promise<ChatClassifyResultDto> {
+    return this.send("POST", paths.chatIntentsClassify(), options, withOperation(input, options));
+  }
+
   listWorkflows(query?: ListQuery): Promise<PageDto<WorkflowDto>> {
     return this.get(paths.workflows(query));
   }
@@ -284,6 +393,10 @@ export class DesktopClient {
 
   getProjectBudget(id: string): Promise<ProjectBudgetDto> {
     return this.get(paths.projectBudget(id));
+  }
+
+  getProjectProgress(id: string): Promise<ProjectProgressProjectionDto> {
+    return this.get(paths.projectProgress(id));
   }
 
   createProjectWorkspace(

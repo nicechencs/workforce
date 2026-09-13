@@ -24,6 +24,7 @@ import {
   MIGRATION_012_SQL,
   MIGRATION_013_SQL,
   MIGRATION_014_SQL,
+  MIGRATION_015_SQL,
   SCHEMA_MIGRATIONS_DDL,
 } from "./schema.js";
 import { startRunIdempotent } from "./start-run.js";
@@ -70,6 +71,10 @@ describe("WorkforceSqlite", () => {
       expect(applied.has("012_execution_axes_switch")).toBe(true);
       expect(applied.has("013_execution_axes_contract")).toBe(true);
       expect(applied.has("014_projection_reconciliation")).toBe(true);
+      expect(applied.has("015_worker_library")).toBe(true);
+      expect(tableExists(db.connection, "catalog_workers")).toBe(true);
+      expect(tableExists(db.connection, "catalog_worker_versions")).toBe(true);
+      expect(tableExists(db.connection, "worker_drafts")).toBe(true);
       expect(tableExists(db.connection, "runs")).toBe(true);
       expect(tableExists(db.connection, "events")).toBe(true);
       expect(tableExists(db.connection, "outbox_messages")).toBe(true);
@@ -108,6 +113,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -164,6 +170,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -208,6 +215,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       const applied = appliedMigrations(db.connection);
       expect(applied.get("001_init")).toBe(checksumSql(MIGRATION_001_SQL));
@@ -262,6 +270,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
 
       for (const table of [
@@ -402,6 +411,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       expect(db.workflowAuthoringScopes.get(draft.workflowId)).toBeNull();
       expect(db.workflowDrafts.get(draft.id)).toEqual(draft);
@@ -452,6 +462,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       for (const table of [
         "catalog_workflows",
@@ -497,6 +508,7 @@ describe("WorkforceSqlite", () => {
         "012_execution_axes_switch",
         "013_execution_axes_contract",
         "014_projection_reconciliation",
+        "015_worker_library",
       ]);
       expect(appliedMigrations(db.connection).get("007_runtime_profile_transport_expand")).toBe(
         checksumSql(MIGRATION_007_SQL),
@@ -521,6 +533,9 @@ describe("WorkforceSqlite", () => {
       );
       expect(appliedMigrations(db.connection).get("014_projection_reconciliation")).toBe(
         checksumSql(MIGRATION_014_SQL),
+      );
+      expect(appliedMigrations(db.connection).get("015_worker_library")).toBe(
+        checksumSql(MIGRATION_015_SQL),
       );
 
       const transportColumn = (

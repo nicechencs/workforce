@@ -26,11 +26,12 @@ import {
   type RegistrableKind,
   type StoredArtifactVersion,
 } from "@workforce/artifacts";
-import { WorkforceSqlite } from "@workforce/database";
+import { WorkforceSqlite, PersistenceError } from "@workforce/database";
 import { SqliteSubscriptionReader, type EventReadQuery } from "@workforce/events/subscriptions";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import {
   DEFAULT_ORCHESTRATION_MODE,
+  parseWorkerDraftWrite,
   type AuthoringSessionPageDto,
   type AuthoringSessionViewDto,
   type AuthoringTurnDto,
@@ -39,6 +40,7 @@ import {
   type AuthoringTurnActionName,
   type AuthoringTurnActionAcceptedDto,
   type CommandReceipt,
+  type WorkerDraftWrite,
   type WorkforceEvent,
 } from "@workforce/protocol";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
@@ -83,10 +85,22 @@ import type {
   CreateTeamVersionInput,
   CreateWorkflowInput,
   CreateWorkflowVersionInput,
+  CreateWorkerInput,
+  ChatClassifyInput,
+  ChatClassifyResultDto,
+  ForkWorkerVersionAcceptedDto,
+  ListWorkersInput,
   PatchTeamInput,
   PatchTeamVersionInput,
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
+  PatchWorkerInput,
+  ProjectProgressProjectionDto,
+  WorkerDraftDto,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
 } from "../modules/dto.js";
 import { AppError } from "../modules/errors.js";
 import { assertStartOrchestrationAllowed } from "../modules/orchestration.js";
@@ -103,9 +117,12 @@ import {
   MOCK_RUNTIME_INSTALLATION_ID,
   ORGANIZATION_ID,
   PROTOCOL_VERSION,
+  SOFTWARE_TEAM_VERSION,
   TEAM_VERSION_ID,
+  isPresetPublishedTeamVersion,
   mockPlanGraph,
   pageOf,
+  seedPresetWorkerLibrary,
   unknownProjectBudget,
 } from "./catalog.js";
 import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
@@ -131,12 +148,18 @@ import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 import {
   assertBindableTeamVersionId,
+  classifyChatIntent,
   createAuthoringCatalog,
   listedDraftTeams,
   listedTeams,
+  listedWorkers,
   listedWorkflows,
   resolveTeam,
   resolveTeamVersion,
+  resolveWorker,
+  resolveWorkerDraft,
+  resolveWorkerVersion,
+  resolveWorkerVersionReferences,
   resolveWorkflow,
   resolveWorkflowVersion,
 } from "../modules/authoring-catalog.js";
@@ -255,13 +278,22 @@ export class ComposedAppServices implements AppServices {
       }),
       principalId,
       clientId,
+      teamVersions: {
+        findTeamVersion: (versionId) => {
+          if (isPresetPublishedTeamVersion(versionId)) {
+            return SOFTWARE_TEAM_VERSION;
+          }
+          return composed.services?.authoring.catalog.findTeamVersion(versionId);
+        },
+        findWorkerVersion: (id) => composed.services?.authoring.catalog.findWorkerVersion(id),
+      },
     });
     const authoring = createAuthoringCatalog({
       ids: { ulid: (prefix) => app.world.ids.ulid(prefix) },
       now: () => app.world.nowIso(),
       validateWorkflowGraph,
     }).service;
-    hydrateCatalog(sqlite, authoring);
+    await hydrateCatalog(sqlite, authoring);
     const services = new ComposedAppServices({
       stateDir: options.stateDir,
       app,
@@ -558,6 +590,152 @@ export class ComposedAppServices implements AppServices {
         revision: version.stateRevision,
       };
     });
+  }
+
+  listWorkers(query: ListWorkersInput): WorkerPageDto {
+    return listedWorkers(this.authoring, query);
+  }
+
+  getWorker(id: string): WorkerDto | null {
+    return resolveWorker(this.authoring, id);
+  }
+
+  getWorkerVersion(id: string, versionId: string): WorkerVersionDto | null {
+    return resolveWorkerVersion(this.authoring, id, versionId);
+  }
+
+  getWorkerDraft(id: string, draftId: string): WorkerDraftDto | null {
+    return resolveWorkerDraft(this.authoring, id, draftId);
+  }
+
+  listWorkerVersionReferences(id: string, versionId: string): WorkerVersionReferencesDto | null {
+    return resolveWorkerVersionReferences(this.authoring, id, versionId);
+  }
+
+  createWorker(ctx: CommandContext, input: CreateWorkerInput): Promise<CommandResult<WorkerDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const created = this.authoring.createWorker(input);
+      await this.persistNewWorker(created.worker, created.draft);
+      return {
+        status: 201,
+        body: resolveWorker(this.authoring, created.worker.id)!,
+        revision: created.worker.stateRevision ?? 1,
+      };
+    });
+  }
+
+  patchWorker(
+    ctx: CommandContext,
+    id: string,
+    input: PatchWorkerInput,
+  ): Promise<CommandResult<WorkerDto>> {
+    return this.exclusive(async () => {
+      const worker = this.authoring.patchWorker(id, input, ctx.ifMatch);
+      await this.persistWorkerIdentity(worker);
+      return {
+        status: 200,
+        body: resolveWorker(this.authoring, id)!,
+        revision: worker.stateRevision ?? 1,
+      };
+    });
+  }
+
+  createWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    input: WorkerDraftWrite,
+  ): Promise<CommandResult<WorkerDraftDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const draft = this.authoring.createWorkerDraft(id, input);
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        await this.sqlite.workers.saveDraft(tx, draft, 0);
+      });
+      return { status: 201, body: draft, revision: draft.revision };
+    });
+  }
+
+  patchWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+    input: WorkerDraftWrite,
+  ): Promise<CommandResult<WorkerDraftDto>> {
+    return this.exclusive(async () => {
+      const draft = this.authoring.patchWorkerDraft(id, draftId, input, ctx.ifMatch);
+      const expectedRevision = ctx.ifMatch;
+      if (expectedRevision === undefined) {
+        throw new AppError("validation_failed", "If-Match is required");
+      }
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        await this.sqlite.workers.saveDraft(tx, draft, expectedRevision);
+      });
+      return { status: 200, body: draft, revision: draft.revision };
+    });
+  }
+
+  publishWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+  ): Promise<CommandResult<WorkerVersionDto>> {
+    return this.exclusive(async () => {
+      const version = this.authoring.publishWorkerDraft(id, draftId, ctx.ifMatch);
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        await this.sqlite.workers.publishVersion(tx, version);
+        this.sqlite.connection.prepare("DELETE FROM worker_drafts WHERE worker_id = ?").run(id);
+      });
+      return { status: 200, body: version, revision: version.stateRevision ?? 1 };
+    });
+  }
+
+  archiveWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): Promise<CommandResult<WorkerVersionDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const version = this.authoring.archiveWorkerVersion(id, versionId);
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        await this.sqlite.workers.archiveVersion(tx, version.id);
+      });
+      return { status: 200, body: version, revision: version.stateRevision ?? 1 };
+    });
+  }
+
+  forkWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): Promise<CommandResult<ForkWorkerVersionAcceptedDto>> {
+    return this.exclusive(async () => {
+      void ctx;
+      const accepted = this.authoring.forkWorkerVersion(id, versionId);
+      const worker = this.authoring.getWorker(accepted.workerId);
+      const draft = this.authoring.getWorkerDraft(accepted.workerId, accepted.workerDraftId);
+      if (!worker || !draft) {
+        throw new AppError("conflict", "fork did not produce a worker draft");
+      }
+      await this.sqlite.uow.withTransaction(async (tx) => {
+        await this.sqlite.workers.forkToDraft(tx, versionId, { worker, draft });
+      });
+      return { status: 201, body: accepted };
+    });
+  }
+
+  classifyChatIntent(input: ChatClassifyInput): ChatClassifyResultDto {
+    return classifyChatIntent(input);
+  }
+
+  async queryProjectProgress(projectId: string): Promise<ProjectProgressProjectionDto> {
+    this.requireProject(projectId);
+    try {
+      return await this.app.queryProjectProgress(projectId);
+    } catch (error) {
+      throw wrapError(error);
+    }
   }
 
   listNodes(_query: ListQuery): PageDto<NodeDto> {
@@ -1300,7 +1478,7 @@ export class ComposedAppServices implements AppServices {
       }
       if (ctx.ifMatch === undefined)
         throw new AppError("validation_failed", "If-Match is required");
-      await confirmAuthoringChatProposal(
+      const confirmed = await confirmAuthoringChatProposal(
         {
           action: "confirm",
           operationId: ctx.operationId,
@@ -1311,6 +1489,9 @@ export class ComposedAppServices implements AppServices {
         },
         this.confirmChatDeps(),
       );
+      for (const ref of confirmed.workerDrafts) {
+        await this.syncWorkerIntoCatalog(ref.workerId, ref.workerDraftId);
+      }
       await this.persistDurably();
       const current = this.sqlite.authoringTurns.get(turnId);
       return {
@@ -1530,7 +1711,37 @@ export class ComposedAppServices implements AppServices {
               : {}),
           },
         }),
+        resolveWorkerDraft: ({
+          proposalId,
+          projectId,
+          sourceRunId,
+          operation,
+          patchRef,
+          workerId,
+          expectedRevision,
+        }) => {
+          const proposal = this.sqlite.authoringProposals.get(proposalId);
+          if (!proposal) {
+            throw new AppError("not_found", "Authoring proposal not found");
+          }
+          return {
+            write: workerDraftWriteFromProposal(proposal.redactedPreview),
+            binding: {
+              organizationId: ORGANIZATION_ID,
+              projectId,
+              sessionId: proposal.sessionId,
+              turnId: proposal.turnId,
+              sourceRunId,
+              patchRef,
+              ...(operation === "update" && workerId !== undefined ? { workerId } : {}),
+              ...(operation === "update" && expectedRevision !== undefined
+                ? { expectedRevision }
+                : {}),
+            },
+          };
+        },
       },
+      workerLibrary: this.sqlite.workers,
       principalId: this.app.ctx.principalId,
       clientId: this.app.ctx.clientId,
     };
@@ -2212,6 +2423,61 @@ export class ComposedAppServices implements AppServices {
         this.sqlite.catalogTeams.upsertVersion(tx, version);
       }
     });
+  }
+
+  private async persistNewWorker(worker: WorkerDto, draft: WorkerDraftDto): Promise<void> {
+    await this.sqlite.uow.withTransaction(async (tx) => {
+      await this.sqlite.workers.insertIdentity(tx, worker, draft);
+    });
+  }
+
+  private async persistWorkerIdentity(worker: WorkerDto): Promise<void> {
+    const now = this.app.world.nowIso();
+    await this.sqlite.uow.withTransaction(async () => {
+      this.sqlite.connection
+        .prepare(
+          `UPDATE catalog_workers
+              SET name = ?, description = ?, state_revision = ?, definition_revision = ?, updated_at = ?
+            WHERE id = ?`,
+        )
+        .run(
+          worker.name,
+          worker.description ?? "",
+          worker.stateRevision ?? 1,
+          worker.definitionRevision ?? 1,
+          now,
+          worker.id,
+        );
+    });
+  }
+
+  private async syncWorkerIntoCatalog(workerId: string, draftId?: string): Promise<void> {
+    const worker = await this.sqlite.workers.getWorker(workerId);
+    if (!worker) {
+      return;
+    }
+    const identity: WorkerDto = {
+      id: worker.id,
+      name: worker.name,
+      protocolVersion: worker.protocolVersion,
+      status: worker.status,
+      ...(worker.description !== undefined ? { description: worker.description } : {}),
+      ...(worker.activeVersionId !== undefined ? { activeVersionId: worker.activeVersionId } : {}),
+      ...(worker.stateRevision !== undefined ? { stateRevision: worker.stateRevision } : {}),
+      ...(worker.definitionRevision !== undefined
+        ? { definitionRevision: worker.definitionRevision }
+        : {}),
+    };
+    this.authoring.catalog.workers.set(worker.id, identity);
+    for (const version of worker.versions ?? []) {
+      this.authoring.catalog.workerVersions.set(version.id, version);
+    }
+    if (draftId !== undefined) {
+      const draft = await this.sqlite.workers.getDraft(draftId);
+      if (draft) {
+        this.authoring.catalog.workerDrafts.set(draft.id, draft);
+      }
+    }
   }
 
   /** Catch-up query against the durable Event Store. Does not replay side effects. */
@@ -2913,6 +3179,15 @@ function wrapError(error: unknown): unknown {
   if (error instanceof AppError) {
     return error;
   }
+  if (error instanceof PersistenceError) {
+    const code =
+      error.code === "constraint"
+        ? "conflict"
+        : error.code === "idempotency_key_reused"
+          ? "conflict"
+          : error.code;
+    return new AppError(code, error.message);
+  }
   if (error instanceof UseCaseError) {
     const currentRevision =
       typeof error.details?.actual === "number" ? error.details.actual : undefined;
@@ -2944,7 +3219,7 @@ function wrapError(error: unknown): unknown {
   return error;
 }
 
-function hydrateCatalog(sqlite: WorkforceSqlite, authoring: CatalogService): void {
+async function hydrateCatalog(sqlite: WorkforceSqlite, authoring: CatalogService): Promise<void> {
   for (const workflow of sqlite.catalogWorkflows.listAll()) {
     authoring.catalog.workflows.set(workflow.id, workflow);
   }
@@ -2957,4 +3232,63 @@ function hydrateCatalog(sqlite: WorkforceSqlite, authoring: CatalogService): voi
   for (const version of sqlite.catalogTeams.listVersions()) {
     authoring.catalog.teamVersions.set(version.id, version);
   }
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await sqlite.workers.list({
+      includeArchived: true,
+      limit: 100,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+    for (const worker of page.items) {
+      const identity: WorkerDto = {
+        id: worker.id,
+        name: worker.name,
+        protocolVersion: worker.protocolVersion,
+        status: worker.status,
+        ...(worker.description !== undefined ? { description: worker.description } : {}),
+        ...(worker.activeVersionId !== undefined
+          ? { activeVersionId: worker.activeVersionId }
+          : {}),
+        ...(worker.stateRevision !== undefined ? { stateRevision: worker.stateRevision } : {}),
+        ...(worker.definitionRevision !== undefined
+          ? { definitionRevision: worker.definitionRevision }
+          : {}),
+      };
+      authoring.catalog.workers.set(worker.id, identity);
+      for (const version of worker.versions ?? []) {
+        authoring.catalog.workerVersions.set(version.id, version);
+      }
+    }
+    if (!page.page.hasMore || page.page.nextCursor === null) {
+      break;
+    }
+    cursor = page.page.nextCursor;
+  }
+  const draftRows = sqlite.connection
+    .prepare("SELECT id FROM worker_drafts ORDER BY worker_id ASC, revision ASC")
+    .all() as Record<string, unknown>[];
+  for (const row of draftRows) {
+    const draft = await sqlite.workers.getDraft(String(row.id));
+    if (draft) {
+      authoring.catalog.workerDrafts.set(draft.id, draft);
+    }
+  }
+  seedPresetWorkerLibrary(authoring.catalog);
+}
+
+function workerDraftWriteFromProposal(
+  redactedPreview: string | null | undefined,
+): WorkerDraftWrite {
+  const preview = redactedPreview?.trim() ?? "";
+  if (preview.startsWith("{")) {
+    try {
+      return parseWorkerDraftWrite(JSON.parse(preview));
+    } catch {
+      // Fall through to the unpublished stub write.
+    }
+  }
+  return parseWorkerDraftWrite({
+    name: preview.length > 0 && preview.length <= 120 ? preview : "Untitled worker",
+    role: "worker",
+  });
 }

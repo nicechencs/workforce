@@ -133,7 +133,8 @@
             "enum": [
               "team",
               "task",
-              "workflow"
+              "workflow",
+              "worker"
             ],
             "type": "string"
           }

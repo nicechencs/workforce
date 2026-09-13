@@ -1,10 +1,18 @@
 import {
   entryNodeIds,
   mockPlanFixture,
+  type MemoryCatalog,
   type WorkflowGraph,
   type WorkflowNodeDefinition,
 } from "@workforce/application";
-import type { TeamDto, TeamVersionDto, WorkflowDto, WorkflowVersionDto } from "@workforce/protocol";
+import type {
+  TeamDto,
+  TeamVersionDto,
+  WorkerDto,
+  WorkerVersionDto,
+  WorkflowDto,
+  WorkflowVersionDto,
+} from "@workforce/protocol";
 
 import type {
   NodeDto,
@@ -19,6 +27,13 @@ export const ORGANIZATION_ID = "org_local";
 
 export const TEAM_ID = "tm_software_development";
 export const TEAM_VERSION_ID = "tmv_software_development_0_1_0";
+export const PLANNER_WORKER_ID = "wrk_software_planner";
+export const PLANNER_WORKER_VERSION_ID = "wrv_software_planner_0_1_0";
+export const DEVELOPER_WORKER_ID = "wrk_software_developer";
+export const DEVELOPER_WORKER_VERSION_ID = "wrv_software_developer_0_1_0";
+export const REVIEWER_WORKER_ID = "wrk_software_reviewer";
+export const REVIEWER_WORKER_VERSION_ID = "wrv_software_reviewer_0_1_0";
+const PRESET_WORKER_PUBLISHED_AT = "2026-01-01T00:00:00.000Z";
 export const LOCAL_NODE_ID = "ndl_local";
 export const MOCK_RUNTIME_ID = "mock";
 export const MOCK_RUNTIME_INSTALLATION_ID = "rtm_mock_local";
@@ -120,6 +135,140 @@ export function findPublishedWorkflowVersion(
   );
 }
 
+export const PRESET_PLANNER_WORKER_VERSION: WorkerVersionDto = {
+  id: PLANNER_WORKER_VERSION_ID,
+  workerId: PLANNER_WORKER_ID,
+  version: "0.1.0",
+  status: "published",
+  immutable: true,
+  archived: false,
+  name: "Planner",
+  role: "planner",
+  runtimeProfileId: "mock",
+  stateRevision: 1,
+  publishedAt: PRESET_WORKER_PUBLISHED_AT,
+};
+
+export const PRESET_DEVELOPER_WORKER_VERSION: WorkerVersionDto = {
+  id: DEVELOPER_WORKER_VERSION_ID,
+  workerId: DEVELOPER_WORKER_ID,
+  version: "0.1.0",
+  status: "published",
+  immutable: true,
+  archived: false,
+  name: "Developer",
+  role: "developer",
+  runtimeProfileId: "mock",
+  stateRevision: 1,
+  publishedAt: PRESET_WORKER_PUBLISHED_AT,
+};
+
+export const PRESET_REVIEWER_WORKER_VERSION: WorkerVersionDto = {
+  id: REVIEWER_WORKER_VERSION_ID,
+  workerId: REVIEWER_WORKER_ID,
+  version: "0.1.0",
+  status: "published",
+  immutable: true,
+  archived: false,
+  name: "Reviewer",
+  role: "reviewer",
+  runtimeProfileId: "mock",
+  stateRevision: 1,
+  publishedAt: PRESET_WORKER_PUBLISHED_AT,
+};
+
+export const PRESET_WORKER_VERSIONS: readonly WorkerVersionDto[] = [
+  PRESET_PLANNER_WORKER_VERSION,
+  PRESET_DEVELOPER_WORKER_VERSION,
+  PRESET_REVIEWER_WORKER_VERSION,
+];
+
+export const PRESET_PLANNER_WORKER: WorkerDto = {
+  id: PLANNER_WORKER_ID,
+  name: "Planner",
+  protocolVersion: PROTOCOL_VERSION,
+  status: "published",
+  activeVersionId: PLANNER_WORKER_VERSION_ID,
+  versions: [PRESET_PLANNER_WORKER_VERSION],
+  stateRevision: 1,
+  definitionRevision: 1,
+};
+
+export const PRESET_DEVELOPER_WORKER: WorkerDto = {
+  id: DEVELOPER_WORKER_ID,
+  name: "Developer",
+  protocolVersion: PROTOCOL_VERSION,
+  status: "published",
+  activeVersionId: DEVELOPER_WORKER_VERSION_ID,
+  versions: [PRESET_DEVELOPER_WORKER_VERSION],
+  stateRevision: 1,
+  definitionRevision: 1,
+};
+
+export const PRESET_REVIEWER_WORKER: WorkerDto = {
+  id: REVIEWER_WORKER_ID,
+  name: "Reviewer",
+  protocolVersion: PROTOCOL_VERSION,
+  status: "published",
+  activeVersionId: REVIEWER_WORKER_VERSION_ID,
+  versions: [PRESET_REVIEWER_WORKER_VERSION],
+  stateRevision: 1,
+  definitionRevision: 1,
+};
+
+export const PRESET_WORKERS: readonly WorkerDto[] = [
+  PRESET_PLANNER_WORKER,
+  PRESET_DEVELOPER_WORKER,
+  PRESET_REVIEWER_WORKER,
+];
+
+export function findPublishedWorker(id: string): WorkerDto | null {
+  return PRESET_WORKERS.find((item) => item.id === id) ?? null;
+}
+
+export function findPublishedWorkerVersion(
+  workerId: string,
+  versionId: string,
+): WorkerVersionDto | null {
+  const worker = findPublishedWorker(workerId);
+  if (!worker) {
+    return null;
+  }
+  return (
+    worker.versions?.find((item) => item.id === versionId || item.version === versionId) ?? null
+  );
+}
+
+export function isPresetPublishedWorkerVersion(versionId: string): boolean {
+  return PRESET_WORKER_VERSIONS.some((item) => item.id === versionId || item.version === versionId);
+}
+
+/** Seed published Software Development Team WorkerVersions into the in-memory catalog. */
+export function seedPresetWorkerLibrary(catalog: MemoryCatalog): void {
+  for (const worker of PRESET_WORKERS) {
+    if (catalog.workers.has(worker.id)) {
+      continue;
+    }
+    const identity: WorkerDto = {
+      id: worker.id,
+      name: worker.name,
+      protocolVersion: worker.protocolVersion,
+      status: worker.status,
+      stateRevision: worker.stateRevision,
+      definitionRevision: worker.definitionRevision,
+    };
+    if (worker.activeVersionId !== undefined) {
+      identity.activeVersionId = worker.activeVersionId;
+    }
+    catalog.workers.set(worker.id, identity);
+  }
+  for (const version of PRESET_WORKER_VERSIONS) {
+    if (!catalog.workerVersions.has(version.id)) {
+      catalog.workerVersions.set(version.id, version);
+    }
+  }
+}
+
 export const SOFTWARE_TEAM_VERSION: TeamVersionDto = {
   id: TEAM_VERSION_ID,
   teamId: TEAM_ID,
@@ -127,9 +276,27 @@ export const SOFTWARE_TEAM_VERSION: TeamVersionDto = {
   status: "published",
   immutable: true,
   members: [
-    { id: "planner", role: "planner", runtimeProfileId: "mock", quantity: 1 },
-    { id: "developer", role: "developer", runtimeProfileId: "mock", quantity: 2 },
-    { id: "reviewer", role: "reviewer", runtimeProfileId: "mock", quantity: 1 },
+    {
+      id: "planner",
+      role: "planner",
+      workerVersionId: PLANNER_WORKER_VERSION_ID,
+      runtimeProfileId: "mock",
+      quantity: 1,
+    },
+    {
+      id: "developer",
+      role: "developer",
+      workerVersionId: DEVELOPER_WORKER_VERSION_ID,
+      runtimeProfileId: "mock",
+      quantity: 2,
+    },
+    {
+      id: "reviewer",
+      role: "reviewer",
+      workerVersionId: REVIEWER_WORKER_VERSION_ID,
+      runtimeProfileId: "mock",
+      quantity: 1,
+    },
   ],
 };
 

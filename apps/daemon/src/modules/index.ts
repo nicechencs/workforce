@@ -19,18 +19,25 @@ import type {
   ArtifactVersionDto,
   CancelInput,
   CapabilitiesDto,
+  ChatClassifyInput,
+  ChatClassifyResultDto,
   CommandAcceptedDto,
   CommandContext,
   ConfirmPlanInput,
   CreateProjectInput,
   CreateWorkspaceInput,
+  CreateWorkerInput,
   EventListQuery,
+  ForkWorkerVersionAcceptedDto,
   ListQuery,
+  ListWorkersInput,
   NodeDto,
   PageDto,
   PatchProjectInput,
+  PatchWorkerInput,
   ProjectBudgetDto,
   ProjectDto,
+  ProjectProgressProjectionDto,
   RunDto,
   RunInputBody,
   RuntimeCapabilitiesDto,
@@ -39,6 +46,12 @@ import type {
   TaskDto,
   TeamDto,
   TeamVersionDto,
+  WorkerDraftDto,
+  WorkerDraftWrite,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
   WorkflowDto,
   WorkflowVersionDto,
   WorkspaceDto,
@@ -121,6 +134,50 @@ export interface AppServices {
     id: string,
     versionId: string,
   ): MaybeAsync<CommandResult<WorkflowVersionDto>>;
+
+  listWorkers(query: ListWorkersInput): MaybeAsync<WorkerPageDto>;
+  getWorker(id: string): MaybeAsync<WorkerDto | null>;
+  getWorkerVersion(id: string, versionId: string): MaybeAsync<WorkerVersionDto | null>;
+  getWorkerDraft(id: string, draftId: string): MaybeAsync<WorkerDraftDto | null>;
+  listWorkerVersionReferences(
+    id: string,
+    versionId: string,
+  ): MaybeAsync<WorkerVersionReferencesDto | null>;
+  createWorker(ctx: CommandContext, input: CreateWorkerInput): MaybeAsync<CommandResult<WorkerDto>>;
+  patchWorker(
+    ctx: CommandContext,
+    id: string,
+    input: PatchWorkerInput,
+  ): MaybeAsync<CommandResult<WorkerDto>>;
+  createWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    input: WorkerDraftWrite,
+  ): MaybeAsync<CommandResult<WorkerDraftDto>>;
+  patchWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+    input: WorkerDraftWrite,
+  ): MaybeAsync<CommandResult<WorkerDraftDto>>;
+  publishWorkerDraft(
+    ctx: CommandContext,
+    id: string,
+    draftId: string,
+  ): MaybeAsync<CommandResult<WorkerVersionDto>>;
+  archiveWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): MaybeAsync<CommandResult<WorkerVersionDto>>;
+  forkWorkerVersion(
+    ctx: CommandContext,
+    id: string,
+    versionId: string,
+  ): MaybeAsync<CommandResult<ForkWorkerVersionAcceptedDto>>;
+
+  classifyChatIntent(input: ChatClassifyInput): MaybeAsync<ChatClassifyResultDto>;
+  queryProjectProgress(projectId: string): MaybeAsync<ProjectProgressProjectionDto>;
 
   listNodes(query: ListQuery): PageDto<NodeDto>;
   getNode(id: string): NodeDto | null;

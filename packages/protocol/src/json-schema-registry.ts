@@ -24,11 +24,12 @@ import {
   sendAuthoringMessageAcceptedSchema,
   sendAuthoringMessageInputSchema,
 } from "./authoring-chat.js";
-import { projectDtoSchema, runDtoSchema } from "./dto.js";
+import { chatClassifyResultDtoSchema, projectProgressProjectionDtoSchema } from "./chat-intent.js";
 import {
   startDirectTaskRunAcceptedSchema,
   startDirectTaskRunInputSchema,
 } from "./direct-execution.js";
+import { projectDtoSchema, runDtoSchema } from "./dto.js";
 import { workforceEventSchema } from "./event.js";
 import { orchestrationModeSchema } from "./execution.js";
 import { projectExecutionSnapshotSchema } from "./execution-snapshot.js";
@@ -36,6 +37,14 @@ import { expectedOutputSchema } from "./expected-output.js";
 import { moneySchema } from "./money.js";
 import { taskDtoSchema } from "./task.js";
 import { teamSchema } from "./team.js";
+import {
+  forkWorkerVersionAcceptedDtoSchema,
+  workerDraftDtoSchema,
+  workerDtoSchema,
+  workerPageDtoSchema,
+  workerVersionDtoSchema,
+  workerVersionReferencesDtoSchema,
+} from "./worker.js";
 import { workflowGraphDefinitionSchema, workflowSchema } from "./workflow.js";
 
 /**
@@ -64,6 +73,46 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     fileName: "authoring-command-accepted.schema.json",
     title: "AuthoringCommandAccepted",
     schema: authoringCommandAcceptedSchema,
+  },
+  {
+    fileName: "chat-classify-result.schema.json",
+    title: "ChatClassifyResultDto",
+    schema: chatClassifyResultDtoSchema,
+  },
+  {
+    fileName: "fork-worker-version-accepted.schema.json",
+    title: "ForkWorkerVersionAcceptedDto",
+    schema: forkWorkerVersionAcceptedDtoSchema,
+  },
+  {
+    fileName: "project-progress-projection.schema.json",
+    title: "ProjectProgressProjectionDto",
+    schema: projectProgressProjectionDtoSchema,
+  },
+  {
+    fileName: "worker.schema.json",
+    title: "WorkerDto",
+    schema: workerDtoSchema,
+  },
+  {
+    fileName: "worker-draft.schema.json",
+    title: "WorkerDraftDto",
+    schema: workerDraftDtoSchema,
+  },
+  {
+    fileName: "worker-page.schema.json",
+    title: "WorkerPageDto",
+    schema: workerPageDtoSchema,
+  },
+  {
+    fileName: "worker-version.schema.json",
+    title: "WorkerVersionDto",
+    schema: workerVersionDtoSchema,
+  },
+  {
+    fileName: "worker-version-references.schema.json",
+    title: "WorkerVersionReferencesDto",
+    schema: workerVersionReferencesDtoSchema,
   },
   {
     fileName: "authoring-chat-proposal.schema.json",
