@@ -27,6 +27,7 @@ import type { SessionRegistry } from "./auth.js";
 import {
   asObject,
   optionalInt,
+  optionalObjectArray,
   optionalString,
   parseLimit,
   queryString,
@@ -609,6 +610,47 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       },
     );
   }
+
+  app.post(
+    "/api/v1/authoring-sessions/:sessionId/change-sets/:changeSetId/_cmd/continue",
+    async (request, reply) => {
+      await cmd(
+        request,
+        reply,
+        {
+          canonicalOperation:
+            "POST /authoring-sessions/{sessionId}/change-sets/{changeSetId}:continue",
+          resource: (req) => `${param(req, "sessionId")}:${param(req, "changeSetId")}`,
+          requireIfMatch: true,
+        },
+        (ctx, body) => {
+          rejectUnknownFields(body, [
+            "operationId",
+            "workflowDrafts",
+            "teamDrafts",
+            "taskPatches",
+          ]);
+          const input: {
+            workflowDrafts?: Record<string, unknown>[];
+            teamDrafts?: Record<string, unknown>[];
+            taskPatches?: Record<string, unknown>[];
+          } = {};
+          const workflowDrafts = optionalObjectArray(body, "workflowDrafts");
+          const teamDrafts = optionalObjectArray(body, "teamDrafts");
+          const taskPatches = optionalObjectArray(body, "taskPatches");
+          if (workflowDrafts !== undefined) input.workflowDrafts = workflowDrafts;
+          if (teamDrafts !== undefined) input.teamDrafts = teamDrafts;
+          if (taskPatches !== undefined) input.taskPatches = taskPatches;
+          return deps.services.continueAuthoringChangeSet(
+            ctx,
+            param(request, "sessionId"),
+            param(request, "changeSetId"),
+            input,
+          );
+        },
+      );
+    },
+  );
 
   app.get("/api/v1/approvals", async (request) => deps.services.listApprovals(listQuery(request)));
   app.get("/api/v1/approvals/:id", async (request, reply) => {

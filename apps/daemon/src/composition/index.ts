@@ -23,6 +23,8 @@ export {
 export {
   CompositionWorktreeHost,
   bindWorktreesToHost,
+  workspaceGrantsFile,
+  isDesktopWorkspaceGrant,
   type ProvisionedWorktree,
 } from "./worktree-host.js";
 export { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";

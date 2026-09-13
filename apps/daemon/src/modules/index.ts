@@ -1,4 +1,5 @@
 import type {
+  AuthoringChangeSetDto,
   AuthoringSessionPageDto,
   AuthoringSessionViewDto,
   AuthoringTurnDto,
@@ -24,6 +25,7 @@ import type {
   CommandAcceptedDto,
   CommandContext,
   ConfirmPlanInput,
+  ContinueAuthoringChangeSetInput,
   CreateProjectInput,
   CreateWorkspaceInput,
   CreateWorkerInput,
@@ -283,6 +285,12 @@ export interface AppServices {
     turnId: string,
     action: Exclude<AuthoringTurnActionName, "confirm">,
   ): MaybeAsync<CommandResult<AuthoringTurnActionAcceptedDto>>;
+  continueAuthoringChangeSet(
+    ctx: CommandContext,
+    sessionId: string,
+    changeSetId: string,
+    input: ContinueAuthoringChangeSetInput,
+  ): MaybeAsync<CommandResult<AuthoringChangeSetDto>>;
 
   listApprovals(query: ListQuery): PageDto<ApprovalDto>;
   getApproval(id: string): ApprovalDto | null;

@@ -68,6 +68,7 @@ export type {
   WorkerPageDto,
   WorkerVersionDto,
   WorkerVersionReferencesDto,
+  AuthoringChangeSetDto,
 } from "@workforce/protocol";
 
 export interface PageDto<T> {
@@ -160,6 +161,12 @@ export interface PatchProjectInput {
 
 export interface ConfirmPlanInput {
   planArtifactVersionId: string;
+}
+
+export interface ContinueAuthoringChangeSetInput {
+  workflowDrafts?: readonly Record<string, unknown>[];
+  teamDrafts?: readonly Record<string, unknown>[];
+  taskPatches?: readonly Record<string, unknown>[];
 }
 
 export interface StartProjectInput {

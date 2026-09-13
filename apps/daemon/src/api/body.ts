@@ -126,6 +126,25 @@ export function queryString(raw: unknown): string | undefined {
   return typeof raw === "string" ? raw : String(raw);
 }
 
+export function optionalObjectArray(
+  body: Record<string, unknown>,
+  key: string,
+): Record<string, unknown>[] | undefined {
+  if (!(key in body)) {
+    return undefined;
+  }
+  const value = body[key];
+  if (!Array.isArray(value)) {
+    throw new AppError("validation_failed", `${key} must be an array`);
+  }
+  return value.map((item, index) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new AppError("validation_failed", `${key}[${index}] must be an object`);
+    }
+    return item as Record<string, unknown>;
+  });
+}
+
 export function queryStringList(raw: unknown): string[] | undefined {
   if (raw === undefined) {
     return undefined;

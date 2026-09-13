@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { protocolVersion } from "@workforce/protocol";
 
 import {
@@ -12,6 +14,7 @@ import {
 import { createDesktopRuntimeSession } from "./desktop-connection.js";
 import {
   unknownWorkspaceGrantResponse,
+  WORKSPACE_GRANTS_FILENAME,
   WorkspaceGrantStore,
 } from "./ipc/workspace-picker.js";
 import { createSupervisorDeps, resolveDesktopStateDir } from "./supervisor-runtime.js";
@@ -78,7 +81,9 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
       env,
     });
   const fetchImpl = options.fetchImpl ?? fetch;
-  const grants = new WorkspaceGrantStore();
+  const grants = new WorkspaceGrantStore({
+    persistFile: path.join(stateDir, WORKSPACE_GRANTS_FILENAME),
+  });
   let windowPort: DesktopWindowPort | null = null;
 
   const runtime = createDesktopRuntimeSession({

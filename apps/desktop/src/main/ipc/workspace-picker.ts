@@ -1,6 +1,9 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import type { ApiRequest, ApiResponse, WorkspaceGrant, WorkspacePickResult } from "@workforce/ui";
+
+export const WORKSPACE_GRANTS_FILENAME = "workspace-grants.json";
 
 export interface DirectoryDialog {
   pick(): Promise<string | null>;
@@ -8,6 +11,12 @@ export interface DirectoryDialog {
 
 export class WorkspaceGrantStore {
   readonly #grants = new Map<string, string>();
+  readonly #persistFile: string | undefined;
+
+  constructor(options: { persistFile?: string } = {}) {
+    this.#persistFile = options.persistFile;
+    this.#load();
+  }
 
   issue(absolutePath: string): WorkspaceGrant {
     const resolved = path.resolve(absolutePath);
@@ -22,6 +31,7 @@ export class WorkspaceGrantStore {
     }
     const authorizationId = `wsauth_${crypto.randomUUID()}`;
     this.#grants.set(authorizationId, resolved);
+    this.#persist();
     return { authorizationId, displayLabel };
   }
 
@@ -31,6 +41,40 @@ export class WorkspaceGrantStore {
 
   has(authorizationId: string): boolean {
     return this.#grants.has(authorizationId);
+  }
+
+  #load(): void {
+    const file = this.#persistFile;
+    if (!file) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { grants?: unknown };
+      const grants = parsed.grants;
+      if (grants === null || typeof grants !== "object" || Array.isArray(grants)) {
+        return;
+      }
+      for (const [id, hostPath] of Object.entries(grants as Record<string, unknown>)) {
+        if (typeof hostPath === "string" && hostPath.length > 0) {
+          this.#grants.set(id, path.resolve(hostPath));
+        }
+      }
+    } catch {
+      // Missing or unreadable grant file is a cold store, not a picker failure.
+    }
+  }
+
+  #persist(): void {
+    const file = this.#persistFile;
+    if (!file) {
+      return;
+    }
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const grants: Record<string, string> = {};
+    for (const [id, hostPath] of this.#grants) {
+      grants[id] = hostPath;
+    }
+    fs.writeFileSync(file, `${JSON.stringify({ grants }, null, 2)}\n`);
   }
 }
 

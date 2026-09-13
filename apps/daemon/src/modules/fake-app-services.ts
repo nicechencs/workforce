@@ -233,6 +233,10 @@ export class FakeAppServices implements AppServices {
     throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
   }
 
+  continueAuthoringChangeSet(): never {
+    throw new UseCaseError("unsupported_capability", "authoring chat requires the composed daemon");
+  }
+
   getOperation(operationId: string, principalId: string): CommandReceipt | null {
     const receipt = this.operations.get(operationId);
     if (!receipt || receipt.scope.principalId !== principalId) {
