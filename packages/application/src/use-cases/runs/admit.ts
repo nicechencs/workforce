@@ -11,6 +11,7 @@ import { expectRevision, touch } from "../projects/context.js";
 import { notFound, validationFailed } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
+import { captureProjectPolicySnapshot } from "../projects/policy-snapshot.js";
 import { requireProject } from "../projects/projects.js";
 import type { RunRecord, TaskRecord } from "../projects/store.js";
 import { dispatchTask, queueTask, requireTask } from "../tasks/tasks.js";
@@ -26,7 +27,7 @@ export interface AdmitRunInput {
   orchestrationMode?: OrchestrationMode;
   placementIntent?: PlacementIntent;
   snapshotRef?: string;
-  /** HTTP start-task-run requires the Task to match the requested mode. */
+  /** Only `workflow_bound` may require a WorkflowInstance. Direct never sets this. */
   requireWorkflowBinding?: boolean;
 }
 
@@ -43,7 +44,9 @@ export async function admitRun(
   const task = requireTask(ctx, input.taskId);
   const project = requireProject(ctx, task.projectId);
   const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
-  assertModeAgainstTask(task, orchestrationMode, input.requireWorkflowBinding === true);
+  const requireWorkflowBinding =
+    orchestrationMode === "direct" ? false : input.requireWorkflowBinding === true;
+  assertModeAgainstTask(task, orchestrationMode, requireWorkflowBinding);
 
   const intent = input.placementIntent ?? project.placementIntent ?? DEFAULT_PLACEMENT_INTENT;
   const placement = ctx.placement.resolve({
@@ -117,14 +120,8 @@ export async function admitRun(
           if (liveProject.status === "paused" || liveProject.cancelRequestedAt) {
             throw validationFailed("project is not accepting new work");
           }
-          assertModeAgainstTask(live, orchestrationMode, input.requireWorkflowBinding === true);
-          assertGovernance(
-            ctx,
-            live,
-            liveProject,
-            orchestrationMode,
-            input.requireWorkflowBinding === true,
-          );
+          assertModeAgainstTask(live, orchestrationMode, requireWorkflowBinding);
+          assertGovernance(ctx, live, liveProject, orchestrationMode, requireWorkflowBinding);
 
           const existingActive = ctx.world.activeRunForTask(live.id);
           if (existingActive) {
@@ -142,7 +139,13 @@ export async function admitRun(
           const workflowBound =
             orchestrationMode === "workflow_bound" && live.workflowInstanceId !== undefined;
           let executionSnapshot;
+          let directPolicy: ReturnType<typeof captureProjectPolicySnapshot> | undefined;
           if (orchestrationMode === "direct") {
+            directPolicy = captureProjectPolicySnapshot({
+              project: liveProject,
+              principalId: ctx.principalId,
+              capturedAt: now,
+            });
             executionSnapshot = assembleRunExecutionSnapshot({
               orchestrationMode: "direct",
               transport: placement.candidate.transport,
@@ -206,6 +209,12 @@ export async function admitRun(
               transport: placement.candidate.transport,
               executionLeaseId: leased.lease.id,
               fencingToken: leased.lease.fencingToken,
+              ...(directPolicy
+                ? {
+                    policySnapshot: directPolicy,
+                    budgetId: liveProject.budgetId,
+                  }
+                : {}),
             },
           });
           return { run };
@@ -245,6 +254,11 @@ function assertGovernance(
     !project.workspaceInstanceId
   ) {
     throw validationFailed("run start requires a workspace");
+  }
+  if (mode === "direct") {
+    if (!project.budgetId || !ctx.world.budgets.get(project.budgetId)) {
+      throw validationFailed("run start requires a budget");
+    }
   }
   const blocking = [...ctx.world.approvals.values()].find(
     (approval) =>

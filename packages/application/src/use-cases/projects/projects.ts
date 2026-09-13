@@ -6,7 +6,6 @@ import {
   requirePublishedExecutionGraph,
   resolvePublishedExecutionGraph,
 } from "./admission.js";
-import { findAdHocTask, insertAdHocTask } from "./direct-task.js";
 import type { AppContext } from "./context.js";
 import { expectRevision, touch } from "./context.js";
 import type { WorkflowGraph } from "./engine-port.js";
@@ -58,7 +57,7 @@ export interface StartExecutionInput {
   idempotencyKey: string;
   projectId: string;
   expectedStateRevision?: number;
-  /** Existing `:start` field. Omit → workflow_bound. Not a StartRunRequest field. */
+  /** Existing `:start` field. Omit → workflow_bound. `direct` is rejected; use `startDirectWork`. */
   orchestrationMode?: OrchestrationMode;
 }
 
@@ -346,6 +345,11 @@ export async function startExecution(
   input: StartExecutionInput,
 ): Promise<{ reused: boolean; project: ProjectRecord }> {
   const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
+  if (orchestrationMode === "direct") {
+    throw validationFailed(
+      "direct execution is not started via project.start; POST /tasks/{id}/runs with orchestrationMode=direct",
+    );
+  }
   return ctx.world.uow.withTransaction(async (tx) => {
     return withIdempotency(
       ctx.world,
@@ -370,13 +374,6 @@ export async function startExecution(
           }
           const now = ctx.world.nowIso();
           project.orchestrationMode = orchestrationMode;
-          if (orchestrationMode === "direct") {
-            if (!findAdHocTask(ctx, project.id)) {
-              insertAdHocTask(ctx, project, project.name, input.operationId);
-            }
-            touch(project, now);
-            return { project };
-          }
 
           const nextStatus = ctx.engine.nextProjectStatus(project.status, "start");
           if (!project.executionSnapshotId) {

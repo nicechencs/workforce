@@ -36,7 +36,8 @@ export async function startRun(
 
 /**
  * HTTP `POST /tasks/{id}/runs` entry. Omit `orchestrationMode` → workflow_bound.
- * Direct and workflow-bound share this command; the body selects the mode.
+ * Direct never sets `requireWorkflowBinding`; that flag only constrains
+ * `workflow_bound`.
  */
 export async function startTaskRun(
   ctx: AppContext,
@@ -48,10 +49,15 @@ export async function startTaskRun(
     orchestrationMode?: OrchestrationMode;
     placementIntent?: PlacementIntent;
     snapshotRef?: string;
+    /**
+     * Only `workflow_bound` may set this. Direct admission ignores it and never
+     * requires a WorkflowInstance.
+     */
     requireWorkflowBinding?: boolean;
   },
 ): Promise<{ reused: boolean; run: RunRecord }> {
   const task = requireTask(ctx, input.taskId);
+  const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
   const idempotencyKey =
     input.idempotencyKey ??
     startIdempotencyKey({
@@ -64,8 +70,10 @@ export async function startTaskRun(
     operationId: input.operationId,
     idempotencyKey,
     taskId: input.taskId,
-    orchestrationMode: input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE,
-    ...(input.requireWorkflowBinding ? { requireWorkflowBinding: true } : {}),
+    orchestrationMode,
+    ...(orchestrationMode !== "direct" && input.requireWorkflowBinding
+      ? { requireWorkflowBinding: true }
+      : {}),
     ...(input.expectedStateRevision !== undefined
       ? { expectedStateRevision: input.expectedStateRevision }
       : {}),
@@ -85,12 +93,6 @@ export async function startTaskRun(
 
 export function recordRunSucceeded(ctx: AppContext, runId: string): RunRecord {
   const run = requireRun(ctx, runId);
-  if (run.orchestrationMode === "direct") {
-    run.status = ctx.engine.nextRunStatus(run.status, "succeed");
-    touch(run, ctx.world.nowIso());
-    evaluateTaskAfterRun(ctx, run.taskId);
-    return run;
-  }
   run.status = ctx.engine.nextRunStatus(run.status, "succeed");
   touch(run, ctx.world.nowIso());
   evaluateTaskAfterRun(ctx, run.taskId);

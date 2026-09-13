@@ -126,23 +126,31 @@ describe("orchestrationMode start pass-through", () => {
 
   it("echoes requested direct onto run/host records without changing the published-graph start", async () => {
     const { app, host, projectId } = await readyProject();
-    const started = await app.start({
-      operationId: "op_start_direct",
-      idempotencyKey: "start-direct",
+    const projectBefore = app.world.projects.get(projectId)!;
+    await expect(
+      app.start({
+        operationId: "op_start_direct",
+        idempotencyKey: "start-direct",
+        projectId,
+        orchestrationMode: "direct",
+      }),
+    ).rejects.toBeInstanceOf(UseCaseError);
+
+    expect(app.world.projects.get(projectId)?.status).toBe(projectBefore.status);
+    expect(app.world.projects.get(projectId)?.workflowInstanceId).toBeUndefined();
+    expect([...app.world.workflows.values()]).toHaveLength(0);
+    expect([...app.world.nodes.values()]).toHaveLength(0);
+
+    const started = await app.startDirectWork({
+      operationId: "op_run_direct",
+      idempotencyKey: "run-direct",
       projectId,
-      orchestrationMode: "direct",
+      title: "adhoc",
     });
-    expect(started.project.status).toBe("ready");
-    expect(started.project.orchestrationMode).toBe("direct");
-    expect(started.project.workflowInstanceId).toBeUndefined();
-    expect([...app.world.tasks.values()]).toHaveLength(1);
-
-    const receipt = await app.world.receipts.getByOperationId("op_start_direct");
-    expect(receipt?.requestDigest).toContain('"orchestrationMode":"direct"');
-
-    const task = [...app.world.tasks.values()][0]!;
-    const run = await app.startRun({ operationId: "op_run_direct", taskId: task.id });
-    expect(run.run.orchestrationMode).toBe("direct");
+    expect(started.run.orchestrationMode).toBe("direct");
+    expect(started.run.executionSnapshot?.executionSnapshotId).toBeUndefined();
+    expect(started.task.workflowInstanceId).toBeUndefined();
+    expect(app.world.projects.get(projectId)?.status).toBe(projectBefore.status);
     expect(host.started.get("op_run_direct")?.orchestrationMode).toBe("direct");
   });
 
