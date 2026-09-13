@@ -1,6 +1,8 @@
 /**
  * T09 completion barriers. T08 supplies artifact/evaluation evidence;
  * this module only decides whether a Task may enter `completed`.
+ * Run exit is not an acceptance verdict: empty / fail / inconclusive
+ * evaluations must not pass the gate.
  */
 export type CompletionBarrierReason = "missing_artifact" | "integrity" | "evaluation_failed";
 
@@ -21,10 +23,19 @@ export function taskCompletionBarrier(input: {
   ) {
     return { ok: false, reason: "integrity" };
   }
-  if (input.evaluations.some((evaluation) => evaluation.verdict === "fail")) {
+  if (!hasTrustedPass(input.evaluations)) {
     return { ok: false, reason: "evaluation_failed" };
   }
   return { ok: true };
+}
+
+/**
+ * A Task may complete only when every recorded evaluation is `pass`
+ * and at least one exists. `fail`, `inconclusive`, unknown verdicts,
+ * and an empty list are all `evaluation_failed`.
+ */
+function hasTrustedPass(evaluations: readonly { verdict: string }[]): boolean {
+  return evaluations.length > 0 && evaluations.every((evaluation) => evaluation.verdict === "pass");
 }
 
 export function runTimeoutDue(nowMs: number, deadlineMs: number | undefined): boolean {
