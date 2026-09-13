@@ -3,7 +3,7 @@ title: 产品沟通历史
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # 产品沟通历史
@@ -36,6 +36,12 @@ updated: 2026-09-12
 同一自然日可有多条；后写的条目不得假装改写先写的决定，只能追加澄清。
 
 ---
+
+## 2026-09-13（Asia/Taipei）角色版本库与全局 Chat 壳现在就要有
+
+- **决定：** 用户纠正：跨项目复用角色；模型第一天就是 WorkerVersion；**现在就要有我的角色版本库**（找、搜、引用、归档、Team 选用/fork；发布不可变，不适应则 fork）。**Chat 功能也要有**：随时随地用语言创建角色、创建流程，并可用语言问进度、交流工作内容。Chat 是全局壳，不是作者页专属，也不是 IM（不要 Worker 收件箱、无项目聊天室、`workerId` 当对端）。仍禁止聊天当完成；问进度只读 Task/Run/Event/Artifact 投影，不得编造终态。Marketplace 未来要做、**现在不是一等面**；装进来仍进自己的库。现行 `{ role, runtimeProfileId, quantity }` 不再写成目标模型；Team 成员目标是 `workerVersionId`。
+- **文档影响：** [决策登记](decision-register.md) 收窄 D16/D17/D18 非目标并写入冻结表；[PRD](../blueprint/01-product-vision-prd.md) 把「自由聊天」读成禁 IM；[领域模型](../blueprint/02-domain-model.md) TeamMember 目标 `workerVersionId`；[IA](../product-ui/01-information-architecture.md) 库挂 AI 团队、Chat 挂壳；[核心流程](../product-ui/02-core-user-flows.md) §8/§9；[线框](../product-ui/03-p0-wireframes.md) 壳上 Chat 与库；[任务清单](02-development-task-backlog.md) 只改 T19/T20 目标句与 planned 子任务名；[实现进度](03-implementation-status.md) 只标 planned。不改能力矩阵 path、不发明 HTTP。
+- **状态：** **planned**。本条只冻结产品方向并回写规划文档；角色库页、全局 Chat、`workerVersionId` 写入与 Marketplace 均未实现。
 
 ## 2026-09-12（Asia/Taipei）T00-DOC-ALIGN：规划文档对齐到当前 `dev` 源码
 

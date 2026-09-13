@@ -3,14 +3,14 @@ title: Workforce Domain Model
 type: architecture
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-13
 ---
 
 # Workforce — Domain Model
 
 **版本：** V0.1 Draft  
 **状态：** Architecture baseline  
-**日期：** 2026-09-11
+**日期：** 2026-09-13
 
 ## 1. 设计目标
 
@@ -151,12 +151,16 @@ interface TeamVersion {
 }
 
 interface TeamMember {
+  /** 目标身份：已发布、未归档的 WorkerVersion。发布/绑定必填。 */
   workerVersionId: WorkerVersionId;
+  /** 职责标签（planner / developer / reviewer 等），不是员工身份。 */
   teamRole: string;
   quantity: number;
   routingWeight?: number;
 }
 ```
+
+**目标 vs 当前切片：** 领域目标是上表。现行公开 `TeamMemberDto` 仍是 `{ role, runtimeProfileId, quantity }`——这是实现切片，**不是**目标模型。新写入不得再把三字段当身份；`runtimeProfileId` 改为以 WorkerVersion 为准（契约扩展归 T02）。归档后的版本不可再被**新** Team 选用；已被引用的 `TeamVersion` 仍有效。
 
 ### 4.5 Worker、Role 与 Runtime
 
@@ -192,10 +196,12 @@ interface RuntimeProfile {
 
 关键约束：
 
+- **我的角色版本库**是 V0.1 产品面：Worker identity + 不可变 `WorkerVersion`；发布后不可改该版本，不适应则 fork。
 - 一个 Role 可由多个 Worker 实现。
 - 一个 Worker 的不同版本可以绑定不同 Runtime。
 - Runtime 不拥有业务角色，也不直接决定 Task 路由。
 - Run 必须记录实际使用的 WorkerVersion、Runtime Adapter 版本和模型。
+- Team 选用库中已发布未归档版本；数量仍可编。Chat 创建的角色草稿确认后进同一座库。
 
 ### 4.6 Workflow
 

@@ -3,7 +3,7 @@ title: Workforce 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Workforce Documentation
@@ -82,9 +82,9 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 
 ## Product UI
 
-- [页面信息架构](product-ui/01-information-architecture.md)（§2 一级导航；`P0`/`P1` 是切片深度不是侧栏可见性；项目详情六标签以 §4.3 为准）
+- [页面信息架构](product-ui/01-information-architecture.md)（§2 一级导航；`P0`/`P1` 是切片深度不是侧栏可见性；项目详情六标签以 §4.3 为准；角色版本库挂 AI 团队；Chat 为壳 §6.4）
 - [核心用户流程](product-ui/02-core-user-flows.md)
-- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；§7 为 M3 只读目录过渡；§10–§12 为 M7 画布、Team 与 D17 authoring；§13 为 M8 双执行模式）
+- [P0 页面线框规范](product-ui/03-p0-wireframes.md)（侧栏与 IA §2 对齐；壳上 Chat；§7 为 M3 只读目录过渡；§10–§12 为 M7 画布、角色库/Team 与全局 Chat；§13 为 M8 双执行模式）
 - [UI 设计系统](product-ui/04-design-system.md)（token、字号、圆角、组件与状态规则；含与 AgentHub 的对齐基线与刻意差异）
 
 ## 设计评审、冻结决策与开发任务
@@ -95,7 +95,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [协作与评审流程](planning/04-collab-and-review.md)
 - [D15–D18 落地方案（实现前检查点）](planning/05-d17-d18-landing-plan.md)
 - [T02 契约变更请求（C5–C9）](planning/06-t02-contract-request-c5-c9.md)
-- [决策登记（项目制主对象；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
+- [决策登记（项目制主对象；角色版本库与全局 Chat 壳现在就要有；Marketplace 现在不是一等面；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
 - [产品沟通历史](planning/communication-history.md)
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)

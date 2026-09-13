@@ -3,25 +3,25 @@ title: Workforce P0 页面线框规范
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-13
 ---
 
 # Workforce P0 页面线框规范
 
 **版本：** V0.1 Draft  
 **状态：** Ready for visual design  
-**日期：** 2026-09-11  
-**修订：** 2026-09-11 — §7 只读 `GET /workflows` 目录为 M3 过渡（不是夹具冒充接通）；§10 画布、§11 自定义 Team、§12 对话生成与 §13 双执行模式为 M7/M8 planned 必达。2026-09-10 — 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；§3 与 IA §4.3 对齐（概览不是 Overview；Task DAG 不在默认画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
+**日期：** 2026-09-13  
+**修订：** 2026-09-13 — 壳上 Chat 按钮；§11 角色版本库；§12 全局 Chat 四类意图；去掉「无 Marketplace」永久句。均 planned。2026-09-11 — §7 只读 `GET /workflows` 目录为 M3 过渡（不是夹具冒充接通）；§10 画布、§11 自定义 Team、§12 对话生成与 §13 双执行模式为 M7/M8 planned 必达。2026-09-10 — 侧栏按 [IA §2](01-information-architecture.md) 含 P1「运行记录」「工作流」；§3 与 IA §4.3 对齐（概览不是 Overview；Task DAG 不在默认画布）。标题中的 P0 指主工作区切片，不隐藏 P1 一级导航。
 
 ## 1. 全局框架
 
 桌面端采用左侧一级导航、顶部上下文区和主工作区。首屏不放营销内容。
 
-侧栏成员以 [页面信息架构 §2](01-information-architecture.md) 为准：`P0`/`P1` 是切片深度，P1「运行记录」「工作流」必须画在左侧栏。§2–§6 与 §8 细化 P0 主工作区；§7 是 M3 工作流只读目录（`GET /workflows` 过渡）；§10 / §11 / §12 是 M7 画布、自定义 Team 与对话 authoring；§13 是 M8 双执行模式。
+侧栏成员以 [页面信息架构 §2](01-information-architecture.md) 为准：`P0`/`P1` 是切片深度，P1「运行记录」「工作流」必须画在左侧栏。§2–§6 与 §8 细化 P0 主工作区；§7 是 M3 工作流只读目录（`GET /workflows` 过渡）；§10 / §11 / §12 是 M7 画布、角色版本库 + Team 与全局 Chat；§13 是 M8 双执行模式。Chat 是顶栏壳按钮，不是侧栏「某员工」。
 
 ```text
 ┌──────────────┬─────────────────────────────────────────────┐
-│ Workforce    │ 当前 Workspace / 页面          通知  新建   │
+│ Workforce    │ 当前 Workspace / 页面     Chat  通知  新建 │
 │              ├─────────────────────────────────────────────┤
 │ 工作台       │                                             │
 │ 项目         │                主工作区                     │
@@ -199,45 +199,51 @@ V0.1 的执行位置默认值为“本机”；未来存在远程节点时可选
 - 发布失败保留画布，不假装已发布。
 - 不提供「在画布上直接 Run」作为 Task 完成。
 
-## 11. AI 团队编排（M7）
+## 11. AI 团队编排与角色版本库（M7）
 
-按 [IA §4.6](01-information-architecture.md) 与 [D16](../planning/decision-register.md#d16-自定义-team-编排)。M3 只画只读预设卡；M7 才启用右侧编辑。
+按 [IA §4.6](01-information-architecture.md) 与 [D16](../planning/decision-register.md#d16-自定义-team-编排)。M3 只画只读预设卡；M7 才启用库与右侧编辑。成员目标是库中 `workerVersionId`，不是三字段身份。
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ AI 团队                                     ＋ 新建团队     │
+│ AI 团队 / 我的角色版本库                      ＋ 新建团队     │
 ├──────────────┬─────────────────────────────────────────────┤
+│ 搜角色版本   │ 已发布 WorkerVersion                          │
+│ reviewer-v3  │ 引用：Software Dev Team v2、自定义 Team A   │
+│ （已发布）   │ [选用到当前 Team]  [fork 新草稿]  [归档]     │
+│ 草稿         │                                             │
+│ 更严 reviewer│ 未发布：不可被 Team 选用                     │
+├──────────────┼─────────────────────────────────────────────┤
 │ 预设         │ 自定义 Team 草稿                             │
-│ Software Dev │ 角色 / RuntimeProfile / 数量                 │
-│ （只读）     │ planner ×1  · Codex profile                  │
-│              │ developer ×2 · Codex profile                 │
-│              │ reviewer ×1  · Codex profile                 │
+│ Software Dev │ workerVersionId / 职责标签 / 数量          │
+│ （只读）     │ wv_reviewer_v3 · reviewer ×1                  │
+│              │ wv_developer_v2 · developer ×2              │
 │              │                    保存草稿   发布版本       │
 └──────────────┴─────────────────────────────────────────────┘
 ```
 
-未发布草稿不能绑定后开始规划。无 Marketplace。
+未发布草稿不能绑定后开始规划。未选 `workerVersionId` 不得点成成功。**现在不做商店一等面**；不要画可点成功的 Marketplace。未来经本库安装。
 
-## 12. 对话生成工作流（M7 planned）
+## 12. 全局 Chat（V0.1 就要有，planned）
 
-按 [D17](../planning/decision-register.md#d17-对话式-agent-编排工作流)。这是 Workflow 的作者入口；authoring Agent 本身通过受治理 Runtime 执行，但不是生成出的 Workflow 的执行窗口。结果必须落为可编辑草稿并进入 §10。
+按 [D17](../planning/decision-register.md#d17-对话式-agent-编排工作流) 与 [IA §6.4](01-information-architecture.md)。这是壳上随时可开的语言入口，不限于工作流作者页。创建流程仍可落到画布（§10）；创建角色确认后进 §11 库。authoring Agent 通过受治理 Runtime 执行，但不是生成物的执行窗口，回复气泡也不是完成。
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ 工作流 / 对话生成                         生成草稿  清空   │
+│ Chat                                         关闭            │
 ├──────────────────────────────┬─────────────────────────────┤
-│ 用户                          │ 结构化草稿预览              │
-│ 创建 bot1（角色…）            │ Team 角色 / Tasks / DAG      │
-│ bot2、bot3；流程 X；任务 Y    │ draft revision: 4            │
-│                              │ 未发布：生成图不会执行       │
-│ [描述意图……]     发送        │ [打开画布编辑]               │
+│ 用户                          │ 意图 / 对象预览              │
+│ 建一个更严的 reviewer          │ 创建角色 → WorkerVersion 草稿 │
+│ 做一条发布流程                │ 创建流程 → WorkflowDraft      │
+│ 进行到哪了                    │ 问进度 → 还没有记录           │
+│ 补一句：别动 schema            │ 交流工作 → 先问哪个项目      │
+│                              │ 「去做」：unsupported         │
+│ [说一句……]          发送     │ [去角色库] [打开画布编辑]     │
 ├──────────────────────────────┴─────────────────────────────┤
-│ 状态：proposal 已生成 / 校验失败 / CAS 冲突 / 部分应用      │
-│ 对话上下文按 Project retention/redaction policy 保存         │
+│ 确认后才落草稿。未发布不执行。完成只看 Artifact / Run / Approval │
 └────────────────────────────────────────────────────────────┘
 ```
 
-M3 不显示可点击成功的生成入口。M7 的 authoring Run 通过受治理 Runtime SPI 执行编排 Agent，生成、CAS/staged apply、usage、budget、取消、重试和失败均须由 Application authoring use case 诚实返回；生成出的 Workflow 不得在发布/计划确认前执行，也不得写入 Secret。
+M3 不显示可点击成功的生成入口。HTTP 未就绪时壳说明未接通。创建类须用户确认；问进度只渲染投影事实；没有 `projectId`/`runId` 不发写。生成出的 Workflow 不得在发布/计划确认前执行，也不得写入 Secret。不得把 bot 回复画成已完成或已在跑。
 
 ## 13. Agent 执行模式（M8 planned）
 

@@ -91,8 +91,8 @@ flowchart TD
 | T16 | 联调、恢复与端到端验证 | 根 tests，受协调的 composition 接线 | 可从 T02 写场景；验收等待依赖 | 高 / 大 |
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
-| T19 | 项目循环：自定义 Team | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
-| T20 | 项目循环：对话生成工作流 UI | `renderer/features/workflow-authoring`；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
+| T19 | 项目循环：Team 从角色版本库选用/fork `workerVersionId` | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
+| T20 | 全局 Chat 壳：创建角色/流程、问进度、交流工作 | `renderer/features/workflow-authoring`（作者页）及后续会话 UI；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
 | T20-B | 项目循环：Authoring Application 用例 | `application/src/use-cases/authoring`（由 T14 负责）及相关测试 | T02 authoring proposal/change-set DTO；不改 Renderer、Workflow Engine 或 API composition | 高 / 大 |
 | T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `orchestrationMode` 后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
 
@@ -105,6 +105,8 @@ flowchart TD
 | 子任务 | 所属/唯一 owner | 范围与验收 | 前置依赖 |
 |---|---|---|---|
 | `T02-CANONICAL-GRAPH-CONTRACT` | T02 | **协议切片已实现：** `WorkflowGraphDefinition`、Draft/CAS、TeamVersion、AuthoringProposal/ChangeSet 已冻结为 `packages/protocol` 的唯一图契约；节点、边、failure/concurrency policy 与非法 DAG fixture 可校验，画布与 authoring 复用同一 DTO。Application/SQLite/Daemon 消费者仍待后续任务接线。 | C5–C9 已冻结；解除 T18、T20-SEND、T14-AUTH 的协议阻塞。 |
+| `T02-WORKER-VERSION-LIBRARY` | T02 | **planned：** 冻结 WorkerVersion 身份、角色版本库（列表/搜/归档/引用/fork）与 `TeamMemberDto.workerVersionId`。`role` 为职责标签；读取仍能 parse 旧三字段。不发明 Marketplace path，也不在本文列 HTTP。 | 产品方向已确认（D16 收窄）；解除库/Team 写契约阻塞。 |
+| `T02-GLOBAL-CHAT-SHELL` | T02 | **planned：** 冻结 Chat 四类意图（创建角色 / 创建流程 / 问进度 / 交流工作）与只读进度投影。创建类仍用 AuthoringSession。禁止 IM、`workerId` 会话对端、聊天当完成。不发明 HTTP path。 | 产品方向已确认（D17 收窄）。 |
 | `T02-RUN-WIRE-CONTRACT` | T02 | 冻结 `POST /tasks/{id}/runs`、placement intent、mode 归一化和 capability mode 维度；Run/Project/Team DTO 只保留一个权威来源，并覆盖幂等、CAS、无能力组合 fixture。 | 阻塞 T09-DIRECT 与 T10 接线。 |
 | `T04-D15-PUBLISH` | T04（迁移/repository）与 T09（发布校验）顺序交接 | **repository 切片已实现：** 以稳定 SHA-256 insert-once 已发布执行图；实例只能引用版本，禁止 `workflow_instances` 写入时隐式 upsert/改写 `workflow_versions`；旧空 FK placeholder 只能一次提升，真实版本更新拒绝且读图回到版本表。Application 发布、历史 backfill 和 T09 图源切换仍待接线。不得复用 catalog DTO 当执行图。 | `T02-CANONICAL-GRAPH-CONTRACT`；repository 阻塞已解除，T09-D02 仍等待发布/图源接线。 |
 | `T04-AUTHORING-REPOSITORIES` | T04（repository）→ T20-B（Application staged apply） | **持久化切片已实现：** Workflow/Team Draft 按父对象 revision append-only CAS；ChangeSet 与全量 step 原子写入，source Run 必须属于同一 Project/organization；ChangeSet 与 step 的推进均要求当前 status CAS。它不定义状态转移规则、不产出 proposal、不应用 patch，也不替代恢复策略。 | `T02-CANONICAL-GRAPH-CONTRACT`；解除 T20-B 的 SQLite 写入阻塞。 |
@@ -393,7 +395,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 ### T19 — 自定义 Team 编排
 
-**目标：** 兑现 D16：用户能围着 Project 创建并发布自定义 TeamVersion 并绑定到该项目（不是独立员工目录）。
+**目标：** 兑现收窄后的 D16：用户能围着 Project 创建并发布自定义 TeamVersion；成员改为从**我的角色版本库**选用或 fork 已发布 `workerVersionId`，不再把 `{ role, runtimeProfileId, quantity }` 当编辑目标。
 
 **所有权：** `apps/desktop/src/renderer/features/teams/` 可写切片及测试。领取前确认 T12 不再改同一文件。不改 protocol / daemon composition。
 
@@ -412,7 +414,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 ### T20 — 对话式工作流编排
 
-**目标：** 兑现 D17：用户能通过对话让 Agent **生成**可编辑的 Workflow / 角色 / 任务草稿（高度可定制的作者路径），再交给 D15 画布编辑与发布。不是独立聊天产品，也不是生成图的执行 Runtime；authoring Task/Run 通过 Runtime SPI 治理。
+**目标：** 兑现收窄后的 D17：用户随时可开**全局 Chat 壳**，用语言创建角色草稿、创建流程、询问进度、交流工作内容；创建类仍走 AuthoringSession，确认后才落草稿。不是 IM，不是聊天当完成，也不是生成图的执行 Runtime；authoring Task/Run 通过 Runtime SPI 治理。
 
 **所有权：** `apps/desktop/src/renderer/features/workflow-authoring/` 及包内测试。不改 protocol、daemon composition、workflow-engine、路由表或 T18 画布文件。会话 / 草稿 DTO 缺口提交 T02。
 
