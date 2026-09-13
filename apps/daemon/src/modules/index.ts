@@ -221,6 +221,11 @@ export interface AppServices {
 
   listTasks(query: ListQuery): PageDto<TaskDto>;
   getTask(id: string): TaskDto | null;
+  createAdHocTask(
+    ctx: CommandContext,
+    projectId: string,
+    input: { title?: string; expectedStateRevision?: number },
+  ): MaybeAsync<CommandResult<TaskDto>>;
   retryTask(
     ctx: CommandContext,
     id: string,

@@ -12,15 +12,19 @@ import {
   createWorkforceApp,
   integratePatches,
   mapPublishedTaskDependsOn,
+  parseAuthoringTaskPatch,
+  recordEvaluationEvidence,
   settleRunCancel,
   workerCardFieldsFrom,
   type ApprovalRecord,
+  type AuthoringTaskPatch,
   type ProjectRecord,
   type RunRecord,
   type TaskRecord,
   type ConfirmChatProposalDeps,
 } from "@workforce/application";
 import {
+  ArtifactEvaluator,
   KIND_MEDIA_TYPES,
   LocalArtifactStore,
   collectBytes,
@@ -193,6 +197,7 @@ export class ComposedAppServices implements AppServices {
   readonly host: ComposedMockHost;
   readonly sqlite: WorkforceSqlite;
   readonly artifacts: LocalArtifactStore;
+  readonly evaluator: ArtifactEvaluator;
   readonly worktrees: CompositionWorktreeHost;
   readonly policy: CompositionPolicy;
   readonly authoring: CatalogService;
@@ -230,6 +235,11 @@ export class ComposedAppServices implements AppServices {
     this.hostStore = input.hostStore;
     this.sqlite = input.sqlite;
     this.artifacts = input.artifacts;
+    this.evaluator = new ArtifactEvaluator({
+      store: input.artifacts,
+      ids: { ulid: (prefix) => input.app.world.ids.ulid(prefix) },
+      clock: { now: () => input.app.world.clock.now() },
+    });
     this.worktrees = input.worktrees;
     this.policy = input.policy;
     this.sqliteWriter = input.sqliteWriter;
@@ -394,7 +404,8 @@ export class ComposedAppServices implements AppServices {
       },
       orchestration: {
         workflowBound: true,
-        direct: false,
+        /** Mock Runtime is composed and can execute direct Runs. */
+        direct: true,
       },
     };
   }
@@ -1117,6 +1128,31 @@ export class ComposedAppServices implements AppServices {
     return task ? this.taskDto(task) : null;
   }
 
+  createAdHocTask(
+    ctx: CommandContext,
+    projectId: string,
+    input: { title?: string; expectedStateRevision?: number },
+  ): Promise<CommandResult<TaskDto>> {
+    return this.exclusive(async () => {
+      const project = this.requireProject(projectId);
+      const expectedStateRevision = input.expectedStateRevision ?? ctx.ifMatch;
+      this.assertMatch(project.stateRevision, expectedStateRevision);
+      const created = await this.app.createAdHocTask({
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        projectId,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(expectedStateRevision !== undefined ? { expectedStateRevision } : {}),
+      });
+      this.persist();
+      return {
+        status: created.reused ? 200 : 201,
+        body: this.taskDto(created.task),
+        revision: created.task.stateRevision,
+      };
+    });
+  }
+
   startTaskRun(
     ctx: CommandContext,
     id: string,
@@ -1132,16 +1168,26 @@ export class ComposedAppServices implements AppServices {
       const orchestrationMode = input.orchestrationMode ?? DEFAULT_ORCHESTRATION_MODE;
       assertStartOrchestrationAllowed(orchestrationMode, this.capabilities());
       await this.assertRuntimeStartAllowed(this.requireProject(task.projectId));
-      const started = await this.app.startTaskRun({
-        operationId: ctx.operationId,
-        idempotencyKey: ctx.operationId,
-        taskId: id,
-        orchestrationMode,
-        snapshotRef: "mock:success",
-        requireWorkflowBinding: true,
-        ...optionalRevision(ctx.ifMatch),
-        ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
-      });
+      const started =
+        orchestrationMode === "direct"
+          ? await this.app.startDirectWork({
+              operationId: ctx.operationId,
+              idempotencyKey: ctx.operationId,
+              projectId: task.projectId,
+              taskId: id,
+              ...(ctx.ifMatch !== undefined ? { expectedTaskStateRevision: ctx.ifMatch } : {}),
+              ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
+            })
+          : await this.app.startTaskRun({
+              operationId: ctx.operationId,
+              idempotencyKey: ctx.operationId,
+              taskId: id,
+              orchestrationMode,
+              snapshotRef: "mock:success",
+              requireWorkflowBinding: true,
+              ...optionalRevision(ctx.ifMatch),
+              ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
+            });
       this.persist();
       return {
         status: started.reused ? 200 : 201,
@@ -1703,6 +1749,7 @@ export class ComposedAppServices implements AppServices {
         },
       },
       teamDrafts: adaptTeamDraftRepository(this.sqlite.teamDrafts),
+      tasks: this.sqlite.tasks,
       resolver: {
         resolveWorkflowGraph: ({
           proposalId,
@@ -1761,6 +1808,39 @@ export class ComposedAppServices implements AppServices {
               sourceRunId,
               patchRef,
               ...(operation === "update" && teamId !== undefined ? { teamId } : {}),
+              ...(operation === "update" && expectedRevision !== undefined
+                ? { expectedRevision }
+                : {}),
+            },
+          };
+        },
+        resolveTaskPatch: ({
+          proposalId,
+          projectId,
+          sourceRunId,
+          operation,
+          patchRef,
+          taskId,
+          expectedRevision,
+        }) => {
+          const proposal = this.sqlite.authoringProposals.get(proposalId);
+          if (!proposal) {
+            throw new AppError("not_found", "Authoring proposal not found");
+          }
+          const patch = this.taskPatchFromUtterance(
+            this.authoringUtteranceForTurn(proposal.sessionId, proposal.turnId),
+            taskId,
+          );
+          return {
+            patch,
+            binding: {
+              organizationId: ORGANIZATION_ID,
+              projectId,
+              sessionId: proposal.sessionId,
+              turnId: proposal.turnId,
+              sourceRunId,
+              patchRef,
+              ...(operation === "update" && taskId !== undefined ? { taskId } : {}),
               ...(operation === "update" && expectedRevision !== undefined
                 ? { expectedRevision }
                 : {}),
@@ -1948,8 +2028,9 @@ export class ComposedAppServices implements AppServices {
         return;
       }
       if (event.status === "succeeded") {
-        this.app.recordRunSucceeded(run.id);
         await this.bindRequiredOutputs(run);
+        await this.recordBoundOutputEvaluations(run);
+        this.app.recordRunSucceeded(run.id);
         await this.maybeIntegrate(run.projectId);
         await this.maybeCreateArtifactApproval(run.projectId);
         await this.dispatchReadyTasks(run.projectId);
@@ -2151,6 +2232,27 @@ export class ComposedAppServices implements AppServices {
         slotId: output.id,
         artifactVersionId: created.versionId,
         digest: created.hash,
+      });
+    }
+  }
+
+  private async recordBoundOutputEvaluations(run: RunRecord): Promise<void> {
+    const task = this.app.world.tasks.get(run.taskId);
+    if (!task) {
+      return;
+    }
+    for (const versionId of Object.values(task.outputBindings)) {
+      if (this.app.world.evaluationsForArtifact(versionId).length > 0) {
+        continue;
+      }
+      const evaluation = await this.evaluator.evaluate({
+        artifactVersionId: versionId,
+        criterion: { id: `schema:${versionId}`, type: "schema" },
+      });
+      recordEvaluationEvidence(this.app.ctx, {
+        artifactVersionId: versionId,
+        verdict: evaluation.verdict,
+        id: evaluation.id,
       });
     }
   }
@@ -2598,6 +2700,32 @@ export class ComposedAppServices implements AppServices {
       );
     }
     return members;
+  }
+
+  private taskPatchFromUtterance(
+    text: string | undefined,
+    taskId: string | undefined,
+  ): AuthoringTaskPatch {
+    if (text === undefined) {
+      throw new AppError(
+        "validation_failed",
+        "authoring chat task confirmation requires the original utterance",
+      );
+    }
+    const interpreted = interpretMockAuthoringIntent(text);
+    const raw = mockTaskPatchFromInterpretation(interpreted);
+    if (raw === undefined) {
+      throw new AppError("validation_failed", "authoring chat task confirmation has no task patch");
+    }
+    const resolvedTaskId =
+      taskId ?? (typeof raw.taskId === "string" && raw.taskId.length > 0 ? raw.taskId : undefined);
+    if (resolvedTaskId === undefined) {
+      throw new AppError(
+        "validation_failed",
+        "authoring chat task confirmation has no task identity",
+      );
+    }
+    return parseAuthoringTaskPatch({ ...raw, taskId: resolvedTaskId });
   }
 
   private syncTeamDraftIntoCatalog(teamId: string): void {
@@ -3241,6 +3369,19 @@ function workflowGraphFromUtterance(text: string | undefined) {
     return authoringGraphDefinition();
   }
   return interpretMockAuthoringIntent(text).workflow?.graph ?? authoringGraphDefinition();
+}
+
+function mockTaskPatchFromInterpretation(
+  interpreted: ReturnType<typeof interpretMockAuthoringIntent>,
+): AuthoringTaskPatch | undefined {
+  if (!("task" in interpreted)) {
+    return undefined;
+  }
+  const value = (interpreted as { task?: unknown }).task;
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as AuthoringTaskPatch;
 }
 
 function chatProposalCreateTargets(proposal: AuthoringProposalDto): Array<{

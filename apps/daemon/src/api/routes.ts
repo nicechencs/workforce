@@ -4,6 +4,7 @@ import "./fastify-augment.js";
 
 import {
   parseChatClassifyInput,
+  parseCreateAdHocTaskInput,
   parseCreateTeamInput,
   parseCreateWorkerInput,
   parseCreateWorkflowInput,
@@ -198,6 +199,47 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/v1/projects/:id/progress", async (request) =>
     deps.services.queryProjectProgress(param(request, "id")),
   );
+
+  app.post("/api/v1/projects/:id/tasks", async (request, reply) => {
+    await cmd(
+      request,
+      reply,
+      {
+        canonicalOperation: "POST /projects/{id}/tasks",
+        resource: (req) => param(req, "id"),
+        requireIfMatch: false,
+      },
+      (ctx, body) => {
+        rejectUnknownFields(body, [
+          "operationId",
+          "idempotencyKey",
+          "title",
+          "expectedStateRevision",
+          "workflowInstanceId",
+        ]);
+        let parsed;
+        try {
+          parsed = parseCreateAdHocTaskInput({
+            operationId: ctx.operationId,
+            idempotencyKey: ctx.operationId,
+            ...withoutOperationId(body),
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Request body failed schema validation";
+          throw new AppError("validation_failed", message);
+        }
+        return deps.services.createAdHocTask(ctx, param(request, "id"), {
+          ...(parsed.title !== undefined ? { title: parsed.title } : {}),
+          ...(parsed.expectedStateRevision !== undefined
+            ? { expectedStateRevision: parsed.expectedStateRevision }
+            : ctx.ifMatch !== undefined
+              ? { expectedStateRevision: ctx.ifMatch }
+              : {}),
+        });
+      },
+    );
+  });
 
   app.get("/api/v1/projects/:id/budget", async (request) =>
     requireFound(deps.services.getProjectBudget(param(request, "id")), "Project not found"),
