@@ -28,6 +28,8 @@ import {
   stableJson,
 } from "@workforce/runtime-sdk";
 
+import { buildMockAuthoringProposal } from "./authoring-proposal.js";
+
 export const MOCK_ADAPTER_ID = "mock";
 export const MOCK_ADAPTER_VERSION = "0.1.0";
 
@@ -301,6 +303,7 @@ class MockExecution {
   private cancelRequested = false;
   private started = false;
   private authoringInputDigest?: string;
+  private authoringInputText = "";
 
   constructor(options: MockExecutionOptions) {
     this.handle = options.handle;
@@ -370,6 +373,7 @@ class MockExecution {
     }
     if (this.isAuthoringScenario()) {
       this.authoringInputDigest = sha256Hex(stableJson(input));
+      this.authoringInputText = authoringTextOf(input);
     }
     this.status = "running";
     this.emit("runtime.started", { resumedFrom: "waiting_input" });
@@ -406,22 +410,14 @@ class MockExecution {
     }
     this.emit("runtime.usage.updated", { tokens: 12 });
     if (this.scenario === "authoring_proposal") {
-      this.emit("runtime.authoring.proposal", {
-        proposal: {
-          id: `apr_${this.handle.handleId}`,
-          projectId: "prj_mock_authoring",
-          sourceRunId: "run_mock_authoring",
-          summary: "Mock authoring proposal",
-          targets: [
-            {
-              targetType: "workflow",
-              targetId: "wf_mock_authoring",
-              expectedRevision: 1,
-              patchRef: this.authoringPatchRef(),
-            },
-          ],
-        },
+      const built = buildMockAuthoringProposal({
+        id: `apr_${this.handle.handleId}`,
+        projectId: "prj_mock_authoring",
+        sourceRunId: "run_mock_authoring",
+        patchRef: this.authoringPatchRef(),
+        text: this.authoringInputText,
       });
+      this.emit("runtime.authoring.proposal", { proposal: built.proposal });
     }
     if (this.scenario === "authoring_proposal_secret_summary") {
       this.emit("runtime.authoring.proposal", {
@@ -508,6 +504,14 @@ class MockExecution {
       waiter();
     }
   }
+}
+
+function authoringTextOf(input: RuntimeInput): string {
+  if (typeof input.text === "string") {
+    return input.text;
+  }
+  const payloadText = input.payload?.["text"];
+  return typeof payloadText === "string" ? payloadText : "";
 }
 
 function mockCapabilities(): RuntimeCapability[] {
