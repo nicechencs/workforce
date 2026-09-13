@@ -10,6 +10,9 @@
             {
               "additionalProperties": false,
               "properties": {
+                "how": {
+                  "type": "string"
+                },
                 "kind": {
                   "const": "create_worker",
                   "type": "string"
@@ -19,8 +22,14 @@
                   "minLength": 1,
                   "type": "string"
                 },
+                "skills": {
+                  "type": "string"
+                },
                 "summary": {
                   "minLength": 1,
+                  "type": "string"
+                },
+                "who": {
                   "type": "string"
                 },
                 "workerDraftId": {
@@ -104,8 +113,265 @@
                 "projectId"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "cardField": {
+                  "enum": [
+                    "who",
+                    "how",
+                    "skills"
+                  ],
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "update_worker",
+                  "type": "string"
+                },
+                "text": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerDraftId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerVersionId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "workerId",
+                "cardField"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "invite_team",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerVersionId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "projectId",
+                "workerVersionId"
+              ],
+              "type": "object"
             }
           ]
+        },
+        "intents": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "how": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "create_worker",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "skills": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "who": {
+                    "type": "string"
+                  },
+                  "workerDraftId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "create_workflow",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "summary": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workflowDraftId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "query_progress",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "discuss_work",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "runId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cardField": {
+                    "enum": [
+                      "who",
+                      "how",
+                      "skills"
+                    ],
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "update_worker",
+                    "type": "string"
+                  },
+                  "text": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workerDraftId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workerId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workerVersionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "workerId",
+                  "cardField"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "invite_team",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "summary": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workerVersionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "projectId",
+                  "workerVersionId"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
         },
         "outcome": {
           "const": "intent",
@@ -124,7 +390,8 @@
         "missing": {
           "enum": [
             "projectId",
-            "runId"
+            "runId",
+            "workerId"
           ],
           "type": "string"
         },
@@ -136,6 +403,24 @@
       "required": [
         "outcome",
         "missing"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "const": "need_clarification",
+          "type": "string"
+        },
+        "question": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "question"
       ],
       "type": "object"
     },

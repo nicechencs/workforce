@@ -73,6 +73,8 @@ export type {
   TeamMemberDto,
   TeamRoleDto,
   TeamVersionDto,
+  WorkerCardFieldName,
+  WorkerCardFieldsDto,
   WorkerDraftDto,
   WorkerDraftWrite,
   WorkerDto,

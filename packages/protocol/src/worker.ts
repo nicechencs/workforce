@@ -5,10 +5,33 @@ import { z } from "zod";
  * Published + immutable versions are not edited in place; fork creates a new
  * Worker identity and a new draft. This module is not a Marketplace catalog
  * and not an IM inbox: there is no worker-as-peer session object.
+ *
+ * The printable card is exactly three optional fields: who / how / skills.
+ * Runtime and Policy stay optional on the version and are never card-required.
+ * Old records without these keys still parse; new writes may fill them.
  */
 
 export const workerDefinitionStatuses = ["draft", "published"] as const;
 export type WorkerDefinitionStatus = (typeof workerDefinitionStatuses)[number];
+
+/** Printable role-card slots. These three keys are the card; values are optional. */
+export const workerCardFieldNames = ["who", "how", "skills"] as const;
+export type WorkerCardFieldName = (typeof workerCardFieldNames)[number];
+export const workerCardFieldNameSchema = z.enum(workerCardFieldNames);
+
+/**
+ * 他是谁 / 怎么干活 / 会哪些技能.
+ * Absent means empty on old rows. Empty string is an explicit blank cell.
+ * Not Runtime, Policy, placement, or a Marketplace listing.
+ */
+const workerCardFieldShape = {
+  who: z.string().optional(),
+  how: z.string().optional(),
+  skills: z.string().optional(),
+};
+
+export const workerCardFieldsDtoSchema = z.object(workerCardFieldShape).strict();
+export type WorkerCardFieldsDto = z.infer<typeof workerCardFieldsDtoSchema>;
 
 export const workerVersionDtoSchema = z
   .object({
@@ -22,12 +45,13 @@ export const workerVersionDtoSchema = z
     description: z.string().optional(),
     /** Duty label, not the Worker identity. */
     role: z.string().min(1),
-    /** Published members take this version as the source of truth. */
+    /** Published members take this version as the source of truth. Not a card field. */
     runtimeProfileId: z.string().min(1).optional(),
     forkedFromWorkerVersionId: z.string().min(1).optional(),
     stateRevision: z.number().int().min(1).optional(),
     publishedAt: z.string().datetime().optional(),
     archivedAt: z.string().datetime().optional(),
+    ...workerCardFieldShape,
   })
   .strict();
 
@@ -42,10 +66,12 @@ export const workerDraftDtoSchema = z
     name: z.string().min(1),
     description: z.string().optional(),
     role: z.string().min(1),
+    /** Optional execution binding. Not a required card field. */
     runtimeProfileId: z.string().min(1).optional(),
     contentHash: z.string().min(1),
     updatedAt: z.string().datetime(),
     updatedBy: z.string().min(1),
+    ...workerCardFieldShape,
   })
   .strict();
 
@@ -99,6 +125,7 @@ export const createWorkerInputSchema = z
     description: z.string().optional(),
     role: z.string().min(1).optional(),
     runtimeProfileId: z.string().min(1).optional(),
+    ...workerCardFieldShape,
   })
   .strict();
 
@@ -119,6 +146,7 @@ export const workerDraftWriteSchema = z
     description: z.string().optional(),
     role: z.string().min(1).optional(),
     runtimeProfileId: z.string().min(1).optional(),
+    ...workerCardFieldShape,
   })
   .strict();
 
@@ -193,10 +221,29 @@ export function parseForkWorkerVersionAccepted(input: unknown): ForkWorkerVersio
   return forkWorkerVersionAcceptedDtoSchema.parse(input);
 }
 
+export function parseWorkerCardFields(input: unknown): WorkerCardFieldsDto {
+  return workerCardFieldsDtoSchema.parse(input);
+}
+
+export function isWorkerCardFieldName(value: string): value is WorkerCardFieldName {
+  return (workerCardFieldNames as readonly string[]).includes(value);
+}
+
 export function isPublishedWorkerVersion(
   version: Pick<WorkerVersionDto, "status" | "immutable">,
 ): boolean {
   return version.status === "published" && version.immutable === true;
+}
+
+/**
+ * Card who/how/skills follow the version. Published + immutable must not be
+ * patched in place; writers fork (new identity + new draft) instead.
+ * There is no UPDATE-published WorkerVersion path.
+ */
+export function workerCardFieldsAreImmutable(
+  version: Pick<WorkerVersionDto, "status" | "immutable">,
+): boolean {
+  return isPublishedWorkerVersion(version);
 }
 
 /**

@@ -1,8 +1,9 @@
-import { protocolVersion } from "@workforce/protocol";
+import { protocolVersion, workerCardFieldNames } from "@workforce/protocol";
 import type {
   TeamDto,
   TeamRoleDto,
   TeamVersionDto,
+  WorkerCardFieldsDto,
   WorkerDto,
   WorkerVersionDto,
   WorkflowDto,
@@ -128,6 +129,31 @@ export function workflowDtoFromCatalog(
 
 export function teamDtoFromCatalog(catalog: MemoryCatalog, record: TeamDefinitionRecord): TeamDto {
   return teamDto(record, catalog.listTeamVersions(record.id));
+}
+
+/** Copy present protocol card slots. Does not invent keys or fill from Runtime/Policy. */
+export function workerCardFieldsFrom(source: WorkerCardFieldsDto): WorkerCardFieldsDto {
+  const fields: WorkerCardFieldsDto = {};
+  for (const key of workerCardFieldNames) {
+    const value = source[key];
+    if (value !== undefined) {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
+export function assignWorkerCardFields<T extends WorkerCardFieldsDto>(
+  target: T,
+  source: WorkerCardFieldsDto,
+): T {
+  const fields = workerCardFieldsFrom(source);
+  for (const key of workerCardFieldNames) {
+    if (fields[key] !== undefined) {
+      target[key] = fields[key];
+    }
+  }
+  return target;
 }
 
 export function workerVersionDto(record: WorkerVersionDto): WorkerVersionDto {

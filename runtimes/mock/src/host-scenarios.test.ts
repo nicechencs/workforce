@@ -112,9 +112,10 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
     const proposalEvent = proposalEvents.find(
       (event) => event.type === "runtime.authoring.proposal",
     );
-    const expectedPatchRef = `arv_mock_authoring_${sha256Hex(
+    const digestPrefix = sha256Hex(
       stableJson({ operationId: "op_authoring_proposal_input", text: secret }),
-    ).slice(0, 16)}`;
+    ).slice(0, 16);
+    const expectedPatchRef = `arv_mock_authoring_${digestPrefix}`;
     expect(proposalEvent?.data).toMatchObject({
       proposal: {
         id: expect.stringMatching(/^apr_/),
@@ -124,7 +125,7 @@ describe("LocalNodeHost + MockRuntimeAdapter", () => {
         targets: [
           {
             targetType: "workflow",
-            targetId: "wf_mock_authoring",
+            targetId: `wf_${digestPrefix}`,
             expectedRevision: 1,
             patchRef: expectedPatchRef,
           },

@@ -1,0 +1,18 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/worker-card-fields.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "how": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "string"
+    },
+    "who": {
+      "type": "string"
+    }
+  },
+  "title": "WorkerCardFieldsDto",
+  "type": "object"
+}

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   CatalogService,
+  adaptTeamDraftRepository,
   confirmAuthoringChatProposal,
   HostCapabilityError,
   MOCK_PLAN_DOCUMENT,
@@ -12,6 +13,7 @@ import {
   integratePatches,
   mapPublishedTaskDependsOn,
   settleRunCancel,
+  workerCardFieldsFrom,
   type ApprovalRecord,
   type ProjectRecord,
   type RunRecord,
@@ -31,7 +33,10 @@ import { SqliteSubscriptionReader, type EventReadQuery } from "@workforce/events
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import {
   DEFAULT_ORCHESTRATION_MODE,
+  isSelectableWorkerVersion,
+  parseTeamVersionWrite,
   parseWorkerDraftWrite,
+  type AuthoringProposalDto,
   type AuthoringSessionPageDto,
   type AuthoringSessionViewDto,
   type AuthoringTurnDto,
@@ -40,9 +45,11 @@ import {
   type AuthoringTurnActionName,
   type AuthoringTurnActionAcceptedDto,
   type CommandReceipt,
+  type TeamMemberDto,
   type WorkerDraftWrite,
   type WorkforceEvent,
 } from "@workforce/protocol";
+import { interpretMockAuthoringIntent } from "@workforce/runtime-mock";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";
@@ -726,7 +733,7 @@ export class ComposedAppServices implements AppServices {
   }
 
   classifyChatIntent(input: ChatClassifyInput): ChatClassifyResultDto {
-    return classifyChatIntent(input);
+    return classifyChatIntent(input, this.chatClassifyContext());
   }
 
   async queryProjectProgress(projectId: string): Promise<ProjectProgressProjectionDto> {
@@ -1492,6 +1499,9 @@ export class ComposedAppServices implements AppServices {
       for (const ref of confirmed.workerDrafts) {
         await this.syncWorkerIntoCatalog(ref.workerId, ref.workerDraftId);
       }
+      for (const ref of confirmed.teamDrafts) {
+        this.syncTeamDraftIntoCatalog(ref.teamId);
+      }
       await this.persistDurably();
       const current = this.sqlite.authoringTurns.get(turnId);
       return {
@@ -1687,6 +1697,12 @@ export class ComposedAppServices implements AppServices {
           };
         },
       },
+      teamIdentities: {
+        create: (tx, team) => {
+          this.sqlite.catalogTeams.upsert(tx, team);
+        },
+      },
+      teamDrafts: adaptTeamDraftRepository(this.sqlite.teamDrafts),
       resolver: {
         resolveWorkflowGraph: ({
           proposalId,
@@ -1696,21 +1712,61 @@ export class ComposedAppServices implements AppServices {
           patchRef,
           workflowId,
           expectedRevision,
-        }) => ({
-          graph: authoringGraphDefinition(),
-          binding: {
-            organizationId: ORGANIZATION_ID,
-            projectId,
-            sessionId: this.sqlite.authoringProposals.get(proposalId)?.sessionId ?? "",
-            turnId: this.sqlite.authoringProposals.get(proposalId)?.turnId ?? "",
-            sourceRunId,
-            patchRef,
-            ...(operation === "update" && workflowId !== undefined ? { workflowId } : {}),
-            ...(operation === "update" && expectedRevision !== undefined
-              ? { expectedRevision }
-              : {}),
-          },
-        }),
+        }) => {
+          const proposal = this.sqlite.authoringProposals.get(proposalId);
+          if (!proposal) {
+            throw new AppError("not_found", "Authoring proposal not found");
+          }
+          return {
+            graph: workflowGraphFromUtterance(
+              this.authoringUtteranceForTurn(proposal.sessionId, proposal.turnId),
+            ),
+            binding: {
+              organizationId: ORGANIZATION_ID,
+              projectId,
+              sessionId: proposal.sessionId,
+              turnId: proposal.turnId,
+              sourceRunId,
+              patchRef,
+              ...(operation === "update" && workflowId !== undefined ? { workflowId } : {}),
+              ...(operation === "update" && expectedRevision !== undefined
+                ? { expectedRevision }
+                : {}),
+            },
+          };
+        },
+        resolveTeamDraft: ({
+          proposalId,
+          projectId,
+          sourceRunId,
+          operation,
+          patchRef,
+          teamId,
+          expectedRevision,
+        }) => {
+          const proposal = this.sqlite.authoringProposals.get(proposalId);
+          if (!proposal) {
+            throw new AppError("not_found", "Authoring proposal not found");
+          }
+          const members = this.publishedTeamMembersFromUtterance(
+            this.authoringUtteranceForTurn(proposal.sessionId, proposal.turnId),
+          );
+          return {
+            members,
+            binding: {
+              organizationId: ORGANIZATION_ID,
+              projectId,
+              sessionId: proposal.sessionId,
+              turnId: proposal.turnId,
+              sourceRunId,
+              patchRef,
+              ...(operation === "update" && teamId !== undefined ? { teamId } : {}),
+              ...(operation === "update" && expectedRevision !== undefined
+                ? { expectedRevision }
+                : {}),
+            },
+          };
+        },
         resolveWorkerDraft: ({
           proposalId,
           projectId,
@@ -1985,8 +2041,8 @@ export class ComposedAppServices implements AppServices {
     const existing = this.sqlite.authoringTurns.get(turnId);
     if (!existing) return false;
     const proposalId = event.proposal.id;
-    const target = event.proposal.targets[0];
-    if (!target) return false;
+    const targets = chatProposalCreateTargets(event.proposal);
+    if (targets.length === 0) return false;
     const now = this.app.world.nowIso();
     const project = this.requireProject(existing.projectId);
     await this.sqlite.uow.withTransaction(async (tx) => {
@@ -1999,16 +2055,17 @@ export class ComposedAppServices implements AppServices {
           projectId: existing.projectId,
           sourceRunId,
           proposalRef: proposalId,
-          proposalHash: sha256Hex(canonicalJson({ id: proposalId, patchRef: target.patchRef })),
-          redactedPreview: "[workflow proposal ready]",
-          targets: [
-            {
-              ordinal: 1,
-              targetType: "workflow",
-              operation: "create",
-              patchRef: target.patchRef,
-            },
-          ],
+          proposalHash: sha256Hex(
+            canonicalJson({
+              id: proposalId,
+              targets: targets.map((target) => ({
+                targetType: target.targetType,
+                patchRef: target.patchRef,
+              })),
+            }),
+          ),
+          redactedPreview: event.proposal.summary,
+          targets,
           createdAt: now,
           updatedAt: now,
         });
@@ -2020,7 +2077,7 @@ export class ComposedAppServices implements AppServices {
                   proposal_id = ?, patch_refs_json = ?, updated_at = ?
             WHERE id = ? AND status IN ('accepted', 'running', 'awaiting_confirmation')`,
         )
-        .run(proposalId, JSON.stringify([target.patchRef]), now, turnId);
+        .run(proposalId, JSON.stringify(targets.map((target) => target.patchRef)), now, turnId);
       const eventRecord: WorkforceEvent = {
         specVersion: "0.1",
         id: this.app.world.ids.ulid("evt_"),
@@ -2042,7 +2099,11 @@ export class ComposedAppServices implements AppServices {
           turnId,
           proposalId,
           sourceRunId,
-          targets: [{ targetType: "workflow", operation: "create", patchRef: target.patchRef }],
+          targets: targets.map((target) => ({
+            targetType: target.targetType,
+            operation: "create",
+            patchRef: target.patchRef,
+          })),
         },
         sensitivity: "internal",
       };
@@ -2477,6 +2538,72 @@ export class ComposedAppServices implements AppServices {
       if (draft) {
         this.authoring.catalog.workerDrafts.set(draft.id, draft);
       }
+    }
+  }
+
+  private chatClassifyContext(): {
+    workers: WorkerDto[];
+    projects: ProjectDto[];
+    runs: RunDto[];
+  } {
+    return {
+      workers: listedWorkers(this.authoring, { limit: 100 }).items,
+      projects: [...this.app.world.projects.values()].map((record) => this.projectDto(record)),
+      runs: [...this.app.world.runs.values()].map((record) => this.runDto(record)),
+    };
+  }
+
+  private authoringUtteranceForTurn(sessionId: string, turnId: string): string | undefined {
+    const view = this.authoringSessionView(sessionId);
+    const content = view?.turns.find((turn) => turn.id === turnId)?.userMessage.content.trim();
+    if (content === undefined || content.length === 0) {
+      return undefined;
+    }
+    if (content.startsWith("[") && content.endsWith("]")) {
+      return undefined;
+    }
+    return content;
+  }
+
+  private publishedTeamMembersFromUtterance(text: string | undefined): TeamMemberDto[] {
+    if (text === undefined) {
+      throw new AppError(
+        "validation_failed",
+        "authoring chat team confirmation requires the original utterance",
+      );
+    }
+    const interpreted = interpretMockAuthoringIntent(text);
+    if (interpreted.team === undefined || interpreted.team.members.length === 0) {
+      throw new AppError(
+        "validation_failed",
+        "authoring chat team confirmation has no published workerVersionId members",
+      );
+    }
+    const members = parseTeamVersionWrite({
+      members: interpreted.team.members.map((member) => ({
+        id: member.id,
+        role: member.role,
+        workerVersionId: member.workerVersionId,
+        quantity: member.quantity,
+      })),
+    }).members;
+    const unpublished = members.find((member) => {
+      const version = this.authoring.catalog.findWorkerVersion(member.workerVersionId ?? "");
+      return version === undefined || !isSelectableWorkerVersion(version);
+    });
+    if (unpublished !== undefined) {
+      throw new AppError(
+        "validation_failed",
+        "authoring chat team confirmation requires published workerVersionId members",
+      );
+    }
+    return members;
+  }
+
+  private syncTeamDraftIntoCatalog(teamId: string): void {
+    const identity = this.sqlite.catalogTeams.listAll().find((item) => item.id === teamId);
+    if (identity) {
+      this.authoring.catalog.teams.set(identity.id, identity);
     }
   }
 
@@ -3109,6 +3236,43 @@ function authoringGraphDefinition() {
   };
 }
 
+function workflowGraphFromUtterance(text: string | undefined) {
+  if (text === undefined) {
+    return authoringGraphDefinition();
+  }
+  return interpretMockAuthoringIntent(text).workflow?.graph ?? authoringGraphDefinition();
+}
+
+function chatProposalCreateTargets(proposal: AuthoringProposalDto): Array<{
+  ordinal: number;
+  targetType: "team" | "task" | "workflow";
+  operation: "create";
+  patchRef: string;
+}> {
+  const targets: Array<{
+    ordinal: number;
+    targetType: "team" | "task" | "workflow";
+    operation: "create";
+    patchRef: string;
+  }> = [];
+  for (const target of proposal.targets) {
+    if (
+      target.targetType !== "team" &&
+      target.targetType !== "task" &&
+      target.targetType !== "workflow"
+    ) {
+      continue;
+    }
+    targets.push({
+      ordinal: targets.length + 1,
+      targetType: target.targetType,
+      operation: "create",
+      patchRef: target.patchRef,
+    });
+  }
+  return targets;
+}
+
 function isCanonicalMockPlan(value: unknown): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -3282,7 +3446,20 @@ function workerDraftWriteFromProposal(
   const preview = redactedPreview?.trim() ?? "";
   if (preview.startsWith("{")) {
     try {
-      return parseWorkerDraftWrite(JSON.parse(preview));
+      const parsed = JSON.parse(preview) as Record<string, unknown>;
+      return parseWorkerDraftWrite({
+        ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
+        ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
+        ...(typeof parsed.role === "string" ? { role: parsed.role } : {}),
+        ...(typeof parsed.runtimeProfileId === "string"
+          ? { runtimeProfileId: parsed.runtimeProfileId }
+          : {}),
+        ...workerCardFieldsFrom({
+          ...(typeof parsed.who === "string" ? { who: parsed.who } : {}),
+          ...(typeof parsed.how === "string" ? { how: parsed.how } : {}),
+          ...(typeof parsed.skills === "string" ? { skills: parsed.skills } : {}),
+        }),
+      });
     } catch {
       // Fall through to the unpublished stub write.
     }

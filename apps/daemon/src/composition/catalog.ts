@@ -145,6 +145,9 @@ export const PRESET_PLANNER_WORKER_VERSION: WorkerVersionDto = {
   name: "Planner",
   role: "planner",
   runtimeProfileId: "mock",
+  who: "规划软件交付的 Planner",
+  how: "先产出 Plan Artifact，再发布 workflowVersion",
+  skills: "规划、任务拆解",
   stateRevision: 1,
   publishedAt: PRESET_WORKER_PUBLISHED_AT,
 };
@@ -159,6 +162,9 @@ export const PRESET_DEVELOPER_WORKER_VERSION: WorkerVersionDto = {
   name: "Developer",
   role: "developer",
   runtimeProfileId: "mock",
+  who: "实现变更的 Developer",
+  how: "在隔离 worktree 里改代码并提交可整合产出",
+  skills: "编码、实现",
   stateRevision: 1,
   publishedAt: PRESET_WORKER_PUBLISHED_AT,
 };
@@ -173,6 +179,9 @@ export const PRESET_REVIEWER_WORKER_VERSION: WorkerVersionDto = {
   name: "Reviewer",
   role: "reviewer",
   runtimeProfileId: "mock",
+  who: "审查整合 digest 的 Reviewer",
+  how: "对照计划与产出做审查，不改已发布版本",
+  skills: "审查、质量把关",
   stateRevision: 1,
   publishedAt: PRESET_WORKER_PUBLISHED_AT,
 };
