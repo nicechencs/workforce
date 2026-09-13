@@ -120,7 +120,11 @@ export {
 } from "./authoring.js";
 export { seedMinimalGraph, type SeededGraph } from "./seed.js";
 export { SqliteTaskRepository } from "./tasks.js";
-export { SqliteWorldSnapshot, type WorldEntitySnapshot, type WorldProjectionMeta } from "./world-snapshot.js";
+export {
+  SqliteWorldSnapshot,
+  type WorldEntitySnapshot,
+  type WorldProjectionMeta,
+} from "./world-snapshot.js";
 export { SqliteWorkflowInstanceRepository } from "./workflows.js";
 export { SQLITE_SESSION, SqliteTx, assertNotInTransaction, sqliteDbOf } from "./session.js";
 export { startRunIdempotent, type StartRunCommand, type StartRunResult } from "./start-run.js";

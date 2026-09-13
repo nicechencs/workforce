@@ -20,13 +20,7 @@ import {
 
 import { PersistenceError, isConstraintError } from "./errors.js";
 import { sqliteDbOf } from "./session.js";
-import {
-  cell,
-  ifPresent,
-  optionalText,
-  requiredInt,
-  requiredText,
-} from "./sql.js";
+import { cell, ifPresent, optionalText, requiredInt, requiredText } from "./sql.js";
 
 const WORKER_COLUMNS = `
   id, name, description, protocol_version, status, state_revision,
@@ -62,7 +56,10 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const items = pageRows.map((row) =>
-      this.toWorkerDto(row, this.listVersionsFor(requiredText(cell(row, "id"), "id"), includeArchived)),
+      this.toWorkerDto(
+        row,
+        this.listVersionsFor(requiredText(cell(row, "id"), "id"), includeArchived),
+      ),
     );
     const last = pageRows.at(-1);
     return parseWorkerPage({
@@ -230,7 +227,10 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
       )
       .run(archivedAt, archivedAt, workerVersionId);
     if (Number(updated.changes) !== 1) {
-      throw new PersistenceError("conflict", `worker version ${workerVersionId} could not be archived`);
+      throw new PersistenceError(
+        "conflict",
+        `worker version ${workerVersionId} could not be archived`,
+      );
     }
     const stored = this.getVersionFrom(db, workerVersionId);
     if (stored === null) {
@@ -270,7 +270,10 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
     insertDraftRow(db, draft);
     const unchanged = this.getVersionFrom(db, sourceWorkerVersionId);
     if (unchanged === null || versionFingerprint(unchanged) !== versionFingerprint(source)) {
-      throw new PersistenceError("conflict", `fork mutated source version ${sourceWorkerVersionId}`);
+      throw new PersistenceError(
+        "conflict",
+        `fork mutated source version ${sourceWorkerVersionId}`,
+      );
     }
     return parseForkWorkerVersionAccepted({
       workerId: identity.id,
@@ -440,7 +443,10 @@ function rowToVersion(row: Record<string, unknown>): WorkerVersionDto {
     ...ifPresent("description", emptyToNull(optionalText(cell(row, "description")))),
     role: requiredText(cell(row, "role"), "role"),
     ...ifPresent("runtimeProfileId", optionalText(cell(row, "runtime_profile_id"))),
-    ...ifPresent("forkedFromWorkerVersionId", optionalText(cell(row, "forked_from_worker_version_id"))),
+    ...ifPresent(
+      "forkedFromWorkerVersionId",
+      optionalText(cell(row, "forked_from_worker_version_id")),
+    ),
     stateRevision: requiredInt(cell(row, "state_revision"), "state_revision"),
     ...ifPresent("publishedAt", optionalText(cell(row, "published_at"))),
     ...ifPresent("archivedAt", optionalText(cell(row, "archived_at"))),
