@@ -10,9 +10,11 @@ import { cn } from "./cn.js";
 import { useLiftPageChrome } from "./page-chrome.js";
 import {
   IconApprovals,
+  IconChat,
   IconDashboard,
   IconNodes,
   IconProjects,
+  IconRoleLibrary,
   IconRuns,
   IconSettings,
   IconTeams,
@@ -549,6 +551,10 @@ export function NavIcon(props: IconProps & { slot: string }): ReactNode {
       return <IconProjects {...rest} />;
     case "teams":
       return <IconTeams {...rest} />;
+    case "role-library":
+      return <IconRoleLibrary {...rest} />;
+    case "chat":
+      return <IconChat {...rest} />;
     case "nodes":
       return <IconNodes {...rest} />;
     case "approvals":
