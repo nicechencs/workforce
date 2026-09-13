@@ -19,6 +19,13 @@ export type FeatureOwner = "t11" | "t12" | "t13";
 
 export const ROLE_LIBRARY_PATH = "/role-library";
 export const CHAT_PATH = "/chat";
+export const WORKFLOW_AUTHORING_PATH = "/workflows/authoring";
+
+/** Full-page role detail. Same list→detail habit as `/teams/:teamId`. */
+export function roleLibraryWorkerPath(workerId: string): string {
+  const id = workerId.trim();
+  return id.length === 0 ? ROLE_LIBRARY_PATH : `${ROLE_LIBRARY_PATH}/${id}`;
+}
 
 export type NavPriority = "p0" | "p1";
 

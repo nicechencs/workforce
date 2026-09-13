@@ -8,7 +8,7 @@ import {
   type CanvasId,
   type ThemeMode,
 } from "@workforce/ui";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useTheme } from "../../app/theme.js";
 import {
@@ -20,11 +20,20 @@ import {
   Page,
   SegmentedControl,
   StatusText,
+  Tabs,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
-import { BUDGET_NOTES, capabilityRows } from "./model.js";
+import {
+  BUDGET_NOTES,
+  capabilityRows,
+  parseSettingsTabFromHash,
+  SETTINGS_TAB_LABELS,
+  SETTINGS_TABS,
+  settingsPath,
+  type SettingsTab,
+} from "./model.js";
 
 const THEME_MODE_ITEMS: readonly { id: ThemeMode; label: string }[] = [
   { id: "light", label: "浅色" },
@@ -52,7 +61,9 @@ const CANVAS_LABELS: Record<CanvasId, string> = {
 };
 
 export function SettingsPage(props: FeaturePageProps): ReactNode {
-  void props;
+  const [tab, setTab] = useState<SettingsTab>(() =>
+    typeof window === "undefined" ? "appearance" : parseSettingsTabFromHash(window.location.hash),
+  );
   const query = useClientQuery("settings:probe", async () => {
     const client = getWorkforceClient();
     const [health, ready, version, capabilities] = await Promise.all([
@@ -63,21 +74,47 @@ export function SettingsPage(props: FeaturePageProps): ReactNode {
     ]);
     return { health, ready, version, capabilities };
   });
+
+  useEffect(() => {
+    const sync = (): void => {
+      setTab(parseSettingsTabFromHash(window.location.hash));
+    };
+    window.addEventListener("hashchange", sync);
+    sync();
+    return () => {
+      window.removeEventListener("hashchange", sync);
+    };
+  }, []);
+
+  function selectTab(next: SettingsTab) {
+    setTab(next);
+    props.navigate(settingsPath(next));
+  }
+
+  const snapshot = query.data;
   return (
     <Page title="设置" subtitle="本机 Runtime 探测、能力矩阵、预算说明与界面外观。">
       <ErrorText>{query.error}</ErrorText>
       {query.loading && query.data === null ? <LoadingText /> : null}
-      <AppearanceCard />
-      {query.data ? (
-        <SettingsView
-          health={query.data.health}
-          ready={query.data.ready}
-          version={query.data.version}
-          capabilities={query.data.capabilities}
+      <Tabs
+        ariaLabel="设置"
+        testId="settings-tabs"
+        tabTestIdPrefix="settings-tab-"
+        items={SETTINGS_TABS.map((id) => ({ id, label: SETTINGS_TAB_LABELS[id] }))}
+        value={tab}
+        onChange={selectTab}
+      />
+      {tab === "appearance" ? <AppearanceCard /> : null}
+      {tab === "local" ? (
+        <SettingsLocalView
+          health={snapshot?.health ?? null}
+          ready={snapshot?.ready ?? null}
+          version={snapshot?.version ?? null}
         />
-      ) : (
-        <SettingsView health={null} ready={null} version={null} capabilities={null} />
-      )}
+      ) : null}
+      {tab === "capabilities" ? (
+        <SettingsCapabilitiesView capabilities={snapshot?.capabilities ?? null} />
+      ) : null}
     </Page>
   );
 }
@@ -141,6 +178,19 @@ export function SettingsView(props: {
 }): ReactNode {
   return (
     <>
+      <SettingsLocalView health={props.health} ready={props.ready} version={props.version} />
+      <SettingsCapabilitiesView capabilities={props.capabilities} />
+    </>
+  );
+}
+
+export function SettingsLocalView(props: {
+  health: HealthDto | null;
+  ready: ReadyDto | null;
+  version: VersionDto | null;
+}): ReactNode {
+  return (
+    <>
       <Card title="本机探测" testId="settings-probe">
         {props.health ? (
           <StatusText tone="success">
@@ -170,21 +220,6 @@ export function SettingsView(props: {
           <Muted>就绪检查待返回。</Muted>
         )}
       </Card>
-      <Card title="能力" testId="settings-capabilities">
-        {props.capabilities ? (
-          <ul className="wf-list">
-            {capabilityRows(props.capabilities).map((row) => (
-              <li key={`${row.group}-${row.name}`} className="wf-list-row">
-                <span className="wf-list-row-title">
-                  {row.group} / {row.name}：{row.value}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Muted>能力探测待返回。不支持的按钮不会渲染为可成功点击。</Muted>
-        )}
-      </Card>
       <Card title="预算说明" testId="settings-budget">
         <ul className="wf-list">
           {BUDGET_NOTES.map((note) => (
@@ -195,5 +230,27 @@ export function SettingsView(props: {
         </ul>
       </Card>
     </>
+  );
+}
+
+export function SettingsCapabilitiesView(props: {
+  capabilities: CapabilitiesDto | null;
+}): ReactNode {
+  return (
+    <Card title="能力" testId="settings-capabilities">
+      {props.capabilities ? (
+        <ul className="wf-list">
+          {capabilityRows(props.capabilities).map((row) => (
+            <li key={`${row.group}-${row.name}`} className="wf-list-row">
+              <span className="wf-list-row-title">
+                {row.group} / {row.name}：{row.value}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Muted>能力探测待返回。不支持的按钮不会渲染为可成功点击。</Muted>
+      )}
+    </Card>
   );
 }

@@ -18,10 +18,13 @@ import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   approvalDigest,
   approvalExpiry,
+  approvalExtraRefs,
   approvalStatusLabel,
   canApproveApproval,
   canDecideApproval,
   decisionPayload,
+  EVALUATION_UNAVAILABLE,
+  FIELD_UNRETURNED,
   gateLabel,
 } from "./model.js";
 
@@ -79,13 +82,30 @@ export function ApprovalListView(props: {
 }
 
 function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): ReactNode {
-  const query = useClientQuery(`approvals:${props.approvalId}`, () =>
-    getWorkforceClient().getApproval(props.approvalId),
-  );
+  const query = useClientQuery(`approvals:${props.approvalId}`, async () => {
+    const client = getWorkforceClient();
+    const approval = await client.getApproval(props.approvalId);
+    let artifactHref: string | undefined;
+    if (approval.artifactVersionId) {
+      try {
+        const page = await client.listArtifacts({ projectId: approval.projectId, limit: 50 });
+        const match = page.items.find((artifact) =>
+          artifact.versions.some((version) => version.id === approval.artifactVersionId),
+        );
+        if (match) {
+          artifactHref = `/artifacts/${match.id}/versions/${approval.artifactVersionId}`;
+        }
+      } catch {
+        artifactHref = undefined;
+      }
+    }
+    return { approval, artifactHref };
+  });
   const [reason, setReason] = useState("人工确认");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const approval = query.data;
+  const approval = query.data?.approval;
+  const artifactHref = query.data?.artifactHref;
 
   async function decide(kind: "approve" | "reject" | "request-changes"): Promise<void> {
     if (!approval) {
@@ -122,6 +142,7 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
       subtitle={props.approvalId}
       actions={
         <Button
+          variant="outline"
           onClick={() => {
             props.navigate("/approvals");
           }}
@@ -139,6 +160,23 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
           reason={reason}
           onReason={setReason}
           busy={busy}
+          onOpenTask={
+            approval.taskId
+              ? () => {
+                  props.navigate(`/projects/${approval.projectId}/tasks/${approval.taskId}`);
+                }
+              : undefined
+          }
+          onOpenProject={() => {
+            props.navigate(`/projects/${approval.projectId}`);
+          }}
+          onOpenArtifact={
+            artifactHref
+              ? () => {
+                  props.navigate(artifactHref);
+                }
+              : undefined
+          }
           onApprove={() => {
             void decide("approve");
           }}
@@ -160,6 +198,9 @@ export interface ApprovalCardProps {
   busy?: boolean | undefined;
   onReason?: ((value: string) => void) | undefined;
   onOpen?: (() => void) | undefined;
+  onOpenTask?: (() => void) | undefined;
+  onOpenProject?: (() => void) | undefined;
+  onOpenArtifact?: (() => void) | undefined;
   onApprove?: (() => void) | undefined;
   onReject?: (() => void) | undefined;
   onRequestChanges?: (() => void) | undefined;
@@ -167,6 +208,7 @@ export interface ApprovalCardProps {
 
 export function ApprovalCard(props: ApprovalCardProps): ReactNode {
   const digest = approvalDigest(props.approval);
+  const extra = approvalExtraRefs(props.approval);
   const approveEnabled = canApproveApproval(props.approval) && props.busy !== true;
   const decideEnabled = canDecideApproval(props.approval) && props.busy !== true && digest !== null;
   const showActions = props.onApprove !== undefined || props.onOpen !== undefined;
@@ -179,14 +221,40 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
           {approvalStatusLabel(props.approval.status)}
         </Badge>
       </div>
-      <Muted>项目 {props.approval.projectId}</Muted>
-      {props.approval.taskId !== undefined ? <Muted>Task {props.approval.taskId}</Muted> : null}
+      {props.onOpenProject ? (
+        <Button variant="ghost" onClick={props.onOpenProject}>
+          项目 {props.approval.projectId}
+        </Button>
+      ) : (
+        <Muted>项目 {props.approval.projectId}</Muted>
+      )}
+      {props.approval.taskId !== undefined ? (
+        props.onOpenTask ? (
+          <Button variant="ghost" onClick={props.onOpenTask}>
+            Task {props.approval.taskId}
+          </Button>
+        ) : (
+          <Muted>Task {props.approval.taskId}</Muted>
+        )
+      ) : (
+        <Muted>Task {FIELD_UNRETURNED}</Muted>
+      )}
       <dl className="wf-detail-grid">
         <dt>资源</dt>
         <dd data-testid="approval-resource">{props.approval.resource}</dd>
         <dt>版本</dt>
         <dd data-testid="approval-version">
-          {props.approval.artifactVersionId ?? "未绑定产物版本"}
+          {props.approval.artifactVersionId ? (
+            props.onOpenArtifact ? (
+              <Button variant="ghost" onClick={props.onOpenArtifact}>
+                {props.approval.artifactVersionId}
+              </Button>
+            ) : (
+              props.approval.artifactVersionId
+            )
+          ) : (
+            "未绑定产物版本"
+          )}
         </dd>
         <dt>摘要</dt>
         <dd data-testid="approval-digest">{digest ?? "缺失"}</dd>
@@ -194,7 +262,18 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
         <dd data-testid="approval-expiry">{approvalExpiry(props.approval)}</dd>
         <dt>请求时间</dt>
         <dd>{props.approval.requestedAt}</dd>
+        <dt>WorkerVersion</dt>
+        <dd>{extra.workerVersionId ?? FIELD_UNRETURNED}</dd>
+        <dt>Run</dt>
+        <dd>{extra.runId ?? FIELD_UNRETURNED}</dd>
+        <dt>节点</dt>
+        <dd>{extra.nodeId ?? FIELD_UNRETURNED}</dd>
+        <dt>Workspace</dt>
+        <dd>{extra.workspaceInstanceId ?? FIELD_UNRETURNED}</dd>
+        <dt>影响级别</dt>
+        <dd>{extra.impact ?? FIELD_UNRETURNED}</dd>
       </dl>
+      <Muted>{EVALUATION_UNAVAILABLE}</Muted>
       {digest === null ? (
         <p className="wf-error-text" data-testid="approval-digest-missing">
           缺少动作摘要，无法批准。版本变更后必须使用审批 DTO 上的当前 digest。

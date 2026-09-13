@@ -61,6 +61,33 @@ export function approvalStatusLabel(status: string): string {
   return APPROVAL_STATUS_LABELS[status] ?? status;
 }
 
+export const FIELD_UNRETURNED = "未返回";
+export const EVALUATION_UNAVAILABLE =
+  "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
+
+export interface ApprovalExtraRefs {
+  workerVersionId?: string;
+  runId?: string;
+  nodeId?: string;
+  workspaceInstanceId?: string;
+  impact?: string;
+}
+
+export function approvalExtraRefs(approval: ApprovalDto): ApprovalExtraRefs {
+  const extra = approval as ApprovalDto & ApprovalExtraRefs;
+  return {
+    ...(typeof extra.workerVersionId === "string" && extra.workerVersionId.length > 0
+      ? { workerVersionId: extra.workerVersionId }
+      : {}),
+    ...(typeof extra.runId === "string" && extra.runId.length > 0 ? { runId: extra.runId } : {}),
+    ...(typeof extra.nodeId === "string" && extra.nodeId.length > 0 ? { nodeId: extra.nodeId } : {}),
+    ...(typeof extra.workspaceInstanceId === "string" && extra.workspaceInstanceId.length > 0
+      ? { workspaceInstanceId: extra.workspaceInstanceId }
+      : {}),
+    ...(typeof extra.impact === "string" && extra.impact.length > 0 ? { impact: extra.impact } : {}),
+  };
+}
+
 /** Bind the decision to the digest currently on the approval DTO — never a stale copy. */
 export function decisionPayload(
   approval: ApprovalDto,

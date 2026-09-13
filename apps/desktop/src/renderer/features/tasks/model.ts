@@ -128,6 +128,15 @@ function compareTaskStable(a: TaskDto, b: TaskDto): number {
   return a.id < b.id ? -1 : 1;
 }
 
+export const FIELD_UNRETURNED = "未返回";
+export const EVALUATION_UNAVAILABLE =
+  "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
+export const RETRY_NEW_RUN_NOTE = "重试会创建新 Run，不会覆盖这条 Task 上的旧 Run。";
+
 export function taskKindNote(): string {
-  return "任务状态与运行（Run）状态分开显示，不会混用 waiting_review / succeeded。";
+  return "任务状态不是 Run 状态。完成只看产物与判定，不以 Run 成功代替任务完成。";
+}
+
+export function projectTasksPath(projectId: string): string {
+  return `/projects/${projectId}?tab=tasks`;
 }

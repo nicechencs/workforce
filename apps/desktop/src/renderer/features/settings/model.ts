@@ -20,6 +20,35 @@ export function capabilityRows(capabilities: CapabilitiesDto): Array<{
   ];
 }
 
+export const SETTINGS_TABS = ["appearance", "local", "capabilities"] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
+  appearance: "外观",
+  local: "本机",
+  capabilities: "能力",
+};
+
+export function parseSettingsTab(value: string | null | undefined): SettingsTab {
+  if (value === "local" || value === "capabilities") {
+    return value;
+  }
+  return "appearance";
+}
+
+export function parseSettingsTabFromHash(hash: string): SettingsTab {
+  const trimmed = hash.startsWith("#") ? hash.slice(1) : hash;
+  const queryIndex = trimmed.indexOf("?");
+  if (queryIndex < 0) {
+    return "appearance";
+  }
+  return parseSettingsTab(new URLSearchParams(trimmed.slice(queryIndex + 1)).get("tab"));
+}
+
+export function settingsPath(tab: SettingsTab): string {
+  return tab === "appearance" ? "/settings" : `/settings?tab=${tab}`;
+}
+
 export const BUDGET_NOTES = [
   "金额使用整数 costMinor 与 ISO-4217 currency，展示层不得把 5.0 当成契约。",
   "未知 / 估算 / 已结算必须区分。未知成本不是 0，也不能拿未知值做硬货币上限。",

@@ -19,13 +19,13 @@ import {
   type WorkerDto,
   type WorkerVersionDto,
 } from "@workforce/protocol";
-import { ROLE_LIBRARY_PATH } from "@workforce/ui";
+import { ROLE_LIBRARY_PATH, roleLibraryWorkerPath as roleLibraryWorkerHref } from "@workforce/ui";
 
 export const CHAT_SUBTITLE =
   "全局语言入口，任意页面可开，不限于作者页。分类不是完成；完成只看 Artifact / Run / Approval。";
 
 export const CHAT_NOT_AUTHORING_ONLY =
-  "这不是 /workflows?authoring=1 的作者页。创建流程仍走项目内 AuthoringSession；创建角色确认后进角色库草稿，不挂 projectId。";
+  "这不是工作流作者面（#/workflows/authoring，旧链 ?authoring=1 仍识别）。创建流程仍走项目内 AuthoringSession；创建角色确认后进角色库草稿，不挂 projectId。";
 
 export const CHAT_NOT_IM =
   "没有 Worker 收件箱，也没有无项目聊天室。对象仍是 WorkerVersion / Team / Workflow / Task / Run / Artifact。";
@@ -295,7 +295,69 @@ export function roleLibraryPath(): string {
 }
 
 export function roleLibraryWorkerPath(workerId: string): string {
-  return `${ROLE_LIBRARY_PATH}?worker=${encodeURIComponent(workerId)}`;
+  return roleLibraryWorkerHref(workerId);
+}
+
+export interface ChatLandingLine {
+  object: string;
+  note: string;
+  href?: string;
+}
+
+/** 本页「将落到」预览：分类仍以 Daemon 为准，这里只说明当前挂点会进哪些对象。 */
+export function chatLandingLines(bindings: {
+  projectId: string;
+  workerId: string;
+  taskId: string;
+  runId: string;
+}): ChatLandingLine[] {
+  const lines: ChatLandingLine[] = [];
+  if (bindings.workerId) {
+    lines.push({
+      object: "角色详情",
+      note: "空闲说话写这张卡片的谁 / 怎么干活 / 技能，不是 IM，也不派 Task/Run。",
+      href: roleLibraryWorkerHref(bindings.workerId),
+    });
+  } else {
+    lines.push({
+      object: "角色库",
+      note: "建角色不要求项目。确认后进库草稿，未发布不能当员工。",
+      href: ROLE_LIBRARY_PATH,
+    });
+  }
+  if (bindings.projectId) {
+    const projectHref = `/projects/${bindings.projectId}`;
+    lines.push({
+      object: "项目",
+      note: "请来 Team / 创建流程 / 去做挂这个项目。没有 :direct URL。",
+      href: projectHref,
+    });
+    if (bindings.taskId) {
+      lines.push({
+        object: "Task",
+        note: "去做可挂已有 Task。返回的是 Run 引用，不是完成。",
+        href: `${projectHref}/tasks/${bindings.taskId}`,
+      });
+    } else {
+      lines.push({
+        object: "Task",
+        note: "去做无 Task 时先建项目内 ad-hoc Task，再开 Run。",
+      });
+    }
+    if (bindings.runId) {
+      lines.push({
+        object: "Run",
+        note: "交流执行中的工作才挂 Run。过程气泡不是完成。",
+        href: `/runs/${bindings.runId}`,
+      });
+    }
+  } else {
+    lines.push({
+      object: "项目内对象",
+      note: "请来 / 建流程 / 去做还缺项目，只问不发写。",
+    });
+  }
+  return lines;
 }
 
 export function landedDraftCanvasPath(draft: LandedWorkflowDraft): string | null {

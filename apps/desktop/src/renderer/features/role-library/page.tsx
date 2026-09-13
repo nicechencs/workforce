@@ -5,6 +5,7 @@ import type {
   WorkerVersionDto,
   WorkerVersionReferencesDto,
 } from "@workforce/desktop-client";
+import { CHAT_PATH, ROLE_LIBRARY_PATH } from "@workforce/ui";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { parseHashQuery } from "../../app/hash-router.js";
@@ -34,7 +35,6 @@ import {
   activeDraftIdOf,
   activeVersionOf,
   applyArchivedToWorker,
-  applyArchivedVersion,
   ARCHIVED_FILTER_ITEMS,
   ARCHIVE_NOT_PUBLISHED,
   canArchiveVersion,
@@ -66,10 +66,10 @@ import {
   prependWorker,
   PUBLISHED_CARD_NOT_PATCHABLE,
   PUBLISH_NOT_DRAFT,
-  replaceWorker,
+  CARD_UNPUBLISHED_NO_DRAFT,
+  roleLibraryDetailHref,
   selectableVersionOptions,
   STATUS_FILTER_ITEMS,
-  CARD_UNPUBLISHED_NO_DRAFT,
   versionOptionLabel,
   workerBadge,
   workerLibraryMethodsPresent,
@@ -79,14 +79,16 @@ import {
   type LibraryQuery,
 } from "./model.js";
 
-interface Selection {
-  workerId: string;
-  versionId?: string;
-  draftId?: string;
+export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
+  const workerId = props.params.workerId;
+  if (workerId !== undefined && workerId.length > 0) {
+    return <RoleLibraryDetailPage {...props} workerId={workerId} />;
+  }
+  return <RoleLibraryListPage {...props} />;
 }
 
-export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
-  void props;
+function RoleLibraryListPage(props: FeaturePageProps): ReactNode {
+  const { navigate } = props;
   const client = useWorkforceClient();
   const [query, setQuery] = useState<LibraryQuery>(emptyLibraryQuery);
   const [searchText, setSearchText] = useState("");
@@ -97,24 +99,12 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
   const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [apiReady, setApiReady] = useState(() => workerLibraryMethodsPresent(client));
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [detailWorker, setDetailWorker] = useState<WorkerDto | null>(null);
-  const [detailVersion, setDetailVersion] = useState<WorkerVersionDto | null>(null);
-  const [detailDraft, setDetailDraft] = useState<WorkerDraftDto | null>(null);
-  const [references, setReferences] = useState<WorkerVersionReferencesDto | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionBusy, setActionBusy] = useState<"archive" | "fork" | "save" | "publish" | "create" | null>(
-    null,
-  );
-  const [forkNotice, setForkNotice] = useState<ForkWorkerVersionAcceptedDto | null>(null);
   const [createForm, setCreateForm] = useState<CreateRoleForm>(emptyCreateRoleForm);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<"create" | null>(null);
   const [hashOpened, setHashOpened] = useState(false);
 
   const selectable = useMemo(() => selectableVersionOptions(workers), [workers]);
-  const selectedOptionId = selection?.versionId ?? "";
 
   const reloadList = useCallback(
     async (nextQuery: LibraryQuery) => {
@@ -151,21 +141,6 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
     void reloadList(query);
   }, [client, query, reloadList]);
 
-  const openWorker = useCallback((worker: WorkerDto, versionId?: string, draftId?: string) => {
-    const version = versionId
-      ? (worker.versions ?? []).find((item) => item.id === versionId)
-      : activeVersionOf(worker);
-    const resolvedDraftId = draftId ?? activeDraftIdOf(worker);
-    setSelection({
-      workerId: worker.id,
-      ...(version?.id !== undefined ? { versionId: version.id } : {}),
-      ...(resolvedDraftId !== undefined ? { draftId: resolvedDraftId } : {}),
-    });
-    setDetailWorker(worker);
-    setDetailVersion(version ?? null);
-    setActionError(null);
-  }, []);
-
   useEffect(() => {
     if (hashOpened || loading) {
       return;
@@ -174,79 +149,12 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
     if (workerId === null || workerId.length === 0) {
       return;
     }
-    const worker = workers.find((item) => item.id === workerId);
-    if (worker !== undefined) {
-      openWorker(worker);
-      setHashOpened(true);
-    }
-  }, [hashOpened, loading, openWorker, workers]);
-
-  useEffect(() => {
-    if (selection === null) {
-      setDetailWorker(null);
-      setDetailVersion(null);
-      setDetailDraft(null);
-      setReferences(null);
-      setDetailError(null);
-      setDetailLoading(false);
-      return;
-    }
-    if (!workerLibraryMethodsPresent(client)) {
-      return;
-    }
-    let cancelled = false;
-    setDetailLoading(true);
-    setDetailError(null);
-    void (async () => {
-      try {
-        const worker = await client.getWorker(selection.workerId);
-        if (cancelled) {
-          return;
-        }
-        setDetailWorker(worker);
-        setWorkers((current) => replaceWorker(current, worker));
-        const versionId = selection.versionId ?? activeVersionOf(worker)?.id;
-        let version: WorkerVersionDto | null = null;
-        if (versionId !== undefined) {
-          version =
-            (worker.versions ?? []).find((item) => item.id === versionId) ??
-            (await client.getWorkerVersion(worker.id, versionId));
-        }
-        if (cancelled) {
-          return;
-        }
-        setDetailVersion(version);
-        if (version !== null && version.status === "published") {
-          const refs = await client.getWorkerVersionReferences(worker.id, version.id);
-          if (!cancelled) {
-            setReferences(refs);
-          }
-        } else if (!cancelled) {
-          setReferences(null);
-        }
-        const draftId = selection.draftId ?? activeDraftIdOf(worker);
-        if (draftId !== undefined) {
-          const draft = await client.getWorkerDraft(selection.workerId, draftId);
-          if (!cancelled) {
-            setDetailDraft(draft);
-          }
-        } else if (!cancelled) {
-          setDetailDraft(null);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setDetailError(libraryErrorMessage(caught));
-        }
-      } finally {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, selection]);
+    setHashOpened(true);
+    const next = roleLibraryDetailHref(workerId);
+    window.location.replace(
+      `${window.location.pathname}${window.location.search}${next.startsWith("#") ? next : `#${next}`}`,
+    );
+  }, [hashOpened, loading]);
 
   function applySearch(event?: FormEvent) {
     event?.preventDefault();
@@ -277,175 +185,20 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
     }
     setActionBusy("create");
     setCreateError(null);
-    setActionError(null);
     try {
       const worker = confirmCreatedDraft(
         await client.createWorker(createWorkerInputFromForm(createForm), libraryCommandOptions()),
       );
       setWorkers((current) => prependWorker(current, worker));
       setCreateForm(emptyCreateRoleForm());
-      setForkNotice(null);
-      openWorker(worker, undefined, activeDraftIdOf(worker));
+      const draftId = activeDraftIdOf(worker);
+      navigate(
+        draftId === undefined
+          ? roleLibraryDetailHref(worker.id)
+          : roleLibraryDetailHref(worker.id, { draftId }),
+      );
     } catch (caught) {
       setCreateError(libraryErrorMessage(caught));
-    } finally {
-      setActionBusy(null);
-    }
-  }
-
-  async function archiveSelected() {
-    if (detailWorker === null || detailVersion === null) {
-      return;
-    }
-    if (!canArchiveVersion(detailVersion)) {
-      setActionError(ARCHIVE_NOT_PUBLISHED);
-      return;
-    }
-    setActionBusy("archive");
-    setActionError(null);
-    try {
-      const archived = confirmArchived(
-        await client.archiveWorkerVersion(
-          detailWorker.id,
-          detailVersion.id,
-          libraryCommandOptions(),
-        ),
-      );
-      setDetailVersion(archived);
-      setDetailWorker((current) =>
-        current === null ? current : applyArchivedToWorker(current, archived, true),
-      );
-      setWorkers((current) => applyArchivedVersion(current, archived, query.includeArchived));
-      setForkNotice(null);
-    } catch (caught) {
-      setActionError(libraryErrorMessage(caught));
-    } finally {
-      setActionBusy(null);
-    }
-  }
-
-  async function forkSelected() {
-    if (detailWorker === null || detailVersion === null) {
-      return;
-    }
-    if (!canForkVersion(detailVersion)) {
-      setActionError(FORK_NOT_PUBLISHED);
-      return;
-    }
-    setActionBusy("fork");
-    setActionError(null);
-    try {
-      const accepted = await client.forkWorkerVersion(
-        detailWorker.id,
-        detailVersion.id,
-        libraryCommandOptions(),
-      );
-      let worker: WorkerDto | null = null;
-      let draft: WorkerDraftDto | null = null;
-      try {
-        worker = await client.getWorker(accepted.workerId);
-      } catch {
-        worker = null;
-      }
-      try {
-        draft = await client.getWorkerDraft(accepted.workerId, accepted.workerDraftId);
-      } catch {
-        draft = null;
-      }
-      const confirmed = confirmForkedDraft(accepted, worker, draft);
-      setForkNotice(confirmed.accepted);
-      if (confirmed.worker !== null) {
-        const forkedWorker = confirmed.worker;
-        setWorkers((current) => prependWorker(current, forkedWorker));
-        setSelection({
-          workerId: confirmed.accepted.workerId,
-          draftId: confirmed.accepted.workerDraftId,
-        });
-        setDetailWorker(forkedWorker);
-        setDetailVersion(null);
-        setDetailDraft(confirmed.draft);
-        setReferences(null);
-      } else {
-        setSelection({
-          workerId: accepted.workerId,
-          draftId: accepted.workerDraftId,
-        });
-      }
-    } catch (caught) {
-      setActionError(libraryErrorMessage(caught));
-    } finally {
-      setActionBusy(null);
-    }
-  }
-
-  async function publishSelected() {
-    if (detailWorker === null || detailDraft === null) {
-      setActionError(PUBLISH_NOT_DRAFT);
-      return;
-    }
-    if (!canPublishDraft(detailWorker, detailDraft)) {
-      setActionError(PUBLISH_NOT_DRAFT);
-      return;
-    }
-    setActionBusy("publish");
-    setActionError(null);
-    try {
-      const published = confirmPublishedVersion(
-        await client.publishWorkerDraft(
-          detailWorker.id,
-          detailDraft.id,
-          libraryCommandOptions(detailDraft.revision),
-        ),
-      );
-      const worker = await client.getWorker(detailWorker.id);
-      setDetailWorker(worker);
-      setWorkers((current) => replaceWorker(current, worker));
-      setDetailVersion(published);
-      setDetailDraft(null);
-      setSelection({
-        workerId: worker.id,
-        versionId: published.id,
-      });
-      setForkNotice(null);
-    } catch (caught) {
-      setActionError(libraryErrorMessage(caught));
-    } finally {
-      setActionBusy(null);
-    }
-  }
-
-  async function saveCard(form: CardForm) {
-    if (detailWorker === null) {
-      return;
-    }
-    if (detailDraft === null) {
-      setActionError(
-        isPublishedCardLocked(detailVersion)
-          ? PUBLISHED_CARD_NOT_PATCHABLE
-          : CARD_UNPUBLISHED_NO_DRAFT,
-      );
-      return;
-    }
-    if (!canPatchCardDraft(detailDraft)) {
-      setActionError(DRAFT_NOT_EDITABLE);
-      return;
-    }
-    setActionBusy("save");
-    setActionError(null);
-    try {
-      const patched = confirmPatchedDraft(
-        await client.patchWorkerDraft(
-          detailWorker.id,
-          detailDraft.id,
-          cardWriteFromForm(form),
-          libraryCommandOptions(detailDraft.revision),
-        ),
-      );
-      setDetailDraft(patched);
-    } catch (caught) {
-      setActionError(
-        isLibraryRevisionConflict(caught) ? DRAFT_REVISION_CONFLICT : libraryErrorMessage(caught),
-      );
     } finally {
       setActionBusy(null);
     }
@@ -512,12 +265,9 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
       </Card>
       <SelectablePicker
         options={selectable}
-        value={selectedOptionId}
+        value=""
         onChange={(option) => {
-          const worker = workers.find((item) => item.id === option.workerId);
-          if (worker !== undefined) {
-            openWorker(worker, option.version.id);
-          }
+          navigate(roleLibraryDetailHref(option.workerId, { versionId: option.version.id }));
         }}
       />
       <Card title="库">
@@ -544,8 +294,7 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
                   }
                   meta={workerListMeta(worker)}
                   onClick={() => {
-                    setForkNotice(null);
-                    openWorker(worker);
+                    navigate(roleLibraryDetailHref(worker.id));
                   }}
                 />
               );
@@ -558,35 +307,227 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
           </Button>
         ) : null}
       </Card>
-      {selection === null ? (
-        <Card>
-          <Muted>
-            从列表或可选用版本打开一个 identity，查看角色卡片、引用关系，并归档、fork 或发布草稿。
-          </Muted>
-        </Card>
-      ) : (
-        <WorkerDetail
-          worker={detailWorker}
-          version={detailVersion}
-          draft={detailDraft}
-          references={references}
-          loading={detailLoading}
-          error={detailError}
-          actionError={actionError}
-          busy={actionBusy}
-          forkNotice={forkNotice}
-          onArchive={() => void archiveSelected()}
-          onFork={() => void forkSelected()}
-          onPublish={() => void publishSelected()}
-          onSaveCard={(form) => void saveCard(form)}
-          onOpenVersion={(version) => {
-            if (detailWorker !== null) {
-              setForkNotice(null);
-              openWorker(detailWorker, version.id);
-            }
+    </Page>
+  );
+}
+
+function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): ReactNode {
+  const { navigate, workerId } = props;
+  const client = useWorkforceClient();
+  const query = parseHashQuery(typeof window === "undefined" ? "" : window.location.hash);
+  const requestedVersionId = query.get("version") ?? undefined;
+  const requestedDraftId = query.get("draft") ?? undefined;
+  const [worker, setWorker] = useState<WorkerDto | null>(null);
+  const [version, setVersion] = useState<WorkerVersionDto | null>(null);
+  const [draft, setDraft] = useState<WorkerDraftDto | null>(null);
+  const [references, setReferences] = useState<WorkerVersionReferencesDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<"archive" | "fork" | "save" | "publish" | null>(
+    null,
+  );
+  const [forkNotice, setForkNotice] = useState<ForkWorkerVersionAcceptedDto | null>(null);
+
+  const reload = useCallback(async () => {
+    if (!workerLibraryMethodsPresent(client)) {
+      setLoading(false);
+      setWorker(null);
+      setError(LIBRARY_API_MISSING);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const loaded = await client.getWorker(workerId);
+      setWorker(loaded);
+      const versionId = requestedVersionId ?? activeVersionOf(loaded)?.id;
+      let nextVersion: WorkerVersionDto | null = null;
+      if (versionId !== undefined) {
+        nextVersion =
+          (loaded.versions ?? []).find((item) => item.id === versionId) ??
+          (await client.getWorkerVersion(loaded.id, versionId));
+      }
+      setVersion(nextVersion);
+      if (nextVersion !== null && nextVersion.status === "published") {
+        setReferences(await client.getWorkerVersionReferences(loaded.id, nextVersion.id));
+      } else {
+        setReferences(null);
+      }
+      const draftId = requestedDraftId ?? activeDraftIdOf(loaded);
+      if (draftId !== undefined) {
+        try {
+          setDraft(await client.getWorkerDraft(loaded.id, draftId));
+        } catch {
+          setDraft(null);
+        }
+      } else {
+        setDraft(null);
+      }
+    } catch (caught) {
+      setWorker(null);
+      setError(libraryErrorMessage(caught));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, requestedDraftId, requestedVersionId, workerId]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  async function archiveSelected() {
+    if (worker === null || version === null) {
+      return;
+    }
+    if (!canArchiveVersion(version)) {
+      setActionError(ARCHIVE_NOT_PUBLISHED);
+      return;
+    }
+    setActionBusy("archive");
+    setActionError(null);
+    try {
+      const archived = confirmArchived(
+        await client.archiveWorkerVersion(worker.id, version.id, libraryCommandOptions()),
+      );
+      setVersion(archived);
+      setWorker((current) =>
+        current === null ? current : applyArchivedToWorker(current, archived, true),
+      );
+      setForkNotice(null);
+    } catch (caught) {
+      setActionError(libraryErrorMessage(caught));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function forkSelected() {
+    if (worker === null || version === null) {
+      return;
+    }
+    if (!canForkVersion(version)) {
+      setActionError(FORK_NOT_PUBLISHED);
+      return;
+    }
+    setActionBusy("fork");
+    setActionError(null);
+    try {
+      const accepted = await client.forkWorkerVersion(
+        worker.id,
+        version.id,
+        libraryCommandOptions(),
+      );
+      const confirmed = confirmForkedDraft(accepted, null, null);
+      setForkNotice(confirmed.accepted);
+      navigate(roleLibraryDetailHref(accepted.workerId, { draftId: accepted.workerDraftId }));
+    } catch (caught) {
+      setActionError(libraryErrorMessage(caught));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function publishSelected() {
+    if (worker === null || draft === null) {
+      setActionError(PUBLISH_NOT_DRAFT);
+      return;
+    }
+    if (!canPublishDraft(worker, draft)) {
+      setActionError(PUBLISH_NOT_DRAFT);
+      return;
+    }
+    setActionBusy("publish");
+    setActionError(null);
+    try {
+      const published = confirmPublishedVersion(
+        await client.publishWorkerDraft(worker.id, draft.id, libraryCommandOptions(draft.revision)),
+      );
+      setForkNotice(null);
+      navigate(roleLibraryDetailHref(worker.id, { versionId: published.id }));
+      await reload();
+    } catch (caught) {
+      setActionError(libraryErrorMessage(caught));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function saveCard(form: CardForm) {
+    if (worker === null) {
+      return;
+    }
+    if (draft === null) {
+      setActionError(
+        isPublishedCardLocked(version) ? PUBLISHED_CARD_NOT_PATCHABLE : CARD_UNPUBLISHED_NO_DRAFT,
+      );
+      return;
+    }
+    if (!canPatchCardDraft(draft)) {
+      setActionError(DRAFT_NOT_EDITABLE);
+      return;
+    }
+    setActionBusy("save");
+    setActionError(null);
+    try {
+      const patched = confirmPatchedDraft(
+        await client.patchWorkerDraft(
+          worker.id,
+          draft.id,
+          cardWriteFromForm(form),
+          libraryCommandOptions(draft.revision),
+        ),
+      );
+      setDraft(patched);
+    } catch (caught) {
+      setActionError(
+        isLibraryRevisionConflict(caught) ? DRAFT_REVISION_CONFLICT : libraryErrorMessage(caught),
+      );
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  return (
+    <Page
+      title={worker?.name ?? "角色详情"}
+      subtitle="卡片必印谁 / 怎么干活 / 技能。空闲说话写这三格，不是 IM，也不派 Task/Run。"
+      actions={
+        <Button
+          variant="outline"
+          onClick={() => {
+            navigate(ROLE_LIBRARY_PATH);
           }}
-        />
-      )}
+        >
+          返回角色库
+        </Button>
+      }
+    >
+      <Notice tone="info" title="空闲说话写卡片">
+        请用顶栏 Chat 说一句。确认后写入本卡片对应格子，不会开收件箱，也不派 Task/Run。
+        <Button variant="outline" onClick={() => navigate(CHAT_PATH)}>
+          去 Chat 说一句
+        </Button>
+      </Notice>
+      <WorkerDetail
+        worker={worker}
+        version={version}
+        draft={draft}
+        references={references}
+        loading={loading}
+        error={error}
+        actionError={actionError}
+        busy={actionBusy}
+        forkNotice={forkNotice}
+        onArchive={() => void archiveSelected()}
+        onFork={() => void forkSelected()}
+        onPublish={() => void publishSelected()}
+        onSaveCard={(form) => void saveCard(form)}
+        onOpenVersion={(next) => {
+          setForkNotice(null);
+          navigate(roleLibraryDetailHref(workerId, { versionId: next.id }));
+        }}
+      />
     </Page>
   );
 }
@@ -672,7 +613,7 @@ function SelectablePicker(props: {
     <Card title="Team 可选用的已发布版本" testId="role-library-selector">
       <Muted>
         只列出已发布且未归档的 WorkerVersion，给项目 Team 选用时对照。这里不会写入 Team。归档后不会再出现；已有
-        TeamVersion 引用仍然有效。
+        TeamVersion 引用仍然有效。点选后打开该角色详情。
       </Muted>
       {props.options.length === 0 ? (
         <EmptyState title="没有可选用版本">未发布草稿和已归档版本都不会进入此选择器。</EmptyState>

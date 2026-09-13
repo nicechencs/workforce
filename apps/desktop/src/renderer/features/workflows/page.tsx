@@ -112,11 +112,12 @@ export function WorkflowsPage(props: FeaturePageProps) {
     };
   }, [client, props.params.workflowId, props.params.versionId]);
 
-  if (authoringHash !== null) {
+  if (authoringHash !== null || props.params.workflowId === "authoring") {
     // The full hash is an authoring-session boundary. In particular,
     // `projectId=prj_a` → `projectId=prj_b` must not retain A's form or
     // local messages while B hydrates.
-    return <WorkflowAuthoringPage key={authoringHash} {...props} path={authoringHash} />;
+    const hash = authoringHash ?? "#/workflows/authoring";
+    return <WorkflowAuthoringPage key={hash} {...props} path={hash} />;
   }
   if (openCanvas) {
     return (

@@ -359,6 +359,9 @@ export function shouldOpenCanvas(params: {
   versionId?: string | undefined;
   workflow?: WorkflowTemplateView | null | undefined;
 }): boolean {
+  if (params.workflowId === "authoring") {
+    return false;
+  }
   if (params.workflowId === CANVAS_NEW_WORKFLOW_ID) {
     return true;
   }

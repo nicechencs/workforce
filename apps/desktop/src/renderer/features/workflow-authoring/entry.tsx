@@ -1,5 +1,5 @@
 import { Badge, Button, Card, Cluster, Muted } from "../../components/ui.js";
-import { AUTHORING_PATH, CHAT_SESSION_GAP } from "./model.js";
+import { AUTHORING_ROUTE, CHAT_SESSION_GAP } from "./model.js";
 
 export function WorkflowAuthoringEntry(props: { navigate: (path: string) => void }) {
   return (
@@ -13,7 +13,7 @@ export function WorkflowAuthoringEntry(props: { navigate: (path: string) => void
         <Button
           testId="workflow-authoring-open"
           variant="primary"
-          onClick={() => props.navigate(AUTHORING_PATH)}
+          onClick={() => props.navigate(AUTHORING_ROUTE)}
         >
           打开工作流作者面
         </Button>

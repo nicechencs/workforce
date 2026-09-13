@@ -48,6 +48,14 @@ function decodeBytes(bytes: Uint8Array): { text: string; binary: boolean } {
   }
 }
 
+export const FIELD_UNRETURNED = "未返回";
+export const EVALUATION_UNAVAILABLE =
+  "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
+
+export function artifactVersionPath(artifactId: string, versionId: string): string {
+  return `/artifacts/${artifactId}/versions/${versionId}`;
+}
+
 export function artifactVersionHeading(
   artifactId: string,
   version: Pick<ArtifactVersionDto, "id" | "version" | "status" | "hash">,

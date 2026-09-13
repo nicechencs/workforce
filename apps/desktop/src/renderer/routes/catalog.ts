@@ -2,6 +2,7 @@ import {
   CHAT_PATH,
   FEATURE_SLOTS,
   ROLE_LIBRARY_PATH,
+  WORKFLOW_AUTHORING_PATH,
   type FeatureOwner,
   type FeatureSlot,
 } from "@workforce/ui";
@@ -66,6 +67,15 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     placeholder: true,
   },
   {
+    id: "role-library-worker",
+    // Legacy `#/role-library?worker=` is still parsed on the list page and replaced here.
+    path: `${ROLE_LIBRARY_PATH}/:workerId`,
+    title: "角色详情",
+    slot: "role-library",
+    owner: "t11",
+    placeholder: true,
+  },
+  {
     id: "nodes",
     path: "/nodes",
     title: "执行节点",
@@ -110,6 +120,15 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     id: "workflows",
     path: "/workflows",
     title: "工作流",
+    slot: "workflows",
+    owner: "t12",
+    placeholder: true,
+  },
+  {
+    id: "workflow-authoring",
+    // Must sit before `/workflows/:workflowId`. Legacy `#/workflows?authoring=1` still opens this view.
+    path: WORKFLOW_AUTHORING_PATH,
+    title: "工作流作者面",
     slot: "workflows",
     owner: "t12",
     placeholder: true,

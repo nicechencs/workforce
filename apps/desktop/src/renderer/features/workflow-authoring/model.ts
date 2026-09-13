@@ -4,12 +4,15 @@ import type {
   CommandOptions,
   ProjectDto,
 } from "@workforce/desktop-client";
+import { WORKFLOW_AUTHORING_PATH } from "@workforce/ui";
 
 export type { AuthoringSessionViewDto, AuthoringTurnDto, ProjectDto };
 
 export const CHAT_SESSION_PROTOCOL_FROZEN = true;
 export const AUTHORING_QUERY = "authoring";
+/** Legacy query deep link. Canonical path is WORKFLOW_AUTHORING_PATH. */
 export const AUTHORING_PATH = "/workflows?authoring=1";
+export const AUTHORING_ROUTE = WORKFLOW_AUTHORING_PATH;
 
 export const CHAT_SESSION_GAP =
   "此页面使用项目范围的 Daemon AuthoringSession。消息正文只在 Daemon 进程内暂存，重启后不可恢复的消息会明确标记。";
@@ -39,12 +42,14 @@ export interface AuthoringProjectBinding {
 export function isWorkflowAuthoringHash(hash: string): boolean {
   const trimmed = hash.startsWith("#") ? hash.slice(1) : hash;
   const queryIndex = trimmed.indexOf("?");
-  if (queryIndex < 0) {
-    return false;
+  const pathPart = (queryIndex < 0 ? trimmed : trimmed.slice(0, queryIndex)) || "";
+  const withSlash = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+  const normalized =
+    withSlash.length > 1 && withSlash.endsWith("/") ? withSlash.slice(0, -1) : withSlash;
+  if (normalized === WORKFLOW_AUTHORING_PATH) {
+    return true;
   }
-  const path = trimmed.slice(0, queryIndex);
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  if (normalized !== "/workflows") {
+  if (normalized !== "/workflows" || queryIndex < 0) {
     return false;
   }
   return new URLSearchParams(trimmed.slice(queryIndex + 1)).get(AUTHORING_QUERY) === "1";

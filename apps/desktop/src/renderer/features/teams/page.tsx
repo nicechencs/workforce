@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
+import { roleLibraryWorkerPath } from "@workforce/ui";
 
 import {
   Badge,
@@ -67,6 +68,21 @@ import {
   type TeamView,
   type TeamWriteSupport,
 } from "./model.js";
+
+function roleDetailPath(workerId: string, versionId?: string): string {
+  const path = roleLibraryWorkerPath(workerId);
+  return versionId ? `${path}?version=${encodeURIComponent(versionId)}` : path;
+}
+
+function memberWorkerId(
+  member: TeamMemberView,
+  versions: SelectableWorkerVersionView[],
+): string | undefined {
+  if (member.workerId && member.workerId.length > 0) {
+    return member.workerId;
+  }
+  return versions.find((item) => item.workerVersionId === member.workerVersionId)?.workerId;
+}
 
 export function TeamsPage(props: FeaturePageProps) {
   const client = useWorkforceClient();
@@ -180,6 +196,7 @@ export function TeamsPage(props: FeaturePageProps) {
         writeSupport={writeSupport}
         onBack={() => props.navigate("/teams")}
         onOpenLibrary={() => props.navigate("/role-library")}
+        onOpenRole={(workerId, versionId) => props.navigate(roleDetailPath(workerId, versionId))}
         onPersisted={openTeam}
         onPublished={(team) => void openPublishedTeam(team)}
       />
@@ -197,6 +214,7 @@ export function TeamsPage(props: FeaturePageProps) {
         client={client}
         onBack={() => props.navigate("/teams")}
         onOpenLibrary={() => props.navigate("/role-library")}
+        onOpenRole={(workerId, versionId) => props.navigate(roleDetailPath(workerId, versionId))}
         onPersisted={openTeam}
         onPublished={(team) => void openPublishedTeam(team)}
       />
@@ -270,6 +288,7 @@ function TeamDetailRoute(props: {
   client: DesktopClient;
   onBack: () => void;
   onOpenLibrary: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -316,6 +335,7 @@ function TeamDetailRoute(props: {
       client={props.client}
       onBack={props.onBack}
       onOpenLibrary={props.onOpenLibrary}
+      onOpenRole={props.onOpenRole}
       onPersisted={props.onPersisted}
       onPublished={props.onPublished}
     />
@@ -330,6 +350,7 @@ function TeamDetail(props: {
   client: DesktopClient;
   onBack: () => void;
   onOpenLibrary: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -345,6 +366,7 @@ function TeamDetail(props: {
         initial={draftFormFromTeam(team)}
         onBack={props.onBack}
         onOpenLibrary={props.onOpenLibrary}
+        onOpenRole={props.onOpenRole}
         onPersisted={props.onPersisted}
         onPublished={props.onPublished}
       />
@@ -359,6 +381,7 @@ function TeamDetail(props: {
       onForked={writeSupport.create ? props.onPersisted : undefined}
       client={props.client}
       onBack={props.onBack}
+      onOpenRole={props.onOpenRole}
     />
   );
 }
@@ -371,6 +394,7 @@ function TeamCard(props: {
   onForked?: ((team: TeamView) => void) | undefined;
   client: DesktopClient;
   onBack: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
 }) {
   const [forkError, setForkError] = useState<string | null>(null);
   const [forking, setForking] = useState(false);
@@ -425,7 +449,11 @@ function TeamCard(props: {
         </Muted>
         {props.note ? <Muted>{props.note}</Muted> : null}
         <h2 className="wf-section-title">Workers</h2>
-        <MemberList client={props.client} members={props.team.members} />
+        <MemberList
+          client={props.client}
+          members={props.team.members}
+          onOpenRole={props.onOpenRole}
+        />
         {props.team.kind === "preset" ? <Muted>{save.reason}</Muted> : null}
         {!bindable ? (
           <Muted>
@@ -468,6 +496,7 @@ function TeamEditor(props: {
   initial?: TeamDraftForm;
   onBack: () => void;
   onOpenLibrary: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -613,6 +642,7 @@ function TeamEditor(props: {
           members={form.members}
           disabled={!props.writeSupport.create}
           onOpenLibrary={props.onOpenLibrary}
+          onOpenRole={props.onOpenRole}
           onChange={(members) =>
             setForm((current) => reduceTeamDraftForm(current, { type: "setMembers", members }))
           }
@@ -721,7 +751,11 @@ function WorkerCardPreview(props: {
   );
 }
 
-function MemberList(props: { client: DesktopClient; members: TeamMemberView[] }) {
+function MemberList(props: {
+  client: DesktopClient;
+  members: TeamMemberView[];
+  onOpenRole: (workerId: string, versionId?: string) => void;
+}) {
   const versions = usePublishedWorkerCards(props.client);
   return (
     <Table>
@@ -732,20 +766,41 @@ function MemberList(props: { client: DesktopClient; members: TeamMemberView[] })
           <TH>卡片</TH>
           <TH>WorkerVersion</TH>
           <TH>数量</TH>
+          <TH>
+            <span className="wf-sr-only">操作</span>
+          </TH>
         </TR>
       </THead>
       <TBody>
-        {props.members.map((member) => (
-          <TR key={member.id} testId={`team-member-${member.id}`}>
-            <TD>{member.title}</TD>
-            <TD>{member.role}</TD>
-            <TD>
-              <WorkerCardPreview card={resolveMemberCard(member, versions)} />
-            </TD>
-            <TD>{member.workerVersionId ?? "未引用"}</TD>
-            <TD>{member.quantity}</TD>
-          </TR>
-        ))}
+        {props.members.map((member) => {
+          const workerId = memberWorkerId(member, versions);
+          return (
+            <TR key={member.id} testId={`team-member-${member.id}`}>
+              <TD>{member.title}</TD>
+              <TD>{member.role}</TD>
+              <TD>
+                <WorkerCardPreview card={resolveMemberCard(member, versions)} />
+              </TD>
+              <TD>{member.workerVersionId ?? "未引用"}</TD>
+              <TD>{member.quantity}</TD>
+              <TD>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  testId="team-open-role"
+                  disabled={!workerId}
+                  onClick={() => {
+                    if (workerId) {
+                      props.onOpenRole(workerId, member.workerVersionId);
+                    }
+                  }}
+                >
+                  打开角色
+                </Button>
+              </TD>
+            </TR>
+          );
+        })}
       </TBody>
     </Table>
   );
@@ -756,6 +811,7 @@ function MemberEditor(props: {
   members: TeamMemberView[];
   disabled: boolean;
   onOpenLibrary: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
   onChange: (members: TeamMemberView[]) => void;
 }) {
   const [picker, setPicker] = useState<"add" | number | null>(null);
@@ -838,6 +894,20 @@ function MemberEditor(props: {
                   <Button
                     variant="outline"
                     size="sm"
+                    testId="team-open-role"
+                    disabled={!memberWorkerId(member, versions)}
+                    onClick={() => {
+                      const workerId = memberWorkerId(member, versions);
+                      if (workerId) {
+                        props.onOpenRole(workerId, member.workerVersionId);
+                      }
+                    }}
+                  >
+                    打开角色
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     disabled={props.disabled || props.members.length <= 1}
                     onClick={() => props.onChange(removeDraftMember(props.members, index))}
                   >
@@ -857,6 +927,7 @@ function MemberEditor(props: {
           client={props.client}
           disabled={props.disabled}
           onOpenLibrary={props.onOpenLibrary}
+          onOpenRole={props.onOpenRole}
           onCancel={() => setPicker(null)}
           onSelect={(selected) => {
             if (picker === "add") {
@@ -876,6 +947,7 @@ function WorkerVersionPicker(props: {
   client: DesktopClient;
   disabled: boolean;
   onOpenLibrary: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
   onCancel: () => void;
   onSelect: (selected: SelectableWorkerVersionView) => void;
 }) {
@@ -1002,6 +1074,14 @@ function WorkerVersionPicker(props: {
                       onClick={() => props.onSelect(option)}
                     >
                       选用
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      testId="team-open-role-option"
+                      onClick={() => props.onOpenRole(option.workerId, option.workerVersionId)}
+                    >
+                      打开角色
                     </Button>
                     <Button
                       variant="outline"

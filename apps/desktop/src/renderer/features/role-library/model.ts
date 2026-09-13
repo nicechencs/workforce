@@ -21,6 +21,25 @@ import {
   type WorkerCardFieldName,
   type WorkerDefinitionStatus,
 } from "@workforce/protocol";
+import { ROLE_LIBRARY_PATH, roleLibraryWorkerPath } from "@workforce/ui";
+
+export { ROLE_LIBRARY_PATH, roleLibraryWorkerPath };
+
+export function roleLibraryDetailHref(
+  workerId: string,
+  options: { versionId?: string; draftId?: string } = {},
+): string {
+  const path = roleLibraryWorkerPath(workerId);
+  const query = new URLSearchParams();
+  if (options.versionId !== undefined && options.versionId.length > 0) {
+    query.set("version", options.versionId);
+  }
+  if (options.draftId !== undefined && options.draftId.length > 0) {
+    query.set("draft", options.draftId);
+  }
+  const encoded = query.toString();
+  return encoded.length === 0 ? path : `${path}?${encoded}`;
+}
 
 export type LibraryTone = "success" | "warning" | "muted";
 

@@ -1,17 +1,20 @@
 import type {
+  ApprovalDto,
   ArtifactDto,
   ArtifactLineageDto,
   ArtifactVersionDto,
 } from "@workforce/desktop-client";
 import type { ReactNode } from "react";
 
-import { Card, ErrorText, LoadingText, Muted, Page } from "../../components/ui.js";
+import { Button, Card, ErrorText, List, ListRow, LoadingText, Muted, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   artifactVersionHeading,
   decodeArtifactContent,
+  EVALUATION_UNAVAILABLE,
+  FIELD_UNRETURNED,
   isUnversionedArtifactPath,
 } from "./model.js";
 
@@ -27,10 +30,16 @@ export function ArtifactsPage(props: FeaturePageProps): ReactNode {
       </Page>
     );
   }
-  return <ArtifactVersionPage artifactId={artifactId} versionId={versionId} />;
+  return (
+    <ArtifactVersionPage artifactId={artifactId} versionId={versionId} navigate={props.navigate} />
+  );
 }
 
-function ArtifactVersionPage(props: { artifactId: string; versionId: string }): ReactNode {
+function ArtifactVersionPage(props: {
+  artifactId: string;
+  versionId: string;
+  navigate: (path: string) => void;
+}): ReactNode {
   const query = useClientQuery(`artifact:${props.artifactId}:${props.versionId}`, async () => {
     const client = getWorkforceClient();
     const [artifact, version, content, lineage] = await Promise.all([
@@ -39,7 +48,14 @@ function ArtifactVersionPage(props: { artifactId: string; versionId: string }): 
       client.getArtifactVersionContent(props.artifactId, props.versionId),
       client.getArtifactVersionLineage(props.artifactId, props.versionId),
     ]);
-    return { artifact, version, content, lineage };
+    let approvals: ApprovalDto[] = [];
+    try {
+      const page = await client.listApprovals({ projectId: artifact.projectId, limit: 50 });
+      approvals = page.items.filter((item) => item.artifactVersionId === props.versionId);
+    } catch {
+      approvals = [];
+    }
+    return { artifact, version, content, lineage, approvals };
   });
   return (
     <Page title="产物" subtitle={`${props.artifactId} / versions / ${props.versionId}`}>
@@ -51,6 +67,13 @@ function ArtifactVersionPage(props: { artifactId: string; versionId: string }): 
           version={query.data.version}
           content={query.data.content}
           lineage={query.data.lineage}
+          approvals={query.data.approvals}
+          onOpenProject={(projectId) => {
+            props.navigate(`/projects/${projectId}`);
+          }}
+          onOpenApproval={(approvalId) => {
+            props.navigate(`/approvals/${approvalId}`);
+          }}
         />
       ) : null}
     </Page>
@@ -62,8 +85,12 @@ export function ArtifactVersionView(props: {
   version: ArtifactVersionDto;
   content: unknown;
   lineage: ArtifactLineageDto;
+  approvals?: ApprovalDto[] | undefined;
+  onOpenProject?: ((projectId: string) => void) | undefined;
+  onOpenApproval?: ((approvalId: string) => void) | undefined;
 }): ReactNode {
   const decoded = decodeArtifactContent(props.content);
+  const approvals = props.approvals ?? [];
   return (
     <>
       <Card testId="artifact-meta">
@@ -79,6 +106,21 @@ export function ArtifactVersionView(props: {
         </Muted>
         <Muted>固定版本内容，不读取无版本 content。</Muted>
       </Card>
+      <Card title="所属">
+        <Muted>Task：{FIELD_UNRETURNED}</Muted>
+        <Muted>Run：{FIELD_UNRETURNED}</Muted>
+        <Muted>项目 {props.artifact.projectId}</Muted>
+        {props.onOpenProject ? (
+          <Button
+            variant="outline"
+            onClick={() => {
+              props.onOpenProject?.(props.artifact.projectId);
+            }}
+          >
+            打开项目
+          </Button>
+        ) : null}
+      </Card>
       <Card title="内容" testId="artifact-content">
         <pre className="wf-mono">{decoded.text}</pre>
       </Card>
@@ -87,6 +129,31 @@ export function ArtifactVersionView(props: {
         <IdList ids={props.lineage.parents} empty="无父版本" />
         <Muted>子版本</Muted>
         <IdList ids={props.lineage.children} empty="无子版本" />
+      </Card>
+      <Card title="判定">
+        <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+      </Card>
+      <Card title="审批">
+        {approvals.length === 0 ? (
+          <Muted>没有绑定这个精确版本的审批。</Muted>
+        ) : (
+          <List>
+            {approvals.map((approval) => (
+              <ListRow
+                key={approval.id}
+                title={approval.gate}
+                meta={approval.status}
+                onClick={
+                  props.onOpenApproval
+                    ? () => {
+                        props.onOpenApproval?.(approval.id);
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </List>
+        )}
       </Card>
     </>
   );

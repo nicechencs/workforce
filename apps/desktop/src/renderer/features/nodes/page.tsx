@@ -29,11 +29,7 @@ export function NodesPage(props: FeaturePageProps): ReactNode {
         title="节点详情"
         subtitle={nodeId}
         actions={
-          <Button
-            onClick={() => {
-              props.navigate("/nodes");
-            }}
-          >
+          <Button variant="outline" onClick={() => props.navigate("/nodes")}>
             返回本机节点
           </Button>
         }

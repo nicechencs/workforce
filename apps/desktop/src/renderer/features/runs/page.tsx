@@ -1,4 +1,4 @@
-import type { CapabilitiesDto, RunDto } from "@workforce/desktop-client";
+import type { ApprovalDto, ArtifactDto, CapabilitiesDto, RunDto } from "@workforce/desktop-client";
 import { useEffect, useState, type ReactNode } from "react";
 import type { WorkforcePreloadApi } from "@workforce/ui";
 
@@ -7,6 +7,8 @@ import {
   Card,
   CardList,
   ErrorText,
+  List,
+  ListRow,
   LoadingText,
   Muted,
   Page,
@@ -16,9 +18,12 @@ import {
 import type { FeaturePageProps } from "../contract.js";
 import { commandOptions, formatClientError, useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
+import { pinnedArtifactVersion } from "../projects/model.js";
 import {
   canCancelRun,
   canOfferRerun,
+  EVALUATION_UNAVAILABLE,
+  FIELD_UNRETURNED,
   formatRunUsage,
   isUnknownRunRecovery,
   runStatusLabel,
@@ -53,12 +58,23 @@ function RunListPage(props: FeaturePageProps): ReactNode {
         onOpen={(id) => {
           props.navigate(`/runs/${id}`);
         }}
+        onOpenTask={(run) => {
+          props.navigate(`/projects/${run.projectId}/tasks/${run.taskId}`);
+        }}
+        onOpenProject={(projectId) => {
+          props.navigate(`/projects/${projectId}`);
+        }}
       />
     </Page>
   );
 }
 
-export function RunListView(props: { runs: RunDto[]; onOpen: (id: string) => void }): ReactNode {
+export function RunListView(props: {
+  runs: RunDto[];
+  onOpen: (id: string) => void;
+  onOpenTask?: ((run: RunDto) => void) | undefined;
+  onOpenProject?: ((projectId: string) => void) | undefined;
+}): ReactNode {
   if (props.runs.length === 0) {
     return (
       <Card>
@@ -73,9 +89,32 @@ export function RunListView(props: { runs: RunDto[]; onOpen: (id: string) => voi
           <div className="wf-card-header wf-card-header-flush">
             <div>
               <p className="wf-list-row-title">{run.id}</p>
-              <Muted>
-                Task {run.taskId} · 项目 {run.projectId}
-              </Muted>
+              <div className="wf-cluster">
+                {props.onOpenTask ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      props.onOpenTask?.(run);
+                    }}
+                  >
+                    Task {run.taskId}
+                  </Button>
+                ) : (
+                  <Muted>Task {run.taskId}</Muted>
+                )}
+                {props.onOpenProject ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      props.onOpenProject?.(run.projectId);
+                    }}
+                  >
+                    项目 {run.projectId}
+                  </Button>
+                ) : (
+                  <Muted>项目 {run.projectId}</Muted>
+                )}
+              </div>
             </div>
             <Button
               onClick={() => {
@@ -103,7 +142,11 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
       client.listRunEvents(props.runId, { limit: 200 }),
       client.getCapabilities(),
     ]);
-    return { run, events: events.items, capabilities };
+    const [artifacts, approvals] = await Promise.all([
+      listOrEmpty(() => client.listArtifacts({ runId: run.id })),
+      listOrEmpty(() => client.listApprovals({ runId: run.id })),
+    ]);
+    return { run, events: events.items, capabilities, artifacts, approvals };
   });
   const [cancelAccepted, setCancelAccepted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -182,6 +225,7 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
       subtitle={props.runId}
       actions={
         <Button
+          variant="outline"
           onClick={() => {
             props.navigate("/runs");
           }}
@@ -198,6 +242,8 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
           run={run}
           events={mergeEventLists(snapshot?.events ?? [], liveEvents)}
           capabilities={snapshot?.capabilities ?? null}
+          artifacts={snapshot?.artifacts ?? []}
+          approvals={snapshot?.approvals ?? []}
           cancelAccepted={cancelAccepted}
           busy={busy}
           inputText={inputText}
@@ -207,6 +253,18 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
           }}
           onInput={() => {
             void onInput();
+          }}
+          onOpenTask={() => {
+            props.navigate(`/projects/${run.projectId}/tasks/${run.taskId}`);
+          }}
+          onOpenProject={() => {
+            props.navigate(`/projects/${run.projectId}`);
+          }}
+          onOpenArtifact={(artifactId, versionId) => {
+            props.navigate(`/artifacts/${artifactId}/versions/${versionId}`);
+          }}
+          onOpenApproval={(approvalId) => {
+            props.navigate(`/approvals/${approvalId}`);
           }}
         />
       ) : null}
@@ -218,12 +276,18 @@ export interface RunConsoleViewProps {
   run: RunDto;
   events: unknown[];
   capabilities: CapabilitiesDto | null;
+  artifacts?: ArtifactDto[] | undefined;
+  approvals?: ApprovalDto[] | undefined;
   cancelAccepted?: boolean | undefined;
   busy?: boolean | undefined;
   inputText?: string | undefined;
   onInputText?: ((value: string) => void) | undefined;
   onCancel?: (() => void) | undefined;
   onInput?: (() => void) | undefined;
+  onOpenTask?: (() => void) | undefined;
+  onOpenProject?: (() => void) | undefined;
+  onOpenArtifact?: ((artifactId: string, versionId: string) => void) | undefined;
+  onOpenApproval?: ((approvalId: string) => void) | undefined;
 }
 
 export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
@@ -285,10 +349,25 @@ export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
             ) : null}
           </div>
         </div>
-        <Muted>
-          Task {props.run.taskId} · 项目 {props.run.projectId} · attempt {props.run.attempt} ·
-          generation {props.run.generation}
-        </Muted>
+        <div className="wf-cluster">
+          {props.onOpenTask ? (
+            <Button variant="ghost" onClick={props.onOpenTask}>
+              Task {props.run.taskId}
+            </Button>
+          ) : (
+            <Muted>Task {props.run.taskId}</Muted>
+          )}
+          {props.onOpenProject ? (
+            <Button variant="ghost" onClick={props.onOpenProject}>
+              项目 {props.run.projectId}
+            </Button>
+          ) : (
+            <Muted>项目 {props.run.projectId}</Muted>
+          )}
+          <Muted>
+            attempt {props.run.attempt} · generation {props.run.generation}
+          </Muted>
+        </div>
       </Card>
       <Split>
         <Card title="事件时间线" testId="run-timeline">
@@ -301,10 +380,73 @@ export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
         <Card title="上下文" testId="run-context">
           <p data-testid="run-usage">{formatRunUsage(props.run.usage)}</p>
           <Muted>用量区分未知 / 估算 / 已结算。未知成本不是 0。</Muted>
-          <Muted>节点：本机 · Runtime / Worker 细节以事件为准</Muted>
+          <Muted>WorkerVersion：{FIELD_UNRETURNED}</Muted>
+          <Muted>Runtime：{props.run.transport ?? FIELD_UNRETURNED}</Muted>
+          <Muted>节点：{FIELD_UNRETURNED}</Muted>
+          <Muted>WorkspaceInstance：{FIELD_UNRETURNED}</Muted>
+          <Muted>编排模式：{props.run.orchestrationMode ?? FIELD_UNRETURNED}</Muted>
           {canOfferRerun(props.run.status) ? <Button>重跑</Button> : null}
         </Card>
       </Split>
+      <Card title="产物">
+        {(props.artifacts ?? []).length === 0 ? (
+          <Muted>还没有精确版本产物。完成不能看时间线气泡。</Muted>
+        ) : (
+          <List>
+            {(props.artifacts ?? []).map((artifact) => {
+              const version = pinnedArtifactVersion(artifact);
+              if (version === null) {
+                return (
+                  <ListRow
+                    key={artifact.id}
+                    title={artifact.logicalName}
+                    meta={`${artifact.kind} · 无版本，不能打开 latest`}
+                  />
+                );
+              }
+              return (
+                <ListRow
+                  key={artifact.id}
+                  title={artifact.logicalName}
+                  meta={`${artifact.kind} · ${version.id}`}
+                  onClick={
+                    props.onOpenArtifact
+                      ? () => {
+                          props.onOpenArtifact?.(artifact.id, version.id);
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </Card>
+      <Card title="判定">
+        <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+      </Card>
+      <Card title="审批">
+        {(props.approvals ?? []).length === 0 ? (
+          <Muted>没有绑定这条 Run 的审批。</Muted>
+        ) : (
+          <List>
+            {(props.approvals ?? []).map((approval) => (
+              <ListRow
+                key={approval.id}
+                title={approval.gate}
+                meta={approval.status}
+                onClick={
+                  props.onOpenApproval
+                    ? () => {
+                        props.onOpenApproval?.(approval.id);
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </List>
+        )}
+      </Card>
       {showInput ? (
         <Card testId="run-input">
           <label className="wf-label" htmlFor="run-input-text">
@@ -349,4 +491,12 @@ function TimelineList(props: { rows: TimelineRow[] }): ReactNode {
       ))}
     </ol>
   );
+}
+
+async function listOrEmpty<T>(load: () => Promise<{ items: T[] }>): Promise<T[]> {
+  try {
+    return (await load()).items;
+  } catch {
+    return [];
+  }
 }

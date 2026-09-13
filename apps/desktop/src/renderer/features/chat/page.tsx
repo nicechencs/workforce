@@ -47,6 +47,7 @@ import {
   startDirectIntentFromHanging,
   writeCommandOptions,
   createWorkerInputFromWrite,
+  chatLandingLines,
 } from "./model.js";
 import { Transcript } from "./transcript.js";
 
@@ -360,6 +361,13 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         onTaskChange={setTaskId}
         onWorkerChange={onWorkerChange}
       />
+      <LandingCard
+        projectId={projectId}
+        workerId={workerId}
+        taskId={taskId}
+        runId={runId}
+        navigate={props.navigate}
+      />
       <Card testId={directReady ? "chat-direct-ready" : "chat-direct-closed"}>
         <Cluster>
           <Button
@@ -433,6 +441,37 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         ) : null}
       </Card>
     </Page>
+  );
+}
+
+function LandingCard(props: {
+  projectId: string;
+  workerId: string;
+  taskId: string;
+  runId: string;
+  navigate: (path: string) => void;
+}): ReactNode {
+  const lines = chatLandingLines(props);
+  return (
+    <Card title="将落到" testId="chat-landing">
+      <Muted>分类以 Daemon 为准。这里只说明当前挂点会进哪些对象，不是会话轨，也不是完成态。</Muted>
+      {lines.map((line) => (
+        <div key={line.object} className="wf-stack">
+          <strong>{line.object}</strong>
+          <Muted>{line.note}</Muted>
+          {line.href ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                props.navigate(line.href ?? "");
+              }}
+            >
+              打开
+            </Button>
+          ) : null}
+        </div>
+      ))}
+    </Card>
   );
 }
 

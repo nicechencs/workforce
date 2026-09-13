@@ -195,7 +195,7 @@ function WorkerIntentCard(props: {
           variant="primary"
           onClick={() => props.onOpenLibrary(roleLibraryWorkerPath(worker.id))}
         >
-          打开角色库
+          打开角色详情
         </Button>
       </Card>
     );
