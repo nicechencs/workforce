@@ -9,7 +9,11 @@ import type {
   RunDto,
   WorkerDto,
 } from "@workforce/desktop-client";
-import type { ChatIntentDto } from "@workforce/protocol";
+import type {
+  ChatIntentDto,
+  ChatNeedContextMissing,
+  WorkerCardFieldName,
+} from "@workforce/protocol";
 
 import { useOptionalWorkforceContext } from "../../app/workforce-context.js";
 import {
@@ -37,6 +41,7 @@ import {
   sendWorkflowAuthoringMessage,
 } from "./authoring.js";
 import {
+  CARD_FIELD_LABELS,
   CHAT_NOT_AUTHORING_ONLY,
   CHAT_NOT_IM,
   CHAT_SUBTITLE,
@@ -48,9 +53,18 @@ import {
   DIRECT_UNSUPPORTED_NOTE,
   DISCUSS_NEEDS_RUN,
   DISCUSS_SENT_NOTE,
+  INVITE_ALREADY_ON_TEAM,
+  INVITE_TEAM_LANDED_NOTE,
+  INVITE_TEAM_UNPUBLISHED_NOTE,
+  NEED_CLARIFICATION_NOTE,
   PROGRESS_FACT_NOTE,
   TURN_CONFIRMED_IS_NOT_DONE,
+  UPDATE_WORKER_FORKED_NOTE,
+  UPDATE_WORKER_LANDED_NOTE,
+  classifiedIntents,
   classifyUnsupportedAction,
+  createWorkerInputFromWrite,
+  createWorkerWriteFromIntent,
   errorCode,
   errorMessage,
   hasCompletionFact,
@@ -58,11 +72,14 @@ import {
   isActiveRun,
   isDirectCapabilityReady,
   isEmptyChatIntent,
+  landIdleWorkerRemark,
+  landInviteTeam,
   landedDraftCanvasPath,
+  needContextMessage,
   newChatId,
   progressEmptyMessage,
   roleLibraryPath,
-  workerWriteFromText,
+  selectablePublishedVersion,
   writeCommandOptions,
   type WorkerProposalWrite,
 } from "./model.js";
@@ -78,8 +95,14 @@ interface UserEntry {
 interface NeedContextEntry {
   id: string;
   kind: "need_context";
-  missing: "projectId" | "runId";
+  missing: ChatNeedContextMissing;
   text: string;
+}
+
+interface ClarificationEntry {
+  id: string;
+  kind: "need_clarification";
+  question: string;
 }
 
 interface UnsupportedEntry {
@@ -96,6 +119,29 @@ interface CreateWorkerEntry {
   write: WorkerProposalWrite;
   phase: "proposal" | "landed";
   worker?: WorkerDto;
+}
+
+interface UpdateWorkerEntry {
+  id: string;
+  kind: "update_worker";
+  cardField: WorkerCardFieldName;
+  workerId: string;
+  draftId: string;
+  phase: "landed" | "failed";
+  forkedFromWorkerVersionId?: string;
+  error?: string;
+}
+
+interface InviteTeamEntry {
+  id: string;
+  kind: "invite_team";
+  projectId: string;
+  workerVersionId: string;
+  phase: "landed" | "failed";
+  teamId?: string;
+  teamVersionId?: string;
+  alreadyMember?: boolean;
+  error?: string;
 }
 
 interface CreateWorkflowEntry {
@@ -138,8 +184,11 @@ interface ErrorEntry {
 type ChatEntry =
   | UserEntry
   | NeedContextEntry
+  | ClarificationEntry
   | UnsupportedEntry
   | CreateWorkerEntry
+  | UpdateWorkerEntry
+  | InviteTeamEntry
   | CreateWorkflowEntry
   | ProgressEntry
   | DiscussEntry
@@ -151,9 +200,12 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
   const capabilities = useOptionalWorkforceContext()?.capabilities ?? null;
   const online = connection.status === "online";
   const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [workers, setWorkers] = useState<WorkerDto[]>([]);
   const [runs, setRuns] = useState<RunDto[]>([]);
   const [projectId, setProjectId] = useState("");
   const [runId, setRunId] = useState("");
+  const [workerId, setWorkerId] = useState("");
+  const [workerVersionId, setWorkerVersionId] = useState("");
   const [input, setInput] = useState("");
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [busy, setBusy] = useState<BusyAction>(null);
@@ -165,12 +217,13 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
       return;
     }
     let cancelled = false;
-    void client
-      .listProjects({ limit: 100 })
-      .then((page) => {
-        if (!cancelled) {
-          setProjects(page.items);
+    void Promise.all([client.listProjects({ limit: 100 }), client.listWorkers({ limit: 100 })])
+      .then(([projectPage, workerPage]) => {
+        if (cancelled) {
+          return;
         }
+        setProjects(projectPage.items);
+        setWorkers(workerPage.items);
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -208,6 +261,13 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
     };
   }, [client, online, projectId]);
 
+  function onWorkerChange(nextWorkerId: string): void {
+    setWorkerId(nextWorkerId);
+    const worker = workers.find((item) => item.id === nextWorkerId);
+    const published = worker === undefined ? undefined : selectablePublishedVersion(worker);
+    setWorkerVersionId(published?.id ?? "");
+  }
+
   async function onSend(): Promise<void> {
     if (busy !== null || !online) {
       return;
@@ -223,8 +283,14 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
     setEntries((current) => [...current, { id: newChatId("usr"), kind: "user", text }]);
     setInput("");
     try {
-      const result = await classify(client, text, projectId, runId);
-      const next = await dispatchIntent(client, result, text, capabilities);
+      const result = await classify(client, {
+        text,
+        projectId,
+        runId,
+        workerId,
+        workerVersionId,
+      });
+      const next = await dispatchResult(client, result, text, capabilities);
       setEntries((current) => [...current, ...next]);
       setBusy(null);
     } catch (reason: unknown) {
@@ -251,11 +317,7 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
     setError(null);
     try {
       const worker = await client.createWorker(
-        {
-          name: entry.write.name,
-          role: entry.write.role,
-          ...(entry.write.description.trim() ? { description: entry.write.description } : {}),
-        },
+        createWorkerInputFromWrite(entry.write),
         writeCommandOptions(),
       );
       if (worker.status !== "draft") {
@@ -350,12 +412,15 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
       </Notice>
       <BindingBar
         projects={projects}
+        workers={workers}
         runs={runs}
         projectId={projectId}
         runId={runId}
+        workerId={workerId}
         online={online}
         onProjectChange={setProjectId}
         onRunChange={setRunId}
+        onWorkerChange={onWorkerChange}
       />
       <Card testId="chat-direct-closed">
         <Cluster>
@@ -381,14 +446,18 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         }}
       />
       <Card title="发送" testId="chat-composer">
-        <Field label="用语言描述要做的事" htmlFor="chat-intent" hint="空意图不会发送。">
+        <Field
+          label="用语言描述要做的事"
+          htmlFor="chat-intent"
+          hint="分类以 Daemon 为准。认不出就问；空意图不会发送。"
+        >
           <Textarea
             id="chat-intent"
             testId="chat-intent"
             rows={4}
             value={input}
             disabled={busy !== null}
-            placeholder="例如：创建角色 reviewer；创建流程；问进度；交流工作内容。不要写「去做」。"
+            placeholder="例如：建一个更严的 reviewer；把这个角色改得更会写测试；请这个角色进项目；做一条发布流程；进度怎么样。"
             onChange={(event) => {
               setInput(event.target.value);
               if (!isEmptyChatIntent(event.target.value)) {
@@ -425,12 +494,15 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
 
 function BindingBar(props: {
   projects: readonly ProjectDto[];
+  workers: readonly WorkerDto[];
   runs: readonly RunDto[];
   projectId: string;
   runId: string;
+  workerId: string;
   online: boolean;
   onProjectChange: (projectId: string) => void;
   onRunChange: (runId: string) => void;
+  onWorkerChange: (workerId: string) => void;
 }): ReactNode {
   const activeRuns = props.runs.filter((run) => isActiveRun(run.status));
   return (
@@ -444,10 +516,28 @@ function BindingBar(props: {
             disabled={!props.online}
             onChange={(event) => props.onProjectChange(event.target.value)}
           >
-            <option value="">未选择（创建角色可不选；创建流程 / 问进度 / 交流工作要选）</option>
+            <option value="">
+              未选择（创建角色可不选；请来 Team / 创建流程 / 问进度 / 交流工作要选）
+            </option>
             {props.projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name} · {project.id}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="角色" htmlFor="chat-worker">
+          <Select
+            id="chat-worker"
+            testId="chat-worker-select"
+            value={props.workerId}
+            disabled={!props.online}
+            onChange={(event) => props.onWorkerChange(event.target.value)}
+          >
+            <option value="">未选择（空闲写卡 / 请来 Team 对不上角色时先选）</option>
+            {props.workers.map((worker) => (
+              <option key={worker.id} value={worker.id}>
+                {worker.name} · {worker.status} · {worker.id}
               </option>
             ))}
           </Select>
@@ -469,7 +559,9 @@ function BindingBar(props: {
           </Select>
         </Field>
       </Cluster>
-      <Muted>{CREATE_WORKFLOW_NEEDS_PROJECT} 没有 projectId / runId 时只问，不发写。</Muted>
+      <Muted>
+        {CREATE_WORKFLOW_NEEDS_PROJECT} 没有 projectId / runId / workerId 时只问，不发写。
+      </Muted>
     </Card>
   );
 }
@@ -485,7 +577,7 @@ function Transcript(props: {
     return (
       <Card testId="chat-empty">
         <EmptyState title="还没有对话。">
-          随时可说：创建角色、创建流程、问进度、交流工作。分类结果不是完成态。
+          随时可说：建角色、改卡片、请到项目、建流程、问进度、交流工作。分类结果不是完成态。认不出再问。
         </EmptyState>
       </Card>
     );
@@ -502,7 +594,7 @@ function Transcript(props: {
           onConfirmWorkflow={props.onConfirmWorkflow}
         />
       ))}
-      {props.busy === "classify" ? <LoadingText>正在分类并处理意图…</LoadingText> : null}
+      {props.busy === "classify" ? <LoadingText>正在按 Daemon 分类结果落地…</LoadingText> : null}
     </div>
   );
 }
@@ -527,12 +619,16 @@ function EntryCard(props: {
       return (
         <Card testId={`chat-need-${entry.missing}`}>
           <Badge tone="warning">还缺挂点</Badge>
-          <p>
-            {entry.missing === "projectId"
-              ? "还缺项目。创建流程、问进度、交流工作都要有 projectId。没有写入对象。"
-              : DISCUSS_NEEDS_RUN}
-          </p>
-          <Muted>分类保留了原话，选好挂点后再发送。</Muted>
+          <p>{needContextMessage(entry.missing)}</p>
+          <Muted>分类保留了原话，选好挂点后再发送。没有按字面默认交流工作。</Muted>
+        </Card>
+      );
+    case "need_clarification":
+      return (
+        <Card testId="chat-need-clarification">
+          <Badge tone="warning">需要澄清</Badge>
+          <p>{entry.question}</p>
+          <Muted>{NEED_CLARIFICATION_NOTE}</Muted>
         </Card>
       );
     case "unsupported":
@@ -555,6 +651,10 @@ function EntryCard(props: {
           onOpenLibrary={() => props.navigate(roleLibraryPath())}
         />
       );
+    case "update_worker":
+      return <UpdateWorkerCard entry={entry} />;
+    case "invite_team":
+      return <InviteTeamCard entry={entry} />;
     case "create_workflow":
       return (
         <WorkflowIntentCard
@@ -605,6 +705,7 @@ function WorkerIntentCard(props: {
         <Muted>
           {entry.worker.name} · {entry.worker.id} · status {entry.worker.status}
         </Muted>
+        <CardFields write={entry.write} />
         <Button
           testId="chat-open-role-library-after"
           variant="primary"
@@ -621,6 +722,7 @@ function WorkerIntentCard(props: {
       <p>
         {entry.write.name} · 职责 {entry.write.role}
       </p>
+      <CardFields write={entry.write} />
       <Muted>{entry.summary}</Muted>
       <Button
         testId="chat-confirm-worker"
@@ -630,6 +732,72 @@ function WorkerIntentCard(props: {
       >
         {props.confirming ? "确认中…" : "确认并写入未发布草稿"}
       </Button>
+    </Card>
+  );
+}
+
+function CardFields(props: { write: WorkerProposalWrite }): ReactNode {
+  return (
+    <>
+      <Muted>
+        {CARD_FIELD_LABELS.who}：{props.write.who ?? "（空）"}
+      </Muted>
+      <Muted>
+        {CARD_FIELD_LABELS.how}：{props.write.how ?? "（空）"}
+      </Muted>
+      <Muted>
+        {CARD_FIELD_LABELS.skills}：{props.write.skills ?? "（空）"}
+      </Muted>
+    </>
+  );
+}
+
+function UpdateWorkerCard(props: { entry: UpdateWorkerEntry }): ReactNode {
+  const { entry } = props;
+  if (entry.phase === "failed") {
+    return (
+      <Card testId="chat-update-worker-failed">
+        <Badge tone="danger">{intentKindLabel("update_worker")}</Badge>
+        <ErrorText>{entry.error}</ErrorText>
+        <Muted>没有创建 Task/Run，也没有收件箱。</Muted>
+      </Card>
+    );
+  }
+  return (
+    <Card testId="chat-update-worker-landed">
+      <Badge tone="muted">{intentKindLabel("update_worker")}</Badge>
+      <p>
+        {entry.forkedFromWorkerVersionId ? UPDATE_WORKER_FORKED_NOTE : UPDATE_WORKER_LANDED_NOTE}
+      </p>
+      <Muted>
+        {CARD_FIELD_LABELS[entry.cardField]} · Worker {entry.workerId} · 草稿 {entry.draftId}
+        {entry.forkedFromWorkerVersionId ? ` · fork 自 ${entry.forkedFromWorkerVersionId}` : ""}
+      </Muted>
+    </Card>
+  );
+}
+
+function InviteTeamCard(props: { entry: InviteTeamEntry }): ReactNode {
+  const { entry } = props;
+  if (entry.phase === "failed") {
+    return (
+      <Card testId="chat-invite-failed">
+        <Badge tone="danger">{intentKindLabel("invite_team")}</Badge>
+        <ErrorText>{entry.error}</ErrorText>
+        <Muted>没有把请来画成已发布员工或已在执行。</Muted>
+      </Card>
+    );
+  }
+  return (
+    <Card testId="chat-invite-landed">
+      <Badge tone="muted">{intentKindLabel("invite_team")}</Badge>
+      <p>{entry.alreadyMember ? INVITE_ALREADY_ON_TEAM : INVITE_TEAM_LANDED_NOTE}</p>
+      <Muted>
+        项目 {entry.projectId} · WorkerVersion {entry.workerVersionId}
+        {entry.teamId ? ` · Team ${entry.teamId}` : ""}
+        {entry.teamVersionId ? ` · Version ${entry.teamVersionId}` : ""}
+      </Muted>
+      <Muted>{INVITE_TEAM_UNPUBLISHED_NOTE}</Muted>
     </Card>
   );
 }
@@ -759,21 +927,31 @@ function FactList(props: { label: string; items: readonly string[] }): ReactNode
 
 async function classify(
   client: DesktopClient,
-  text: string,
-  projectId: string,
-  runId: string,
+  hanging: {
+    text: string;
+    projectId: string;
+    runId: string;
+    workerId: string;
+    workerVersionId: string;
+  },
 ): Promise<ChatClassifyResultDto> {
-  const body: ChatClassifyInput = { text };
-  if (projectId) {
-    body.projectId = projectId;
+  const body: ChatClassifyInput = { text: hanging.text };
+  if (hanging.projectId) {
+    body.projectId = hanging.projectId;
   }
-  if (runId) {
-    body.runId = runId;
+  if (hanging.runId) {
+    body.runId = hanging.runId;
+  }
+  if (hanging.workerId) {
+    body.workerId = hanging.workerId;
+  }
+  if (hanging.workerVersionId) {
+    body.workerVersionId = hanging.workerVersionId;
   }
   return client.classifyChatIntent(body, writeCommandOptions());
 }
 
-async function dispatchIntent(
+async function dispatchResult(
   client: DesktopClient,
   result: ChatClassifyResultDto,
   text: string,
@@ -800,10 +978,23 @@ async function dispatchIntent(
       },
     ];
   }
+  if (result.outcome === "need_clarification") {
+    return [
+      {
+        id: newChatId("ask"),
+        kind: "need_clarification",
+        question: result.question,
+      },
+    ];
+  }
   if (result.outcome !== "intent") {
     return [{ id: newChatId("err"), kind: "error", detail: "分类结果无法识别，没有写入对象。" }];
   }
-  return handleIntent(client, result.intent, text, capabilities);
+  const entries: ChatEntry[] = [];
+  for (const intent of classifiedIntents(result)) {
+    entries.push(...(await handleIntent(client, intent, text, capabilities)));
+  }
+  return entries;
 }
 
 async function handleIntent(
@@ -819,10 +1010,14 @@ async function handleIntent(
           id: newChatId("wrk"),
           kind: "create_worker",
           summary: intent.summary ?? text,
-          write: workerWriteFromText(intent.summary ?? text),
+          write: createWorkerWriteFromIntent(intent, text),
           phase: "proposal",
         },
       ];
+    case "update_worker":
+      return landUpdateWorkerEntry(client, intent, text);
+    case "invite_team":
+      return landInviteTeamEntry(client, intent);
     case "create_workflow":
       return startWorkflowAuthoring(client, intent.projectId, intent.summary ?? text);
     case "query_progress": {
@@ -831,6 +1026,71 @@ async function handleIntent(
     }
     case "discuss_work":
       return sendDiscussWork(client, intent, text, capabilities);
+  }
+}
+
+async function landUpdateWorkerEntry(
+  client: DesktopClient,
+  intent: Extract<ChatIntentDto, { kind: "update_worker" }>,
+  text: string,
+): Promise<ChatEntry[]> {
+  try {
+    const landed = await landIdleWorkerRemark(client, intent, text);
+    const entry: UpdateWorkerEntry = {
+      id: newChatId("upd"),
+      kind: "update_worker",
+      cardField: landed.cardField,
+      workerId: landed.workerId,
+      draftId: landed.draft.id,
+      phase: "landed",
+    };
+    if (landed.forkedFromWorkerVersionId !== undefined) {
+      entry.forkedFromWorkerVersionId = landed.forkedFromWorkerVersionId;
+    }
+    return [entry];
+  } catch (reason: unknown) {
+    return [
+      {
+        id: newChatId("upd"),
+        kind: "update_worker",
+        cardField: intent.cardField,
+        workerId: intent.workerId,
+        draftId: intent.workerDraftId ?? "",
+        phase: "failed",
+        error: errorMessage(reason),
+      },
+    ];
+  }
+}
+
+async function landInviteTeamEntry(
+  client: DesktopClient,
+  intent: Extract<ChatIntentDto, { kind: "invite_team" }>,
+): Promise<ChatEntry[]> {
+  try {
+    const landed = await landInviteTeam(client, intent);
+    const entry: InviteTeamEntry = {
+      id: newChatId("inv"),
+      kind: "invite_team",
+      projectId: landed.projectId,
+      workerVersionId: landed.workerVersionId,
+      phase: "landed",
+      teamId: landed.teamId,
+      teamVersionId: landed.teamVersionId,
+      alreadyMember: landed.alreadyMember,
+    };
+    return [entry];
+  } catch (reason: unknown) {
+    return [
+      {
+        id: newChatId("inv"),
+        kind: "invite_team",
+        projectId: intent.projectId,
+        workerVersionId: intent.workerVersionId,
+        phase: "failed",
+        error: errorMessage(reason),
+      },
+    ];
   }
 }
 
