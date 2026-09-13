@@ -70,8 +70,8 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
   });
   const feature = resolved ? registry.getFeatureModule(resolved.route.slot) : undefined;
   const Page = feature?.Page;
-  const showFeaturePage = shouldRenderFeaturePage(resolved, Page) && Page && resolved;
-  const unwired = !showFeaturePage && isUnwiredShellSlot(resolved?.route.slot);
+  const unwired =
+    !shouldRenderFeaturePage(resolved, Page) && isUnwiredShellSlot(resolved?.route.slot);
 
   return (
     <WorkforceProvider value={{ client, connection, navigate, capabilities }}>
@@ -91,7 +91,7 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
         }}
       >
         <OutletErrorBoundary resetKey={path}>
-          {showFeaturePage && Page && resolved ? (
+          {shouldRenderFeaturePage(resolved, Page) && Page && resolved ? (
             <Page key={path} params={resolved.params} path={path} navigate={navigate} />
           ) : (
             <PlaceholderPage
