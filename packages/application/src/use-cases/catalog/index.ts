@@ -1,6 +1,11 @@
 export { CatalogService, type CatalogServiceOptions } from "./service.js";
 export { MemoryCatalog } from "./store.js";
 export {
+  applyIdleWorkerRemark,
+  type ApplyIdleWorkerRemarkInput,
+  type IdleWorkerRemarkResult,
+} from "./idle-remark.js";
+export {
   isBindableTeamVersion,
   isExecutableWorkflowVersion,
   teamMembersHaveSelectableWorkerVersions,
@@ -8,10 +13,12 @@ export {
 } from "./executable.js";
 export { deriveEntryNodeIds, deriveStepsFromGraph, toEngineGraph } from "./graph.js";
 export {
+  assignWorkerCardFields,
   teamDto,
   teamDtoFromCatalog,
   teamRolesFromVersion,
   teamVersionDto,
+  workerCardFieldsFrom,
   workerDto,
   workerDtoFromCatalog,
   workerVersionDto,
