@@ -76,3 +76,25 @@ export type StartTaskRunInput = z.infer<typeof startTaskRunInputSchema>;
 export function parseStartTaskRunInput(input: unknown): StartTaskRunInput {
   return startTaskRunInputSchema.parse(input);
 }
+
+/**
+ * Request body for `POST /projects/{id}/tasks` (Chat `start_direct` without
+ * `taskId`). Application `createAdHocTask`. Ad-hoc only: body must not
+ * carry `workflowInstanceId`. `StartRunRequest` is unchanged and still has
+ * no `orchestrationMode`.
+ */
+export const createAdHocTaskInputSchema = z
+  .object({
+    operationId: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    title: z.string().trim().min(1).optional(),
+    expectedStateRevision: z.number().int().min(1).optional(),
+    workflowInstanceId: z.never().optional(),
+  })
+  .strict();
+
+export type CreateAdHocTaskInput = z.infer<typeof createAdHocTaskInputSchema>;
+
+export function parseCreateAdHocTaskInput(input: unknown): CreateAdHocTaskInput {
+  return createAdHocTaskInputSchema.parse(input);
+}

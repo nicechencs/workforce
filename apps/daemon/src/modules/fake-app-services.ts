@@ -845,6 +845,47 @@ export class FakeAppServices implements AppServices {
     return this.tasks.get(id)?.dto ?? null;
   }
 
+  createAdHocTask(
+    ctx: CommandContext,
+    projectId: string,
+    input: { title?: string; expectedStateRevision?: number },
+  ): CommandResult<TaskDto> {
+    const project = this.requireProject(projectId);
+    const expectedStateRevision = input.expectedStateRevision ?? ctx.ifMatch;
+    this.assertMatch(project.dto.stateRevision, expectedStateRevision);
+    const existing = [...this.tasks.values()].find(
+      (record) => record.dto.projectId === projectId && record.dto.workflowNodeId === undefined,
+    );
+    if (existing) {
+      return { status: 200, body: existing.dto, revision: existing.dto.stateRevision };
+    }
+    const ts = this.timestamp();
+    const task: TaskDto = {
+      id: this.ids(prefixes.task),
+      projectId,
+      title: input.title ?? project.dto.name,
+      objective: project.dto.objective,
+      status: "ready",
+      stateRevision: 1,
+      definitionRevision: 1,
+      generation: 1,
+      attempt: 1,
+      protocolVersion: PROTOCOL_VERSION,
+      cancelRequested: false,
+      createdAt: ts,
+      updatedAt: ts,
+      role: "developer",
+      dependsOn: [],
+    };
+    this.tasks.set(task.id, { dto: task });
+    this.appendEvent("task.created", "task", task.id, projectId, {
+      correlationId: ctx.operationId,
+      taskId: task.id,
+      data: { status: task.status, orchestrationMode: "direct" },
+    });
+    return { status: 201, body: task, revision: task.stateRevision };
+  }
+
   startTaskRun(
     ctx: CommandContext,
     id: string,

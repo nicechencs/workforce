@@ -13,7 +13,12 @@ import { workerCardFieldNameSchema } from "./worker.js";
  * Idle remarks reuse draft PATCH + fork; they are not IM and not a new Task/Run.
  * discuss_work writes through the already frozen `POST /runs/{id}:input`.
  * Unrecognized utterances are `need_clarification`, never default `discuss_work`.
- * "去做" / direct has no new URL; this batch only admits honest unsupported.
+ * "去做" / "现在改这个 bug" classify as `start_direct`. The Run lands on the
+ * already frozen `POST /tasks/{id}/runs` with `startDirectTaskRunInput`
+ * (`orchestrationMode: "direct"`). Missing `taskId` first creates a project
+ * ad-hoc Task via `POST /projects/{id}/tasks` (`createAdHocTask`). No
+ * `:direct` URL. IM / inbox stay `unsupported` / `im`. Idle card writes are
+ * not direct.
  */
 
 export const chatIntentKinds = [
@@ -23,6 +28,7 @@ export const chatIntentKinds = [
   "discuss_work",
   "update_worker",
   "invite_team",
+  "start_direct",
 ] as const;
 export type ChatIntentKind = (typeof chatIntentKinds)[number];
 
@@ -41,16 +47,34 @@ export const IDLE_WORKER_REMARK_DRAFT_PATH = "PATCH /workers/{id}/drafts/{draftI
 /** Published + immutable card writes must fork first. */
 export const IDLE_WORKER_REMARK_FORK_PATH = "POST /workers/{id}/versions/{versionId}:fork" as const;
 
+/**
+ * Unique Run landing for `start_direct`. Body is `startTaskRunInput` /
+ * `startDirectTaskRunInput` with `orchestrationMode: "direct"`. Not a second URL.
+ */
+export const START_DIRECT_TASK_RUN_PATH = "POST /tasks/{id}/runs" as const;
+
+/**
+ * Ad-hoc Task create when `start_direct` has no `taskId`. Application command
+ * `createAdHocTask`. Body must not carry `workflowInstanceId`.
+ */
+export const CREATE_ADHOC_TASK_PATH = "POST /projects/{id}/tasks" as const;
+
 export const CHAT_FORBIDDEN_PATHS = [
   "/workers/{id}/messages",
   "/chat/inbox",
   "/workers/{id}/remarks",
+  "/runs/{id}:direct",
+  "/projects/{id}:direct",
 ] as const;
 
 /** Unrecognized sentences classify as this outcome. Never `discuss_work`. */
 export const UNRECOGNIZED_CHAT_OUTCOME = "need_clarification" as const;
 
-export const chatNeedContextMissing = ["projectId", "runId", "workerId"] as const;
+/**
+ * `taskId` is only missing when the caller insists on an existing Task and
+ * did not supply the id. Missing project always asks `projectId`.
+ */
+export const chatNeedContextMissing = ["projectId", "runId", "workerId", "taskId"] as const;
 export type ChatNeedContextMissing = (typeof chatNeedContextMissing)[number];
 
 const chatIdSchema = z.string().trim().min(1).max(256);
@@ -119,6 +143,22 @@ export const inviteTeamChatIntentSchema = z
   })
   .strict();
 
+/**
+ * Chat "去做" / start work now. Requires `projectId`. Optional `taskId`
+ * reuses that Task; optional `title` names a new ad-hoc Task.
+ * No `taskId` → Application `createAdHocTask` (no `workflowInstanceId`),
+ * then `POST /tasks/{id}/runs` using `startDirectTaskRunInput`. Not
+ * `unsupported` / `action: "direct"`. Idle `update_worker` is not this kind.
+ */
+export const startDirectChatIntentSchema = z
+  .object({
+    kind: z.literal("start_direct"),
+    projectId: chatIdSchema,
+    taskId: chatIdSchema.optional(),
+    title: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
 export const chatIntentSchema = z.discriminatedUnion("kind", [
   createWorkerChatIntentSchema,
   createWorkflowChatIntentSchema,
@@ -126,12 +166,14 @@ export const chatIntentSchema = z.discriminatedUnion("kind", [
   discussWorkChatIntentSchema,
   updateWorkerChatIntentSchema,
   inviteTeamChatIntentSchema,
+  startDirectChatIntentSchema,
 ]);
 
 export type ChatIntentDto = z.infer<typeof chatIntentSchema>;
 export const chatIntentDtoSchema = chatIntentSchema;
 export type UpdateWorkerChatIntentDto = z.infer<typeof updateWorkerChatIntentSchema>;
 export type InviteTeamChatIntentDto = z.infer<typeof inviteTeamChatIntentSchema>;
+export type StartDirectChatIntentDto = z.infer<typeof startDirectChatIntentSchema>;
 
 export const chatClassifyInputSchema = z
   .object({
@@ -141,6 +183,7 @@ export const chatClassifyInputSchema = z
     workerId: chatIdSchema.optional(),
     workerDraftId: chatIdSchema.optional(),
     workerVersionId: chatIdSchema.optional(),
+    taskId: chatIdSchema.optional(),
   })
   .strict();
 
@@ -178,6 +221,11 @@ export const chatClassifyUnsupportedResultSchema = z
   .object({
     outcome: z.literal("unsupported"),
     code: z.literal("unsupported_capability"),
+    /**
+     * IM / inbox only. "去做" is `start_direct`, never this outcome.
+     * `direct` remains so existing classify results still parse until Chat
+     * consumers stop emitting it; new classify must not produce it.
+     */
     action: z.enum(["direct", "im"]),
   })
   .strict();
@@ -296,4 +344,12 @@ export function parseProjectProgressProjection(input: unknown): ProjectProgressP
 
 export function discussWorkRunInputPath(runId: string): `POST /runs/${string}:input` {
   return `POST /runs/${runId}:input`;
+}
+
+export function startDirectTaskRunPath(taskId: string): `POST /tasks/${string}/runs` {
+  return `POST /tasks/${taskId}/runs`;
+}
+
+export function createAdHocTaskPath(projectId: string): `POST /projects/${string}/tasks` {
+  return `POST /projects/${projectId}/tasks`;
 }

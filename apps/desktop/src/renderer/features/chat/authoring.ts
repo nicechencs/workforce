@@ -1,8 +1,14 @@
 import type {
+  AuthoringChatProposalDto,
   AuthoringSessionViewDto,
   AuthoringTurnDto,
   DesktopClient,
 } from "@workforce/desktop-client";
+import {
+  parseAuthoringChatProposal,
+  parseWorkforceEvent,
+  type AuthoringProposalTargetInput,
+} from "@workforce/protocol";
 
 import { errorMessage, writeCommandOptions, type LandedWorkflowDraft } from "./model.js";
 
@@ -51,8 +57,72 @@ export function landedWorkflowDraft(
 export function isWorkflowProposalReady(
   session: AuthoringSessionViewDto | null | undefined,
 ): boolean {
+  return isAuthoringProposalReady(session);
+}
+
+export function isAuthoringProposalReady(
+  session: AuthoringSessionViewDto | null | undefined,
+): boolean {
   const turn = lastAuthoringTurn(session);
   return session?.draft?.kind === "proposal" && turn?.status === "awaiting_confirmation";
+}
+
+export function proposalHasTaskTarget(
+  proposal: AuthoringChatProposalDto | null | undefined,
+): boolean {
+  return proposal?.targets.some((target) => target.targetType === "task") === true;
+}
+
+export function taskTargetsFromProposal(
+  proposal: AuthoringChatProposalDto | null | undefined,
+): AuthoringProposalTargetInput[] {
+  return proposal?.targets.filter((target) => target.targetType === "task") ?? [];
+}
+
+export async function loadChatProposalForTurn(
+  client: DesktopClient,
+  session: AuthoringSessionViewDto,
+): Promise<AuthoringChatProposalDto | null> {
+  const turn = lastAuthoringTurn(session);
+  const runId = turn?.refs.runId;
+  if (!runId) {
+    return null;
+  }
+  try {
+    const page = await client.listEvents({
+      runId,
+      types: ["workflow.authoring.chat.proposed"],
+      limit: 50,
+    });
+    const proposalId = proposalIdFromEvents(page.items);
+    if (proposalId === undefined) {
+      return null;
+    }
+    return parseAuthoringChatProposal(await client.getAuthoringProposal(session.id, proposalId));
+  } catch {
+    return null;
+  }
+}
+
+function proposalIdFromEvents(items: readonly unknown[]): string | undefined {
+  for (const item of items) {
+    try {
+      const event = parseWorkforceEvent(item);
+      if (event.type !== "workflow.authoring.chat.proposed") {
+        continue;
+      }
+      if (event.subject.type === "authoring_chat_proposal" && event.subject.id.trim().length > 0) {
+        return event.subject.id;
+      }
+      const fromData = event.data.proposalId;
+      if (typeof fromData === "string" && fromData.trim().length > 0) {
+        return fromData.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }
 
 export async function loadOrCreateAuthoringSession(

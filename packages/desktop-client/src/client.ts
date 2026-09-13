@@ -55,6 +55,7 @@ import type {
   SendAuthoringMessageAcceptedDto,
   StartProjectInput,
   StartTaskRunInput,
+  CreateAdHocTaskInput,
   TaskDto,
   TeamDto,
   TeamVersionDto,
@@ -413,6 +414,14 @@ export class DesktopClient {
 
   getTask(id: string): Promise<TaskDto> {
     return this.get(paths.task(id));
+  }
+
+  createAdHocTask(
+    projectId: string,
+    options: CommandOptions,
+    input: CreateAdHocTaskInput = {},
+  ): Promise<TaskDto> {
+    return this.send("POST", paths.projectTasks(projectId), options, withOperation(input, options));
   }
 
   retryTask(id: string, options: CommandOptions): Promise<{ task: TaskDto; run: RunDto }> {

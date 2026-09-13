@@ -1,6 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import type { TaskRecord, Tx } from "@workforce/application";
+import type {
+  AuthoringTaskPatch,
+  AuthoringTaskPatchRepository,
+  AuthoringTaskPatchTarget,
+  TaskRecord,
+  Tx,
+} from "@workforce/application";
 
 import { assertCas, organizationIdOfProject } from "./ensure.js";
 import { PersistenceError, isConstraintError } from "./errors.js";
@@ -25,12 +31,26 @@ const TASK_COLUMNS = `
 
 const PROTOCOL_VERSION = "0.1";
 
-export class SqliteTaskRepository {
+export class SqliteTaskRepository implements AuthoringTaskPatchRepository {
   constructor(private readonly db: DatabaseSync) {}
 
   get(id: string): TaskRecord | null {
-    const row = this.db.prepare(`SELECT ${TASK_COLUMNS} FROM tasks WHERE id = ?`).get(id);
-    return row ? this.withNormalizedDependencies(rowToTask(row)) : null;
+    return this.loadTask(this.db, id);
+  }
+
+  getInTransaction(tx: Tx, taskId: string): AuthoringTaskPatchTarget | null {
+    const db = sqliteDbOf(tx);
+    const row = db
+      .prepare("SELECT id, project_id, definition_revision FROM tasks WHERE id = ?")
+      .get(taskId);
+    if (!row) {
+      return null;
+    }
+    return {
+      id: requiredText(cell(row, "id"), "id"),
+      projectId: requiredText(cell(row, "project_id"), "project_id"),
+      definitionRevision: requiredInt(cell(row, "definition_revision"), "definition_revision"),
+    };
   }
 
   listByProject(projectId: string): TaskRecord[] {
@@ -41,14 +61,14 @@ export class SqliteTaskRepository {
           ORDER BY created_at ASC, id ASC`,
       )
       .all(projectId)
-      .map((row) => this.withNormalizedDependencies(rowToTask(row)));
+      .map((row) => this.withNormalizedDependencies(this.db, rowToTask(row)));
   }
 
   listAll(): TaskRecord[] {
     return this.db
       .prepare(`SELECT ${TASK_COLUMNS} FROM tasks ORDER BY created_at ASC, id ASC`)
       .all()
-      .map((row) => this.withNormalizedDependencies(rowToTask(row)));
+      .map((row) => this.withNormalizedDependencies(this.db, rowToTask(row)));
   }
 
   insert(tx: Tx, record: TaskRecord): void {
@@ -154,6 +174,49 @@ export class SqliteTaskRepository {
   }
 
   /**
+   * Same-transaction CAS for Chat Task confirmation. Reads the live
+   * `definition_revision`, applies a partial patch through the existing
+   * `update` columns, and fail-closes on revision mismatch. Does not publish
+   * or start a Run.
+   */
+  applyInTransaction(
+    tx: Tx,
+    input: {
+      taskId: string;
+      expectedRevision: number;
+      patch: AuthoringTaskPatch;
+      at: string;
+    },
+  ): AuthoringTaskPatchTarget {
+    if (input.patch.taskId !== input.taskId) {
+      throw new PersistenceError(
+        "constraint",
+        `task patch ${input.patch.taskId} does not match ${input.taskId}`,
+      );
+    }
+    const current = this.loadTask(sqliteDbOf(tx), input.taskId);
+    if (current === null) {
+      throw new PersistenceError("not_found", `task ${input.taskId} was not found`);
+    }
+    if (
+      current.definitionRevision !== input.expectedRevision ||
+      input.patch.revision !== input.expectedRevision + 1
+    ) {
+      throw new PersistenceError("revision_conflict", `task ${input.taskId} revision mismatch`);
+    }
+    const next = applyAuthoringPatch(current, input.patch, input.at);
+    this.update(tx, next, current.stateRevision);
+    if (input.patch.dependsOn !== undefined) {
+      this.syncDependencies(tx, [next], input.at);
+    }
+    return {
+      id: next.id,
+      projectId: next.projectId,
+      definitionRevision: next.definitionRevision,
+    };
+  }
+
+  /**
    * Keep the normalized dependency projection in the same transaction as the
    * Task snapshot. It deliberately runs after every Task row has been
    * inserted/updated so a graph whose nodes are not topologically ordered
@@ -186,8 +249,13 @@ export class SqliteTaskRepository {
     }
   }
 
-  private withNormalizedDependencies(task: TaskRecord): TaskRecord {
-    const rows = this.db
+  private loadTask(db: DatabaseSync, id: string): TaskRecord | null {
+    const row = db.prepare(`SELECT ${TASK_COLUMNS} FROM tasks WHERE id = ?`).get(id);
+    return row ? this.withNormalizedDependencies(db, rowToTask(row)) : null;
+  }
+
+  private withNormalizedDependencies(db: DatabaseSync, task: TaskRecord): TaskRecord {
+    const rows = db
       .prepare(
         `SELECT depends_on_task_id, required_status
            FROM task_dependencies
@@ -250,6 +318,26 @@ function rowToTask(row: Record<string, unknown>): TaskRecord {
     ...ifPresent("workflowInstanceId", optionalText(cell(row, "workflow_instance_id"))),
     ...ifPresent("workflowNodeId", optionalText(cell(row, "workflow_node_id"))),
     ...ifPresent("nextAttemptAt", optionalText(cell(row, "next_attempt_at"))),
+  };
+}
+
+function applyAuthoringPatch(
+  current: TaskRecord,
+  patch: AuthoringTaskPatch,
+  at: string,
+): TaskRecord {
+  return {
+    ...current,
+    ...(patch.title !== undefined ? { title: patch.title } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.requiresReview !== undefined ? { requiresReview: patch.requiresReview } : {}),
+    ...(patch.expectedOutputs !== undefined ? { expectedOutputs: [...patch.expectedOutputs] } : {}),
+    ...(patch.dependsOn !== undefined ? { dependsOn: [...patch.dependsOn] } : {}),
+    ...(patch.maxAttempts !== undefined ? { maxAttempts: patch.maxAttempts } : {}),
+    ...(patch.maxReworkCycles !== undefined ? { maxReworkCycles: patch.maxReworkCycles } : {}),
+    ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+    definitionRevision: patch.revision,
+    updatedAt: at,
   };
 }
 

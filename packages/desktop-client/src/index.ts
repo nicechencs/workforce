@@ -73,6 +73,7 @@ export type {
   SessionDto,
   StartProjectInput,
   StartTaskRunInput,
+  CreateAdHocTaskInput,
   TaskDependency,
   TaskDto,
   TeamDto,

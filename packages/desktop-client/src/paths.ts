@@ -73,6 +73,7 @@ export const paths = {
   projectBudget: (id: string) => `/api/v1/projects/${id}/budget`,
   projectWorkspaces: (id: string) => `/api/v1/projects/${id}/workspaces`,
   projectProgress: (id: string) => `/api/v1/projects/${id}/progress`,
+  projectTasks: (id: string) => `/api/v1/projects/${id}/tasks`,
   workers: (query?: ListWorkersInput) =>
     `/api/v1/workers${search({
       q: query?.q,

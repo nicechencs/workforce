@@ -184,6 +184,34 @@
                 "workerVersionId"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "start_direct",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "taskId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "title": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "projectId"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -367,6 +395,34 @@
                   "workerVersionId"
                 ],
                 "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "start_direct",
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "taskId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "projectId"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -391,7 +447,8 @@
           "enum": [
             "projectId",
             "runId",
-            "workerId"
+            "workerId",
+            "taskId"
           ],
           "type": "string"
         },

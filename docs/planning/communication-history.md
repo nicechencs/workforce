@@ -37,6 +37,12 @@ updated: 2026-09-13
 
 ---
 
+## 2026-09-13（Asia/Taipei）Chat「去做」冻成 start_direct，落到已有 Task Run HTTP
+
+- **决定：** ChatIntent 英文名唯一为 `start_direct`。必带 `projectId`；可选已有 `taskId`、可选 `title`。无 `taskId` 时 Application `createAdHocTask` 建项目内、无 `workflowInstanceId` 的 Task，再对该 id `POST /tasks/{id}/runs` 且 `orchestrationMode: "direct"`。禁止 `/runs/{id}:direct`、`/projects/{id}:direct`。`StartRunRequest` 不加 `orchestrationMode`。IM / 收件箱仍 `unsupported` / `im`；空闲写卡不是 direct；认不出仍 `need_clarification`。
+- **文档影响：** [能力矩阵](api-capability-matrix.md) 增加唯一 ad-hoc path `POST /projects/{id}/tasks`，并把「去做」从 `unsupported` 改到已冻 `POST /tasks/{id}/runs`；[协议索引](../protocols/README.md) 补 `start_direct` / `CreateAdHocTaskInput`。未改 03 / backlog（归 T00）。
+- **状态：** 契约 **implemented**（`@workforce/protocol` + registry）。Daemon composition、allowlist、Chat UI、Application `classifyChatIntent` 仍 **planned**（T10 / T11 / T20）。
+
 ## 2026-09-13（Asia/Taipei）库/Chat 已接线；卡片三字段、句意落地、空闲写卡收窄为 planned
 
 - **决定：** 四处已拍板写入决策登记：角色与 Project 解耦；卡片必印他是谁 / 怎么干活 / 技能（Runtime / Policy 不是必印）；空闲对角色说话写入卡片相应字段、已发布则 fork、不派 Task/Run、不是 IM、不是 D18 direct；Chat 按句意落到库 / Team / Workflow，认不出再问，不默成交流工作，不强制三张确认卡。建/改角色走库、可无 `projectId`；AuthoringSession **只**服务项目内流程 / 组队。Marketplace 仍是未来、现在不是当前债。

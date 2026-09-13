@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type {
+  AuthoringChatProposalDto,
   CapabilitiesDto,
   ChatClassifyInput,
   ChatClassifyResultDto,
@@ -7,6 +8,7 @@ import type {
   ProjectDto,
   ProjectProgressProjectionDto,
   RunDto,
+  TaskDto,
   WorkerDto,
 } from "@workforce/desktop-client";
 import type {
@@ -35,10 +37,13 @@ import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient, useWorkforceConnection } from "../hooks.js";
 import {
   confirmWorkflowAuthoringTurn,
-  isWorkflowProposalReady,
+  isAuthoringProposalReady,
   landedWorkflowDraft,
   lastAuthoringTurn,
+  loadChatProposalForTurn,
+  proposalHasTaskTarget,
   sendWorkflowAuthoringMessage,
+  taskTargetsFromProposal,
 } from "./authoring.js";
 import {
   CARD_FIELD_LABELS,
@@ -50,6 +55,7 @@ import {
   CREATE_WORKFLOW_LANDED_NOTE,
   CREATE_WORKFLOW_NEEDS_PROJECT,
   CREATE_WORKFLOW_PROPOSAL_NOTE,
+  DIRECT_READY_NOTE,
   DIRECT_UNSUPPORTED_NOTE,
   DISCUSS_NEEDS_RUN,
   DISCUSS_SENT_NOTE,
@@ -58,6 +64,10 @@ import {
   INVITE_TEAM_UNPUBLISHED_NOTE,
   NEED_CLARIFICATION_NOTE,
   PROGRESS_FACT_NOTE,
+  START_DIRECT_LANDED_NOTE,
+  START_DIRECT_NEEDS_PROJECT,
+  TASK_PATCH_LANDED_NOTE,
+  TASK_PATCH_PROPOSAL_NOTE,
   TURN_CONFIRMED_IS_NOT_DONE,
   UPDATE_WORKER_FORKED_NOTE,
   UPDATE_WORKER_LANDED_NOTE,
@@ -74,17 +84,19 @@ import {
   isEmptyChatIntent,
   landIdleWorkerRemark,
   landInviteTeam,
+  landStartDirect,
   landedDraftCanvasPath,
   needContextMessage,
   newChatId,
   progressEmptyMessage,
   roleLibraryPath,
   selectablePublishedVersion,
+  startDirectIntentFromHanging,
   writeCommandOptions,
   type WorkerProposalWrite,
 } from "./model.js";
 
-type BusyAction = "classify" | "confirming" | null;
+type BusyAction = "classify" | "confirming" | "starting" | null;
 
 interface UserEntry {
   id: string;
@@ -155,6 +167,22 @@ interface CreateWorkflowEntry {
   workflowDraftId?: string;
   workflowId?: string;
   unpublished?: true;
+  proposal?: AuthoringChatProposalDto;
+  taskId?: string;
+  definitionRevision?: number;
+  error?: string;
+}
+
+interface StartDirectEntry {
+  id: string;
+  kind: "start_direct";
+  projectId: string;
+  phase: "started" | "failed";
+  taskId?: string;
+  runId?: string;
+  runStatus?: string;
+  createdAdHocTask?: boolean;
+  detail: string;
   error?: string;
 }
 
@@ -190,6 +218,7 @@ type ChatEntry =
   | UpdateWorkerEntry
   | InviteTeamEntry
   | CreateWorkflowEntry
+  | StartDirectEntry
   | ProgressEntry
   | DiscussEntry
   | ErrorEntry;
@@ -202,8 +231,10 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [workers, setWorkers] = useState<WorkerDto[]>([]);
   const [runs, setRuns] = useState<RunDto[]>([]);
+  const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [projectId, setProjectId] = useState("");
   const [runId, setRunId] = useState("");
+  const [taskId, setTaskId] = useState("");
   const [workerId, setWorkerId] = useState("");
   const [workerVersionId, setWorkerVersionId] = useState("");
   const [input, setInput] = useState("");
@@ -239,17 +270,23 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
     if (!online || !projectId) {
       setRuns([]);
       setRunId("");
+      setTasks([]);
+      setTaskId("");
       return;
     }
     let cancelled = false;
-    void client
-      .listRuns({ projectId, limit: 50 })
-      .then((page) => {
+    void Promise.all([
+      client.listRuns({ projectId, limit: 50 }),
+      client.listTasks({ projectId, limit: 50 }),
+    ])
+      .then(([runPage, taskPage]) => {
         if (cancelled) {
           return;
         }
-        setRuns(page.items);
-        setRunId((current) => (page.items.some((item) => item.id === current) ? current : ""));
+        setRuns(runPage.items);
+        setTasks(taskPage.items);
+        setRunId((current) => (runPage.items.some((item) => item.id === current) ? current : ""));
+        setTaskId((current) => (taskPage.items.some((item) => item.id === current) ? current : ""));
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -287,10 +324,68 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         text,
         projectId,
         runId,
+        taskId,
         workerId,
         workerVersionId,
       });
-      const next = await dispatchResult(client, result, text, capabilities);
+      const next = await dispatchResult(client, result, text, capabilities, {
+        projectId,
+        taskId,
+      });
+      setEntries((current) => [...current, ...next]);
+      setBusy(null);
+    } catch (reason: unknown) {
+      setBusy(null);
+      const detail = errorMessage(reason);
+      const code = errorCode(reason);
+      setError(detail);
+      const entry: ErrorEntry = { id: newChatId("err"), kind: "error", detail };
+      if (code) {
+        entry.code = code;
+      }
+      setEntries((current) => [...current, entry]);
+    }
+  }
+
+  async function onGoDirect(): Promise<void> {
+    if (busy !== null || !online || !isDirectCapabilityReady(capabilities?.orchestration?.direct)) {
+      return;
+    }
+    setEmptyIntent(false);
+    setError(null);
+    if (!projectId) {
+      setEntries((current) => [
+        ...current,
+        {
+          id: newChatId("need"),
+          kind: "need_context",
+          missing: "projectId",
+          text: input.trim() || "去做",
+        },
+      ]);
+      return;
+    }
+    const hanging: { projectId: string; taskId?: string; title?: string } = { projectId };
+    if (taskId) {
+      hanging.taskId = taskId;
+    }
+    const title = input.trim();
+    if (title.length > 0) {
+      hanging.title = title;
+    }
+    setBusy("starting");
+    setEntries((current) => [
+      ...current,
+      { id: newChatId("usr"), kind: "user", text: title.length > 0 ? title : "去做" },
+    ]);
+    setInput("");
+    try {
+      const next = await handleIntent(
+        client,
+        startDirectIntentFromHanging(hanging),
+        hanging.title ?? "去做",
+        capabilities,
+      );
       setEntries((current) => [...current, ...next]);
       setBusy(null);
     } catch (reason: unknown) {
@@ -351,16 +446,20 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
       const confirmed = await confirmWorkflowAuthoringTurn(client, session);
       const landed = landedWorkflowDraft(confirmed);
       const turn = lastAuthoringTurn(confirmed);
+      const proposal = entry.proposal ?? (await loadChatProposalForTurn(client, confirmed));
+      const hadTaskPatch = proposalHasTaskTarget(proposal);
+      const turnCompleted = turn?.status === "completed";
       setEntries((current) =>
         current.map((item) => {
           if (item.id !== entryId || item.kind !== "create_workflow") {
             return item;
           }
-          if (!landed) {
+          if (!landed && !hadTaskPatch && !turnCompleted) {
             return {
               ...item,
               phase: "failed",
-              error: "确认后没有未发布 WorkflowDraft。未把对话当成已执行。",
+              ...(proposal ? { proposal } : {}),
+              error: "确认后没有未发布 WorkflowDraft，也没有 Task patch。未把对话当成已执行。",
             };
           }
           const next: CreateWorkflowEntry = {
@@ -369,14 +468,22 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
             unpublished: true,
             sessionId: confirmed.id,
           };
+          if (proposal) {
+            next.proposal = proposal;
+          }
           if (turn) {
             next.turnId = turn.id;
           }
-          if (landed.workflowDraftId) {
+          if (landed?.workflowDraftId) {
             next.workflowDraftId = landed.workflowDraftId;
           }
-          if (landed.workflowId) {
+          if (landed?.workflowId) {
             next.workflowId = landed.workflowId;
+          }
+          const taskTarget = taskTargetsFromProposal(proposal)[0];
+          if (taskTarget?.operation === "update") {
+            next.taskId = taskTarget.targetId;
+            next.definitionRevision = taskTarget.expectedRevision;
           }
           return next;
         }),
@@ -390,6 +497,7 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
 
   const sendDisabled = busy !== null || !online;
   const directReady = isDirectCapabilityReady(capabilities?.orchestration?.direct);
+  const directDisabled = sendDisabled || !directReady;
 
   return (
     <Page
@@ -414,25 +522,34 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         projects={projects}
         workers={workers}
         runs={runs}
+        tasks={tasks}
         projectId={projectId}
         runId={runId}
+        taskId={taskId}
         workerId={workerId}
         online={online}
         onProjectChange={setProjectId}
         onRunChange={setRunId}
+        onTaskChange={setTaskId}
         onWorkerChange={onWorkerChange}
       />
-      <Card testId="chat-direct-closed">
+      <Card testId={directReady ? "chat-direct-ready" : "chat-direct-closed"}>
         <Cluster>
-          <Button testId="chat-direct-go" variant="outline" disabled>
-            去做
+          <Button
+            testId="chat-direct-go"
+            variant={directReady ? "primary" : "outline"}
+            disabled={directDisabled}
+            onClick={() => void onGoDirect()}
+          >
+            {busy === "starting" ? "启动中…" : "去做"}
           </Button>
-          <Badge tone="warning">unsupported_capability</Badge>
+          {directReady ? (
+            <Badge tone="info">{intentKindLabel("start_direct")}</Badge>
+          ) : (
+            <Badge tone="warning">unsupported_capability</Badge>
+          )}
         </Cluster>
-        <Muted>{DIRECT_UNSUPPORTED_NOTE}</Muted>
-        {directReady ? (
-          <Muted>能力矩阵即使标记 direct，本批 Chat 也不调度，避免假成功。</Muted>
-        ) : null}
+        <Muted>{directReady ? DIRECT_READY_NOTE : DIRECT_UNSUPPORTED_NOTE}</Muted>
       </Card>
       <Transcript
         entries={entries}
@@ -457,7 +574,7 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
             rows={4}
             value={input}
             disabled={busy !== null}
-            placeholder="例如：建一个更严的 reviewer；把这个角色改得更会写测试；请这个角色进项目；做一条发布流程；进度怎么样。"
+            placeholder="例如：去做；现在改这个 bug；建一个更严的 reviewer；把这个角色改得更会写测试；请这个角色进项目；做一条发布流程；进度怎么样。"
             onChange={(event) => {
               setInput(event.target.value);
               if (!isEmptyChatIntent(event.target.value)) {
@@ -496,12 +613,15 @@ function BindingBar(props: {
   projects: readonly ProjectDto[];
   workers: readonly WorkerDto[];
   runs: readonly RunDto[];
+  tasks: readonly TaskDto[];
   projectId: string;
   runId: string;
+  taskId: string;
   workerId: string;
   online: boolean;
   onProjectChange: (projectId: string) => void;
   onRunChange: (runId: string) => void;
+  onTaskChange: (taskId: string) => void;
   onWorkerChange: (workerId: string) => void;
 }): ReactNode {
   const activeRuns = props.runs.filter((run) => isActiveRun(run.status));
@@ -517,7 +637,7 @@ function BindingBar(props: {
             onChange={(event) => props.onProjectChange(event.target.value)}
           >
             <option value="">
-              未选择（创建角色可不选；请来 Team / 创建流程 / 问进度 / 交流工作要选）
+              未选择（创建角色可不选；请来 Team / 创建流程 / 问进度 / 交流工作 / 去做要选）
             </option>
             {props.projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -542,6 +662,22 @@ function BindingBar(props: {
             ))}
           </Select>
         </Field>
+        <Field label="Task" htmlFor="chat-task">
+          <Select
+            id="chat-task"
+            testId="chat-task-select"
+            value={props.taskId}
+            disabled={!props.online || !props.projectId}
+            onChange={(event) => props.onTaskChange(event.target.value)}
+          >
+            <option value="">未选择（去做可空；空则先建项目内 ad-hoc Task）</option>
+            {props.tasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.title} · {task.status} · {task.id}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field label="Run" htmlFor="chat-run">
           <Select
             id="chat-run"
@@ -560,7 +696,8 @@ function BindingBar(props: {
         </Field>
       </Cluster>
       <Muted>
-        {CREATE_WORKFLOW_NEEDS_PROJECT} 没有 projectId / runId / workerId 时只问，不发写。
+        {CREATE_WORKFLOW_NEEDS_PROJECT} {START_DIRECT_NEEDS_PROJECT} 没有 projectId / runId /
+        workerId / taskId 时只问，不发写。
       </Muted>
     </Card>
   );
@@ -577,7 +714,7 @@ function Transcript(props: {
     return (
       <Card testId="chat-empty">
         <EmptyState title="还没有对话。">
-          随时可说：建角色、改卡片、请到项目、建流程、问进度、交流工作。分类结果不是完成态。认不出再问。
+          随时可说：去做、建角色、改卡片、请到项目、建流程、问进度、交流工作。分类结果不是完成态。认不出再问。
         </EmptyState>
       </Card>
     );
@@ -664,6 +801,8 @@ function EntryCard(props: {
           onOpenCanvas={(path) => props.navigate(path)}
         />
       );
+    case "start_direct":
+      return <StartDirectCard entry={entry} />;
     case "progress":
       return <ProgressCard projection={entry.projection} />;
     case "discuss_work":
@@ -809,16 +948,47 @@ function WorkflowIntentCard(props: {
   onOpenCanvas: (path: string) => void;
 }): ReactNode {
   const { entry } = props;
+  const taskTargets = taskTargetsFromProposal(entry.proposal);
+  const hasTaskPatch = taskTargets.length > 0;
   if (entry.phase === "failed") {
     return (
-      <Card testId="chat-workflow-failed">
+      <Card testId={hasTaskPatch ? "chat-task-patch-failed" : "chat-workflow-failed"}>
         <Badge tone="danger">未落地</Badge>
         <ErrorText>{entry.error}</ErrorText>
-        <Muted>{TURN_CONFIRMED_IS_NOT_DONE}</Muted>
+        <Muted>{hasTaskPatch ? TASK_PATCH_LANDED_NOTE : TURN_CONFIRMED_IS_NOT_DONE}</Muted>
       </Card>
     );
   }
   if (entry.phase === "landed") {
+    if (hasTaskPatch && !entry.workflowDraftId && !entry.workflowId) {
+      return (
+        <Card testId="chat-task-patch-landed">
+          <Badge tone="muted">Task patch 已确认</Badge>
+          <p>{TASK_PATCH_LANDED_NOTE}</p>
+          <TaskPatchTargets targets={taskTargets} />
+          <Muted>
+            项目 {entry.projectId}
+            {entry.taskId ? ` · Task ${entry.taskId}` : ""}
+            {entry.definitionRevision !== undefined
+              ? ` · expectedRevision ${entry.definitionRevision}`
+              : ""}
+          </Muted>
+        </Card>
+      );
+    }
+    if (!entry.workflowDraftId && !entry.workflowId) {
+      return (
+        <Card testId="chat-task-patch-landed">
+          <Badge tone="muted">确认已落地</Badge>
+          <p>{TASK_PATCH_LANDED_NOTE}</p>
+          <Muted>
+            项目 {entry.projectId}
+            {entry.taskId ? ` · Task ${entry.taskId}` : ""}
+          </Muted>
+          <Muted>{TURN_CONFIRMED_IS_NOT_DONE}</Muted>
+        </Card>
+      );
+    }
     const canvasPath = landedDraftCanvasPath({
       unpublished: true,
       ...(entry.workflowDraftId ? { workflowDraftId: entry.workflowDraftId } : {}),
@@ -828,6 +998,12 @@ function WorkflowIntentCard(props: {
       <Card testId="chat-workflow-landed">
         <Badge tone="muted">未发布 WorkflowDraft</Badge>
         <p>{CREATE_WORKFLOW_LANDED_NOTE}</p>
+        {hasTaskPatch ? (
+          <>
+            <Muted>{TASK_PATCH_LANDED_NOTE}</Muted>
+            <TaskPatchTargets targets={taskTargets} />
+          </>
+        ) : null}
         <Muted>
           草稿 {entry.workflowDraftId ?? "（未返回 draft id）"}
           {entry.workflowId ? ` · 工作流 ${entry.workflowId}` : ""}
@@ -849,6 +1025,27 @@ function WorkflowIntentCard(props: {
       </Card>
     );
   }
+  if (hasTaskPatch) {
+    return (
+      <Card title="确认 Task patch" testId="chat-task-patch-proposal">
+        <Muted>{TASK_PATCH_PROPOSAL_NOTE}</Muted>
+        <p>{entry.summary}</p>
+        <TaskPatchTargets targets={taskTargets} />
+        <Muted>
+          项目 {entry.projectId}
+          {entry.sessionId ? ` · 会话 ${entry.sessionId}` : ""}
+        </Muted>
+        <Button
+          testId="chat-confirm-task-patch"
+          variant="primary"
+          disabled={props.confirming}
+          onClick={props.onConfirm}
+        >
+          {props.confirming ? "确认中…" : "确认 Task patch"}
+        </Button>
+      </Card>
+    );
+  }
   return (
     <Card title="创建流程提案" testId="chat-workflow-proposal">
       <Muted>{CREATE_WORKFLOW_PROPOSAL_NOTE}</Muted>
@@ -865,6 +1062,54 @@ function WorkflowIntentCard(props: {
       >
         {props.confirming ? "确认中…" : "确认并创建未发布草稿"}
       </Button>
+    </Card>
+  );
+}
+
+function TaskPatchTargets(props: {
+  targets: ReturnType<typeof taskTargetsFromProposal>;
+}): ReactNode {
+  if (props.targets.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {props.targets.map((target, index) => (
+        <Muted key={`${target.patchRef}-${index}`}>
+          targetType=task · {target.operation}
+          {target.operation === "update"
+            ? ` · taskId ${target.targetId} · expectedRevision ${target.expectedRevision}`
+            : ""}
+          {` · patchRef ${target.patchRef}`}
+        </Muted>
+      ))}
+    </>
+  );
+}
+
+function StartDirectCard(props: { entry: StartDirectEntry }): ReactNode {
+  const { entry } = props;
+  if (entry.phase === "failed") {
+    return (
+      <Card testId="chat-direct-failed">
+        <Badge tone="danger">{intentKindLabel("start_direct")}</Badge>
+        <ErrorText>{entry.error ?? entry.detail}</ErrorText>
+        <Muted>没有把气泡画成 completed，也没有发明 :direct 路由。</Muted>
+      </Card>
+    );
+  }
+  return (
+    <Card testId="chat-direct-started">
+      <Badge tone="info">{intentKindLabel("start_direct")}</Badge>
+      <p>{START_DIRECT_LANDED_NOTE}</p>
+      <Muted>
+        项目 {entry.projectId}
+        {entry.taskId ? ` · Task ${entry.taskId}` : ""}
+        {entry.runId ? ` · Run ${entry.runId}` : ""}
+        {entry.runStatus ? ` · ${entry.runStatus}` : ""}
+        {entry.createdAdHocTask ? " · 经 POST /projects/{id}/tasks" : " · 复用已有 Task"}
+      </Muted>
+      <Notice tone="info">没有 Artifact / evaluation pass。不会把这次启动画成做完。</Notice>
     </Card>
   );
 }
@@ -931,6 +1176,7 @@ async function classify(
     text: string;
     projectId: string;
     runId: string;
+    taskId: string;
     workerId: string;
     workerVersionId: string;
   },
@@ -941,6 +1187,9 @@ async function classify(
   }
   if (hanging.runId) {
     body.runId = hanging.runId;
+  }
+  if (hanging.taskId) {
+    body.taskId = hanging.taskId;
   }
   if (hanging.workerId) {
     body.workerId = hanging.workerId;
@@ -956,17 +1205,50 @@ async function dispatchResult(
   result: ChatClassifyResultDto,
   text: string,
   capabilities: CapabilitiesDto | null,
+  hanging: { projectId: string; taskId: string },
 ): Promise<ChatEntry[]> {
   const unsupported = classifyUnsupportedAction(result);
-  if (result.outcome === "unsupported" && unsupported) {
+  if (result.outcome === "unsupported" && unsupported === "im") {
     return [
       {
         id: newChatId("uns"),
         kind: "unsupported",
-        action: unsupported,
+        action: "im",
         code: "unsupported_capability",
       },
     ];
+  }
+  if (result.outcome === "unsupported" && unsupported === "direct") {
+    if (!isDirectCapabilityReady(capabilities?.orchestration?.direct)) {
+      return [
+        {
+          id: newChatId("uns"),
+          kind: "unsupported",
+          action: "direct",
+          code: "unsupported_capability",
+        },
+      ];
+    }
+    if (!hanging.projectId) {
+      return [
+        {
+          id: newChatId("need"),
+          kind: "need_context",
+          missing: "projectId",
+          text,
+        },
+      ];
+    }
+    const hangingIntent: { projectId: string; taskId?: string; title?: string } = {
+      projectId: hanging.projectId,
+    };
+    if (hanging.taskId) {
+      hangingIntent.taskId = hanging.taskId;
+    }
+    if (text.trim().length > 0) {
+      hangingIntent.title = text.trim();
+    }
+    return handleIntent(client, startDirectIntentFromHanging(hangingIntent), text, capabilities);
   }
   if (result.outcome === "need_context") {
     return [
@@ -1026,6 +1308,53 @@ async function handleIntent(
     }
     case "discuss_work":
       return sendDiscussWork(client, intent, text, capabilities);
+    case "start_direct":
+      return landStartDirectEntry(client, intent, capabilities);
+  }
+}
+
+async function landStartDirectEntry(
+  client: DesktopClient,
+  intent: Extract<ChatIntentDto, { kind: "start_direct" }>,
+  capabilities: CapabilitiesDto | null,
+): Promise<ChatEntry[]> {
+  if (!isDirectCapabilityReady(capabilities?.orchestration?.direct)) {
+    return [
+      {
+        id: newChatId("uns"),
+        kind: "unsupported",
+        action: "direct",
+        code: "unsupported_capability",
+      },
+    ];
+  }
+  try {
+    const landed = await landStartDirect(client, intent);
+    return [
+      {
+        id: newChatId("dir"),
+        kind: "start_direct",
+        projectId: landed.projectId,
+        phase: "started",
+        taskId: landed.taskId,
+        runId: landed.run.id,
+        runStatus: landed.run.status,
+        createdAdHocTask: landed.createdAdHocTask,
+        detail: START_DIRECT_LANDED_NOTE,
+      },
+    ];
+  } catch (reason: unknown) {
+    return [
+      {
+        id: newChatId("dir"),
+        kind: "start_direct",
+        projectId: intent.projectId,
+        phase: "failed",
+        ...(intent.taskId ? { taskId: intent.taskId } : {}),
+        detail: errorMessage(reason),
+        error: errorMessage(reason),
+      },
+    ];
   }
 }
 
@@ -1102,7 +1431,7 @@ async function startWorkflowAuthoring(
   try {
     const session = await sendWorkflowAuthoringMessage(client, projectId, summary);
     const turn = lastAuthoringTurn(session);
-    if (!isWorkflowProposalReady(session) || !turn) {
+    if (!isAuthoringProposalReady(session) || !turn) {
       return [
         {
           id: newChatId("wf"),
@@ -1115,17 +1444,20 @@ async function startWorkflowAuthoring(
         },
       ];
     }
-    return [
-      {
-        id: newChatId("wf"),
-        kind: "create_workflow",
-        projectId,
-        summary,
-        phase: "proposal",
-        sessionId: session.id,
-        turnId: turn.id,
-      },
-    ];
+    const proposal = await loadChatProposalForTurn(client, session);
+    const entry: CreateWorkflowEntry = {
+      id: newChatId("wf"),
+      kind: "create_workflow",
+      projectId,
+      summary,
+      phase: "proposal",
+      sessionId: session.id,
+      turnId: turn.id,
+    };
+    if (proposal !== null) {
+      entry.proposal = proposal;
+    }
+    return [entry];
   } catch (reason: unknown) {
     return [
       {

@@ -219,6 +219,12 @@ export interface StartTaskRunInput {
   };
 }
 
+/** Body for POST /projects/{id}/tasks. Ad-hoc only; no workflowInstanceId. */
+export interface CreateAdHocTaskInput {
+  title?: string;
+  expectedStateRevision?: number;
+}
+
 export interface CancelInput {
   reason?: string;
   mode?: string;

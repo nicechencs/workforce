@@ -1,0 +1,32 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/create-adhoc-task-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expectedStateRevision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "idempotencyKey": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "operationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workflowInstanceId": {
+      "not": {}
+    }
+  },
+  "required": [
+    "operationId",
+    "idempotencyKey"
+  ],
+  "title": "CreateAdHocTaskInput",
+  "type": "object"
+}

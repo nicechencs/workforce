@@ -174,7 +174,11 @@ const createTaskAcceptanceCriterionSchema = acceptanceCriterionSchema
   })
   .strict();
 
-/** Request body for POST /projects/{projectId}/tasks. */
+/**
+ * Planning-shaped Task write. Chat `start_direct` ad-hoc create is
+ * `createAdHocTaskInputSchema` on `POST /projects/{id}/tasks` and must not
+ * carry `workflowInstanceId`.
+ */
 export const createTaskInputSchema = z
   .object({
     protocol: z.literal("workforce.task").optional(),

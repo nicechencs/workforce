@@ -30,6 +30,7 @@ import {
   chatIntentDtoSchema,
   projectProgressProjectionDtoSchema,
 } from "./chat-intent.js";
+import { createAdHocTaskInputSchema } from "./command.js";
 import {
   startDirectTaskRunAcceptedSchema,
   startDirectTaskRunInputSchema,
@@ -231,6 +232,11 @@ export const protocolJsonSchemaRegistry: readonly ProtocolJsonSchemaDefinition[]
     fileName: "authoring-message-send-accepted.schema.json",
     title: "SendAuthoringMessageAccepted",
     schema: sendAuthoringMessageAcceptedSchema,
+  },
+  {
+    fileName: "create-adhoc-task-input.schema.json",
+    title: "CreateAdHocTaskInput",
+    schema: createAdHocTaskInputSchema,
   },
   {
     fileName: "direct-task-run-start-input.schema.json",
