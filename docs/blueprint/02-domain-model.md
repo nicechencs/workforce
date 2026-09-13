@@ -160,7 +160,7 @@ interface TeamMember {
 }
 ```
 
-**目标 vs 当前切片：** 领域目标是上表。现行公开 `TeamMemberDto` 仍是 `{ role, runtimeProfileId, quantity }`——这是实现切片，**不是**目标模型。新写入不得再把三字段当身份；`runtimeProfileId` 改为以 WorkerVersion 为准（契约扩展归 T02）。归档后的版本不可再被**新** Team 选用；已被引用的 `TeamVersion` 仍有效。
+**目标 vs 当前切片：** 领域目标是上表。现行公开 `TeamMemberDto` 写入已要求 `workerVersionId`；读仍兼容旧 `{ role, runtimeProfileId, quantity }` 行。`role` 仍是职责标签，不是身份。归档后的版本不可再被**新** Team 选用；已被引用的 `TeamVersion` 仍有效。WorkerVersion 卡片三字段尚未进入公开 DTO（**planned**，英文键名归 T02）。
 
 ### 4.5 Worker、Role 与 Runtime
 
@@ -173,6 +173,12 @@ interface WorkerVersion {
   version: number;
   roleId: RoleId;
   runtimeProfileId: RuntimeProfileId;
+  /** 卡片：他是谁。英文键名归 T02 冻结（建议 `who`）。 */
+  who?: string;
+  /** 卡片：怎么干活。 */
+  how?: string;
+  /** 卡片：会哪些技能。 */
+  skills?: string;
   capabilities: CapabilityRef[];
   toolBindings: ToolBinding[];
   instructionRef: PromptVersionRef;
@@ -197,11 +203,14 @@ interface RuntimeProfile {
 关键约束：
 
 - **我的角色版本库**是 V0.1 产品面：Worker identity + 不可变 `WorkerVersion`；发布后不可改该版本，不适应则 fork。
+- 卡片必印他是谁 / 怎么干活 / 技能。`runtimeProfileId` / Policy **不是**卡片必印；请来 Team 时再选。
+- 空闲对角色说话写入卡片相应字段；已发布（含已被引用）则 fork / 新草稿，不 UPDATE 源版本。不因此新建 Task/Run。
+- 建/改角色走库，不经 AuthoringSession；AuthoringSession 只服务项目内流程 / 组队。
 - 一个 Role 可由多个 Worker 实现。
 - 一个 Worker 的不同版本可以绑定不同 Runtime。
 - Runtime 不拥有业务角色，也不直接决定 Task 路由。
 - Run 必须记录实际使用的 WorkerVersion、Runtime Adapter 版本和模型。
-- Team 选用库中已发布未归档版本；数量仍可编。Chat 创建的角色草稿确认后进同一座库。
+- Team 选用库中已发布未归档版本并带上卡片；数量仍可编。Chat 创建的角色草稿确认后进同一座库。
 
 ### 4.6 Workflow
 

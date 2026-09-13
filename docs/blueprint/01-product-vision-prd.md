@@ -16,7 +16,7 @@ updated: 2026-09-13
 
 Workforce 是一个通用 AI Workforce 编排平台。用户提交目标，平台将工作拆分为可执行任务，分配给具备不同角色与能力的 AI Worker，在受控 Workspace 中调用合适的 Runtime 与工具，产出可追踪的 Artifact，并通过评估、审批和失败恢复完成闭环。
 
-Workforce 不是单一 Coding Agent。产品**不是**多 Agent 自由聊天的 IM（每个 Worker 一个收件箱、没有项目边界的聊天室），但 **V0.1 必须有全局 Chat 壳**：随时用语言创建角色、创建流程、问进度、交流工作。Chat 是入口，对象仍是 WorkerVersion / Workflow / Task / Run / Artifact。产品是**项目制**：主对象是 Project。围着一个项目，用户从**我的角色版本库**编排 Team（含自定义）、编排 Tasks、编排 Workflow（含可视化画布），再执行与验收。核心产品动作是：
+Workforce 不是单一 Coding Agent。产品**不是**多 Agent 自由聊天的 IM（每个 Worker 一个收件箱、没有项目边界的聊天室），但 **V0.1 必须有全局 Chat**：随时用语言按句意落到对象——建/改角色走**我的角色版本库**、请到项目走 Team、建流程走 Workflow；认不出再问。Chat 是入口，对象仍是 WorkerVersion / Team / Workflow / Task / Run / Artifact。产品是**项目制**：主对象是 Project。围着一个项目，用户从角色版本库编排 Team（含自定义）、编排 Tasks、编排 Workflow（含可视化画布），再执行与验收。核心产品动作是：
 
 > 围绕一个 Project，把工作交给配好的 Team，按编排好的 Workflow 执行 Task，并验证其 Output。
 
@@ -48,9 +48,9 @@ Workforce 不是单一 Coding Agent。产品**不是**多 Agent 自由聊天的 
 | Project | **主对象**。围绕一个目标组织 Team、Task、Workflow、Workspace 与 Artifact |
 | Workspace | Worker 实际执行工作的环境与资源集合 |
 | Team | 为项目协作的一组 Worker；成员引用已发布 `WorkerVersion` |
-| Worker / WorkerVersion | 具备角色、能力、工具、策略和 Runtime 配置的执行者；**发布后不可变**，不适应则 fork |
-| 我的角色版本库 | **V0.1 产品面**：找、搜、引用关系、归档；给 Team 选用/fork |
-| Chat | **V0.1 就要有的语言壳**（全局入口）；自己不是一等业务对象 |
+| Worker / WorkerVersion | 具备角色、能力、工具、策略和 Runtime 配置的执行者；**发布后不可变**，不适应则 fork。卡片必印：他是谁、怎么干活、会哪些技能（Runtime / Policy 不是必印） |
+| 我的角色版本库 | **V0.1 产品面**：找、搜、引用关系、归档；给 Team 选用/fork；空闲说话写入卡片 |
+| Chat | **V0.1 就要有的语言入口**；按句意落到库 / Team / Workflow；自己不是一等业务对象 |
 | Role | Worker 在团队中的职责标签，不是员工身份 |
 | Runtime | 实际执行任务的 Agent 或执行环境，如 Codex、Claude Code |
 | Workflow | Task 的依赖、路由、审批与失败恢复规则 |
@@ -105,9 +105,10 @@ M3–M6 是可独立演示和验收的基础切片；V0.1 产品整体 release g
 - 跨平台桌面端：Windows、macOS、Linux
 - Project、Workspace、Team、Worker、Task、Run、Artifact、Event 基础模型
 - 软件开发团队模板
-- 自定义 Team 编排：从**我的角色版本库**选用或 fork 已发布 WorkerVersion，再版本化 Team；不只使用预设
-- **我的角色版本库**：WorkerVersion 发布不可变；可搜、筛、引用、归档（M7；**planned**）
-- **全局 Chat 壳**：随时可用；用语言创建角色草稿、创建流程、询问进度、交流工作；创建经确认；问进度只读事实；交流挂 `projectId` / 执行中 `runId`（**planned**）
+- 自定义 Team 编排：从**我的角色版本库**选用或 fork 已发布 WorkerVersion（选用时带上卡片），再版本化 Team；不只使用预设
+- **我的角色版本库**：WorkerVersion 发布不可变；可搜、筛、引用、归档。库页 **已接线**；卡片必印他是谁 / 怎么干活 / 技能（**planned**）
+- **全局 Chat**：随时可用；按句意落到库 / Team / Workflow。壳与建角色进库 **已接线**；句意分类、空闲写卡 **planned**。建/改角色不挂 `projectId`、不经 AuthoringSession。问进度只读事实；交流挂进行中 `projectId` / `runId`。认不出再问
+- 空闲对角色说话写入卡片相应字段；已发布则 fork；**不**马上派 Task/Run，**不**开 IM（**planned**）
 - 轻量 DAG/状态机 Workflow
 - 高度可定制的 Workflow 作者环：对话生成可编辑草稿、画布/结构化编辑、校验后发布不可变 WorkflowVersion；未发布图不可执行（M7）
 - 每个 Agent 可选择 `workflow_bound` 或 `direct` 执行模式；两者均经过 Task/Run、Policy、Workspace、预算、Approval 与 capability probe（M8）
@@ -127,6 +128,8 @@ M3–M6 是可独立演示和验收的基础切片；V0.1 产品整体 release g
 - **现在不是一等面、未来要做：** Agent/角色 Marketplace（上架/安装别人的已发布版本）。装进来仍进自己的库，再 Team 绑 Project。不要写成永久不做商店。
 - Worker IM 收件箱、没有项目边界的聊天室、以 `workerId` 为会话对端
 - **聊天当完成**：bot 回复不是验收；问进度不得编造终态。完成只看 Artifact / Run / Approval
+- 空闲对角色说话立刻开 Task/Run，或把 AuthoringSession 当建角色闸门
+- 把 Runtime / Policy 写成角色卡片必填
 - 通用 iPaaS、任意 connector 生态或脱离 Project 的工作流 IDE
 - 把未发布画布图当作 Runtime，或把产品做成脱离 Project 的通用 IDE
 - 自主无限循环与完全无人值守运行
