@@ -95,7 +95,7 @@ All blueprint documents are V0.1 drafts. Protocols and implementation details ma
 - [协作与评审流程](planning/04-collab-and-review.md)
 - [D15–D18 落地方案（实现前检查点）](planning/05-d17-d18-landing-plan.md)
 - [T02 契约变更请求（C5–C9）](planning/06-t02-contract-request-c5-c9.md)
-- [决策登记（项目制主对象；角色版本库与全局 Chat 壳现在就要有；Marketplace 现在不是一等面；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
+- [决策登记（项目制主对象；角色版本库与全局 Chat 现在就要有；库/Chat 壳已接线；卡片三字段 / 句意 / 空闲写卡 planned；Marketplace 现在不是一等面；M0–M3 已冻结；M7 补齐 Team/Workflow/对话生成；M8 双执行模式）](planning/decision-register.md)
 - [产品沟通历史](planning/communication-history.md)
 - [状态矩阵](planning/state-matrix.md)
 - [页面与 API 能力矩阵](planning/api-capability-matrix.md)

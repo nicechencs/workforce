@@ -37,6 +37,12 @@ updated: 2026-09-13
 
 ---
 
+## 2026-09-13（Asia/Taipei）库/Chat 已接线；卡片三字段、句意落地、空闲写卡收窄为 planned
+
+- **决定：** 四处已拍板写入决策登记：角色与 Project 解耦；卡片必印他是谁 / 怎么干活 / 技能（Runtime / Policy 不是必印）；空闲对角色说话写入卡片相应字段、已发布则 fork、不派 Task/Run、不是 IM、不是 D18 direct；Chat 按句意落到库 / Team / Workflow，认不出再问，不默成交流工作，不强制三张确认卡。建/改角色走库、可无 `projectId`；AuthoringSession **只**服务项目内流程 / 组队。Marketplace 仍是未来、现在不是当前债。
+- **文档影响：** [决策登记](decision-register.md) D16/D17/D18 收窄句；[PRD](../blueprint/01-product-vision-prd.md) / [领域模型](../blueprint/02-domain-model.md) 卡片三字段与建角色走库；[IA](../product-ui/01-information-architecture.md) §4.6 / §6.4、[核心流程](../product-ui/02-core-user-flows.md) §9、[线框](../product-ui/03-p0-wireframes.md) §11–§12；[任务清单](02-development-task-backlog.md) 只改 T19/T20/T20-B 目标句并增加 `T19-TEAM-CARD` / `T20-CHAT-MAP` / `T20-B-INTENT-CLASSIFY` planned 子任务名；[实现进度](03-implementation-status.md) 按 `e142f72` 把库 HTTP/UI 与 Chat 壳标成已接线，卡片 / 句意 / 空闲写卡标 planned。不改能力矩阵 path、不发明 HTTP、不改 `packages/**` / `apps/**`。
+- **状态：** 库 HTTP/UI、Chat 壳、`POST /workers` 进库、Team `workerVersionId`、问进度投影 **implemented**（`e142f72` 源码；本 tip 未 headed）。卡片三字段、句意分类、空闲写卡、D18 direct、Marketplace 一等面仍 **planned**。
+
 ## 2026-09-13（Asia/Taipei）角色版本库与全局 Chat 壳现在就要有
 
 - **决定：** 用户纠正：跨项目复用角色；模型第一天就是 WorkerVersion；**现在就要有我的角色版本库**（找、搜、引用、归档、Team 选用/fork；发布不可变，不适应则 fork）。**Chat 功能也要有**：随时随地用语言创建角色、创建流程，并可用语言问进度、交流工作内容。Chat 是全局壳，不是作者页专属，也不是 IM（不要 Worker 收件箱、无项目聊天室、`workerId` 当对端）。仍禁止聊天当完成；问进度只读 Task/Run/Event/Artifact 投影，不得编造终态。Marketplace 未来要做、**现在不是一等面**；装进来仍进自己的库。现行 `{ role, runtimeProfileId, quantity }` 不再写成目标模型；Team 成员目标是 `workerVersionId`。

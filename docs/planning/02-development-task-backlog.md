@@ -3,13 +3,13 @@ title: Workforce V0.1 Development Task Backlog
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # V0.1 开发任务清单：供后续 agent 领取
 
-日期：2026-09-12  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 自定义 Team 写 UI / Daemon 会话驱动作者页（typed send；allowlist 未放行）/ 项目详情 orchestrationMode 控件与 composed passthrough 已有切片，完成度只认 03。  
+日期：2026-09-13  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 自定义 Team 写 UI / 角色库页 / 全局 Chat 壳 / Daemon 会话驱动作者页 / 项目详情 orchestrationMode 控件与 composed passthrough 已有切片；卡片三字段、句意分类、空闲写卡仍 planned。完成度只认 03。  
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -91,9 +91,9 @@ flowchart TD
 | T16 | 联调、恢复与端到端验证 | 根 tests，受协调的 composition 接线 | 可从 T02 写场景；验收等待依赖 | 高 / 大 |
 | T17 | 打包、升级、诊断与发布 | 发布脚本、release CI、打包资源、operations | T03 后可准备；验收等待 T16 | 高 / 中 |
 | T18 | 项目循环：Workflow 画布 | `renderer/features/workflows` 画布；协调 T02/T09/T10 写契约 | M3 只读目录已接通；写接口需 T02 扩展 | 高 / 大 |
-| T19 | 项目循环：Team 从角色版本库选用/fork `workerVersionId` | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
-| T20 | 全局 Chat 壳：创建角色/流程、问进度、交流工作 | `renderer/features/workflow-authoring`（作者页）及后续会话 UI；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；T02 冻结会话协议后才能宣称接通 | 高 / 中 |
-| T20-B | 项目循环：Authoring Application 用例 | `application/src/use-cases/authoring`（由 T14 负责）及相关测试 | T02 authoring proposal/change-set DTO；不改 Renderer、Workflow Engine 或 API composition | 高 / 大 |
+| T19 | 项目循环：Team 从角色版本库选用/fork `workerVersionId`，选用时带上卡片 | `renderer/features/teams` 可写面；协调 TeamVersion 写契约 | T12 M3 只读完成后领取；不与 T12 同时改同一文件 | 中 / 中 |
+| T20 | 全局 Chat：按句意落到库 / Team / Workflow；空闲写卡；认不出再问 | `renderer/features/chat` 与 `workflow-authoring`（作者页）；协调会话 DTO | T18 画布入口可复用；不与 T18 同改画布文件；壳已接线 ≠ 句意落地完成 | 高 / 中 |
+| T20-B | 项目循环：Authoring Application 用例（只服务流程 / 组队） | `application/src/use-cases/authoring`（由 T14 负责）及相关测试 | T02 authoring proposal/change-set DTO；不改 Renderer、Workflow Engine 或 API composition | 高 / 大 |
 | T21 | 双执行模式 | 启动字段诚实显隐 + 相关 UI；不发明未冻结 path | T02 冻结 `orchestrationMode` 后领取；不与 T13/T19 同改同一文件 | 高 / 中 |
 
 体量为相对复杂度，不是工时承诺。T09/T13 如需继续拆分，先按子目录/状态机所有权切开，再分配，禁止两人同时改共享控制器。
@@ -126,6 +126,9 @@ flowchart TD
 | `T02-PROTOCOL-SCHEMA-GENERATION` | T02 | 从 `packages/protocol` 权威定义生成或校验版本化 JSON Schema/fixtures，并在本地门禁发现手写 schema 漂移。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T02-RUN-WIRE-CONTRACT`。 |
 | `T11-RENDERER-CLIENT-CANONICALIZATION` | T11（T18/T19/T20 配合迁移调用） | 确定唯一生产 typed client/context 装配；隔离重复 fallback，真实 preload 与测试注入走同一行为，禁止新增第三套 client。 | 当前 Desktop shell；先于后续 M7 页面扩展。 |
 | `T09-PLACEMENT-LEASE-WIRING` | T09（T04 repository、T16 恢复验收） | **本机切片已实现：** NodeSession 与 per-run ExecutionLease 分离；Project 只保留 PlacementIntent/本机库存，Run 启动解析并写入不可变 `RunExecutionSnapshot`；事务提交后再 spawn，相同 operation 幂等重试；Workflow Scheduler 只做 DAG，Local Node Placement Scheduler 选本机节点。续租/过期跨进程恢复、远程 placement 与 T16 故障注入仍待。 | `T04-RUN-AXIS`、`T02-RUN-WIRE-CONTRACT`、T05 binding。 |
+| `T19-TEAM-CARD` | T19 | **planned：** 请角色进 Team 时带上库里卡片；选择器能看见他是谁 / 怎么干活 / 技能，不把 Runtime 当必选身份。添加成员仍必须选已发布 `workerVersionId`。不复制库页，不发明 Marketplace。 | 角色库页已接线；卡片字段契约归 T02。 |
+| `T20-CHAT-MAP` | T20 | **planned：** Chat UI 按分类结果落到库 / Team / Workflow；空闲说话写卡（草稿 PATCH 或已发布 fork）；认不出再问，不默成交流工作；不强制三张确认卡。建角色走 `POST /workers`，不经 AuthoringSession。不在 Renderer 再写一套关键词分类。 | 壳已接线；句意分类归 Application；卡片写入归 catalog。 |
+| `T20-B-INTENT-CLASSIFY` | T20-B（T14 Application chat；不写库） | **planned：** 分类按发信人句意落到对象，而不是匹配「创建角色 / 创建流程」字面。认不出 → 澄清，禁止默成交流工作。建角色可不挂 `projectId`。空闲写卡与建角色不走 AuthoringSession。 | 意图 DTO 归 T02；禁止 Daemon 第二套关键词分类器。 |
 
 `T04-MIG`、`T14-AUTH`、`T20-SEND`、`T09-DIRECT`、`T04-RUN-AXIS`、`T16-UPGRADE`、`T15-LIVE`、`T18-HEADED` 与 `T17-PACK` 已在本任务的先前审计中列为同样受限的父卡子任务；不重复造 T22/T23 一类平行大任务。远程 enrollment、生产远程 runner、容器编排、大文件 GC 和完整 OS sandbox 仍属当前 V0.1 范围外，不得借本表默认扩项。
 
@@ -395,7 +398,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 ### T19 — 自定义 Team 编排
 
-**目标：** 兑现收窄后的 D16：用户能围着 Project 创建并发布自定义 TeamVersion；成员改为从**我的角色版本库**选用或 fork 已发布 `workerVersionId`，不再把 `{ role, runtimeProfileId, quantity }` 当编辑目标。
+**目标：** 兑现收窄后的 D16：用户能围着 Project 创建并发布自定义 TeamVersion；成员改为从**我的角色版本库**选用或 fork 已发布 `workerVersionId`，选用时能看见卡片（他是谁 / 怎么干活 / 技能），不再把 `{ role, runtimeProfileId, quantity }` 或 Runtime 当身份。
 
 **所有权：** `apps/desktop/src/renderer/features/teams/` 可写切片及测试。领取前确认 T12 不再改同一文件。不改 protocol / daemon composition。
 
@@ -408,13 +411,13 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
 
-**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload 已接线。无假 publish/bind。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
+**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `workerVersionId` 写入 + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload 已接线。无假 publish/bind。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。**卡片三字段 / `T19-TEAM-CARD` 仍 planned**。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
 ### T20 — 对话式工作流编排
 
-**目标：** 兑现收窄后的 D17：用户随时可开**全局 Chat 壳**，用语言创建角色草稿、创建流程、询问进度、交流工作内容；创建类仍走 AuthoringSession，确认后才落草稿。不是 IM，不是聊天当完成，也不是生成图的执行 Runtime；authoring Task/Run 通过 Runtime SPI 治理。
+**目标：** 兑现收窄后的 D17：用户随时可开**全局 Chat**，按句意落到库 / Team / Workflow；建/改角色（含空闲说话写卡）走库、不挂 `projectId`、不经 AuthoringSession；请到项目走 Team；建流程才走 AuthoringSession。认不出再问，不默成交流工作，不强制三张确认卡。不是 IM，不是聊天当完成；「去做」仍诚实失败（D18）。
 
 **所有权：** `apps/desktop/src/renderer/features/workflow-authoring/` 及包内测试。不改 protocol、daemon composition、workflow-engine、路由表或 T18 画布文件。会话 / 草稿 DTO 缺口提交 T02。
 
@@ -429,13 +432,13 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 作者壳已挂入 `?authoring=1`；`CHAT_SESSION_PROTOCOL_FROZEN=true`。页面走 typed client 的 `createAuthoringSession` / `sendAuthoringMessage`，会话绑定真实 Project（无 route 时用项目选择器），**不是** `localStorage` 本地 store。Daemon 已注册 AuthoringSession HTTP 与 Workflow 聊天确认。**Electron allowlist 仍未放行** authoring-sessions，真窗口不能当作已接通。无 Codex 编排 Agent。headed 未跑。不得把壳写成对话编排完成或 M7 完成。
+**当前切片（见 03）：** 全局 Chat 壳已接线（`features/chat/`）；确认 `POST /workers` 进库可无项目。作者壳仍挂入 `?authoring=1`；`CHAT_SESSION_PROTOCOL_FROZEN=true`。问进度只读投影、交流挂点、「去做」诚实失败已接线。分类仍是关键词。Electron allowlist 已放行 workers / classify / progress / authoring-sessions。**`T20-CHAT-MAP`（句意落地 / 空闲写卡）仍 planned**。headed 未跑。不得把壳写成对话编排完成或 M7 完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
 ### T20-B — Authoring Application 用例
 
-**目标：** 为 T20/T18 提供 D17 的唯一后端 authoring 入口，接收 conversation turn/raw intent，创建受治理 authoring Task/Run 并通过 Runtime SPI 执行编排 Agent；该 Run 输出结构化 `AuthoringProposal` / `ChangeSet`，再生成可编辑 `WorkflowDraft`（及可选 Team/Task 草稿）。生成出的 Workflow 不在此 Run 中执行。
+**目标：** 为项目内**流程 / 组队**提供 D17 的唯一后端 authoring 入口：接收 conversation turn/raw intent，创建受治理 authoring Task/Run 并通过 Runtime SPI 执行编排 Agent；该 Run 输出结构化 `AuthoringProposal` / `ChangeSet`，再生成可编辑 `WorkflowDraft`（及可选 Team/Task 草稿）。**建/改角色与空闲写卡不走本入口**，走角色库 catalog。生成出的 Workflow 不在此 Run 中执行。
 
 **所有权：** `packages/application/src/use-cases/authoring/` 及相关测试，由 T14 负责；T02 负责公共 DTO/schema，T10 负责 HTTP 接线。不得在 Renderer、Runtime Adapter 或 Workflow Engine 复制此规则。
 
@@ -450,7 +453,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** proposal → draft → CAS/staged apply → 画布编辑 → 发布路径可追溯；revision 冲突、空意图、校验失败、部分失败、取消和重试不假成功；未发布图不会被执行；不同聚合不会被静默部分覆盖。
 
-**当前切片（见 03）：** `authoring.start`、staged-apply、Mock Proposal 回调、Host/Daemon 一次性 transient prompt handoff（磁盘只存 digest）与 `confirmAuthoringChatProposal`（仅 workflow create/update）已接线。`targetType !== "workflow"` 与 Task patch 仍 not implemented；turn retry 为 `unsupported_capability`。不得把 `authoring.start` 误报为 Agent 已收到 intent。
+**当前切片（见 03）：** `authoring.start`、staged-apply、Mock Proposal 回调、Host/Daemon 一次性 transient prompt handoff（磁盘只存 digest）与 `confirmAuthoringChatProposal`（仅 workflow create/update）已接线。`targetType !== "workflow"` 与 Task patch 仍 not implemented；turn retry 为 `unsupported_capability`。**`T20-B-INTENT-CLASSIFY` 仍 planned**。不得把 `authoring.start` 误报为 Agent 已收到 intent，也不得把 AuthoringSession 写成建角色闸门。
 
 **集成依赖：** T02、T09、T10、T14；T20 UI 只消费该用例的 typed contract。
 
