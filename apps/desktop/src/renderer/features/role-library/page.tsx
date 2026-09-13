@@ -26,6 +26,7 @@ import {
   SegmentedControl,
   Stack,
   StatusText,
+  Textarea,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
@@ -37,10 +38,28 @@ import {
   ARCHIVE_NOT_PUBLISHED,
   canArchiveVersion,
   canForkVersion,
+  canPatchCardDraft,
+  CARD_DRAFT_HINT,
+  CARD_EMPTY,
+  CARD_FIELDS,
+  CARD_READ_ONLY,
+  CARD_UNPUBLISHED_NO_DRAFT,
+  cardFieldDisplay,
+  cardFieldText,
+  cardFormDirty,
+  cardSourceOf,
+  cardWriteFromForm,
   confirmArchived,
   confirmForkedDraft,
+  confirmPatchedDraft,
+  DRAFT_NOT_EDITABLE,
+  DRAFT_REVISION_CONFLICT,
+  emptyCardForm,
   emptyLibraryQuery,
   FORK_NOT_PUBLISHED,
+  isCardFieldEmpty,
+  isLibraryRevisionConflict,
+  isPublishedCardLocked,
   LIBRARY_API_MISSING,
   libraryCommandOptions,
   libraryErrorMessage,
@@ -48,6 +67,7 @@ import {
   loadWorkerCatalog,
   mergeWorkerPage,
   prependWorker,
+  PUBLISHED_CARD_NOT_PATCHABLE,
   referenceMeta,
   replaceWorker,
   selectableVersionOptions,
@@ -58,6 +78,7 @@ import {
   workerBadge,
   workerLibraryMethodsPresent,
   workerListMeta,
+  type CardForm,
   type LibraryQuery,
 } from "./model.js";
 
@@ -87,7 +108,7 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionBusy, setActionBusy] = useState<"archive" | "fork" | null>(null);
+  const [actionBusy, setActionBusy] = useState<"archive" | "fork" | "save" | null>(null);
   const [forkNotice, setForkNotice] = useState<ForkWorkerVersionAcceptedDto | null>(null);
 
   const selectable = useMemo(() => selectableVersionOptions(workers), [workers]);
@@ -315,10 +336,47 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
     }
   }
 
+  async function saveCard(form: CardForm) {
+    if (detailWorker === null) {
+      return;
+    }
+    if (detailDraft === null) {
+      setActionError(
+        isPublishedCardLocked(detailVersion)
+          ? PUBLISHED_CARD_NOT_PATCHABLE
+          : CARD_UNPUBLISHED_NO_DRAFT,
+      );
+      return;
+    }
+    if (!canPatchCardDraft(detailDraft)) {
+      setActionError(DRAFT_NOT_EDITABLE);
+      return;
+    }
+    setActionBusy("save");
+    setActionError(null);
+    try {
+      const patched = confirmPatchedDraft(
+        await client.patchWorkerDraft(
+          detailWorker.id,
+          detailDraft.id,
+          cardWriteFromForm(form),
+          libraryCommandOptions(detailDraft.revision),
+        ),
+      );
+      setDetailDraft(patched);
+    } catch (caught) {
+      setActionError(
+        isLibraryRevisionConflict(caught) ? DRAFT_REVISION_CONFLICT : libraryErrorMessage(caught),
+      );
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
   return (
     <Page
       title="角色版本库"
-      subtitle="我的 WorkerVersion：找、搜、看 TeamVersion 引用、归档、选用、fork。未发布不能当已发布员工。"
+      subtitle="我的 WorkerVersion：详情必印谁 / 怎么干活 / 技能。草稿可改这三格；已发布只读，改走 fork。未发布不能当已发布员工。"
     >
       {apiReady ? null : (
         <Notice tone="warning" title="尚未接通">
@@ -416,7 +474,7 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
       </Card>
       {selection === null ? (
         <Card>
-          <Muted>从列表或选用选择器打开一个版本，查看引用关系并归档或 fork。</Muted>
+          <Muted>从列表或选用选择器打开一个版本，查看角色卡片、引用关系，并归档或 fork。</Muted>
         </Card>
       ) : (
         <WorkerDetail
@@ -431,6 +489,7 @@ export function RoleLibraryPage(props: FeaturePageProps): ReactNode {
           forkNotice={forkNotice}
           onArchive={() => void archiveSelected()}
           onFork={() => void forkSelected()}
+          onSaveCard={(form) => void saveCard(form)}
           onOpenVersion={(version) => {
             if (detailWorker !== null) {
               setForkNotice(null);
@@ -490,10 +549,11 @@ function WorkerDetail(props: {
   loading: boolean;
   error: string | null;
   actionError: string | null;
-  busy: "archive" | "fork" | null;
+  busy: "archive" | "fork" | "save" | null;
   forkNotice: ForkWorkerVersionAcceptedDto | null;
   onArchive: () => void;
   onFork: () => void;
+  onSaveCard: (form: CardForm) => void;
   onOpenVersion: (version: WorkerVersionDto) => void;
 }): ReactNode {
   const worker = props.worker;
@@ -565,6 +625,13 @@ function WorkerDetail(props: {
           <Muted>此 identity 还没有已发布 WorkerVersion。</Muted>
         )}
       </Card>
+      <RoleCard
+        draft={props.draft}
+        version={props.version}
+        actionError={props.draft !== null || props.version === null ? props.actionError : null}
+        busy={props.busy === "save"}
+        onSave={props.onSaveCard}
+      />
       {props.version !== null ? (
         <VersionPanel
           version={props.version}
@@ -583,7 +650,7 @@ function VersionPanel(props: {
   version: WorkerVersionDto;
   references: WorkerVersionReferencesDto | null;
   actionError: string | null;
-  busy: "archive" | "fork" | null;
+  busy: "archive" | "fork" | "save" | null;
   onArchive: () => void;
   onFork: () => void;
 }): ReactNode {
@@ -602,7 +669,7 @@ function VersionPanel(props: {
       <Muted>
         {props.version.id} · 职责 {props.version.role}
         {props.version.runtimeProfileId !== undefined
-          ? ` · runtime ${props.version.runtimeProfileId}`
+          ? ` · runtime ${props.version.runtimeProfileId}（执行绑定，不是卡片必填）`
           : ""}
       </Muted>
       {unpublished ? <Notice tone="warning">{UNPUBLISHED_NOT_EMPLOYEE}</Notice> : null}
@@ -646,5 +713,129 @@ function VersionPanel(props: {
         <Muted>已归档版本不能再被新 Team 选用，仍可 fork 出新草稿。</Muted>
       ) : null}
     </Card>
+  );
+}
+
+function RoleCard(props: {
+  draft: WorkerDraftDto | null;
+  version: WorkerVersionDto | null;
+  actionError: string | null;
+  busy: boolean;
+  onSave: (form: CardForm) => void;
+}): ReactNode {
+  const editable = canPatchCardDraft(props.draft);
+  const locked = isPublishedCardLocked(props.version) && !editable;
+  const source = cardSourceOf(props.draft, props.version);
+  return (
+    <Card title="角色卡片" testId="role-library-card">
+      {editable && props.draft !== null ? (
+        <RoleCardEditor
+          draft={props.draft}
+          busy={props.busy}
+          error={props.actionError}
+          onSave={props.onSave}
+        />
+      ) : (
+        <RoleCardReadout source={source} locked={locked} missingDraft={props.draft === null} />
+      )}
+    </Card>
+  );
+}
+
+function RoleCardReadout(props: {
+  source: ReturnType<typeof cardSourceOf>;
+  locked: boolean;
+  missingDraft: boolean;
+}): ReactNode {
+  return (
+    <>
+      {props.locked ? (
+        <Notice tone="info" title="已发布只读">
+          {CARD_READ_ONLY}
+        </Notice>
+      ) : null}
+      {!props.locked && props.missingDraft ? <Muted>{CARD_UNPUBLISHED_NO_DRAFT}</Muted> : null}
+      <dl className="wf-detail-grid" data-testid="role-library-card-fields">
+        {CARD_FIELDS.map((field) => {
+          const value = cardFieldText(props.source, field.id);
+          const empty = isCardFieldEmpty(value);
+          return (
+            <RoleCardField key={field.id} fieldId={field.id} label={field.label} empty={empty}>
+              {empty ? <Muted>{cardFieldDisplay(value)}</Muted> : cardFieldDisplay(value)}
+            </RoleCardField>
+          );
+        })}
+      </dl>
+    </>
+  );
+}
+
+function RoleCardField(props: {
+  fieldId: string;
+  label: string;
+  empty: boolean;
+  children: ReactNode;
+}): ReactNode {
+  return (
+    <>
+      <dt>{props.label}</dt>
+      <dd
+        data-testid={`role-library-card-${props.fieldId}`}
+        data-empty={props.empty ? "true" : "false"}
+      >
+        {props.children}
+      </dd>
+    </>
+  );
+}
+
+function RoleCardEditor(props: {
+  draft: WorkerDraftDto;
+  busy: boolean;
+  error: string | null;
+  onSave: (form: CardForm) => void;
+}): ReactNode {
+  const [form, setForm] = useState(() => emptyCardForm(props.draft));
+  useEffect(() => {
+    setForm(emptyCardForm(props.draft));
+  }, [props.draft.id, props.draft.revision, props.draft.who, props.draft.how, props.draft.skills]);
+  const dirty = cardFormDirty(form, props.draft);
+  return (
+    <>
+      <Muted>{CARD_DRAFT_HINT}</Muted>
+      {CARD_FIELDS.map((field) => (
+        <Field
+          key={field.id}
+          htmlFor={`role-library-card-${field.id}`}
+          label={field.label}
+          hint={field.hint}
+        >
+          <Textarea
+            id={`role-library-card-${field.id}`}
+            name={field.id}
+            rows={3}
+            value={form[field.id]}
+            testId={`role-library-card-${field.id}-input`}
+            placeholder={CARD_EMPTY}
+            disabled={props.busy}
+            onChange={(event) => {
+              const next = event.target.value;
+              setForm((current) => ({ ...current, [field.id]: next }));
+            }}
+          />
+        </Field>
+      ))}
+      <ErrorText>{props.error}</ErrorText>
+      <Button
+        variant="primary"
+        testId="role-library-card-save"
+        disabled={props.busy || !dirty}
+        onClick={() => {
+          props.onSave(form);
+        }}
+      >
+        {props.busy ? "保存中…" : "保存卡片"}
+      </Button>
+    </>
   );
 }

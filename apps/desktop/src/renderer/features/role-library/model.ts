@@ -4,14 +4,20 @@ import {
   type DesktopClient,
   type ForkWorkerVersionAcceptedDto,
   type ListWorkersInput,
+  type WorkerCardFieldsDto,
   type WorkerDraftDto,
+  type WorkerDraftWrite,
   type WorkerDto,
   type WorkerVersionDto,
   type WorkerVersionReferencesDto,
 } from "@workforce/desktop-client";
 import {
+  isEditableWorkerDraft,
   isPublishedWorkerVersion,
   isSelectableWorkerVersion,
+  workerCardFieldNames,
+  workerCardFieldsAreImmutable,
+  type WorkerCardFieldName,
   type WorkerDefinitionStatus,
 } from "@workforce/protocol";
 
@@ -20,7 +26,7 @@ export type LibraryTone = "success" | "warning" | "muted";
 export const LIBRARY_PAGE_LIMIT = 50;
 
 export const LIBRARY_API_MISSING =
-  "角色版本库接口尚未接通。列表、搜索、引用、归档和 fork 都不会成功。";
+  "角色版本库接口尚未接通。列表、搜索、引用、归档、fork 和卡片 PATCH 都不会成功。";
 
 export const UNPUBLISHED_NOT_EMPLOYEE =
   "未发布草稿不是已发布员工，不能给 Team 选用，也不能当成已发布 WorkerVersion。";
@@ -32,6 +38,40 @@ export const FORK_NOT_PUBLISHED = "只有已发布且不可变的 WorkerVersion 
 export const FORK_NOT_DRAFT = "fork 响应不是新草稿，未当作已发布员工。";
 
 export const ARCHIVE_NOT_CONFIRMED = "归档响应仍显示未归档，未从选择器移除。";
+
+export const CARD_EMPTY = "空";
+
+export const CARD_READ_ONLY =
+  "已发布版本的卡片只读，不能就地保存。要改谁 / 怎么干活 / 技能，请 fork 出新草稿。源版本不会被改。";
+
+export const CARD_DRAFT_HINT =
+  "未发布草稿可以改这三格并 PATCH。Runtime / Policy 不是卡片必填，请入 Team 时再选。";
+
+export const CARD_UNPUBLISHED_NO_DRAFT =
+  "还没有打开草稿，三格按空显示，不能就地保存。已发布版本请 fork，得到新草稿后再改。";
+
+export const PUBLISHED_CARD_NOT_PATCHABLE = "已发布卡片不能就地保存。请 fork 新草稿后再改。";
+
+export const DRAFT_NOT_EDITABLE = "这份草稿不是可编辑草稿，未当作已发布员工，也没有写入卡片。";
+
+export const DRAFT_REVISION_CONFLICT =
+  "版本冲突（412 revision_conflict）。已保留你输入的三格，请刷新后再保存。";
+
+export const CARD_PATCH_NOT_CONFIRMED = "PATCH 响应不是未发布草稿，未当作已发布员工。";
+
+export interface CardFieldSpec {
+  id: WorkerCardFieldName;
+  label: string;
+  hint: string;
+}
+
+export const CARD_FIELDS: readonly CardFieldSpec[] = [
+  { id: "who", label: "他是谁", hint: "身份 / 职责称呼。空则显式空，不拿名称或 Runtime 顶替。" },
+  { id: "how", label: "怎么干活", hint: "做事方式、偏好、属于角色自己的约束。" },
+  { id: "skills", label: "会哪些技能", hint: "会做什么。不是 Policy、席位或 Placement。" },
+];
+
+export type CardForm = Record<WorkerCardFieldName, string>;
 
 export type LibraryStatusFilter = "all" | WorkerDefinitionStatus;
 
@@ -76,7 +116,8 @@ export function workerLibraryMethodsPresent(client: DesktopClient): boolean {
     typeof client.getWorkerVersionReferences === "function" &&
     typeof client.getWorkerDraft === "function" &&
     typeof client.archiveWorkerVersion === "function" &&
-    typeof client.forkWorkerVersion === "function"
+    typeof client.forkWorkerVersion === "function" &&
+    typeof client.patchWorkerDraft === "function"
   );
 }
 
@@ -187,6 +228,80 @@ export function canForkVersion(version: WorkerVersionDto): boolean {
   return isPublishedWorkerVersion(version);
 }
 
+export function canPatchCardDraft(draft: WorkerDraftDto | null | undefined): boolean {
+  return draft !== null && draft !== undefined && isEditableWorkerDraft(draft);
+}
+
+export function isPublishedCardLocked(version: WorkerVersionDto | null | undefined): boolean {
+  return version !== null && version !== undefined && workerCardFieldsAreImmutable(version);
+}
+
+export function cardSourceOf(
+  draft: WorkerDraftDto | null | undefined,
+  version: WorkerVersionDto | null | undefined,
+): WorkerCardFieldsDto | null {
+  if (draft !== null && draft !== undefined) {
+    return draft;
+  }
+  if (version !== null && version !== undefined) {
+    return version;
+  }
+  return null;
+}
+
+export function cardFieldText(
+  source: WorkerCardFieldsDto | null | undefined,
+  field: WorkerCardFieldName,
+): string {
+  const value = source?.[field];
+  return typeof value === "string" ? value : "";
+}
+
+export function cardFieldDisplay(value: string | undefined): string {
+  return value === undefined || value.length === 0 ? CARD_EMPTY : value;
+}
+
+export function isCardFieldEmpty(value: string | undefined): boolean {
+  return value === undefined || value.length === 0;
+}
+
+export function emptyCardForm(source: WorkerCardFieldsDto | null | undefined): CardForm {
+  return {
+    who: cardFieldText(source, "who"),
+    how: cardFieldText(source, "how"),
+    skills: cardFieldText(source, "skills"),
+  };
+}
+
+export function cardWriteFromForm(form: CardForm): WorkerDraftWrite {
+  return {
+    who: form.who,
+    how: form.how,
+    skills: form.skills,
+  };
+}
+
+export function cardFormDirty(
+  form: CardForm,
+  source: WorkerCardFieldsDto | null | undefined,
+): boolean {
+  return workerCardFieldNames.some((key) => form[key] !== cardFieldText(source, key));
+}
+
+export function confirmPatchedDraft(draft: WorkerDraftDto): WorkerDraftDto {
+  if (draft.status !== "draft") {
+    throw new Error(CARD_PATCH_NOT_CONFIRMED);
+  }
+  return draft;
+}
+
+export function isLibraryRevisionConflict(error: unknown): boolean {
+  return (
+    error instanceof ProblemError &&
+    (error.status === 412 || error.problem.code === "revision_conflict")
+  );
+}
+
 export function workerBadge(worker: WorkerDto): { label: string; tone: LibraryTone } {
   if (isUnpublishedWorker(worker)) {
     return { label: "未发布草稿", tone: "warning" };
@@ -261,11 +376,15 @@ export function confirmForkedDraft(
   return { accepted, worker, draft };
 }
 
-export function libraryCommandOptions(): CommandOptions {
-  return {
+export function libraryCommandOptions(ifMatch?: number): CommandOptions {
+  const options: CommandOptions = {
     idempotencyKey: crypto.randomUUID(),
     operationId: crypto.randomUUID(),
   };
+  if (ifMatch !== undefined) {
+    options.ifMatch = ifMatch;
+  }
+  return options;
 }
 
 export function libraryErrorMessage(error: unknown): string {
