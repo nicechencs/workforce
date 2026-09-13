@@ -5,7 +5,7 @@ import { appendEvent } from "../projects/events.js";
 import { digestOf, withIdempotency } from "../projects/idempotency.js";
 import { requireProject } from "../projects/projects.js";
 import type { NodeRuntimeState } from "../projects/engine-port.js";
-import type { TaskRecord } from "../projects/store.js";
+import type { EvaluationEvidenceRecord, TaskRecord } from "../projects/store.js";
 
 export async function queueTask(
   ctx: AppContext,
@@ -91,6 +91,31 @@ export function bindTaskOutput(
   return task;
 }
 
+/**
+ * Copies a T08 evaluation verdict into `world.evaluations`. Does not
+ * inspect Process/Artifacts, mutate T08, or complete the Task.
+ */
+export function recordEvaluationEvidence(
+  ctx: AppContext,
+  input: {
+    artifactVersionId: string;
+    verdict: "pass" | "fail" | "inconclusive";
+    id?: string;
+  },
+): EvaluationEvidenceRecord {
+  const artifactVersionId = input.artifactVersionId.trim();
+  if (artifactVersionId === "") {
+    throw validationFailed("evaluation evidence requires artifactVersionId");
+  }
+  const record: EvaluationEvidenceRecord = {
+    id: input.id?.trim() ? input.id.trim() : ctx.world.ids.ulid("eval_"),
+    artifactVersionId,
+    verdict: input.verdict,
+  };
+  ctx.world.evaluations.set(record.id, record);
+  return record;
+}
+
 export function evaluateTaskAfterRun(ctx: AppContext, taskId: string): TaskRecord {
   const task = requireTask(ctx, taskId);
   if (task.status !== "running") {
@@ -161,20 +186,21 @@ function completionBarrierFor(
 ): { ok: true } | { ok: false; reason: string } {
   const artifacts = ctx.world.artifactsForTask(task);
   const evaluations = ctx.world.evaluationsForTask(task);
+  const requiredOutputsBound = ctx.world.requiredOutputsReady(task);
   if (ctx.engine.taskCompletionBarrier) {
     return ctx.engine.taskCompletionBarrier({
-      requiredOutputsBound: ctx.world.requiredOutputsReady(task),
+      requiredOutputsBound,
       artifacts,
       evaluations,
     });
   }
-  if (!ctx.world.requiredOutputsReady(task)) {
+  if (!requiredOutputsBound) {
     return { ok: false, reason: "missing_artifact" };
   }
   if (artifacts.some((item) => item.status === "quarantined" || item.status === "staging")) {
     return { ok: false, reason: "integrity" };
   }
-  if (evaluations.some((item) => item.verdict === "fail")) {
+  if (evaluations.length === 0 || evaluations.some((item) => item.verdict !== "pass")) {
     return { ok: false, reason: "evaluation_failed" };
   }
   return { ok: true };

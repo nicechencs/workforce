@@ -7,6 +7,7 @@ export {
   evaluateTaskAfterFailure,
   evaluateTaskAfterRun,
   queueTask,
+  recordEvaluationEvidence,
   refreshDownstream,
   requestTaskChanges,
   requireTask,
