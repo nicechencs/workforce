@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  authoringChangeTargetTypes,
   authoringDraftProposalSchema,
   authoringSessionSchema,
   createAuthoringSessionInputSchema,
@@ -58,6 +59,8 @@ export const authoringTurnRefsSchema = z
     changeSetId: authoringIdSchema.optional(),
     /** The identity of the mutable draft, never a published version id. */
     workflowDraftId: authoringIdSchema.optional(),
+    /** Unpublished Worker draft; never a published WorkerVersion id. */
+    workerDraftId: authoringIdSchema.optional(),
   })
   .strict();
 export type AuthoringTurnRefsDto = z.infer<typeof authoringTurnRefsSchema>;
@@ -93,18 +96,28 @@ export type AuthoringWorkflowDraftRefDto = z.infer<typeof authoringWorkflowDraft
 
 /**
  * Chat projection for a draft that has been landed by an authoring command.
- * `workflowDraftId` is mandatory; `workflowVersionId` intentionally is not a
- * member of this DTO because a landed draft is still unpublished.
+ * A landed draft is still unpublished. `workflowVersionId` is not a member
+ * of this DTO. Worker confirmations carry `workerDraftId` instead of a
+ * published WorkerVersion id.
  */
 export const authoringLandedDraftSchema = z
   .object({
     kind: z.literal("landed"),
     unpublished: z.literal(true),
-    workflowDraftId: authoringIdSchema,
+    workflowDraftId: authoringIdSchema.optional(),
+    workerDraftId: authoringIdSchema.optional(),
     workflowId: authoringIdSchema.optional(),
     revision: revisionSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((draft, context) => {
+    if (draft.workflowDraftId === undefined && draft.workerDraftId === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landed draft needs workflowDraftId or workerDraftId",
+      });
+    }
+  });
 export type AuthoringLandedDraftDto = z.infer<typeof authoringLandedDraftSchema>;
 
 /**
@@ -122,7 +135,7 @@ export type AuthoringChatDraftDto = z.infer<typeof authoringChatDraftSchema>;
 /** New create/update target input. Legacy output targets remain unchanged. */
 const authoringProposalTargetBaseSchema = z
   .object({
-    targetType: z.enum(["team", "task", "workflow"]),
+    targetType: z.enum(authoringChangeTargetTypes),
     patchRef: authoringPatchRefSchema,
   })
   .strict();

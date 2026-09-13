@@ -1,0 +1,170 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/chat-classify-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "create_worker",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workerDraftId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "create_workflow",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "workflowDraftId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "query_progress",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "discuss_work",
+                  "type": "string"
+                },
+                "projectId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "runId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "projectId"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "outcome": {
+          "const": "intent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "intent"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "missing": {
+          "enum": [
+            "projectId",
+            "runId"
+          ],
+          "type": "string"
+        },
+        "outcome": {
+          "const": "need_context",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "missing"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "direct",
+            "im"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "const": "unsupported_capability",
+          "type": "string"
+        },
+        "outcome": {
+          "const": "unsupported",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "code",
+        "action"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "ChatClassifyResultDto"
+}

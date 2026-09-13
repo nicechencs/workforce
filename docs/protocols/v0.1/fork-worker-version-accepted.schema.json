@@ -1,0 +1,26 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/fork-worker-version-accepted.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "forkedFromWorkerVersionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerDraftId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "workerId",
+    "workerDraftId",
+    "forkedFromWorkerVersionId"
+  ],
+  "title": "ForkWorkerVersionAcceptedDto",
+  "type": "object"
+}

@@ -3,6 +3,7 @@ export { protocolVersion } from "./protocol-version.js";
 
 export * from "./authoring.js";
 export * from "./authoring-chat.js";
+export * from "./chat-intent.js";
 export * from "./command.js";
 export * from "./dto.js";
 export * from "./direct-execution.js";
@@ -17,4 +18,5 @@ export * from "./money.js";
 export * from "./run.js";
 export * from "./task.js";
 export * from "./team.js";
+export * from "./worker.js";
 export * from "./workflow.js";

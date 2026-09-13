@@ -17,7 +17,7 @@
 
 ## V0.1 标识前缀（仅可读，不参与判断）
 
-`org_` `prj_` `tsk_` `run_` `wfd_` `wfv_` `wfi_` `wfn_` `tm_` `tmv_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `snp_` `usr_` `cli_`
+`org_` `prj_` `tsk_` `run_` `wfd_` `wfv_` `wfi_` `wfn_` `tm_` `tmv_` `art_` `arv_` `apr_` `wsp_` `wsi_` `evt_` `op_` `ndl_` `rtm_` `snp_` `usr_` `cli_` `wrk_` `wrv_` `wrdraft_`
 
 ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须拒绝。
 
@@ -28,10 +28,18 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/expected-output.schema.json` — 稳定 `id` + `kind`
 - `v0.1/workflow-catalog.schema.json` — WorkflowDefinition / WorkflowVersion 目录；GET 列表仍只返回 published
 - `v0.1/team.schema.json` — Team / TeamVersion 写契约（draft | published）
-- `v0.1/authoring-session.schema.json` — D17 会话 / 草稿 DTO；V0.1 不提供泛用 Chat API，而提供受鉴权、Project-scoped 的 AuthoringSession / Message / Turn API，用于生成并确认未发布草稿
+- `v0.1/authoring-session.schema.json` — D17 会话 / 草稿 DTO；创建类仍走 Project-scoped AuthoringSession。全局 Chat 四类意图在 `chat-classify-result.schema.json`，不是 IM 消息库
 - `v0.1/workflow-graph-definition.schema.json` — 画布、作者与发布共用的严格有限 DAG；目录 DTO 不替代它
 - `v0.1/workflow-draft.schema.json` — 可编辑 `WorkflowDraft`，含 graph、revision 与内容摘要
 - `v0.1/team-draft.schema.json` — 可编辑 `TeamDraft`，含 members、revision 与内容摘要
+- `v0.1/worker.schema.json` — 角色库 Worker identity
+- `v0.1/worker-version.schema.json` — 已发布/草稿投影 `WorkerVersion`；`published + immutable` 不可改
+- `v0.1/worker-draft.schema.json` — 可编辑 `WorkerDraft`
+- `v0.1/worker-page.schema.json` — 库列表/搜索分页
+- `v0.1/worker-version-references.schema.json` — 某 WorkerVersion 被哪些 TeamVersion 引用
+- `v0.1/fork-worker-version-accepted.schema.json` — fork 得到新 identity + 新草稿
+- `v0.1/chat-classify-result.schema.json` — 全局 Chat 四类意图或诚实 unsupported；不是 IM，不是完成态
+- `v0.1/project-progress-projection.schema.json` — 问进度只读投影；无记录显式「还没有记录」
 - `v0.1/authoring-proposal.schema.json` — 编排 Runtime 的结构化输出；只允许脱敏摘要与 Artifact 引用
 - `v0.1/authoring-change-set.schema.json` — 逐目标 CAS 的 ChangeSet / staged step 状态；应用不等于发布或执行
 - `v0.1/orchestration-mode.schema.json` — D18 `orchestrationMode` 枚举；权威在 `packages/protocol/src/execution.ts`

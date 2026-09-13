@@ -30,11 +30,14 @@
           "runtimeProfileId": {
             "minLength": 1,
             "type": "string"
+          },
+          "workerVersionId": {
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
           "role",
-          "runtimeProfileId",
           "quantity"
         ],
         "type": "object"

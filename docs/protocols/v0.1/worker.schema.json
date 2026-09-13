@@ -1,5 +1,5 @@
 {
-  "$id": "https://workforce.local/protocols/v0.1/team.schema.json",
+  "$id": "https://workforce.local/protocols/v0.1/worker.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -26,32 +26,6 @@
       "const": "0.1",
       "type": "string"
     },
-    "roles": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "role": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "version": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "role",
-          "version"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
     "stateRevision": {
       "minimum": 1,
       "type": "integer"
@@ -63,13 +37,24 @@
       ],
       "type": "string"
     },
-    "version": {
-      "type": "string"
-    },
     "versions": {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "archivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "forkedFromWorkerVersionId": {
+            "minLength": 1,
+            "type": "string"
+          },
           "id": {
             "minLength": 1,
             "type": "string"
@@ -77,41 +62,20 @@
           "immutable": {
             "type": "boolean"
           },
-          "members": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "quantity": {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                "role": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "runtimeProfileId": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "workerVersionId": {
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "role",
-                "quantity"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+          "name": {
+            "minLength": 1,
+            "type": "string"
           },
           "publishedAt": {
             "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runtimeProfileId": {
+            "minLength": 1,
             "type": "string"
           },
           "stateRevision": {
@@ -125,22 +89,24 @@
             ],
             "type": "string"
           },
-          "teamId": {
+          "version": {
             "minLength": 1,
             "type": "string"
           },
-          "version": {
+          "workerId": {
             "minLength": 1,
             "type": "string"
           }
         },
         "required": [
           "id",
-          "teamId",
+          "workerId",
           "version",
           "status",
           "immutable",
-          "members"
+          "archived",
+          "name",
+          "role"
         ],
         "type": "object"
       },
@@ -150,11 +116,9 @@
   "required": [
     "id",
     "name",
-    "version",
-    "status",
     "protocolVersion",
-    "roles"
+    "status"
   ],
-  "title": "Team",
+  "title": "WorkerDto",
   "type": "object"
 }

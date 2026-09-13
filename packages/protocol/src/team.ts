@@ -13,16 +13,39 @@ export const teamRoleSchema = z
 
 export type TeamRoleDto = z.infer<typeof teamRoleSchema>;
 
+/**
+ * Read shape: expand-parses the legacy `{ role, runtimeProfileId, quantity }`
+ * member row. `role` is a duty label, not Worker identity.
+ * `runtimeProfileId` is optional; published members take WorkerVersion as truth.
+ * `workerVersionId` is optional on read so stored three-field rows still parse.
+ */
 export const teamMemberSchema = z
   .object({
     id: z.string().min(1).optional(),
     role: z.string().min(1),
-    runtimeProfileId: z.string().min(1),
+    workerVersionId: z.string().min(1).optional(),
+    runtimeProfileId: z.string().min(1).optional(),
     quantity: z.number().int().min(1),
   })
   .strict();
 
 export type TeamMemberDto = z.infer<typeof teamMemberSchema>;
+
+/**
+ * Target write shape for new Team publish/bind. Legacy three-field rows are
+ * not the write model; callers must send `workerVersionId`.
+ */
+export const teamMemberWriteSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    workerVersionId: z.string().min(1),
+    role: z.string().min(1),
+    runtimeProfileId: z.string().min(1).optional(),
+    quantity: z.number().int().min(1),
+  })
+  .strict();
+
+export type TeamMemberWriteDto = z.infer<typeof teamMemberWriteSchema>;
 
 export const teamVersionSchema = z
   .object({
@@ -121,6 +144,16 @@ export function parsePatchTeamInput(input: unknown): PatchTeamInput {
 
 export function parseTeamVersionWrite(input: unknown): CreateTeamVersionInput {
   return teamVersionWriteSchema.parse(input);
+}
+
+export function parseTeamMemberWrite(input: unknown): TeamMemberWriteDto {
+  return teamMemberWriteSchema.parse(input);
+}
+
+export function teamMemberHasWorkerVersionId(
+  member: TeamMemberDto,
+): member is TeamMemberDto & { workerVersionId: string } {
+  return member.workerVersionId !== undefined && member.workerVersionId.length > 0;
 }
 
 export function isPublishedTeamVersion(

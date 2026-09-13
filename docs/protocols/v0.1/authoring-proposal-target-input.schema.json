@@ -24,7 +24,8 @@
           "enum": [
             "team",
             "task",
-            "workflow"
+            "workflow",
+            "worker"
           ],
           "type": "string"
         }
@@ -61,7 +62,8 @@
           "enum": [
             "team",
             "task",
-            "workflow"
+            "workflow",
+            "worker"
           ],
           "type": "string"
         }

@@ -41,11 +41,14 @@
                       "runtimeProfileId": {
                         "minLength": 1,
                         "type": "string"
+                      },
+                      "workerVersionId": {
+                        "minLength": 1,
+                        "type": "string"
                       }
                     },
                     "required": [
                       "role",
-                      "runtimeProfileId",
                       "quantity"
                     ],
                     "type": "object"
@@ -62,6 +65,27 @@
             "unpublished": {
               "const": true,
               "type": "boolean"
+            },
+            "worker": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "role": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "runtimeProfileId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
             },
             "workflow": {
               "additionalProperties": false,
@@ -318,6 +342,11 @@
               "const": true,
               "type": "boolean"
             },
+            "workerDraftId": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
             "workflowDraftId": {
               "maxLength": 256,
               "minLength": 1,
@@ -331,8 +360,7 @@
           },
           "required": [
             "kind",
-            "unpublished",
-            "workflowDraftId"
+            "unpublished"
           ],
           "type": "object"
         }
@@ -428,6 +456,11 @@
                 "type": "string"
               },
               "taskId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "workerDraftId": {
                 "maxLength": 256,
                 "minLength": 1,
                 "type": "string"

@@ -1,7 +1,14 @@
 import type {
   CommandReceipt,
+  ForkWorkerVersionAcceptedDto,
+  ListWorkersInput,
   ProtocolError,
   ReceiptScope,
+  WorkerDraftDto,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
   WorkforceEvent,
 } from "@workforce/protocol";
 
@@ -233,4 +240,26 @@ export interface ArtifactStore {
   commit(staging: StagingRef): Promise<ArtifactVersion>;
   get(artifactVersionId: string): Promise<ArtifactVersion>;
   read(artifactVersionId: string): AsyncIterable<Uint8Array>;
+}
+
+/**
+ * Persistence port for the role version library. Implementations live in
+ * T04 (SQLite) / APP-LIBRARY (Memory). This is not a Marketplace store and
+ * not an IM inbox.
+ */
+export interface WorkerLibraryRepository {
+  list(input: ListWorkersInput): Promise<WorkerPageDto>;
+  getWorker(workerId: string): Promise<WorkerDto | null>;
+  getVersion(workerVersionId: string): Promise<WorkerVersionDto | null>;
+  getDraft(workerDraftId: string): Promise<WorkerDraftDto | null>;
+  listReferences(workerVersionId: string): Promise<WorkerVersionReferencesDto>;
+  insertIdentity(tx: Tx, worker: WorkerDto, draft: WorkerDraftDto): Promise<void>;
+  saveDraft(tx: Tx, draft: WorkerDraftDto, expectedRevision: number): Promise<WorkerDraftDto>;
+  publishVersion(tx: Tx, version: WorkerVersionDto): Promise<WorkerVersionDto>;
+  archiveVersion(tx: Tx, workerVersionId: string): Promise<WorkerVersionDto>;
+  forkToDraft(
+    tx: Tx,
+    sourceWorkerVersionId: string,
+    next: { worker: WorkerDto; draft: WorkerDraftDto },
+  ): Promise<ForkWorkerVersionAcceptedDto>;
 }

@@ -15,6 +15,11 @@
       "const": true,
       "type": "boolean"
     },
+    "workerDraftId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
     "workflowDraftId": {
       "maxLength": 256,
       "minLength": 1,
@@ -28,8 +33,7 @@
   },
   "required": [
     "kind",
-    "unpublished",
-    "workflowDraftId"
+    "unpublished"
   ],
   "title": "AuthoringLandedDraft",
   "type": "object"

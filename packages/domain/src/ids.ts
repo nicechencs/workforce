@@ -14,6 +14,10 @@ export type WorkflowNodeId = Brand<string, "WorkflowNodeId">;
 export type TeamId = Brand<string, "TeamId">;
 export type TeamVersionId = Brand<string, "TeamVersionId">;
 export type TeamDraftId = Brand<string, "TeamDraftId">;
+/** Catalog identity; generated with `ID_PREFIX.worker`. */
+export type WorkerId = Brand<string, "WorkerId">;
+export type WorkerVersionId = Brand<string, "WorkerVersionId">;
+export type WorkerDraftId = Brand<string, "WorkerDraftId">;
 export type ArtifactId = Brand<string, "ArtifactId">;
 export type ArtifactVersionId = Brand<string, "ArtifactVersionId">;
 export type ApprovalId = Brand<string, "ApprovalId">;
@@ -42,6 +46,9 @@ export const ID_PREFIX = {
   teamDefinition: "tm_",
   teamVersion: "tmv_",
   teamDraft: "tmd_",
+  worker: "wrk_",
+  workerVersion: "wrv_",
+  workerDraft: "wrdraft_",
   artifact: "art_",
   artifactVersion: "arv_",
   approval: "apr_",

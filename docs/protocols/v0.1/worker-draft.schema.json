@@ -1,0 +1,63 @@
+{
+  "$id": "https://workforce.local/protocols/v0.1/worker-draft.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "role": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "runtimeProfileId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "status": {
+      "const": "draft",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "updatedBy": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workerId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workerId",
+    "revision",
+    "status",
+    "name",
+    "role",
+    "contentHash",
+    "updatedAt",
+    "updatedBy"
+  ],
+  "title": "WorkerDraftDto",
+  "type": "object"
+}
