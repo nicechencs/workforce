@@ -42,6 +42,7 @@ import {
   MISSING_WORKER_VERSION_REASON,
   persistTeamDraft,
   PRESET_TEAM,
+  printableWorkerCardField,
   publishPersistedTeamVersion,
   publishTeamButton,
   reduceTeamDraftForm,
@@ -49,12 +50,15 @@ import {
   rejectCustomTeamSave,
   removeDraftMember,
   replaceDraftMember,
+  resolveMemberCard,
   TEAM_WRITE_API_MISSING,
   teamPageModel,
   teamWriteMethodsPresent,
   probeTeamWriteSupport,
   updateDraftMember,
   workerLibraryMethodsPresent,
+  WORKER_CARD_FIELD_LABELS,
+  workerCardFieldNames,
   WORKER_LIBRARY_API_MISSING,
   writeOptions,
   type SelectableWorkerVersionView,
@@ -421,7 +425,7 @@ function TeamCard(props: {
         </Muted>
         {props.note ? <Muted>{props.note}</Muted> : null}
         <h2 className="wf-section-title">Workers</h2>
-        <MemberList members={props.team.members} />
+        <MemberList client={props.client} members={props.team.members} />
         {props.team.kind === "preset" ? <Muted>{save.reason}</Muted> : null}
         {!bindable ? (
           <Muted>
@@ -584,8 +588,8 @@ function TeamEditor(props: {
     >
       <Card testId="team-editor">
         <Muted>
-          成员必须引用已发布且未归档的
-          WorkerVersion。数量仍可编；职责标签来自所选版本。发布后不可变。
+          成员必须引用已发布且未归档的 WorkerVersion。选用时能看见该版本卡片（他是谁 / 怎么干活 /
+          会哪些技能）。Runtime 请来时再选，不是卡片必印。发布后不可变。
         </Muted>
         {!props.writeSupport.create ? (
           <Notice tone="warning">
@@ -669,13 +673,63 @@ function TeamEditor(props: {
   );
 }
 
-function MemberList(props: { members: TeamMemberView[] }) {
+function usePublishedWorkerCards(client: DesktopClient): SelectableWorkerVersionView[] {
+  const [versions, setVersions] = useState<SelectableWorkerVersionView[]>([]);
+  useEffect(() => {
+    if (!workerLibraryMethodsPresent(client)) {
+      setVersions([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await loadSelectableWorkerVersions(client);
+        if (!cancelled) {
+          setVersions(loaded);
+        }
+      } catch {
+        if (!cancelled) {
+          setVersions([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+  return versions;
+}
+
+function WorkerCardPreview(props: {
+  card: {
+    who?: string | undefined;
+    how?: string | undefined;
+    skills?: string | undefined;
+  };
+}) {
+  return (
+    <div className="wf-stack" data-testid="team-worker-card">
+      {workerCardFieldNames.map((key) => (
+        <Muted key={key}>
+          {WORKER_CARD_FIELD_LABELS[key]}：
+          <span data-testid={`team-worker-card-${key}`}>
+            {printableWorkerCardField(props.card[key])}
+          </span>
+        </Muted>
+      ))}
+    </div>
+  );
+}
+
+function MemberList(props: { client: DesktopClient; members: TeamMemberView[] }) {
+  const versions = usePublishedWorkerCards(props.client);
   return (
     <Table>
       <THead>
         <TR>
           <TH>角色版本</TH>
           <TH>职责</TH>
+          <TH>卡片</TH>
           <TH>WorkerVersion</TH>
           <TH>数量</TH>
         </TR>
@@ -685,6 +739,9 @@ function MemberList(props: { members: TeamMemberView[] }) {
           <TR key={member.id} testId={`team-member-${member.id}`}>
             <TD>{member.title}</TD>
             <TD>{member.role}</TD>
+            <TD>
+              <WorkerCardPreview card={resolveMemberCard(member, versions)} />
+            </TD>
             <TD>{member.workerVersionId ?? "未引用"}</TD>
             <TD>{member.quantity}</TD>
           </TR>
@@ -702,6 +759,7 @@ function MemberEditor(props: {
   onChange: (members: TeamMemberView[]) => void;
 }) {
   const [picker, setPicker] = useState<"add" | number | null>(null);
+  const versions = usePublishedWorkerCards(props.client);
   return (
     <div data-testid="team-member-editor">
       <h2 className="wf-section-title">成员</h2>
@@ -710,7 +768,9 @@ function MemberEditor(props: {
           <TR>
             <TH>角色版本</TH>
             <TH>职责</TH>
+            <TH>卡片</TH>
             <TH>数量</TH>
+            <TH>Runtime（可选）</TH>
             <TH>
               <span className="wf-sr-only">操作</span>
             </TH>
@@ -730,6 +790,9 @@ function MemberEditor(props: {
               </TD>
               <TD>{member.role}</TD>
               <TD>
+                <WorkerCardPreview card={resolveMemberCard(member, versions)} />
+              </TD>
+              <TD>
                 <Input
                   type="number"
                   min={1}
@@ -740,6 +803,22 @@ function MemberEditor(props: {
                     props.onChange(
                       updateDraftMember(props.members, index, {
                         quantity: Number.parseInt(event.target.value, 10) || 0,
+                      }),
+                    )
+                  }
+                />
+              </TD>
+              <TD>
+                <Input
+                  testId="team-member-runtime"
+                  disabled={props.disabled}
+                  value={member.runtimeProfile}
+                  placeholder="请来时再选"
+                  aria-label="Runtime 请来时再选，不是卡片必填"
+                  onChange={(event) =>
+                    props.onChange(
+                      updateDraftMember(props.members, index, {
+                        runtimeProfile: event.target.value,
                       }),
                     )
                   }
@@ -864,7 +943,10 @@ function WorkerVersionPicker(props: {
   return (
     <div data-testid="team-worker-version-picker">
       <h3 className="wf-section-title">从角色版本库选用</h3>
-      <Muted>只列出已发布且未归档的 WorkerVersion。草稿和归档不能点成成功。</Muted>
+      <Muted>
+        只列出已发布且未归档的 WorkerVersion。选用时能看见卡片三字段；空格显式为「空」，不拿 Runtime
+        或 Policy 顶替。Runtime 请来时再选。草稿和归档不能点成成功。
+      </Muted>
       <Field label="搜索库" htmlFor="wf-team-worker-search">
         <Input
           id="wf-team-worker-search"
@@ -894,6 +976,7 @@ function WorkerVersionPicker(props: {
             <TR>
               <TH>版本</TH>
               <TH>职责</TH>
+              <TH>卡片</TH>
               <TH>
                 <span className="wf-sr-only">操作</span>
               </TH>
@@ -906,6 +989,9 @@ function WorkerVersionPicker(props: {
                   {option.name} · {option.workerVersionId}
                 </TD>
                 <TD>{option.role}</TD>
+                <TD>
+                  <WorkerCardPreview card={option} />
+                </TD>
                 <TD>
                   <div className="wf-cluster">
                     <Button
