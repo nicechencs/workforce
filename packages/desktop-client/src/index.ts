@@ -80,6 +80,8 @@ export type {
   TeamRoleDto,
   TeamVersionDto,
   VersionDto,
+  WorkerCardFieldName,
+  WorkerCardFieldsDto,
   WorkerDraftDto,
   WorkerDraftWrite,
   WorkerDto,

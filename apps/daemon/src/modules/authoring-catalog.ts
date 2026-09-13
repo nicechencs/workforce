@@ -10,22 +10,17 @@ import {
   teamVersionDto,
   type CatalogServiceOptions,
 } from "@workforce/application";
-import {
-  parseChatClassifyInput,
-  parseChatClassifyResult,
-  type ChatClassifyInput,
-  type ChatClassifyResultDto,
-  type ChatIntentDto,
-  type ListWorkersInput,
-  type TeamDto,
-  type TeamVersionDto,
-  type WorkerDraftDto,
-  type WorkerDto,
-  type WorkerPageDto,
-  type WorkerVersionDto,
-  type WorkerVersionReferencesDto,
-  type WorkflowDto,
-  type WorkflowVersionDto,
+import type {
+  ListWorkersInput,
+  TeamDto,
+  TeamVersionDto,
+  WorkerDraftDto,
+  WorkerDto,
+  WorkerPageDto,
+  WorkerVersionDto,
+  WorkerVersionReferencesDto,
+  WorkflowDto,
+  WorkflowVersionDto,
 } from "@workforce/protocol";
 
 import {
@@ -199,105 +194,7 @@ export function assertBindableTeamVersionId(service: CatalogService, versionId: 
 }
 
 /**
- * Chat language-entry classification. Does not persist, does not open an IM
- * inbox, and does not treat the result as completion.
+ * Chat language-entry classification lives in Application. Daemon only
+ * re-exports it: no second keyword detector, no IM inbox, not completion.
  */
-export function classifyChatIntent(input: ChatClassifyInput): ChatClassifyResultDto {
-  const parsed = parseChatClassifyInput(input);
-  const text = parsed.text;
-  const lowered = text.toLowerCase();
-
-  if (isImRequest(lowered, text)) {
-    return parseChatClassifyResult({
-      outcome: "unsupported",
-      code: "unsupported_capability",
-      action: "im",
-    });
-  }
-  if (isDirectRequest(lowered, text)) {
-    return parseChatClassifyResult({
-      outcome: "unsupported",
-      code: "unsupported_capability",
-      action: "direct",
-    });
-  }
-
-  const kind = detectChatIntentKind(lowered, text);
-  if (kind === "create_worker") {
-    const intent: ChatIntentDto = { kind: "create_worker" };
-    if (parsed.projectId !== undefined) {
-      intent.projectId = parsed.projectId;
-    }
-    const summary = text.trim();
-    if (summary.length > 0) {
-      intent.summary = summary;
-    }
-    return parseChatClassifyResult({ outcome: "intent", intent });
-  }
-  if (kind === "create_workflow") {
-    if (parsed.projectId === undefined) {
-      return parseChatClassifyResult({ outcome: "need_context", missing: "projectId" });
-    }
-    const intent: ChatIntentDto = { kind: "create_workflow", projectId: parsed.projectId };
-    const summary = text.trim();
-    if (summary.length > 0) {
-      intent.summary = summary;
-    }
-    return parseChatClassifyResult({ outcome: "intent", intent });
-  }
-  if (kind === "query_progress") {
-    if (parsed.projectId === undefined) {
-      return parseChatClassifyResult({ outcome: "need_context", missing: "projectId" });
-    }
-    return parseChatClassifyResult({
-      outcome: "intent",
-      intent: { kind: "query_progress", projectId: parsed.projectId },
-    });
-  }
-
-  if (parsed.projectId === undefined) {
-    return parseChatClassifyResult({ outcome: "need_context", missing: "projectId" });
-  }
-  if (needsRunId(lowered, text) && parsed.runId === undefined) {
-    return parseChatClassifyResult({ outcome: "need_context", missing: "runId" });
-  }
-  const intent: ChatIntentDto = { kind: "discuss_work", projectId: parsed.projectId };
-  if (parsed.runId !== undefined) {
-    intent.runId = parsed.runId;
-  }
-  return parseChatClassifyResult({ outcome: "intent", intent });
-}
-
-function isImRequest(lowered: string, text: string): boolean {
-  return (
-    /收件箱|私聊|inbox/.test(lowered) ||
-    /\/chat\/inbox/.test(text) ||
-    /\/workers\/[^/\s]+\/messages/.test(text)
-  );
-}
-
-function isDirectRequest(lowered: string, text: string): boolean {
-  return /去做|现在改|马上做|\bdirect\b|just do it/.test(lowered) || /:direct/.test(text);
-}
-
-function detectChatIntentKind(lowered: string, text: string): ChatIntentDto["kind"] | undefined {
-  void text;
-  if (/进度|还没有记录|\bprogress\b/.test(lowered)) {
-    return "query_progress";
-  }
-  if (/创建角色|创建员工|新角色|角色版本|create worker/.test(lowered)) {
-    return "create_worker";
-  }
-  if (/创建流程|创建工作流|create workflow/.test(lowered)) {
-    return "create_workflow";
-  }
-  if (/交流|讨论|返工|补约束|工作内容|\bdiscuss\b/.test(lowered)) {
-    return "discuss_work";
-  }
-  return undefined;
-}
-
-function needsRunId(lowered: string, text: string): boolean {
-  void text;
-  return /执行中|进行中|这条 run|this run|\brunid\b/.test(lowered);
-}
+export { classifyChatIntent, type ChatClassifyContext } from "@workforce/application";

@@ -502,7 +502,11 @@ export class FakeAppServices implements AppServices {
   }
 
   classifyChatIntent(input: ChatClassifyInput): ChatClassifyResultDto {
-    return classifyChatIntent(input);
+    return classifyChatIntent(input, {
+      workers: listedWorkers(this.authoring, { limit: 100 }).items,
+      projects: [...this.projects.values()].map((record) => record.dto),
+      runs: [...this.runs.values()].map((record) => record.dto),
+    });
   }
 
   queryProjectProgress(projectId: string): ProjectProgressProjectionDto {
