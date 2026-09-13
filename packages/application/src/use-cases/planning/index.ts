@@ -1,9 +1,14 @@
 export { acceptPlannerArtifact } from "./accept-plan.js";
 export { confirmPlan } from "./confirm-plan.js";
+export {
+  generateSoftwareDevelopmentPlan,
+  type GenerateSoftwareDevelopmentPlanInput,
+  type PlanAcceptanceInput,
+} from "./generate-plan.js";
 export { mockPlanFixture, MOCK_PLAN_DOCUMENT } from "./mock-plan.js";
 export { parsePlanArtifact } from "./schema.js";
 export { startPlanner } from "./start-planner.js";
-export { describeWorkflowVersion, entryNodeIds } from "./workflow-version.js";
+export { describeWorkflowVersion, entryNodeIds, planToExecutionGraph } from "./workflow-version.js";
 export type {
   AcceptPlannerArtifactDeps,
   ConfirmPlanDeps,

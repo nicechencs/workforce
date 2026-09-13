@@ -1,3 +1,4 @@
+import type { WorkflowGraph, WorkflowNodeDefinition } from "../projects/engine-port.js";
 import type {
   PlanArtifact,
   ConfirmedWorkflowEdge,
@@ -44,6 +45,51 @@ export function toWorkflowEdges(plan: PlanArtifact): ConfirmedWorkflowEdge[] {
     to: edge.to,
     onUpstream: edge.onUpstream,
   }));
+}
+
+/**
+ * Execution graph for confirm-plan when the caller does not supply a
+ * published WorkflowVersion graph. Approval nodes stay on the Plan Artifact;
+ * Runtime DAG nodes are tasks only.
+ */
+export function planToExecutionGraph(plan: PlanArtifact, graphId: string): WorkflowGraph {
+  const taskNodes = plan.nodes.filter((node) => node.kind === "task");
+  const taskIds = new Set(taskNodes.map((node) => node.id));
+  const entries = entryNodeIds(plan).filter((id) => taskIds.has(id));
+  const nodes: WorkflowNodeDefinition[] = taskNodes.map((node) => {
+    const definition: WorkflowNodeDefinition = {
+      id: node.id,
+      kind: "task",
+      role: node.role,
+      requiresReview: node.role === "reviewer",
+      expectedOutputIds: node.expectedOutputs
+        .filter((output) => output.required)
+        .map((output) => output.id),
+      maxAttempts: node.maxAttempts,
+      maxReworkCycles: node.maxReworkCycles,
+      priority: node.role === "reviewer" ? 10 : 80,
+    };
+    if (!entries.includes(node.id)) {
+      definition.joinPolicy = "all_success";
+    }
+    return definition;
+  });
+  return {
+    id: graphId,
+    workflowId: plan.workflowId,
+    version: 1,
+    entryNodeIds: entries,
+    terminalNodeIds: taskNodes.filter((node) => node.role === "reviewer").map((node) => node.id),
+    nodes,
+    edges: plan.edges
+      .filter((edge) => taskIds.has(edge.from) && taskIds.has(edge.to))
+      .map((edge) => ({
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+        waitFor: edge.onUpstream,
+      })),
+  };
 }
 
 export function describeWorkflowVersion(input: {

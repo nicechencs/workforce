@@ -1,7 +1,11 @@
 import { parsePlanArtifact } from "./schema.js";
 import type { PlanArtifact } from "./types.js";
 
-/** Fixed sample Plan Artifact shape. Production planning uses startPlanner → Run output. */
+/**
+ * Test-only sample Plan Artifact. Production `:start-planning` generates from
+ * the project objective via `generateSoftwareDevelopmentPlan`; it must not
+ * fill an empty body with this fixture.
+ */
 export const MOCK_PLAN_DOCUMENT = {
   protocol: "workforce.plan",
   protocolVersion: "0.1",

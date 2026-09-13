@@ -1,5 +1,13 @@
 import { DEFAULT_ORCHESTRATION_MODE, type OrchestrationMode } from "@workforce/protocol";
 import { DEFAULT_PLACEMENT_INTENT } from "../runs/placement.js";
+import { contentDigest } from "../planning/digest.js";
+import {
+  generateSoftwareDevelopmentPlan,
+  type PlanAcceptanceInput,
+} from "../planning/generate-plan.js";
+import { parsePlanArtifact } from "../planning/schema.js";
+import type { PlanArtifact } from "../planning/types.js";
+import { planToExecutionGraph } from "../planning/workflow-version.js";
 
 import {
   assertExecutionBinding,
@@ -40,7 +48,12 @@ export interface StartPlanningInput {
   executionNodeId: string;
   runtimeInstallationId: string;
   workspaceInstanceId: string;
-  planDigest: string;
+  /**
+   * Optional caller digest. Ignored as a plan source: the plan is generated
+   * from the project objective. Kept so existing callers may still pass it.
+   */
+  planDigest?: string;
+  acceptanceCriteria?: readonly PlanAcceptanceInput[];
 }
 
 export interface ConfirmPlanInput {
@@ -49,7 +62,11 @@ export interface ConfirmPlanInput {
   projectId: string;
   approvalId: string;
   expectedStateRevision?: number;
-  graph: WorkflowGraph;
+  /**
+   * Published execution graph from the caller (Daemon). When omitted, confirm
+   * uses the plan generated at start-planning.
+   */
+  graph?: WorkflowGraph;
 }
 
 export interface StartExecutionInput {
@@ -122,8 +139,30 @@ export async function createProject(
 export async function startPlanning(
   ctx: AppContext,
   input: StartPlanningInput,
-): Promise<{ reused: boolean; project: ProjectRecord; approvalId: string }> {
+): Promise<{
+  reused: boolean;
+  project: ProjectRecord;
+  approvalId: string;
+  plan: PlanArtifact;
+  planDigest: string;
+}> {
   return ctx.world.uow.withTransaction(async (tx) => {
+    const preview = requireProject(ctx, input.projectId);
+    if (preview.objective.trim() === "") {
+      throw validationFailed("planner objective is required");
+    }
+    let generated: PlanArtifact;
+    try {
+      generated = generateSoftwareDevelopmentPlan({
+        objective: preview.objective,
+        ...(input.acceptanceCriteria ? { acceptanceCriteria: input.acceptanceCriteria } : {}),
+      });
+    } catch (error) {
+      throw validationFailed(
+        error instanceof Error ? error.message : "plan generation failed",
+      );
+    }
+    const generatedDigest = contentDigest(generated);
     return withIdempotency(
       ctx.world,
       tx,
@@ -135,7 +174,9 @@ export async function startPlanning(
           teamVersionId: input.teamVersionId,
           runtimeId: input.runtimeId,
           budgetId: input.budgetId,
-          planDigest: input.planDigest,
+          objective: preview.objective,
+          acceptanceCriteria: input.acceptanceCriteria ?? [],
+          planDigest: generatedDigest,
         }),
         scope: {
           principalId: ctx.principalId,
@@ -170,8 +211,9 @@ export async function startPlanning(
           artifactVersionId: planArtifactId,
           projectId: project.id,
           slotId: "plan",
-          digest: input.planDigest,
+          digest: generatedDigest,
           status: "available",
+          body: generated,
         });
         project.planArtifactVersionId = planArtifactId;
 
@@ -182,7 +224,7 @@ export async function startPlanning(
           gate: "plan",
           status: "pending",
           stateRevision: 1,
-          actionDigest: input.planDigest,
+          actionDigest: generatedDigest,
           resource: `artifactVersion:${planArtifactId}`,
           artifactVersionId: planArtifactId,
           createdAt: now,
@@ -206,14 +248,16 @@ export async function startPlanning(
           subjectId: project.id,
           projectId: project.id,
           correlationId: input.operationId,
-          data: { to: next },
+          data: { to: next, planDigest: generatedDigest },
         });
-        return { project, approvalId };
+        return { project, approvalId, plan: generated, planDigest: generatedDigest };
       },
     ).then((result) => ({
       reused: result.reused,
       project: result.value.project,
       approvalId: result.value.approvalId,
+      plan: result.value.plan,
+      planDigest: result.value.planDigest,
     }));
   });
 }
@@ -231,7 +275,7 @@ export async function confirmPlan(
         digest: digestOf({
           projectId: input.projectId,
           approvalId: input.approvalId,
-          graphId: input.graph.id,
+          graphId: input.graph?.id ?? `plan:${input.projectId}`,
         }),
         scope: {
           principalId: ctx.principalId,
@@ -265,11 +309,7 @@ export async function confirmPlan(
             throw validationFailed("confirm-plan requires a published team version");
           }
 
-          const graph = resolvePublishedExecutionGraph(
-            ctx.world.workflowVersions,
-            input.graph.id,
-            input.graph,
-          );
+          const graph = resolveConfirmPlanGraph(ctx, project, input.graph);
           const dag = ctx.engine.validateWorkflowGraph(graph);
           if (!dag.ok) {
             throw validationFailed(dag.reason);
@@ -702,4 +742,32 @@ function executionSnapshotContentHash(value: unknown): string {
   // publication computes the cryptographic graph hash; this in-memory slice
   // keeps a canonical-content fingerprint until that source is wired through.
   return `canonical-json:${digestOf(value)}`;
+}
+
+function resolveConfirmPlanGraph(
+  ctx: AppContext,
+  project: ProjectRecord,
+  supplied?: WorkflowGraph,
+): WorkflowGraph {
+  if (supplied) {
+    return resolvePublishedExecutionGraph(ctx.world.workflowVersions, supplied.id, supplied);
+  }
+  const artifact = project.planArtifactVersionId
+    ? ctx.world.artifacts.get(project.planArtifactVersionId)
+    : undefined;
+  const parsed = parsePlanArtifact(artifact?.body);
+  if (!parsed.ok) {
+    throw validationFailed(
+      "confirm-plan requires a workflow graph or a plan generated at start-planning",
+    );
+  }
+  if (parsed.plan.objective.trim() !== project.objective.trim()) {
+    throw validationFailed("generated plan objective does not match the project");
+  }
+  const graphId = `wfv_plan_${project.planArtifactVersionId ?? project.id}`;
+  return resolvePublishedExecutionGraph(
+    ctx.world.workflowVersions,
+    graphId,
+    planToExecutionGraph(parsed.plan, graphId),
+  );
 }

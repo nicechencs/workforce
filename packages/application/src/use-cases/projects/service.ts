@@ -44,6 +44,7 @@ import {
 import { markRunUnknown, reconcile } from "../recovery/recovery.js";
 import {
   applyAuthoringChangeSet,
+  continueAuthoringChangeSet,
   cancelAuthoringChangeSet,
   expireAuthoringChangeSet,
   failAuthoringChangeSet,
@@ -124,6 +125,8 @@ export class WorkforceApp {
   markRunUnknown = (runId: string) => markRunUnknown(this.ctx, runId);
   applyAuthoringChangeSet = (input: Parameters<typeof applyAuthoringChangeSet>[1]) =>
     applyAuthoringChangeSet(this.ctx, input);
+  continueAuthoringChangeSet = (input: Parameters<typeof continueAuthoringChangeSet>[1]) =>
+    continueAuthoringChangeSet(this.ctx, input);
   startAuthoring = (input: Parameters<typeof startAuthoring>[1]) => startAuthoring(this.ctx, input);
   recordAuthoringProposal = (input: Parameters<typeof recordAuthoringProposal>[1]) =>
     recordAuthoringProposal(this.ctx, input);
