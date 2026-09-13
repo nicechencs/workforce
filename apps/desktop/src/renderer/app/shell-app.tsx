@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { CapabilitiesDto } from "@workforce/desktop-client";
-import { primaryNavItems, type ConnectionSnapshot } from "@workforce/ui";
+import { isChatPath, primaryNavItems, type ConnectionSnapshot } from "@workforce/ui";
 
 import { OutletErrorBoundary } from "../components/outlet-error-boundary.js";
 import { PlaceholderPage } from "../components/placeholder-page.js";
 import { ShellFrame } from "../components/shell-frame.js";
+import { isUnwiredShellSlot, unwiredShellDescription } from "../routes/catalog.js";
 import type { RouteRegistry } from "../routes/registry.js";
 import { shouldRenderFeaturePage } from "./feature-modules.js";
 import { parseHashPath, pathToHash } from "./hash-router.js";
@@ -69,12 +70,15 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
   });
   const feature = resolved ? registry.getFeatureModule(resolved.route.slot) : undefined;
   const Page = feature?.Page;
+  const showFeaturePage = shouldRenderFeaturePage(resolved, Page) && Page && resolved;
+  const unwired = !showFeaturePage && isUnwiredShellSlot(resolved?.route.slot);
 
   return (
     <WorkforceProvider value={{ client, connection, navigate, capabilities }}>
       <ShellFrame
         view={view}
         onNavigate={navigate}
+        chatCurrent={isChatPath(path)}
         onBannerAction={(action) => {
           if (!api) {
             return;
@@ -87,10 +91,14 @@ export function ShellApp(props: { registry: RouteRegistry }): ReactNode {
         }}
       >
         <OutletErrorBoundary resetKey={path}>
-          {shouldRenderFeaturePage(resolved, Page) && Page && resolved ? (
+          {showFeaturePage && Page && resolved ? (
             <Page key={path} params={resolved.params} path={path} navigate={navigate} />
           ) : (
-            <PlaceholderPage title={resolved?.route.title ?? "未找到页面"} />
+            <PlaceholderPage
+              title={resolved?.route.title ?? "未找到页面"}
+              description={unwired ? unwiredShellDescription(resolved?.route.slot) : undefined}
+              unwired={unwired}
+            />
           )}
         </OutletErrorBoundary>
       </ShellFrame>
