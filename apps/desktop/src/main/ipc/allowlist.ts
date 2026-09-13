@@ -50,6 +50,10 @@ export const API_ROUTE_TEMPLATES: readonly { method: ApiMethod; path: string }[]
     method: "POST",
     path: "/api/v1/authoring-sessions/{sessionId}/change-sets/{changeSetId}/_cmd/continue",
   },
+  {
+    method: "POST",
+    path: "/api/v1/authoring-sessions/{sessionId}/change-sets/{changeSetId}/_cmd/retry",
+  },
   { method: "POST", path: "/api/v1/chat-intents:classify" },
   { method: "GET", path: "/api/v1/approvals" },
   { method: "GET", path: "/api/v1/approvals/{id}" },

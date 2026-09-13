@@ -291,6 +291,11 @@ export interface AppServices {
     changeSetId: string,
     input: ContinueAuthoringChangeSetInput,
   ): MaybeAsync<CommandResult<AuthoringChangeSetDto>>;
+  retryAuthoringChangeSet(
+    ctx: CommandContext,
+    sessionId: string,
+    changeSetId: string,
+  ): MaybeAsync<CommandResult<AuthoringChangeSetDto>>;
 
   listApprovals(query: ListQuery): PageDto<ApprovalDto>;
   getApproval(id: string): ApprovalDto | null;

@@ -1658,27 +1658,8 @@ export class ComposedAppServices implements AppServices {
     input: ContinueAuthoringChangeSetInput,
   ): Promise<CommandResult<AuthoringChangeSetDto>> {
     return this.exclusive(async () => {
-      const session = this.sqlite.authoringSessions.get(sessionId);
-      if (!session) throw new AppError("not_found", "Authoring session not found");
+      const { session } = this.requireSessionChangeSet(sessionId, changeSetId);
       this.assertMatch(session.stateRevision, ctx.ifMatch);
-      const owned = this.sqlite.connection
-        .prepare(
-          `SELECT id FROM authoring_turns WHERE session_id = ? AND change_set_id = ? LIMIT 1`,
-        )
-        .get(sessionId, changeSetId) as { id: string } | undefined;
-      if (!owned) {
-        throw new AppError("not_found", "Authoring change set not found in this session");
-      }
-      const stored = this.app.world.authoringChangeSets.get(changeSetId);
-      if (!stored) {
-        throw new AppError("not_found", "Authoring change set not found");
-      }
-      if (stored.projectId !== session.projectId) {
-        throw new AppError(
-          "validation_failed",
-          "authoring change set does not belong to this session",
-        );
-      }
       const workflowDrafts = this.parseContinueDrafts(
         input.workflowDrafts,
         parseWorkflowDraft,
@@ -1699,19 +1680,24 @@ export class ComposedAppServices implements AppServices {
           this.syncTeamDraftIntoCatalog(step.targetId);
         }
       }
-      await this.persistDurably();
-      const now = this.app.world.nowIso();
-      this.sqlite.connection
-        .prepare(
-          `UPDATE authoring_sessions SET state_revision = state_revision + 1, updated_at = ? WHERE id = ?`,
-        )
-        .run(now, sessionId);
-      const current = this.sqlite.authoringSessions.get(sessionId);
-      return {
-        status: 200,
-        body: continued.changeSet,
-        revision: current?.stateRevision ?? session.stateRevision + 1,
-      };
+      return this.finishSessionChangeSet(sessionId, session.stateRevision, continued.changeSet);
+    });
+  }
+
+  async retryAuthoringChangeSet(
+    ctx: CommandContext,
+    sessionId: string,
+    changeSetId: string,
+  ): Promise<CommandResult<AuthoringChangeSetDto>> {
+    return this.exclusive(async () => {
+      const { session } = this.requireSessionChangeSet(sessionId, changeSetId);
+      this.assertMatch(session.stateRevision, ctx.ifMatch);
+      const retried = await this.app.retryAuthoringChangeSet({
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        changeSetId,
+      });
+      return this.finishSessionChangeSet(sessionId, session.stateRevision, retried.changeSet);
     });
   }
 
@@ -1741,20 +1727,20 @@ export class ComposedAppServices implements AppServices {
       },
       this.authoringTurnLifecycleDeps(),
     );
-    void retried;
     await this.persistDurably();
     const current = this.sqlite.authoringTurns.get(turnId);
+    const revision = current?.stateRevision ?? turn.stateRevision + 1;
     return {
       status: 200,
       body: {
         operationId: ctx.operationId,
         acceptedAt: this.app.world.nowIso(),
-        sessionId,
-        turnId,
+        sessionId: retried.sessionId,
+        turnId: retried.turnId,
         action: "retry",
-        revision: current?.stateRevision ?? turn.stateRevision + 1,
+        revision,
       },
-      revision: current?.stateRevision ?? turn.stateRevision,
+      revision,
     };
   }
 
@@ -3110,6 +3096,53 @@ export class ComposedAppServices implements AppServices {
       const message = error instanceof Error ? error.message : "taskPatches is malformed";
       throw new AppError("validation_failed", message);
     }
+  }
+
+  private requireSessionChangeSet(
+    sessionId: string,
+    changeSetId: string,
+  ): { session: { id: string; projectId: string; stateRevision: number } } {
+    const session = this.sqlite.authoringSessions.get(sessionId);
+    if (!session) throw new AppError("not_found", "Authoring session not found");
+    const owned = this.sqlite.connection
+      .prepare(
+        `SELECT id FROM authoring_turns WHERE session_id = ? AND change_set_id = ? LIMIT 1`,
+      )
+      .get(sessionId, changeSetId) as { id: string } | undefined;
+    if (!owned) {
+      throw new AppError("not_found", "Authoring change set not found in this session");
+    }
+    const stored = this.app.world.authoringChangeSets.get(changeSetId);
+    if (!stored) {
+      throw new AppError("not_found", "Authoring change set not found");
+    }
+    if (stored.projectId !== session.projectId) {
+      throw new AppError(
+        "validation_failed",
+        "authoring change set does not belong to this session",
+      );
+    }
+    return { session };
+  }
+
+  private async finishSessionChangeSet(
+    sessionId: string,
+    previousRevision: number,
+    changeSet: AuthoringChangeSetDto,
+  ): Promise<CommandResult<AuthoringChangeSetDto>> {
+    await this.persistDurably();
+    const now = this.app.world.nowIso();
+    this.sqlite.connection
+      .prepare(
+        `UPDATE authoring_sessions SET state_revision = state_revision + 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(now, sessionId);
+    const current = this.sqlite.authoringSessions.get(sessionId);
+    return {
+      status: 200,
+      body: changeSet,
+      revision: current?.stateRevision ?? previousRevision + 1,
+    };
   }
 
   private persist(): void {

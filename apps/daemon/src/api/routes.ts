@@ -652,6 +652,30 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     },
   );
 
+  app.post(
+    "/api/v1/authoring-sessions/:sessionId/change-sets/:changeSetId/_cmd/retry",
+    async (request, reply) => {
+      await cmd(
+        request,
+        reply,
+        {
+          canonicalOperation:
+            "POST /authoring-sessions/{sessionId}/change-sets/{changeSetId}:retry",
+          resource: (req) => `${param(req, "sessionId")}:${param(req, "changeSetId")}`,
+          requireIfMatch: true,
+        },
+        (ctx, body) => {
+          rejectUnknownFields(body, ["operationId"]);
+          return deps.services.retryAuthoringChangeSet(
+            ctx,
+            param(request, "sessionId"),
+            param(request, "changeSetId"),
+          );
+        },
+      );
+    },
+  );
+
   app.get("/api/v1/approvals", async (request) => deps.services.listApprovals(listQuery(request)));
   app.get("/api/v1/approvals/:id", async (request, reply) => {
     const approval = requireFound(
