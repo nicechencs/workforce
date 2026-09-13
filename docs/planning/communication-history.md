@@ -43,6 +43,12 @@ updated: 2026-09-13
 - **文档影响：** [能力矩阵](api-capability-matrix.md) 增加唯一 ad-hoc path `POST /projects/{id}/tasks`，并把「去做」从 `unsupported` 改到已冻 `POST /tasks/{id}/runs`；[协议索引](../protocols/README.md) 补 `start_direct` / `CreateAdHocTaskInput`。未改 03 / backlog（归 T00）。
 - **状态：** 契约 **implemented**（`@workforce/protocol` + registry）。Daemon composition、allowlist、Chat UI、Application `classifyChatIntent` 仍 **planned**（T10 / T11 / T20）。
 
+## 2026-09-13（Asia/Taipei）WV-T00-ALIGN：03 / 矩阵 / backlog 对齐 `d376ba2`
+
+- **决定：** 不改产品决策。只把规划页落后于 `origin/dev` `d376ba2` 的实现事实改成与源码一致，避免下游重做卡片或误写「Daemon 无 `POST /tasks/{id}/runs`」。
+- **文档影响：** [实现进度](03-implementation-status.md) 写明卡片/句意/Team `resolveTeamDraft` **已接线**，Task `resolveTaskPatch` **未接**，HTTP `POST /tasks/:id/runs` **有路由**但 allowlist 阻断、`orchestration.direct` 为 false、Chat「去做」仍 unsupported，零条 evaluation 仍可 `completed`；[能力矩阵](api-capability-matrix.md) 只改正事实句、**不**发明 path；[任务清单](02-development-task-backlog.md) 只改 `T09-DIRECT` / `T10-TASK-RUN-HTTP` / T20-B Task patch / T08 完成门的目标句，并去掉把卡片/句意/Team 确认写成 planned 的句子。不改 `packages/**` / `apps/**`。
+- **状态：** 文档对齐 **implemented**（`d376ba2` 源码；本 tip 未 headed、未写测试）。D18 ad-hoc `direct` 产品落点、Task `resolveTaskPatch`、evaluation 完成门仍 **planned**。Marketplace 不是当前债。
+
 ## 2026-09-13（Asia/Taipei）库/Chat 已接线；卡片三字段、句意落地、空闲写卡收窄为 planned
 
 - **决定：** 四处已拍板写入决策登记：角色与 Project 解耦；卡片必印他是谁 / 怎么干活 / 技能（Runtime / Policy 不是必印）；空闲对角色说话写入卡片相应字段、已发布则 fork、不派 Task/Run、不是 IM、不是 D18 direct；Chat 按句意落到库 / Team / Workflow，认不出再问，不默成交流工作，不强制三张确认卡。建/改角色走库、可无 `projectId`；AuthoringSession **只**服务项目内流程 / 组队。Marketplace 仍是未来、现在不是当前债。
