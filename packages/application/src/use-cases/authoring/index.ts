@@ -1,6 +1,7 @@
 export {
   adaptTeamDraftRepository,
   applyAuthoringChangeSet,
+  continueAuthoringChangeSet,
   confirmAuthoringChatProposal,
   parseAuthoringTaskPatch,
   recordAuthoringProposal,
@@ -8,6 +9,7 @@ export {
   startAuthoring,
   validateAuthoringChangeSet,
   type ApplyAuthoringChangeSetInput,
+  type ContinueAuthoringChangeSetInput,
   type AuthoringChatProposalResolver,
   type AuthoringChatBindingProof,
   type AuthoringChatPatchBinding,

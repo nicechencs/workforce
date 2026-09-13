@@ -152,6 +152,8 @@ export interface ArtifactRecord {
   slotId?: string;
   digest: string;
   status: ArtifactVersionStatus;
+  /** Plan body generated at start-planning. Not a Runtime output. */
+  body?: unknown;
 }
 
 /** T08 evidence consumed by T09 completion. Not a second evaluation engine. */

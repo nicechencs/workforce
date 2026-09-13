@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import type { RuntimeHostPort, StartRunHostRequest, TaskRecord } from "@workforce/application";
-import { GitWorkspaceService } from "@workforce/workspace";
+import { GitWorkspaceService, WorkspaceError } from "@workforce/workspace";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,6 +38,16 @@ export interface ProvisionedWorktree {
 
 export interface CompositionWorktreeHostOptions {
   stateDir: string;
+}
+
+export const WORKSPACE_GRANTS_FILENAME = "workspace-grants.json";
+
+export function workspaceGrantsFile(stateDir: string): string {
+  return path.join(stateDir, WORKSPACE_GRANTS_FILENAME);
+}
+
+export function isDesktopWorkspaceGrant(authorizationRef: string): boolean {
+  return authorizationRef.startsWith("wsauth_");
 }
 
 function isWorktreeRole(role: string): boolean {
@@ -89,12 +100,55 @@ export async function ensureMockGitRepository(
   return { repoPath, baseSha };
 }
 
+/** Init or reuse a git repo at a user-selected directory. Does not invent mock fixture files when the tree already has content. */
+export async function ensureUserGitRepository(
+  repoPath: string,
+): Promise<{ repoPath: string; baseSha: string }> {
+  const resolved = path.resolve(repoPath);
+  await mkdir(resolved, { recursive: true });
+  try {
+    const inside = await runMockGit(resolved, ["rev-parse", "--is-inside-work-tree"]);
+    if (inside !== "true") {
+      throw new Error("not a work tree");
+    }
+  } catch {
+    await runMockGit(resolved, ["init", "-b", "main"]);
+    await runMockGit(resolved, ["config", "user.name", MOCK_GIT_NAME]);
+    await runMockGit(resolved, ["config", "user.email", MOCK_GIT_EMAIL]);
+  }
+  let baseSha: string | undefined;
+  try {
+    baseSha = await runMockGit(resolved, ["rev-parse", "HEAD"]);
+  } catch {
+    // Empty repo has no HEAD until the initial commit below.
+  }
+  if (!baseSha) {
+    const entries = fs.readdirSync(resolved).filter((name) => name !== ".git");
+    if (entries.length === 0) {
+      await writeFile(path.join(resolved, "README.md"), "workforce workspace\n");
+    }
+    await runMockGit(resolved, ["add", "-A"]);
+    await runMockGit(resolved, ["commit", "-m", "init", "--allow-empty"]);
+    baseSha = await runMockGit(resolved, ["rev-parse", "HEAD"]);
+  }
+  return { repoPath: resolved, baseSha };
+}
+
+interface ProjectGitBinding {
+  gitWorkspaceId: string;
+  baseSha: string;
+  hostGrantRef?: string;
+}
+
 export class CompositionWorktreeHost {
   readonly git: GitWorkspaceService;
   readonly repoPath: string;
   readonly worktreeRoot: string;
   readonly baseSha: string;
   private readonly gitAuthorizationRef: string;
+  private readonly grantsFile: string;
+  private readonly hostGrants = new Map<string, string>();
+  private readonly projectBindings = new Map<string, ProjectGitBinding>();
   private readonly projectToGitWorkspace = new Map<string, string>();
   private readonly byRunKey = new Map<string, ProvisionedWorktree>();
 
@@ -104,12 +158,14 @@ export class CompositionWorktreeHost {
     worktreeRoot: string;
     baseSha: string;
     gitAuthorizationRef: string;
+    grantsFile: string;
   }) {
     this.git = input.git;
     this.repoPath = input.repoPath;
     this.worktreeRoot = input.worktreeRoot;
     this.baseSha = input.baseSha;
     this.gitAuthorizationRef = input.gitAuthorizationRef;
+    this.grantsFile = input.grantsFile;
   }
 
   static async open(options: CompositionWorktreeHostOptions): Promise<CompositionWorktreeHost> {
@@ -124,10 +180,43 @@ export class CompositionWorktreeHost {
       worktreeRoot,
       baseSha: ensured.baseSha,
       gitAuthorizationRef: registered.authorizationRef,
+      grantsFile: workspaceGrantsFile(options.stateDir),
     });
   }
 
-  async bindProject(projectId: string): Promise<{ gitWorkspaceId: string }> {
+  registerHostGrant(authorizationRef: string, hostPath: string): void {
+    this.hostGrants.set(authorizationRef, path.resolve(hostPath));
+  }
+
+  resolveGrant(authorizationRef: string): string | undefined {
+    const remembered = this.hostGrants.get(authorizationRef);
+    if (remembered) {
+      return remembered;
+    }
+    const persisted = readPersistedGrant(this.grantsFile, authorizationRef);
+    if (persisted) {
+      this.hostGrants.set(authorizationRef, persisted);
+    }
+    return persisted;
+  }
+
+  baseShaFor(projectId: string): string {
+    return this.projectBindings.get(projectId)?.baseSha ?? this.baseSha;
+  }
+
+  async bindProject(
+    projectId: string,
+    authorizationRef?: string,
+  ): Promise<{ gitWorkspaceId: string }> {
+    if (authorizationRef) {
+      const hostPath = this.resolveGrant(authorizationRef);
+      if (hostPath) {
+        return this.bindUserRepo(projectId, authorizationRef, hostPath);
+      }
+      if (isDesktopWorkspaceGrant(authorizationRef)) {
+        throw new WorkspaceError("unknown authorizationRef");
+      }
+    }
     const existing = this.projectToGitWorkspace.get(projectId);
     if (existing) {
       return { gitWorkspaceId: existing };
@@ -137,6 +226,34 @@ export class CompositionWorktreeHost {
       authorizationRef: this.gitAuthorizationRef,
     });
     this.projectToGitWorkspace.set(projectId, binding.workspaceId);
+    this.projectBindings.set(projectId, {
+      gitWorkspaceId: binding.workspaceId,
+      baseSha: this.baseSha,
+    });
+    return { gitWorkspaceId: binding.workspaceId };
+  }
+
+  private async bindUserRepo(
+    projectId: string,
+    authorizationRef: string,
+    hostPath: string,
+  ): Promise<{ gitWorkspaceId: string }> {
+    const already = this.projectBindings.get(projectId);
+    if (already?.hostGrantRef === authorizationRef) {
+      return { gitWorkspaceId: already.gitWorkspaceId };
+    }
+    const ensured = await ensureUserGitRepository(hostPath);
+    const registered = await this.git.registerLocalRepository(ensured.repoPath);
+    const binding = await this.git.bind({
+      projectId,
+      authorizationRef: registered.authorizationRef,
+    });
+    this.projectToGitWorkspace.set(projectId, binding.workspaceId);
+    this.projectBindings.set(projectId, {
+      gitWorkspaceId: binding.workspaceId,
+      baseSha: ensured.baseSha,
+      hostGrantRef: authorizationRef,
+    });
     return { gitWorkspaceId: binding.workspaceId };
   }
 
@@ -154,7 +271,7 @@ export class CompositionWorktreeHost {
     }
     const { gitWorkspaceId } = await this.bindProject(input.projectId);
     this.git.attachRun(runKey, gitWorkspaceId);
-    const instance = await this.git.provisionRunWorkspace(runKey, this.baseSha);
+    const instance = await this.git.provisionRunWorkspace(runKey, this.baseShaFor(input.projectId));
     const worktreePath = await this.git.assertInstancePath(instance.workspaceInstanceId, ".");
     const record: ProvisionedWorktree = {
       projectId: input.projectId,
@@ -231,4 +348,35 @@ export function bindWorktreesToHost(input: {
     port.ensureNodeSession = () => input.inner.ensureNodeSession!();
   }
   return port;
+}
+
+function readPersistedGrant(file: string, authorizationRef: string): string | undefined {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const record = parsed as { grants?: unknown };
+  const grants = record.grants;
+  if (grants === null || typeof grants !== "object" || Array.isArray(grants)) {
+    return undefined;
+  }
+  const value = (grants as Record<string, unknown>)[authorizationRef];
+  if (typeof value !== "string" || value.length === 0) {
+    return undefined;
+  }
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\")) {
+    return path.resolve(value);
+  }
+  return undefined;
 }

@@ -203,6 +203,11 @@ export async function cancelAuthoringChangeSet(
   });
 }
 
+/**
+ * Retry remaining steps: reset failed/pending to `pending` and move the
+ * ChangeSet to `applying`. Call `continueAuthoringChangeSet` (same session)
+ * to actually apply those steps; this command does not pretend they landed.
+ */
 export async function retryAuthoringChangeSet(
   ctx: AppContext,
   input: RetryAuthoringChangeSetInput,

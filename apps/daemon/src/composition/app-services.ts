@@ -5,8 +5,12 @@ import {
   CatalogService,
   adaptTeamDraftRepository,
   confirmAuthoringChatProposal,
+  failAuthoringTurn,
   HostCapabilityError,
-  MOCK_PLAN_DOCUMENT,
+  isExecutableWorkflowVersion,
+  retryAuthoringTurn,
+  storeAuthoringSessionBody,
+  toEngineGraph,
   UseCaseError,
   WorkforceApp,
   createWorkforceApp,
@@ -17,11 +21,15 @@ import {
   settleRunCancel,
   workerCardFieldsFrom,
   type ApprovalRecord,
+  type AuthoringChatTurn,
   type AuthoringTaskPatch,
+  type AuthoringTurnLifecycleDeps,
   type ProjectRecord,
   type RunRecord,
   type TaskRecord,
   type ConfirmChatProposalDeps,
+  type WorkflowGraph,
+  type WorkflowVersionRecord,
 } from "@workforce/application";
 import {
   ArtifactEvaluator,
@@ -32,14 +40,17 @@ import {
   type RegistrableKind,
   type StoredArtifactVersion,
 } from "@workforce/artifacts";
-import { WorkforceSqlite, PersistenceError } from "@workforce/database";
+import { WorkforceSqlite, PersistenceError, sqliteDbOf } from "@workforce/database";
 import { SqliteSubscriptionReader, type EventReadQuery } from "@workforce/events/subscriptions";
 import type { CanonicalAction, InMemoryPolicyEngine } from "@workforce/policy";
 import {
   DEFAULT_ORCHESTRATION_MODE,
   isSelectableWorkerVersion,
+  parseTeamDraft,
   parseTeamVersionWrite,
   parseWorkerDraftWrite,
+  parseWorkflowDraft,
+  type AuthoringChangeSetDto,
   type AuthoringProposalDto,
   type AuthoringSessionPageDto,
   type AuthoringSessionViewDto,
@@ -54,6 +65,7 @@ import {
   type WorkforceEvent,
 } from "@workforce/protocol";
 import { interpretMockAuthoringIntent } from "@workforce/runtime-mock";
+import { WorkspaceError } from "@workforce/workspace";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";
@@ -99,6 +111,7 @@ import type {
   CreateWorkerInput,
   ChatClassifyInput,
   ChatClassifyResultDto,
+  ContinueAuthoringChangeSetInput,
   ForkWorkerVersionAcceptedDto,
   ListWorkersInput,
   PatchTeamInput,
@@ -131,7 +144,6 @@ import {
   SOFTWARE_TEAM_VERSION,
   TEAM_VERSION_ID,
   isPresetPublishedTeamVersion,
-  mockPlanGraph,
   pageOf,
   seedPresetWorkerLibrary,
   unknownProjectBudget,
@@ -346,7 +358,7 @@ export class ComposedAppServices implements AppServices {
       const clock = app.world.clock as unknown as { current: Date };
       clock.current = new Date();
       for (const workspace of services.workspaces.values()) {
-        await services.worktrees.bindProject(workspace.projectId);
+        await services.worktrees.bindProject(workspace.projectId, workspace.authorizationRef);
       }
     }
     await services.restoreArtifactAuthority();
@@ -601,7 +613,12 @@ export class ComposedAppServices implements AppServices {
   ): Promise<CommandResult<WorkflowVersionDto>> {
     return this.exclusive(async () => {
       const version = this.authoring.publishWorkflowVersion(id, versionId, ctx.ifMatch);
+      const graph = engineGraphFromCatalog(version);
+      if (graph) {
+        this.app.world.workflowVersions.set(graph.id, graph);
+      }
       await this.persistCatalogWorkflow(id);
+      this.persist();
       return {
         status: 200,
         body: resolveWorkflowVersion(this.authoring, id, version.id)!,
@@ -805,12 +822,21 @@ export class ComposedAppServices implements AppServices {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
       const now = this.app.world.nowIso();
+      const publicRef = publicAuthorizationRef(input.authorizationRef);
+      try {
+        await this.worktrees.bindProject(project.id, input.authorizationRef);
+      } catch (error) {
+        if (error instanceof WorkspaceError && error.message === "unknown authorizationRef") {
+          throw new AppError("forbidden", "Workspace authorization is unknown");
+        }
+        throw error;
+      }
       const workspace: WorkspaceDto = {
         id: this.app.world.ids.ulid("wsp_"),
         projectId: project.id,
         status: "bound",
         kind: "local",
-        authorizationRef: publicAuthorizationRef(input.authorizationRef),
+        authorizationRef: publicRef,
         createdAt: now,
       };
       this.workspaces.set(workspace.id, workspace);
@@ -818,7 +844,6 @@ export class ComposedAppServices implements AppServices {
       project.workspaceInstanceId = this.app.world.ids.ulid("wsi_");
       project.stateRevision += 1;
       project.updatedAt = now;
-      await this.worktrees.bindProject(project.id);
       this.persist();
       return { status: 201, body: workspace, revision: project.stateRevision };
     });
@@ -897,7 +922,6 @@ export class ComposedAppServices implements AppServices {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
       const workspace = await this.workspaceFor(project);
-      const planDigest = sha256Hex(canonicalJson(MOCK_PLAN_DOCUMENT));
       const teamVersionId = project.teamVersionId ?? TEAM_VERSION_ID;
       assertBindableTeamVersionId(this.authoring, teamVersionId);
       const started = await this.app.startPlanning({
@@ -911,12 +935,11 @@ export class ComposedAppServices implements AppServices {
         executionNodeId: LOCAL_NODE_ID,
         runtimeInstallationId: MOCK_RUNTIME_INSTALLATION_ID,
         workspaceInstanceId: project.workspaceInstanceId ?? this.app.world.ids.ulid("wsi_"),
-        planDigest,
         ...optionalRevision(ctx.ifMatch),
       });
       const live = this.requireProject(id);
       if (live.planArtifactVersionId) {
-        const body = encoder.encode(`${JSON.stringify(MOCK_PLAN_DOCUMENT, null, 2)}\n`);
+        const body = encoder.encode(`${JSON.stringify(started.plan, null, 2)}\n`);
         await this.commitArtifact({
           artifactId: live.planArtifactVersionId,
           aliasVersionId: live.planArtifactVersionId,
@@ -965,12 +988,13 @@ export class ComposedAppServices implements AppServices {
           ...(approval.expiresAt !== undefined ? { expiresAt: approval.expiresAt } : {}),
         });
       }
+      const graph = this.publishedExecutionGraph(project);
       const confirmed = await this.app.confirmPlan({
         operationId: ctx.operationId,
         idempotencyKey: ctx.operationId,
         projectId: project.id,
         approvalId: approval.id,
-        graph: mockPlanGraph(),
+        ...(graph !== undefined ? { graph } : {}),
         ...optionalRevision(ctx.ifMatch),
       });
       this.persist();
@@ -1469,16 +1493,20 @@ export class ComposedAppServices implements AppServices {
       const now = this.app.world.nowIso();
       const messageId = this.app.world.ids.ulid("cam_");
       const turnId = this.app.world.ids.ulid("cat_");
-      const contentRef = `mem:authoring:${messageId}`;
-      this.authoringContent.set(contentRef, content);
+      const stored = storeAuthoringSessionBody(this.app.world, {
+        sessionId,
+        messageId,
+        content,
+      });
+      this.authoringContent.set(stored.contentRef, content);
       await this.sqlite.uow.withTransaction(async (tx) => {
         this.sqlite.authoringMessages.create(tx, {
           id: messageId,
           sessionId,
           role: "user",
-          contentRef,
-          contentHash: sha256Hex(content),
-          redactedPreview: "[user message retained in process memory]",
+          contentRef: stored.contentRef,
+          contentHash: stored.contentHash,
+          redactedPreview: stored.redactedPreview,
           createdAt: now,
         });
         this.sqlite.authoringTurns.create(tx, {
@@ -1573,7 +1601,7 @@ export class ComposedAppServices implements AppServices {
   ): Promise<CommandResult<AuthoringTurnActionAcceptedDto>> {
     return this.exclusive(async () => {
       if (action === "retry") {
-        throw new AppError("unsupported_capability", "authoring turn retry is not implemented");
+        return this.retryAuthoringTurnAction(ctx, sessionId, turnId);
       }
       const turn = this.sqlite.authoringTurns.get(turnId);
       if (!turn || turn.sessionId !== sessionId) {
@@ -1623,6 +1651,283 @@ export class ComposedAppServices implements AppServices {
     });
   }
 
+  async continueAuthoringChangeSet(
+    ctx: CommandContext,
+    sessionId: string,
+    changeSetId: string,
+    input: ContinueAuthoringChangeSetInput,
+  ): Promise<CommandResult<AuthoringChangeSetDto>> {
+    return this.exclusive(async () => {
+      const { session } = this.requireSessionChangeSet(sessionId, changeSetId);
+      this.assertMatch(session.stateRevision, ctx.ifMatch);
+      const workflowDrafts = this.parseContinueDrafts(
+        input.workflowDrafts,
+        parseWorkflowDraft,
+        "workflowDrafts",
+      );
+      const teamDrafts = this.parseContinueDrafts(input.teamDrafts, parseTeamDraft, "teamDrafts");
+      const taskPatches = this.parseContinueTaskPatches(input.taskPatches);
+      const continued = await this.app.continueAuthoringChangeSet({
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        changeSetId,
+        ...(workflowDrafts !== undefined ? { workflowDrafts } : {}),
+        ...(teamDrafts !== undefined ? { teamDrafts } : {}),
+        ...(taskPatches !== undefined ? { taskPatches } : {}),
+      });
+      for (const step of continued.changeSet.steps) {
+        if (step.status === "applied" && step.targetType === "team") {
+          this.syncTeamDraftIntoCatalog(step.targetId);
+        }
+      }
+      return this.finishSessionChangeSet(sessionId, session.stateRevision, continued.changeSet);
+    });
+  }
+
+  async retryAuthoringChangeSet(
+    ctx: CommandContext,
+    sessionId: string,
+    changeSetId: string,
+  ): Promise<CommandResult<AuthoringChangeSetDto>> {
+    return this.exclusive(async () => {
+      const { session } = this.requireSessionChangeSet(sessionId, changeSetId);
+      this.assertMatch(session.stateRevision, ctx.ifMatch);
+      const retried = await this.app.retryAuthoringChangeSet({
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        changeSetId,
+      });
+      return this.finishSessionChangeSet(sessionId, session.stateRevision, retried.changeSet);
+    });
+  }
+
+  private async retryAuthoringTurnAction(
+    ctx: CommandContext,
+    sessionId: string,
+    turnId: string,
+  ): Promise<CommandResult<AuthoringTurnActionAcceptedDto>> {
+    const turn = this.sqlite.authoringTurns.get(turnId);
+    if (!turn || turn.sessionId !== sessionId) {
+      throw new AppError("not_found", "Authoring turn not found");
+    }
+    if (ctx.ifMatch === undefined) {
+      throw new AppError("validation_failed", "If-Match is required");
+    }
+    this.assertMatch(turn.stateRevision, ctx.ifMatch);
+    const contentRef = this.ensureAuthoringTurnBody(sessionId, turnId);
+    const retried = await retryAuthoringTurn(
+      {
+        operationId: ctx.operationId,
+        idempotencyKey: ctx.operationId,
+        sessionId,
+        turnId,
+        expectedRevision: ctx.ifMatch,
+        contentRef,
+        projectId: turn.projectId,
+      },
+      this.authoringTurnLifecycleDeps(),
+    );
+    await this.persistDurably();
+    const current = this.sqlite.authoringTurns.get(turnId);
+    const revision = current?.stateRevision ?? turn.stateRevision + 1;
+    return {
+      status: 200,
+      body: {
+        operationId: ctx.operationId,
+        acceptedAt: this.app.world.nowIso(),
+        sessionId: retried.sessionId,
+        turnId: retried.turnId,
+        action: "retry",
+        revision,
+      },
+      revision,
+    };
+  }
+
+  private async failAuthoringTurnForRun(runId: string): Promise<void> {
+    const chatTurn = this.chatTurnForRun(runId);
+    if (!chatTurn) {
+      return;
+    }
+    const turn = this.sqlite.authoringTurns.get(chatTurn.id);
+    if (!turn || turn.status === "failed" || turn.status === "completed" || turn.status === "closed" || turn.status === "cancelled") {
+      return;
+    }
+    await failAuthoringTurn(
+      {
+        operationId: `authoring-fail:${runId}`,
+        idempotencyKey: `authoring-fail:${runId}`,
+        sessionId: chatTurn.sessionId,
+        turnId: turn.id,
+        expectedRevision: turn.stateRevision,
+        failure: { code: "conflict", message: "authoring run failed" },
+      },
+      this.authoringTurnLifecycleDeps(),
+    );
+  }
+
+  private ensureAuthoringTurnBody(sessionId: string, turnId: string): string {
+    const view = this.authoringSessionView(sessionId);
+    const turnIndex = view?.turns.findIndex((item) => item.id === turnId) ?? -1;
+    const message = turnIndex >= 0 ? view?.turns[turnIndex]?.userMessage : undefined;
+    const messageRows = this.sqlite.connection
+      .prepare(
+        `SELECT id, content_ref FROM authoring_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(sessionId) as Array<{ id: string; content_ref: string | null }>;
+    const row = turnIndex >= 0 ? messageRows[turnIndex] : undefined;
+    const contentRef = row?.content_ref ?? undefined;
+    if (!contentRef) {
+      throw new AppError("validation_failed", "authoring intent is not recoverable after restart");
+    }
+    const existing = this.app.world.authoringProtectedBodies.get(contentRef);
+    if (existing && existing.body.trim().length > 0) {
+      return contentRef;
+    }
+    const body = this.authoringContent.get(contentRef) ?? message?.content;
+    if (!body || (body.startsWith("[") && body.endsWith("]"))) {
+      throw new AppError("validation_failed", "authoring intent is not recoverable after restart");
+    }
+    this.app.world.authoringProtectedBodies.set(contentRef, {
+      contentRef,
+      contentHash: sha256Hex(body),
+      redactedPreview: `[user message retained in process memory]`,
+      body,
+      kind: "session_message",
+      createdAt: this.app.world.nowIso(),
+      sessionId,
+      ...(row?.id ? { messageId: row.id } : {}),
+    });
+    return contentRef;
+  }
+
+  private publishedExecutionGraph(project: ProjectRecord): WorkflowGraph | undefined {
+    const bound = this.graphFromVersionId(project.workflowVersionId);
+    if (bound) {
+      return bound;
+    }
+    for (const scope of this.sqlite.workflowAuthoringScopes.listAll()) {
+      if (scope.projectId !== project.id) {
+        continue;
+      }
+      const workflow = this.authoring.catalog.workflows.get(scope.workflowId);
+      const fromActive = this.graphFromVersionId(workflow?.activeVersionId);
+      if (fromActive) {
+        return fromActive;
+      }
+      const published = this.authoring.catalog
+        .listWorkflowVersions(scope.workflowId)
+        .filter((version) => isExecutableWorkflowVersion(version) && version.nodes.length > 0)
+        .sort(
+          (left, right) =>
+            (right.publishedAt ?? "").localeCompare(left.publishedAt ?? "") ||
+            right.id.localeCompare(left.id),
+        )[0];
+      const graph = published ? engineGraphFromCatalog(published) : undefined;
+      if (graph) {
+        this.app.world.workflowVersions.set(graph.id, graph);
+        return graph;
+      }
+    }
+    return undefined;
+  }
+
+  private graphFromVersionId(versionId: string | undefined): WorkflowGraph | undefined {
+    if (!versionId) {
+      return undefined;
+    }
+    const live = this.app.world.workflowVersions.get(versionId);
+    if (live) {
+      return JSON.parse(JSON.stringify(live)) as WorkflowGraph;
+    }
+    const catalog = this.authoring.catalog.findWorkflowVersion(versionId);
+    const graph = catalog ? engineGraphFromCatalog(catalog) : undefined;
+    if (graph) {
+      this.app.world.workflowVersions.set(graph.id, graph);
+    }
+    return graph;
+  }
+
+  private authoringTurnLifecycleDeps(): AuthoringTurnLifecycleDeps {
+    const services = this;
+    return {
+      clock: this.app.world.clock,
+      ids: this.app.world.ids,
+      uow: this.sqlite.uow,
+      events: this.sqlite.events,
+      receipts: this.sqlite.receipts,
+      sessions: this.sqlite.authoringSessions,
+      turns: {
+        getInTransaction: (tx, id) => {
+          const stored = this.sqlite.authoringTurns.getInTransaction(tx, id);
+          return stored ? toAuthoringChatTurn(stored) : null;
+        },
+        transitionInTransaction: (tx, input) => {
+          const db = sqliteDbOf(tx);
+          const changed = db
+            .prepare(
+              `UPDATE authoring_turns
+                  SET status = ?,
+                      state_revision = state_revision + 1,
+                      task_id = COALESCE(?, task_id),
+                      run_id = COALESCE(?, run_id),
+                      source_run_id = COALESCE(?, source_run_id),
+                      updated_at = ?
+                WHERE id = ? AND state_revision = ?`,
+            )
+            .run(
+              input.status,
+              input.taskId ?? null,
+              input.runId ?? null,
+              input.sourceRunId ?? null,
+              input.at,
+              input.turnId,
+              input.expectedStateRevision,
+            );
+          if (Number(changed.changes) === 0) {
+            const current = this.sqlite.authoringTurns.getInTransaction(tx, input.turnId);
+            throw new UseCaseError("revision_conflict", "Authoring turn revision changed", {
+              details: {
+                expected: input.expectedStateRevision,
+                actual: current?.stateRevision,
+              },
+            });
+          }
+          const next = this.sqlite.authoringTurns.getInTransaction(tx, input.turnId);
+          if (!next) {
+            throw new AppError("not_found", "Authoring turn not found");
+          }
+          return toAuthoringChatTurn(next);
+        },
+      },
+      protectedBodies: this.app.world,
+      principalId: this.app.ctx.principalId,
+      clientId: this.app.ctx.clientId,
+      startAuthoring: async (input) => {
+        services.host.setInitialInput(`${input.operationId}:run`, {
+          operationId: `${input.operationId}:input`,
+          text: input.intent,
+        });
+        const started = await services.app.startAuthoring(input);
+        await services.persistDurably();
+        const run = services.app.world.runs.get(started.runId);
+        if (run?.handleId) {
+          await services.host.sendInput(run.handleId, {
+            operationId: `${input.operationId}:input`,
+            text: input.intent,
+          });
+        }
+        return started;
+      },
+      cancelAuthoringRun: async (runId) => {
+        const run = services.app.world.runs.get(runId);
+        if (run?.handleId) {
+          await services.host.cancel(run.handleId, "authoring turn cancelled");
+        }
+      },
+    };
+  }
+
   private authoringSessionView(sessionId: string): AuthoringSessionViewDto | null {
     const session = this.sqlite.authoringSessions.get(sessionId);
     if (!session) return null;
@@ -1644,7 +1949,7 @@ export class ComposedAppServices implements AppServices {
     const turnRows = this.sqlite.connection
       .prepare(
         `SELECT id, session_id, protocol_version, status, state_revision,
-                task_id, run_id, workflow_draft_id, created_at, updated_at
+                task_id, run_id, change_set_id, workflow_draft_id, created_at, updated_at
            FROM authoring_turns WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
       )
       .all(sessionId) as Record<string, unknown>[];
@@ -1652,6 +1957,7 @@ export class ComposedAppServices implements AppServices {
       const refs: AuthoringTurnDto["refs"] = {};
       if (row.task_id !== null) refs.taskId = String(row.task_id);
       if (row.run_id !== null) refs.runId = String(row.run_id);
+      if (row.change_set_id !== null) refs.changeSetId = String(row.change_set_id);
       if (row.workflow_draft_id !== null) refs.workflowDraftId = String(row.workflow_draft_id);
       const message = messages[index] ?? {
         id: `cam_missing_${String(row.id)}`,
@@ -2036,6 +2342,7 @@ export class ComposedAppServices implements AppServices {
         await this.dispatchReadyTasks(run.projectId);
       } else if (event.status === "failed") {
         this.app.recordRunFailed(run.id);
+        await this.failAuthoringTurnForRun(run.id);
       } else if (event.status === "cancelled") {
         settleRunCancel(this.app.ctx, run.id);
       }
@@ -2302,7 +2609,7 @@ export class ComposedAppServices implements AppServices {
         artifactVersionId: versionId,
         patch: new TextDecoder().decode(content.body),
         changedPaths: [],
-        baseSha: this.worktrees.baseSha,
+        baseSha: this.worktrees.baseShaFor(projectId),
       });
     }
     const project = this.requireProject(projectId);
@@ -2317,7 +2624,7 @@ export class ComposedAppServices implements AppServices {
         projectId,
         workspaceId: gitWorkspaceId,
         integrationTaskId: review?.id ?? `integrate_${projectId}`,
-        baseSha: this.worktrees.baseSha,
+        baseSha: this.worktrees.baseShaFor(projectId),
         workflowVersionId: project.workflowVersionId ?? "wfv_software",
         contributions,
       },
@@ -2340,7 +2647,7 @@ export class ComposedAppServices implements AppServices {
       parents: contributions.map((item) => item.artifactVersionId),
       metadata: {
         type: "git_diff",
-        baseSha: this.worktrees.baseSha,
+        baseSha: this.worktrees.baseShaFor(projectId),
         baseRef: "immutable-base",
       },
     });
@@ -2476,14 +2783,14 @@ export class ComposedAppServices implements AppServices {
     if (project.workspaceId) {
       const existing = this.workspaces.get(project.workspaceId);
       if (existing) {
-        await this.worktrees.bindProject(project.id);
+        await this.worktrees.bindProject(project.id, existing.authorizationRef);
         return existing;
       }
     }
     const bound = [...this.workspaces.values()].find((item) => item.projectId === project.id);
     if (bound) {
       project.workspaceId = bound.id;
-      await this.worktrees.bindProject(project.id);
+      await this.worktrees.bindProject(project.id, bound.authorizationRef);
       return bound;
     }
     const workspace: WorkspaceDto = {
@@ -2523,21 +2830,23 @@ export class ComposedAppServices implements AppServices {
   }
 
   private planDocumentFor(approval: ApprovalRecord): unknown {
+    const fromWorld = approval.artifactVersionId
+      ? this.app.world.artifacts.get(approval.artifactVersionId)?.body
+      : undefined;
+    if (fromWorld !== undefined) {
+      return fromWorld;
+    }
     const content = approval.artifactVersionId
       ? this.findContent(undefined, approval.artifactVersionId)
       : undefined;
     if (content?.body) {
       try {
-        const parsed: unknown = JSON.parse(new TextDecoder().decode(content.body));
-        if (isCanonicalMockPlan(parsed)) {
-          return MOCK_PLAN_DOCUMENT;
-        }
-        return parsed;
+        return JSON.parse(new TextDecoder().decode(content.body)) as unknown;
       } catch {
         return { hash: content.hash };
       }
     }
-    return MOCK_PLAN_DOCUMENT;
+    throw new AppError("validation_failed", "plan artifact is not available");
   }
 
   private canonicalActionFor(approval: ApprovalRecord): CanonicalAction {
@@ -2754,6 +3063,86 @@ export class ComposedAppServices implements AppServices {
       readQuery.types = query.types;
     }
     return readQuery;
+  }
+
+  private parseContinueDrafts<T>(
+    items: readonly Record<string, unknown>[] | undefined,
+    parse: (input: unknown) => T,
+    field: string,
+  ): T[] | undefined {
+    if (items === undefined) {
+      return undefined;
+    }
+    try {
+      return items.map((item) => parse(item));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `${field} is malformed`;
+      throw new AppError("validation_failed", message);
+    }
+  }
+
+  private parseContinueTaskPatches(
+    items: readonly Record<string, unknown>[] | undefined,
+  ): AuthoringTaskPatch[] | undefined {
+    if (items === undefined) {
+      return undefined;
+    }
+    try {
+      return items.map((item) => parseAuthoringTaskPatch(item as unknown as AuthoringTaskPatch));
+    } catch (error) {
+      if (error instanceof UseCaseError) {
+        throw new AppError(error.code, error.message);
+      }
+      const message = error instanceof Error ? error.message : "taskPatches is malformed";
+      throw new AppError("validation_failed", message);
+    }
+  }
+
+  private requireSessionChangeSet(
+    sessionId: string,
+    changeSetId: string,
+  ): { session: { id: string; projectId: string; stateRevision: number } } {
+    const session = this.sqlite.authoringSessions.get(sessionId);
+    if (!session) throw new AppError("not_found", "Authoring session not found");
+    const owned = this.sqlite.connection
+      .prepare(
+        `SELECT id FROM authoring_turns WHERE session_id = ? AND change_set_id = ? LIMIT 1`,
+      )
+      .get(sessionId, changeSetId) as { id: string } | undefined;
+    if (!owned) {
+      throw new AppError("not_found", "Authoring change set not found in this session");
+    }
+    const stored = this.app.world.authoringChangeSets.get(changeSetId);
+    if (!stored) {
+      throw new AppError("not_found", "Authoring change set not found");
+    }
+    if (stored.projectId !== session.projectId) {
+      throw new AppError(
+        "validation_failed",
+        "authoring change set does not belong to this session",
+      );
+    }
+    return { session };
+  }
+
+  private async finishSessionChangeSet(
+    sessionId: string,
+    previousRevision: number,
+    changeSet: AuthoringChangeSetDto,
+  ): Promise<CommandResult<AuthoringChangeSetDto>> {
+    await this.persistDurably();
+    const now = this.app.world.nowIso();
+    this.sqlite.connection
+      .prepare(
+        `UPDATE authoring_sessions SET state_revision = state_revision + 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(now, sessionId);
+    const current = this.sqlite.authoringSessions.get(sessionId);
+    return {
+      status: 200,
+      body: changeSet,
+      revision: current?.stateRevision ?? previousRevision + 1,
+    };
   }
 
   private persist(): void {
@@ -3414,19 +3803,6 @@ function chatProposalCreateTargets(proposal: AuthoringProposalDto): Array<{
   return targets;
 }
 
-function isCanonicalMockPlan(value: unknown): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    record.protocol === MOCK_PLAN_DOCUMENT.protocol &&
-    record.protocolVersion === MOCK_PLAN_DOCUMENT.protocolVersion &&
-    record.workflowId === MOCK_PLAN_DOCUMENT.workflowId &&
-    record.templateId === MOCK_PLAN_DOCUMENT.templateId
-  );
-}
-
 function toVersionDto(record: ArtifactContentRecord): ArtifactVersionDto {
   return {
     id: record.versionId,
@@ -3480,6 +3856,58 @@ function syntheticOutput(
   };
 }
 
+function engineGraphFromCatalog(version: WorkflowVersionRecord): WorkflowGraph | undefined {
+  if (!isExecutableWorkflowVersion(version) || version.nodes.length === 0) {
+    return undefined;
+  }
+  const graphInput: Parameters<typeof toEngineGraph>[0] = {
+    id: version.id,
+    workflowId: version.workflowId,
+    versionLabel: version.version,
+    nodes: version.nodes,
+    edges: version.edges,
+  };
+  if (version.entry !== undefined) {
+    graphInput.entry = version.entry;
+  }
+  return toEngineGraph(graphInput);
+}
+
+function toAuthoringChatTurn(record: {
+  id: string;
+  sessionId: string;
+  organizationId: string;
+  projectId: string;
+  sourceRunId: string;
+  status: string;
+  stateRevision: number;
+  proposalId: string | null;
+  changeSetId: string | null;
+  workflowDraftId: string | null;
+  completedOperationId: string | null;
+  patchRefs: readonly string[];
+  taskId: string | null;
+}): AuthoringChatTurn {
+  const turn: AuthoringChatTurn = {
+    id: record.id,
+    sessionId: record.sessionId,
+    organizationId: record.organizationId,
+    projectId: record.projectId,
+    sourceRunId: record.sourceRunId,
+    status: record.status as AuthoringChatTurn["status"],
+    stateRevision: record.stateRevision,
+    proposalId: record.proposalId,
+    changeSetId: record.changeSetId,
+    workflowDraftId: record.workflowDraftId,
+    completedOperationId: record.completedOperationId,
+    patchRefs: record.patchRefs,
+  };
+  if (record.taskId) {
+    turn.taskId = record.taskId;
+  }
+  return turn;
+}
+
 function wrapError(error: unknown): unknown {
   if (error instanceof AppError) {
     return error;
@@ -3505,6 +3933,12 @@ function wrapError(error: unknown): unknown {
   }
   if (error instanceof HostCapabilityError) {
     return new AppError("unsupported_capability", error.message);
+  }
+  if (error instanceof WorkspaceError) {
+    if (error.message === "unknown authorizationRef") {
+      return new AppError("forbidden", "Workspace authorization is unknown");
+    }
+    return new AppError("validation_failed", error.message);
   }
   if (error && typeof error === "object" && "code" in error) {
     const code = (error as { code: unknown }).code;

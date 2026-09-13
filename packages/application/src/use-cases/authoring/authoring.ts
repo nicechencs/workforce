@@ -64,6 +64,15 @@ export interface ApplyAuthoringChangeSetInput {
   taskPatches?: readonly AuthoringTaskPatch[];
 }
 
+export interface ContinueAuthoringChangeSetInput {
+  operationId: string;
+  idempotencyKey: string;
+  changeSetId: string;
+  workflowDrafts?: readonly WorkflowDraftDto[];
+  teamDrafts?: readonly TeamDraftDto[];
+  taskPatches?: readonly AuthoringTaskPatch[];
+}
+
 export interface StartAuthoringInput {
   operationId: string;
   idempotencyKey: string;
@@ -1835,122 +1844,99 @@ export async function applyAuthoringChangeSet(
         ) {
           throw validationFailed(`authoring change set cannot apply from ${stored.status}`);
         }
-        const workflowDrafts = new Map(
-          (input.workflowDrafts ?? []).map((draft) => [
-            draft.workflowId,
-            parseWorkflowDraft(draft),
-          ]),
-        );
-        const teamDrafts = new Map(
-          (input.teamDrafts ?? []).map((draft) => [draft.teamId, parseTeamDraft(draft)]),
-        );
-        const taskPatches = new Map(
-          (input.taskPatches ?? []).map((patch) => [patch.taskId, parseAuthoringTaskPatch(patch)]),
-        );
-        if (
-          workflowDrafts.size !== (input.workflowDrafts ?? []).length ||
-          teamDrafts.size !== (input.teamDrafts ?? []).length ||
-          taskPatches.size !== (input.taskPatches ?? []).length
-        ) {
-          throw validationFailed("authoring draft targets must be unique");
-        }
+        const drafts = indexAuthoringDrafts(input);
+        assertUniqueAuthoringDrafts(input, drafts);
 
         const pendingSteps = stored.steps.filter((step) => step.status !== "applied");
         for (const step of pendingSteps) {
           if (step.status !== "pending" && step.status !== "applying" && step.status !== "failed") {
             throw validationFailed("authoring change set steps must be pending before apply");
           }
-          if (step.targetType === "task") {
-            if (!taskPatches.get(step.targetId)) {
-              throw validationFailed(`missing task draft for ${step.targetId}`);
-            }
-            continue;
-          }
-          if (step.targetType === "worker") {
-            throw validationFailed(
-              "authoring worker drafts land through chat confirmation, not change-set apply",
-            );
-          }
-          const draft =
-            step.targetType === "workflow"
-              ? workflowDrafts.get(step.targetId)
-              : teamDrafts.get(step.targetId);
-          if (!draft) {
-            throw validationFailed(`missing ${step.targetType} draft for ${step.targetId}`);
-          }
-          assertDraftRevision(
-            ctx,
-            step.targetType,
-            step.targetId,
-            draft.revision,
-            step.expectedRevision,
-          );
+          assertAuthoringStepReady(ctx, step, drafts);
+        }
+
+        const applied = persistAppliedChangeSet(ctx, stored, {
+          drafts,
+          now: ctx.world.nowIso(),
+          resetFailed: false,
+        });
+        await appendChangeSetApplyEvent(ctx, tx, input.operationId, applied);
+        return applied;
+      },
+    );
+    return { reused: result.reused, changeSet: result.value };
+  });
+}
+
+/**
+ * Continues a `partially_applied` ChangeSet in the same session: remaining
+ * (failed/pending) steps are retried in order. Already-applied steps stay.
+ * The result is `applied` only when every step is applied.
+ */
+export async function continueAuthoringChangeSet(
+  ctx: AppContext,
+  input: ContinueAuthoringChangeSetInput,
+): Promise<{ reused: boolean; changeSet: AuthoringChangeSetDto }> {
+  return ctx.world.uow.withTransaction(async (tx) => {
+    const result = await withIdempotency(
+      ctx.world,
+      tx,
+      {
+        operationId: input.operationId,
+        digest: digestOf({
+          changeSetId: input.changeSetId,
+          workflowDrafts: input.workflowDrafts ?? [],
+          teamDrafts: input.teamDrafts ?? [],
+          taskPatches: input.taskPatches ?? [],
+        }),
+        scope: {
+          principalId: ctx.principalId,
+          clientId: ctx.clientId,
+          canonicalOperation: "authoring.continue-change-set",
+          resource: `authoring_change_set:${input.changeSetId}`,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      async () => {
+        const stored = ctx.world.authoringChangeSets.get(input.changeSetId);
+        if (!stored) {
+          throw notFound("authoring change set", input.changeSetId);
+        }
+        if (stored.status !== "partially_applied" && stored.status !== "applying") {
+          throw validationFailed(`authoring change set cannot continue from ${stored.status}`);
+        }
+        const remaining = stored.steps.filter((step) => step.status !== "applied");
+        if (remaining.length === 0) {
+          throw validationFailed("authoring change set has no remaining steps to apply");
+        }
+        const project = requireProject(ctx, stored.projectId);
+        if (project.organizationId !== stored.organizationId) {
+          throw validationFailed("authoring change set organization does not match project");
+        }
+        const sourceRun = ctx.world.runs.get(stored.sourceRunId);
+        if (!sourceRun) {
+          throw notFound("source run", stored.sourceRunId);
+        }
+        if (sourceRun.projectId !== stored.projectId) {
+          throw validationFailed("authoring source run does not belong to the project");
+        }
+        const drafts = indexAuthoringDrafts(input);
+        assertUniqueAuthoringDrafts(input, drafts);
+        for (const step of remaining) {
           if (
-            (step.targetType === "workflow" && ctx.world.workflowDrafts.has(draft.id)) ||
-            (step.targetType === "team" && ctx.world.teamDrafts.has(draft.id))
+            step.status !== "pending" &&
+            step.status !== "applying" &&
+            step.status !== "failed"
           ) {
-            throw validationFailed(`authoring draft ${draft.id} already exists`);
+            throw validationFailed("authoring change set steps must be pending before apply");
           }
         }
-
-        const now = ctx.world.nowIso();
-        const steps = stored.steps.map((step) => ({ ...step }));
-        let halted: { code: string; message: string } | undefined;
-        for (const step of steps) {
-          if (step.status === "applied") continue;
-          if (halted) continue;
-          try {
-            const resultRevision = applyAuthoringStep(ctx, {
-              step,
-              workflowDrafts,
-              teamDrafts,
-              taskPatches,
-              now,
-            });
-            step.status = "applied";
-            step.resultRevision = resultRevision;
-            step.completedAt = now;
-            delete step.failure;
-          } catch (error) {
-            const failure = toStepFailure(error);
-            step.status = "failed";
-            step.failure = failure;
-            step.completedAt = now;
-            halted = failure;
-          }
-        }
-
-        const appliedCount = steps.filter((step) => step.status === "applied").length;
-        const failedCount = steps.filter((step) => step.status === "failed").length;
-        const status =
-          halted === undefined ? "applied" : appliedCount > 0 ? "partially_applied" : "failed";
-        const applied = parseAuthoringChangeSet({
-          ...stored,
-          status,
-          updatedAt: now,
-          steps,
-          ...(halted && status === "failed" ? { failure: halted } : {}),
+        const applied = persistAppliedChangeSet(ctx, stored, {
+          drafts,
+          now: ctx.world.nowIso(),
+          resetFailed: true,
         });
-        ctx.world.authoringChangeSets.set(applied.id, applied);
-        await appendEvent(ctx.world, tx, {
-          type:
-            status === "applied"
-              ? "workflow.authoring.applied"
-              : status === "partially_applied"
-                ? "workflow.authoring.partially_applied"
-                : "workflow.authoring.failed",
-          subjectType: "authoring_change_set",
-          subjectId: applied.id,
-          projectId: applied.projectId,
-          runId: applied.sourceRunId,
-          correlationId: input.operationId,
-          data: {
-            status: applied.status,
-            stepCount: applied.steps.length,
-            appliedCount,
-            failedCount,
-          },
-        });
+        await appendChangeSetApplyEvent(ctx, tx, input.operationId, applied);
         return applied;
       },
     );
@@ -2012,6 +1998,168 @@ function changeSetIdentityDigest(changeSet: AuthoringChangeSetDto): string {
       expectedRevision: step.expectedRevision,
       patchRef: step.patchRef,
     })),
+  });
+}
+
+interface AuthoringDraftIndex {
+  workflowDrafts: Map<string, WorkflowDraftDto>;
+  teamDrafts: Map<string, TeamDraftDto>;
+  taskPatches: Map<string, AuthoringTaskPatch>;
+}
+
+function indexAuthoringDrafts(input: {
+  workflowDrafts?: readonly WorkflowDraftDto[];
+  teamDrafts?: readonly TeamDraftDto[];
+  taskPatches?: readonly AuthoringTaskPatch[];
+}): AuthoringDraftIndex {
+  return {
+    workflowDrafts: new Map(
+      (input.workflowDrafts ?? []).map((draft) => [draft.workflowId, parseWorkflowDraft(draft)]),
+    ),
+    teamDrafts: new Map(
+      (input.teamDrafts ?? []).map((draft) => [draft.teamId, parseTeamDraft(draft)]),
+    ),
+    taskPatches: new Map(
+      (input.taskPatches ?? []).map((patch) => [patch.taskId, parseAuthoringTaskPatch(patch)]),
+    ),
+  };
+}
+
+function assertUniqueAuthoringDrafts(
+  input: {
+    workflowDrafts?: readonly WorkflowDraftDto[];
+    teamDrafts?: readonly TeamDraftDto[];
+    taskPatches?: readonly AuthoringTaskPatch[];
+  },
+  drafts: AuthoringDraftIndex,
+): void {
+  if (
+    drafts.workflowDrafts.size !== (input.workflowDrafts ?? []).length ||
+    drafts.teamDrafts.size !== (input.teamDrafts ?? []).length ||
+    drafts.taskPatches.size !== (input.taskPatches ?? []).length
+  ) {
+    throw validationFailed("authoring draft targets must be unique");
+  }
+}
+
+function assertAuthoringStepReady(
+  ctx: AppContext,
+  step: AuthoringChangeSetDto["steps"][number],
+  drafts: AuthoringDraftIndex,
+): void {
+  if (step.targetType === "task") {
+    if (!drafts.taskPatches.get(step.targetId)) {
+      throw validationFailed(`missing task draft for ${step.targetId}`);
+    }
+    return;
+  }
+  if (step.targetType === "worker") {
+    throw validationFailed(
+      "authoring worker drafts land through chat confirmation, not change-set apply",
+    );
+  }
+  const draft =
+    step.targetType === "workflow"
+      ? drafts.workflowDrafts.get(step.targetId)
+      : drafts.teamDrafts.get(step.targetId);
+  if (!draft) {
+    throw validationFailed(`missing ${step.targetType} draft for ${step.targetId}`);
+  }
+  assertDraftRevision(ctx, step.targetType, step.targetId, draft.revision, step.expectedRevision);
+  if (
+    (step.targetType === "workflow" && ctx.world.workflowDrafts.has(draft.id)) ||
+    (step.targetType === "team" && ctx.world.teamDrafts.has(draft.id))
+  ) {
+    throw validationFailed(`authoring draft ${draft.id} already exists`);
+  }
+}
+
+function persistAppliedChangeSet(
+  ctx: AppContext,
+  stored: AuthoringChangeSetDto,
+  input: { drafts: AuthoringDraftIndex; now: string; resetFailed: boolean },
+): AuthoringChangeSetDto {
+  const steps = stored.steps.map((step) => {
+    if (step.status === "applied") return { ...step };
+    if (!input.resetFailed) return { ...step };
+    const {
+      failure: _failure,
+      startedAt: _started,
+      completedAt: _completed,
+      resultRevision: _result,
+      ...rest
+    } = step;
+    return { ...rest, status: "pending" as const };
+  });
+  let halted: { code: string; message: string } | undefined;
+  for (const step of steps) {
+    if (step.status === "applied") continue;
+    if (halted) continue;
+    try {
+      assertAuthoringStepReady(ctx, step, input.drafts);
+      const resultRevision = applyAuthoringStep(ctx, {
+        step,
+        workflowDrafts: input.drafts.workflowDrafts,
+        teamDrafts: input.drafts.teamDrafts,
+        taskPatches: input.drafts.taskPatches,
+        now: input.now,
+      });
+      step.status = "applied";
+      step.resultRevision = resultRevision;
+      step.completedAt = input.now;
+      delete step.failure;
+    } catch (error) {
+      const failure = toStepFailure(error);
+      step.status = "failed";
+      step.failure = failure;
+      step.completedAt = input.now;
+      halted = failure;
+    }
+  }
+  const appliedCount = steps.filter((step) => step.status === "applied").length;
+  const status =
+    appliedCount === steps.length
+      ? "applied"
+      : appliedCount > 0
+        ? "partially_applied"
+        : "failed";
+  const { failure: _storedFailure, ...rest } = stored;
+  return parseAuthoringChangeSet({
+    ...rest,
+    status,
+    updatedAt: input.now,
+    steps,
+    ...(status === "failed" && halted ? { failure: halted } : {}),
+  });
+}
+
+async function appendChangeSetApplyEvent(
+  ctx: AppContext,
+  tx: Tx,
+  operationId: string,
+  applied: AuthoringChangeSetDto,
+): Promise<void> {
+  const appliedCount = applied.steps.filter((step) => step.status === "applied").length;
+  const failedCount = applied.steps.filter((step) => step.status === "failed").length;
+  ctx.world.authoringChangeSets.set(applied.id, applied);
+  await appendEvent(ctx.world, tx, {
+    type:
+      applied.status === "applied"
+        ? "workflow.authoring.applied"
+        : applied.status === "partially_applied"
+          ? "workflow.authoring.partially_applied"
+          : "workflow.authoring.failed",
+    subjectType: "authoring_change_set",
+    subjectId: applied.id,
+    projectId: applied.projectId,
+    runId: applied.sourceRunId,
+    correlationId: operationId,
+    data: {
+      status: applied.status,
+      stepCount: applied.steps.length,
+      appliedCount,
+      failedCount,
+    },
   });
 }
 
