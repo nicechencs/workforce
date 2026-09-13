@@ -8,6 +8,8 @@ import {
   type ChatNeedContextMissing,
   type CreateWorkerInput,
   type ProjectProgressProjectionDto,
+  type RunDto,
+  type TaskDto,
   type TeamDto,
   type TeamMemberDto,
   type TeamVersionDto,
@@ -29,7 +31,25 @@ export const CHAT_NOT_IM =
   "没有 Worker 收件箱，也没有无项目聊天室。对象仍是 WorkerVersion / Team / Workflow / Task / Run / Artifact。";
 
 export const DIRECT_UNSUPPORTED_NOTE =
-  "「去做 / 现在改这个 bug」在 direct 未就绪时是 unsupported_capability，不会渲染成已在跑。";
+  "「去做 / 现在改这个 bug」在 capabilities.orchestration.direct 不是 true 时是 unsupported_capability，按钮不可点，也不会渲染成已在跑。";
+
+export const DIRECT_READY_NOTE =
+  "「去做」只在 capabilities.orchestration.direct === true 时可点。无 taskId 时先 POST /projects/{id}/tasks 建项目内 ad-hoc Task，再 POST /tasks/{id}/runs（orchestrationMode=direct）。返回 Run 引用，不是 completed。";
+
+export const START_DIRECT_LANDED_NOTE =
+  "已落到项目内 Task 并启动 direct Run。这是 Run 引用，不是 Task 完成。没有 Artifact / evaluation pass 不能画成做完。";
+
+export const START_DIRECT_NEEDS_PROJECT =
+  "去做必须先选择项目。没有 projectId 不会建 Task，也不会 POST /tasks/{id}/runs。";
+
+export const START_DIRECT_TASK_MISMATCH =
+  "所选 Task 不属于当前项目。没有启动 Run，也没有发明 :direct 路由。";
+
+export const TASK_PATCH_PROPOSAL_NOTE =
+  "AuthoringSession 返回了 targetType=task 的待确认 patch。确认走现有 confirm（CAS），不启动 Run，也不把对话当成已执行。";
+
+export const TASK_PATCH_LANDED_NOTE =
+  "Task patch 已确认落地。这不是 Task/Run 完成，也不会当成已在执行。失败时会话保留，不回退夹具。";
 
 export const CREATE_WORKER_PROPOSAL_NOTE =
   "这是创建角色提案，不是已发布员工。确认后才会在库中落下未发布草稿。不经 AuthoringSession，也不挂项目。";
@@ -123,6 +143,13 @@ export interface InviteTeamWriteResult {
   alreadyMember: boolean;
 }
 
+export interface StartDirectLanded {
+  projectId: string;
+  taskId: string;
+  run: RunDto;
+  createdAdHocTask: boolean;
+}
+
 export function newChatId(prefix: string): string {
   const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random()}`;
   return `${prefix}_${id}`;
@@ -176,6 +203,8 @@ export function intentKindLabel(kind: ChatIntentDto["kind"]): string {
       return "空闲写卡";
     case "invite_team":
       return "请到项目";
+    case "start_direct":
+      return "去做";
   }
 }
 
@@ -191,11 +220,13 @@ export function classifiedIntents(
 export function needContextMessage(missing: ChatNeedContextMissing): string {
   switch (missing) {
     case "projectId":
-      return "还缺项目。请到项目、创建流程、问进度、交流工作都要有 projectId。没有写入对象。";
+      return "还缺项目。请到项目、创建流程、问进度、交流工作、去做都要有 projectId。没有写入对象。";
     case "runId":
       return DISCUSS_NEEDS_RUN;
     case "workerId":
       return "还缺角色。空闲写卡和请来 Team 都要能对上 Worker。没有写入对象。";
+    case "taskId":
+      return "还缺已有 Task。只有坚持复用现有 Task 却没给 id 时才问 taskId。无 taskId 的去做会先建项目内 ad-hoc Task。";
   }
 }
 
@@ -295,6 +326,58 @@ export function classifyUnsupportedAction(
 
 export function isDirectCapabilityReady(direct: boolean | undefined): boolean {
   return direct === true;
+}
+
+export function startDirectIntentFromHanging(hanging: {
+  projectId: string;
+  taskId?: string;
+  title?: string;
+}): Extract<ChatIntentDto, { kind: "start_direct" }> {
+  const intent: Extract<ChatIntentDto, { kind: "start_direct" }> = {
+    kind: "start_direct",
+    projectId: hanging.projectId,
+  };
+  const taskId = optionalText(hanging.taskId);
+  if (taskId !== undefined) {
+    intent.taskId = taskId;
+  }
+  const title = optionalText(hanging.title);
+  if (title !== undefined) {
+    intent.title = title;
+  }
+  return intent;
+}
+
+export async function landStartDirect(
+  client: DesktopClient,
+  intent: Extract<ChatIntentDto, { kind: "start_direct" }>,
+): Promise<StartDirectLanded> {
+  const existingTaskId = optionalText(intent.taskId);
+  let task: TaskDto;
+  let createdAdHocTask = false;
+  if (existingTaskId === undefined) {
+    const createInput: { title?: string } = {};
+    const title = optionalText(intent.title);
+    if (title !== undefined) {
+      createInput.title = title;
+    }
+    task = await client.createAdHocTask(intent.projectId, writeCommandOptions(), createInput);
+    createdAdHocTask = true;
+  } else {
+    task = await client.getTask(existingTaskId);
+    if (task.projectId !== intent.projectId) {
+      throw new Error(START_DIRECT_TASK_MISMATCH);
+    }
+  }
+  const run = await client.startTaskRun(task.id, writeCommandOptions(task.stateRevision), {
+    orchestrationMode: "direct",
+  });
+  return {
+    projectId: intent.projectId,
+    taskId: task.id,
+    run,
+    createdAdHocTask,
+  };
 }
 
 export async function landIdleWorkerRemark(
