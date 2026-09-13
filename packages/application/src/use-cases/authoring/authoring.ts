@@ -1,3 +1,4 @@
+import { ID_PREFIX } from "@workforce/domain";
 import {
   parseAuthoringTurnActionCommand,
   parseAuthoringProposal,
@@ -5,6 +6,9 @@ import {
   parseWorkflowGraphDefinition,
   parseTeamDraft,
   parseTeamVersionWrite,
+  parseWorker,
+  parseWorkerDraft,
+  parseWorkerDraftWrite,
   parseWorkflowDraft,
   type AuthoringProposalTargetInput,
   type TeamMemberDto,
@@ -14,11 +18,19 @@ import {
   type CommandReceipt,
   type ProtocolError,
   type TeamDraftDto,
+  type WorkerDraftWrite,
   type WorkflowGraphDefinitionDto,
   type WorkflowDraftDto,
 } from "@workforce/protocol";
 
-import type { Clock, EventStore, IdGenerator, Tx, UnitOfWork } from "../../ports/index.js";
+import type {
+  Clock,
+  EventStore,
+  IdGenerator,
+  Tx,
+  UnitOfWork,
+  WorkerLibraryRepository,
+} from "../../ports/index.js";
 import type { AppContext } from "../projects/context.js";
 import { notFound, revisionConflict, UseCaseError, validationFailed } from "../projects/errors.js";
 import { appendEvent } from "../projects/events.js";
@@ -28,10 +40,7 @@ import { startRun } from "../runs/runs.js";
 import type { TeamDefinitionRecord, WorkflowDefinitionRecord } from "../catalog/types.js";
 import type { TaskRecord } from "../projects/store.js";
 import { sha256CanonicalDigest } from "./canonical-digest.js";
-import {
-  authoringProtectedEventData,
-  storeAuthoringIntent,
-} from "./protected-content.js";
+import { authoringProtectedEventData, storeAuthoringIntent } from "./protected-content.js";
 
 export interface AuthoringTaskPatch {
   taskId: string;
@@ -100,6 +109,7 @@ export interface AuthoringChatBindingProof {
   workflowId?: string;
   teamId?: string;
   taskId?: string;
+  workerId?: string;
   expectedRevision?: number;
 }
 
@@ -143,6 +153,21 @@ export interface AuthoringChatProposalResolver {
   }):
     | Promise<{ patch: AuthoringTaskPatch; binding: AuthoringChatBindingProof }>
     | { patch: AuthoringTaskPatch; binding: AuthoringChatBindingProof };
+  /**
+   * Resolves unpublished worker draft content. Confirm calls the library
+   * write port; this resolver must not publish or persist.
+   */
+  resolveWorkerDraft?(input: {
+    proposalId: string;
+    projectId: string;
+    sourceRunId: string;
+    operation: "create" | "update";
+    patchRef: string;
+    workerId?: string;
+    expectedRevision?: number;
+  }):
+    | Promise<{ write: WorkerDraftWrite; binding: AuthoringChatBindingProof }>
+    | { write: WorkerDraftWrite; binding: AuthoringChatBindingProof };
 }
 
 export interface AuthoringChatProject {
@@ -182,6 +207,8 @@ export interface AuthoringChatTurn {
   proposalId: string | null;
   changeSetId: string | null;
   workflowDraftId: string | null;
+  /** Unpublished worker draft landed by confirm; never a published version. */
+  workerDraftId?: string | null;
   completedOperationId: string | null;
   patchRefs: readonly string[];
   taskId?: string | null;
@@ -250,6 +277,7 @@ export interface AuthoringChatTurnRepository {
       proposalId?: string;
       changeSetId?: string;
       workflowDraftId?: string;
+      workerDraftId?: string;
       at: string;
     },
   ): Promise<AuthoringChatTurn> | AuthoringChatTurn;
@@ -362,6 +390,11 @@ export interface ConfirmChatProposalDeps {
   teamIdentities?: AuthoringTeamIdentityRepository;
   teamDrafts?: AuthoringTeamDraftRepository;
   tasks?: AuthoringTaskPatchRepository;
+  /**
+   * T02 WorkerLibraryRepository write entry. Confirm creates unpublished
+   * drafts through insertIdentity/saveDraft and never calls publishVersion.
+   */
+  workerLibrary?: WorkerLibraryRepository;
   proposals: AuthoringChatProposalRepository;
   resolver: AuthoringChatProposalResolver;
   principalId: string;
@@ -393,6 +426,13 @@ export interface ConfirmedAuthoringTaskPatchRef {
   definitionRevision: number;
 }
 
+export interface ConfirmedAuthoringWorkerDraftRef {
+  targetType: "worker";
+  workerId: string;
+  workerDraftId: string;
+  revision: number;
+}
+
 export interface ConfirmAuthoringChatProposalResult {
   reused: boolean;
   proposalId: string;
@@ -400,6 +440,7 @@ export interface ConfirmAuthoringChatProposalResult {
   workflowDrafts: readonly ConfirmedAuthoringWorkflowDraftRef[];
   teamDrafts: readonly ConfirmedAuthoringTeamDraftRef[];
   taskPatches: readonly ConfirmedAuthoringTaskPatchRef[];
+  workerDrafts: readonly ConfirmedAuthoringWorkerDraftRef[];
 }
 
 /**
@@ -495,13 +536,12 @@ export async function startAuthoring(
 }
 
 /**
- * Confirms a trusted conversational proposal into unpublished WorkflowDrafts.
+ * Confirms a trusted conversational proposal into unpublished drafts.
  *
- * Resolver work happens before the write transaction. Every identity and
- * binding is then read again inside the transaction, so a stale resolver
- * result cannot cross a Project/organization/session/Run boundary. The
- * transaction owns identity, authority scope, draft CAS, Event and committed
- * receipt together. There is intentionally no MemoryWorld fallback.
+ * `create_workflow` still lands only WorkflowDraft. `targetType=worker`
+ * calls the library write port and returns an unpublished workerDraftId.
+ * Resolver work happens before the write transaction. Completing a turn is
+ * not Task/Run completion, and confirm never publishes.
  */
 export async function confirmAuthoringChatProposal(
   input: ConfirmChatProposalCommand,
@@ -587,6 +627,7 @@ export async function confirmAuthoringChatProposal(
       });
       const workflowDrafts: Array<{ draft: WorkflowDraftDto; expectedRevision: number }> = [];
       const teamDrafts: Array<{ draft: TeamDraftDto; expectedRevision: number }> = [];
+      const workerDrafts: ConfirmedAuthoringWorkerDraftRef[] = [];
       const taskPatches: ConfirmedAuthoringTaskPatchRef[] = [];
 
       for (const target of resolved) {
@@ -595,6 +636,8 @@ export async function confirmAuthoringChatProposal(
           workflowDrafts.push(await landChatWorkflowDraft(deps, tx, context, target));
         } else if (target.kind === "team") {
           teamDrafts.push(await landChatTeamDraft(deps, tx, context, target));
+        } else if (target.kind === "worker") {
+          workerDrafts.push(await landChatWorkerDraft(deps, tx, target));
         } else {
           taskPatches.push(await landChatTaskPatch(deps, tx, context, target));
         }
@@ -632,6 +675,7 @@ export async function confirmAuthoringChatProposal(
         workflowDrafts: workflowRefs,
         teamDrafts: teamRefs,
         taskPatches,
+        workerDrafts,
       };
       try {
         await deps.turns.completeInTransaction(tx, {
@@ -641,6 +685,7 @@ export async function confirmAuthoringChatProposal(
           proposalId: context.proposal.id,
           at: deps.clock.now().toISOString(),
           ...(workflowRefs[0] ? { workflowDraftId: workflowRefs[0].workflowDraftId } : {}),
+          ...(workerDrafts[0] ? { workerDraftId: workerDrafts[0].workerDraftId } : {}),
         });
       } catch (error) {
         if (isRevisionConflict(error)) {
@@ -667,6 +712,7 @@ export async function confirmAuthoringChatProposal(
           workflowDrafts: workflowRefs,
           teamDrafts: teamRefs,
           taskPatches,
+          workerDrafts,
         }),
       );
       await deps.receipts.complete(tx, command.operationId, storedChatResult(result));
@@ -792,10 +838,21 @@ interface ResolvedChatTaskTarget {
   expectedRevision?: number;
 }
 
+interface ResolvedChatWorkerTarget {
+  kind: "worker";
+  operation: "create" | "update";
+  write: WorkerDraftWrite;
+  binding: AuthoringChatBindingProof;
+  patchRef: string;
+  workerId?: string;
+  expectedRevision?: number;
+}
+
 type ResolvedChatTarget =
   | ResolvedChatWorkflowTarget
   | ResolvedChatTeamTarget
-  | ResolvedChatTaskTarget;
+  | ResolvedChatTaskTarget
+  | ResolvedChatWorkerTarget;
 
 async function resolveChatTargets(
   deps: ConfirmChatProposalDeps,
@@ -850,6 +907,35 @@ async function resolveChatTargets(
         patchRef: target.patchRef,
         ...(target.operation === "update"
           ? { teamId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      continue;
+    }
+    if (target.targetType === "worker") {
+      if (!deps.resolver.resolveWorkerDraft) {
+        throw validationFailed(
+          "authoring chat worker confirmation requires a worker draft resolver",
+        );
+      }
+      requireWorkerLibrary(deps);
+      const resolution = await deps.resolver.resolveWorkerDraft({
+        proposalId: context.proposal.id,
+        projectId: context.proposal.projectId,
+        sourceRunId: context.proposal.sourceRunId,
+        operation: target.operation,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { workerId: target.targetId, expectedRevision: target.expectedRevision }
+          : {}),
+      });
+      resolved.push({
+        kind: "worker",
+        operation: target.operation,
+        write: parseWorkerDraftWrite(resolution.write),
+        binding: resolution.binding,
+        patchRef: target.patchRef,
+        ...(target.operation === "update"
+          ? { workerId: target.targetId, expectedRevision: target.expectedRevision }
           : {}),
       });
       continue;
@@ -1002,6 +1088,71 @@ async function landChatTeamDraft(
   };
 }
 
+async function landChatWorkerDraft(
+  deps: ConfirmChatProposalDeps,
+  tx: Tx,
+  target: ResolvedChatWorkerTarget,
+): Promise<ConfirmedAuthoringWorkerDraftRef> {
+  const library = requireWorkerLibrary(deps);
+  const workerId =
+    target.operation === "create" ? deps.ids.ulid(ID_PREFIX.worker) : target.workerId;
+  if (!workerId) {
+    throw validationFailed("authoring update target has no worker identity");
+  }
+  const name = target.write.name?.trim() || "Untitled worker";
+  const role = target.write.role?.trim() ?? "";
+  if (role.length === 0) {
+    throw validationFailed("authoring worker draft requires a role");
+  }
+  const now = deps.clock.now().toISOString();
+  let expectedRevision = 0;
+  if (target.operation === "update") {
+    const existing = await library.getWorker(workerId);
+    if (!existing) throw notFound("worker", workerId);
+    expectedRevision = target.expectedRevision ?? -1;
+  }
+  const draft = parseWorkerDraft({
+    id: deps.ids.ulid(ID_PREFIX.workerDraft),
+    workerId,
+    revision: expectedRevision + 1,
+    status: "draft",
+    name,
+    role,
+    contentHash: sha256CanonicalDigest({
+      name,
+      role,
+      description: target.write.description,
+      runtimeProfileId: target.write.runtimeProfileId,
+    }),
+    updatedAt: now,
+    updatedBy: deps.principalId,
+    ...(target.write.description !== undefined ? { description: target.write.description } : {}),
+    ...(target.write.runtimeProfileId !== undefined
+      ? { runtimeProfileId: target.write.runtimeProfileId }
+      : {}),
+  });
+  if (target.operation === "create") {
+    const worker = parseWorker({
+      id: workerId,
+      name,
+      protocolVersion: "0.1",
+      status: "draft",
+      stateRevision: 1,
+      definitionRevision: 1,
+      ...(target.write.description !== undefined ? { description: target.write.description } : {}),
+    });
+    await library.insertIdentity(tx, worker, draft);
+  } else {
+    await library.saveDraft(tx, draft, expectedRevision);
+  }
+  return {
+    targetType: "worker",
+    workerId,
+    workerDraftId: draft.id,
+    revision: draft.revision,
+  };
+}
+
 async function landChatTaskPatch(
   deps: ConfirmChatProposalDeps,
   tx: Tx,
@@ -1047,6 +1198,15 @@ function requireTeamPorts(deps: ConfirmChatProposalDeps): {
   return { identities: deps.teamIdentities, drafts: deps.teamDrafts };
 }
 
+function requireWorkerLibrary(deps: ConfirmChatProposalDeps): WorkerLibraryRepository {
+  if (!deps.workerLibrary) {
+    throw validationFailed(
+      "authoring chat worker confirmation requires a worker library repository",
+    );
+  }
+  return deps.workerLibrary;
+}
+
 async function assertResolutionBinding(
   deps: ConfirmChatProposalDeps,
   tx: Tx,
@@ -1054,18 +1214,7 @@ async function assertResolutionBinding(
   target: ResolvedChatTarget,
 ): Promise<void> {
   const proof = target.binding;
-  const identityMatches =
-    target.kind === "workflow"
-      ? target.operation === "update"
-        ? proof.workflowId === target.workflowId && proof.expectedRevision === target.expectedRevision
-        : proof.workflowId === undefined && proof.expectedRevision === undefined
-      : target.kind === "team"
-        ? target.operation === "update"
-          ? proof.teamId === target.teamId && proof.expectedRevision === target.expectedRevision
-          : proof.teamId === undefined && proof.expectedRevision === undefined
-        : target.operation === "update"
-          ? proof.taskId === target.taskId && proof.expectedRevision === target.expectedRevision
-          : proof.taskId === undefined && proof.expectedRevision === undefined;
+  const identityMatches = resolutionIdentityMatches(target, proof);
   if (
     proof.organizationId !== context.project.organizationId ||
     proof.patchRef !== target.patchRef ||
@@ -1089,6 +1238,30 @@ async function assertResolutionBinding(
   ) {
     throw validationFailed("authoring proposal patch is outside the confirmed chat turn");
   }
+}
+
+function resolutionIdentityMatches(
+  target: ResolvedChatTarget,
+  proof: AuthoringChatBindingProof,
+): boolean {
+  if (target.kind === "workflow") {
+    return target.operation === "update"
+      ? proof.workflowId === target.workflowId && proof.expectedRevision === target.expectedRevision
+      : proof.workflowId === undefined && proof.expectedRevision === undefined;
+  }
+  if (target.kind === "team") {
+    return target.operation === "update"
+      ? proof.teamId === target.teamId && proof.expectedRevision === target.expectedRevision
+      : proof.teamId === undefined && proof.expectedRevision === undefined;
+  }
+  if (target.kind === "worker") {
+    return target.operation === "update"
+      ? proof.workerId === target.workerId && proof.expectedRevision === target.expectedRevision
+      : proof.workerId === undefined && proof.expectedRevision === undefined;
+  }
+  return target.operation === "update"
+    ? proof.taskId === target.taskId && proof.expectedRevision === target.expectedRevision
+    : proof.taskId === undefined && proof.expectedRevision === undefined;
 }
 
 function assertChatBinding(input: {
@@ -1156,6 +1329,7 @@ function chatConfirmedEvent(input: {
   workflowDrafts: readonly ConfirmedAuthoringWorkflowDraftRef[];
   teamDrafts: readonly ConfirmedAuthoringTeamDraftRef[];
   taskPatches: readonly ConfirmedAuthoringTaskPatchRef[];
+  workerDrafts: readonly ConfirmedAuthoringWorkerDraftRef[];
 }) {
   return {
     specVersion: "0.1" as const,
@@ -1179,6 +1353,7 @@ function chatConfirmedEvent(input: {
       workflowDrafts: input.workflowDrafts,
       teamDrafts: input.teamDrafts,
       taskPatches: input.taskPatches,
+      workerDrafts: input.workerDrafts,
     },
     sensitivity: "internal" as const,
   };
@@ -1191,6 +1366,7 @@ function storedChatResult(result: ConfirmAuthoringChatProposalResult) {
     workflowDrafts: result.workflowDrafts,
     teamDrafts: result.teamDrafts,
     taskPatches: result.taskPatches,
+    workerDrafts: result.workerDrafts,
   };
 }
 
@@ -1240,7 +1416,14 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
   if (
     Object.keys(record).some(
       (key) =>
-        !["proposalId", "projectId", "workflowDrafts", "teamDrafts", "taskPatches"].includes(key),
+        ![
+          "proposalId",
+          "projectId",
+          "workflowDrafts",
+          "teamDrafts",
+          "taskPatches",
+          "workerDrafts",
+        ].includes(key),
     ) ||
     !isNonEmptyString(record.proposalId) ||
     !isNonEmptyString(record.projectId) ||
@@ -1248,16 +1431,22 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
   ) {
     throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
   }
-  const workflowDrafts = record.workflowDrafts.map((item) =>
-    parseWorkflowDraftRef(item),
-  );
+  const workflowDrafts = record.workflowDrafts.map((item) => parseWorkflowDraftRef(item));
   const teamDrafts = Array.isArray(record.teamDrafts)
     ? record.teamDrafts.map((item) => parseTeamDraftRef(item))
     : [];
   const taskPatches = Array.isArray(record.taskPatches)
     ? record.taskPatches.map((item) => parseTaskPatchRef(item))
     : [];
-  if (workflowDrafts.length === 0 && teamDrafts.length === 0 && taskPatches.length === 0) {
+  const workerDrafts = Array.isArray(record.workerDrafts)
+    ? record.workerDrafts.map((item) => parseWorkerDraftRef(item))
+    : [];
+  if (
+    workflowDrafts.length === 0 &&
+    teamDrafts.length === 0 &&
+    taskPatches.length === 0 &&
+    workerDrafts.length === 0
+  ) {
     throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
   }
   return {
@@ -1266,6 +1455,7 @@ function parseStoredChatResult(value: unknown): Omit<ConfirmAuthoringChatProposa
     workflowDrafts,
     teamDrafts,
     taskPatches,
+    workerDrafts,
   };
 }
 
@@ -1325,9 +1515,7 @@ function parseTaskPatchRef(value: unknown): ConfirmedAuthoringTaskPatchRef {
   }
   const ref = value as Record<string, unknown>;
   if (
-    Object.keys(ref).some(
-      (key) => !["targetType", "taskId", "definitionRevision"].includes(key),
-    ) ||
+    Object.keys(ref).some((key) => !["targetType", "taskId", "definitionRevision"].includes(key)) ||
     ref.targetType !== "task" ||
     !isNonEmptyString(ref.taskId) ||
     !Number.isInteger(ref.definitionRevision) ||
@@ -1339,6 +1527,31 @@ function parseTaskPatchRef(value: unknown): ConfirmedAuthoringTaskPatchRef {
     targetType: "task",
     taskId: ref.taskId,
     definitionRevision: ref.definitionRevision as number,
+  };
+}
+
+function parseWorkerDraftRef(value: unknown): ConfirmedAuthoringWorkerDraftRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  const ref = value as Record<string, unknown>;
+  if (
+    Object.keys(ref).some(
+      (key) => !["targetType", "workerId", "workerDraftId", "revision"].includes(key),
+    ) ||
+    ref.targetType !== "worker" ||
+    !isNonEmptyString(ref.workerId) ||
+    !isNonEmptyString(ref.workerDraftId) ||
+    !Number.isInteger(ref.revision) ||
+    (ref.revision as number) < 1
+  ) {
+    throw new UseCaseError("conflict", "authoring chat committed receipt result is malformed");
+  }
+  return {
+    targetType: "worker",
+    workerId: ref.workerId,
+    workerDraftId: ref.workerDraftId,
+    revision: ref.revision as number,
   };
 }
 
@@ -1632,10 +1845,7 @@ export async function applyAuthoringChangeSet(
           (input.teamDrafts ?? []).map((draft) => [draft.teamId, parseTeamDraft(draft)]),
         );
         const taskPatches = new Map(
-          (input.taskPatches ?? []).map((patch) => [
-            patch.taskId,
-            parseAuthoringTaskPatch(patch),
-          ]),
+          (input.taskPatches ?? []).map((patch) => [patch.taskId, parseAuthoringTaskPatch(patch)]),
         );
         if (
           workflowDrafts.size !== (input.workflowDrafts ?? []).length ||
@@ -1655,6 +1865,11 @@ export async function applyAuthoringChangeSet(
               throw validationFailed(`missing task draft for ${step.targetId}`);
             }
             continue;
+          }
+          if (step.targetType === "worker") {
+            throw validationFailed(
+              "authoring worker drafts land through chat confirmation, not change-set apply",
+            );
           }
           const draft =
             step.targetType === "workflow"
@@ -1708,11 +1923,7 @@ export async function applyAuthoringChangeSet(
         const appliedCount = steps.filter((step) => step.status === "applied").length;
         const failedCount = steps.filter((step) => step.status === "failed").length;
         const status =
-          halted === undefined
-            ? "applied"
-            : appliedCount > 0
-              ? "partially_applied"
-              : "failed";
+          halted === undefined ? "applied" : appliedCount > 0 ? "partially_applied" : "failed";
         const applied = parseAuthoringChangeSet({
           ...stored,
           status,
@@ -1825,6 +2036,11 @@ function applyAuthoringStep(
     ctx.world.workflowDrafts.set(draft.id, draft);
     return draft.revision;
   }
+  if (input.step.targetType === "worker") {
+    throw validationFailed(
+      "authoring worker drafts land through chat confirmation, not change-set apply",
+    );
+  }
   const draft = input.teamDrafts.get(input.step.targetId);
   if (!draft) {
     throw validationFailed(`missing team draft for ${input.step.targetId}`);
@@ -1846,7 +2062,10 @@ function applyTaskPatch(
   if (task.projectId !== ctx.world.projects.get(task.projectId)?.id) {
     throw validationFailed("authoring task patch does not belong to a known project");
   }
-  if (task.definitionRevision !== step.expectedRevision || patch.revision !== step.expectedRevision + 1) {
+  if (
+    task.definitionRevision !== step.expectedRevision ||
+    patch.revision !== step.expectedRevision + 1
+  ) {
     throw validationFailed(`authoring task draft revision conflict for ${step.targetId}`, {
       expectedRevision: step.expectedRevision,
       currentRevision: task.definitionRevision,
