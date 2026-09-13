@@ -29,7 +29,6 @@ import {
 } from "../projects/command.js";
 import { pinnedArtifactVersion, taskDependencyLabel } from "../projects/model.js";
 import {
-import {
   EVALUATION_PENDING,
   EVALUATION_ROW,
   EVALUATION_UNAVAILABLE,

@@ -169,25 +169,40 @@ function normalizeStoredNavPath(input: string): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+type SessionStorageLike = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+};
+
+function chatReturnStorage(): SessionStorageLike | null {
+  const candidate = (globalThis as { sessionStorage?: SessionStorageLike }).sessionStorage;
+  return candidate ?? null;
+}
+
 /** Remember the current hash path before opening Chat, so Chat can return. */
 export function rememberChatReturnPath(currentPath: string): void {
   const path = normalizeStoredNavPath(currentPath);
-  if (isChatPath(path) || typeof window === "undefined") {
+  if (isChatPath(path)) {
+    return;
+  }
+  const storage = chatReturnStorage();
+  if (storage === null) {
     return;
   }
   try {
-    window.sessionStorage.setItem(CHAT_RETURN_STORAGE_KEY, path);
+    storage.setItem(CHAT_RETURN_STORAGE_KEY, path);
   } catch {
     // Storage may be blocked; Chat falls back to the workbench.
   }
 }
 
 export function readChatReturnPath(): string {
-  if (typeof window === "undefined") {
+  const storage = chatReturnStorage();
+  if (storage === null) {
     return "/";
   }
   try {
-    const stored = window.sessionStorage.getItem(CHAT_RETURN_STORAGE_KEY);
+    const stored = storage.getItem(CHAT_RETURN_STORAGE_KEY);
     if (stored !== null && stored.length > 0 && !isChatPath(stored)) {
       return normalizeStoredNavPath(stored);
     }
