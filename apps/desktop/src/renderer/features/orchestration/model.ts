@@ -24,7 +24,7 @@ export const WORKFLOW_BOUND_COPY =
   "跟随已发布工作流：只执行该项目已确认、已发布 WorkflowVersion 中轮到的节点。";
 
 export const DIRECT_COPY =
-  "直接执行：按所选 Task 调用 POST /tasks/{id}/runs（orchestrationMode=direct）。仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn，也不走 :start。";
+  "直接执行：有所选 Task 时 POST /tasks/{id}/runs（orchestrationMode=direct）；无 Task 时先 POST /projects/{id}/tasks 建 ad-hoc Task 再跑同一 Run 接口。仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn，也不走 :start，没有 :direct URL。";
 
 export const SLICE_NOTE =
   "T21 UI 切片：workflow_bound 走现有 POST /projects/{id}:start 的 orchestrationMode；direct 走 POST /tasks/{id}/runs。Task 详情不挂未接线控件。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";

@@ -25,6 +25,8 @@ export interface OrchestrationModeControlProps {
   tasks?: readonly OrchestrationTaskOption[];
   selectedTaskId?: string;
   onSelectTask?: (taskId: string) => void;
+  emptyOptionLabel?: string;
+  emptyTaskCopy?: string;
 }
 
 export function OrchestrationModeControl(props: OrchestrationModeControlProps): ReactNode {
@@ -71,14 +73,14 @@ export function OrchestrationModeControl(props: OrchestrationModeControlProps): 
               props.onSelectTask?.(event.target.value);
             }}
           >
-            <option value="">选择已有 Task</option>
+            <option value="">{props.emptyOptionLabel ?? "选择已有 Task"}</option>
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>
                 {task.title}（{task.id}）
               </option>
             ))}
           </Select>
-          {tasks.length === 0 ? <Muted>{DIRECT_TASK_REQUIRED}</Muted> : null}
+          {tasks.length === 0 ? <Muted>{props.emptyTaskCopy ?? DIRECT_TASK_REQUIRED}</Muted> : null}
         </Field>
       ) : null}
       {props.probe.direct ? null : <Notice tone="warning">{props.probe.reason}</Notice>}
