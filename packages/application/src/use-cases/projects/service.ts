@@ -16,6 +16,7 @@ import {
   startPlanning,
 } from "./projects.js";
 import { absorbDirectArtifact, createAdHocTask } from "./direct-task.js";
+import { startDirectWork } from "./start-direct-work.js";
 import {
   bindTaskOutput,
   cancelTask,
@@ -93,6 +94,8 @@ export class WorkforceApp {
   cancelProject = (input: Parameters<typeof cancelProject>[1]) => cancelProject(this.ctx, input);
   createAdHocTask = (input: Parameters<typeof createAdHocTask>[1]) =>
     createAdHocTask(this.ctx, input);
+  startDirectWork = (input: Parameters<typeof startDirectWork>[1]) =>
+    startDirectWork(this.ctx, input);
   queueTask = (input: Parameters<typeof queueTask>[1]) => queueTask(this.ctx, input);
   bindTaskOutput = (input: Parameters<typeof bindTaskOutput>[1]) => bindTaskOutput(this.ctx, input);
   retryTask = (input: Parameters<typeof retryTask>[1]) => retryTask(this.ctx, input);
