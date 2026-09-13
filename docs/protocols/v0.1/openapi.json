@@ -2008,6 +2008,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "taskId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
           "text": {
             "minLength": 1,
             "type": "string"
@@ -2218,6 +2223,34 @@
                       "workerVersionId"
                     ],
                     "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "start_direct",
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "taskId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "title": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "projectId"
+                    ],
+                    "type": "object"
                   }
                 ]
               },
@@ -2401,6 +2434,34 @@
                         "workerVersionId"
                       ],
                       "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "const": "start_direct",
+                          "type": "string"
+                        },
+                        "projectId": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "taskId": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "projectId"
+                      ],
+                      "type": "object"
                     }
                   ]
                 },
@@ -2425,7 +2486,8 @@
                 "enum": [
                   "projectId",
                   "runId",
-                  "workerId"
+                  "workerId",
+                  "taskId"
                 ],
                 "type": "string"
               },
@@ -2666,9 +2728,67 @@
               "workerVersionId"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "start_direct",
+                "type": "string"
+              },
+              "projectId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "taskId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "title": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "projectId"
+            ],
+            "type": "object"
           }
         ],
         "title": "ChatIntentDto"
+      },
+      "CreateAdHocTaskInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedStateRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "operationId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflowInstanceId": {
+            "not": {}
+          }
+        },
+        "required": [
+          "operationId",
+          "idempotencyKey"
+        ],
+        "title": "CreateAdHocTaskInput",
+        "type": "object"
       },
       "CreateAuthoringSessionAccepted": {
         "additionalProperties": false,

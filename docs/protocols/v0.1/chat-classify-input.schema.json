@@ -13,6 +13,11 @@
       "minLength": 1,
       "type": "string"
     },
+    "taskId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
     "text": {
       "minLength": 1,
       "type": "string"

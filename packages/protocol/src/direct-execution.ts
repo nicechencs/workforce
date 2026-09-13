@@ -11,6 +11,11 @@ import { placementIntentSchema } from "./execution.js";
  * hierarchy.  The server resolves the Run identity and all execution axes
  * after policy, capability, workspace and placement admission.
  *
+ * Chat `start_direct` uses this same body after a Task exists.  It does not
+ * introduce a parallel Run payload.  When Chat has no `taskId`, Application
+ * `createAdHocTask` (`POST /projects/{id}/tasks`) runs first, then this
+ * command.  `StartRunRequest` does not gain `orchestrationMode`.
+ *
  * `projectId` is intentionally carried beside `taskId`.  The Application must
  * verify that the Task belongs to this Project before creating a Run; a caller
  * cannot use a Task id from another Project and rely on a path-only lookup.

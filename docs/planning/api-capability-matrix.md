@@ -12,6 +12,7 @@ updated: 2026-09-13
 状态：**已冻结（首版按钮与 endpoint；项目制主循环；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式 planned；角色版本库与全局 Chat 契约 planned）**  
 权威：[decision-register.md](decision-register.md) §0、D08、D15、D16、D17、D18、D19。沟通历史：[communication-history.md](communication-history.md)。实现深度以 [03-implementation-status.md](03-implementation-status.md) 为准。  
 未实现能力必须在 UI 隐藏或 disabled，并返回明确错误；禁止前端假成功。  
+修订：2026-09-13 — WV-T02-DIRECT-INTENT：ChatIntent expand `start_direct`（必带 `projectId`，可选 `taskId` / `title`）。「去做」落到已冻 `POST /tasks/{id}/runs`（`orchestrationMode: "direct"`，body 即已有 `startDirectTaskRunInput` / `startTaskRunInput`）。无 `taskId` 时只 expand `POST /projects/{id}/tasks`（仅 ad-hoc，body 不得带 `workflowInstanceId`）。`need_context.missing` 可含 `taskId`。IM 仍 `unsupported` / `im`。**禁止** `/runs/{id}:direct`、`/projects/{id}:direct`。`StartRunRequest` 不加 `orchestrationMode`。  
 修订：2026-09-13 — WV-T02-CARD-INTENT：冻结角色卡片 `who` / `how` / `skills`；ChatIntent expand `update_worker` / `invite_team`；认不出 → `need_clarification`，禁止默成 `discuss_work`。空闲写卡复用 `PATCH /workers/{id}/drafts/{draftId}` 与 `:fork`。**不**发明 `/workers/{id}/remarks`、`/chat/inbox`、`/workers/{id}/messages`、Marketplace path。Runtime/Policy **不是**卡片必填。  
 修订：2026-09-13 — WV-T02-CONTRACT：冻结 WorkerVersion / 角色库 / `TeamMember.workerVersionId` / ChatIntent 公开契约。下列库与 Chat path **planned**，Daemon 未实现。**不**发明 `/workers/{id}/messages`、`/chat/inbox`、`:direct`。Marketplace DTO 不进本矩阵。  
 修订：2026-09-12 — T00-DOC-ALIGN：对照 `dev` tip 源码。`CHAT_SESSION_PROTOCOL_FROZEN=true`；Daemon AuthoringSession HTTP 与 typed send 已接线；Electron allowlist **仍缺**该 path。`RunDto`/`ProjectDto` 在 `packages/protocol`。受管 Run 启动现构造 `RunExecutionSnapshot`。**不**发明泛用 Chat API 或 `:direct` path。**不**宣称 M7/M8 完成或 T20 headed PASS。
@@ -60,7 +61,7 @@ P1 一级导航（壳上可见。权威：[IA §2](../product-ui/01-information-
 | 运行记录列表 | M3 部分 | IA P1；查询走已有 `GET /runs`。控制台仍走 `GET /runs/{id}` |
 | 工作流目录 / 画布 / 对话生成 | M3 readonly → M7 必达 | 项目循环的 Workflow 编排环。M3：只读目录已接通 `GET /workflows`。M7：可视化画布 + 写接口 + 对话生成草稿（D15/D17）。目录不是可执行 Runtime |
 | 角色版本库 | planned | 我的库：找、搜、引用关系、归档、fork。对象是 WorkerVersion，不是 Marketplace，不是 IM 花名册 |
-| 全局 Chat 壳 | planned | 随时语言入口。四类意图：创建角色 / 创建流程 / 问进度 / 交流工作。不是 Worker 收件箱 |
+| 全局 Chat 壳 | planned | 随时语言入口。意图：创建角色 / 创建流程 / 问进度 / 交流工作 / 空闲写卡 / 请到项目 / `start_direct`（去做）。不是 Worker 收件箱 |
 
 M7 必达——补齐项目制循环（**完成态未实现**；本分支已有画布/写 API/Daemon 会话作者页切片，见 03。未领取剩余卡前不要塞进随机 PR）：
 
@@ -128,7 +129,8 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 | POST | `/tasks/{id}:queue` | 必须 | 调度也可内部调用 |
 | POST | `/tasks/{id}:cancel` | 必须 | Task 详情 |
 | POST | `/tasks/{id}:retry` | 必须 | 失败后 |
-| POST | `/tasks/{id}/runs` | 必须 | 显式启动（内部亦可） |
+| POST | `/projects/{id}/tasks` | M8 | 仅 ad-hoc Task（Chat `start_direct` 无 `taskId`）。Application `createAdHocTask`。body 不得带 `workflowInstanceId`。**不是**已发布图实例化 |
+| POST | `/tasks/{id}/runs` | 必须 | 显式启动（内部亦可）。Chat `start_direct` 的**唯一** Run 落点；`orchestrationMode: "direct"`。无 `:direct` URL |
 | GET | `/runs` | 必须 | 工作台、记录 |
 | GET | `/runs/{id}` | 必须 | 控制台 |
 | POST | `/runs/{id}:cancel` | 必须 | 控制台；202=已接受 |
@@ -254,15 +256,17 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 
 ### 全局 Chat（语言入口，不是 IM）
 
-分类结果不是完成态。`create_worker` 走 `POST /workers`（`projectId` 可选，不经 AuthoringSession）。`update_worker` 空闲写卡复用 `PATCH .../drafts/{draftId}`；已发布则先 `:fork`。`invite_team` 落到现有 Team 成员写入（已发布 `workerVersionId`）。建流程仍 `POST /projects/{id}/authoring-sessions`。问进度只读已有 Task / Run / Event / Artifact。交流工作有 `runId` 时走已冻 `POST /runs/{id}:input`。认不出 → `need_clarification`（带要问的问题），**禁止**默成 `discuss_work`。一句话多意图允许一次返回 `intents` 列表，不强制三张确认卡。
+分类结果不是完成态。`create_worker` 走 `POST /workers`（`projectId` 可选，不经 AuthoringSession）。`update_worker` 空闲写卡复用 `PATCH .../drafts/{draftId}`；已发布则先 `:fork`。`invite_team` 落到现有 Team 成员写入（已发布 `workerVersionId`）。建流程仍 `POST /projects/{id}/authoring-sessions`。问进度只读已有 Task / Run / Event / Artifact。交流工作有 `runId` 时走已冻 `POST /runs/{id}:input`。`start_direct`（「去做 / 现在改这个 bug」）必带 `projectId`；有 `taskId` 则对该 id `POST /tasks/{id}/runs` 且 `orchestrationMode: "direct"`；无 `taskId` 先 `POST /projects/{id}/tasks`（`createAdHocTask`）再对新建 id 启动 Run。认不出 → `need_clarification`（带要问的问题），**禁止**默成 `discuss_work`。一句话多意图允许一次返回 `intents` 列表，不强制三张确认卡。空闲写卡仍不是 direct。
 
-**禁止：** `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、无项目聊天室、以 `workerId` 为会话对端、发明 `:direct` URL。「去做」本批只允许诚实 `unsupported_capability`。
+**禁止：** `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、无项目聊天室、以 `workerId` 为会话对端、发明 `:direct` URL（含 `/runs/{id}:direct`、`/projects/{id}:direct`）。IM / 收件箱仍诚实 `unsupported_capability` / `im`。「去做」不再是 `unsupported` / `action: "direct"`。
 
 | Method | Path | 阶段 | 说明 |
 |---|---|---|---|
-| POST | `/chat-intents:classify` | planned | `ChatIntent`：`create_worker` / `update_worker` / `invite_team` / `create_workflow` / `query_progress` / `discuss_work`。认不出 `need_clarification`。`need_context.missing`：`projectId` \| `runId` \| `workerId`。不落 IM |
+| POST | `/chat-intents:classify` | planned | `ChatIntent`：`create_worker` / `update_worker` / `invite_team` / `create_workflow` / `query_progress` / `discuss_work` / `start_direct`。认不出 `need_clarification`。`need_context.missing`：`projectId` \| `runId` \| `workerId` \| `taskId`（仅当坚持用已有 Task 却未给 id）。不落 IM |
 | GET | `/projects/{id}/progress` | planned | 只读投影。无记录则 `empty=true` 且文案「还没有记录」；不得编造 completed |
-| POST | `/projects/{id}/authoring-sessions` | M7 | 仅项目内建流程 / 从零组队；**不是**建角色或空闲写卡 |
+| POST | `/projects/{id}/authoring-sessions` | M7 | 仅项目内建流程 / 从零组队；**不是**建角色、空闲写卡或 `start_direct` |
+| POST | `/projects/{id}/tasks` | M8 | `start_direct` 无 `taskId` 时建项目内 ad-hoc Task；body 不得带 `workflowInstanceId` |
+| POST | `/tasks/{id}/runs` | 必须 | `start_direct` 唯一 Run 落点；`orchestrationMode: "direct"`。沿用 `startDirectTaskRunInput`，无第二套 body |
 | POST | `/runs/{id}:input` | Mock 必须 | `discuss_work` 在已有 `runId` 时的写入口；不新开聊天室 path |
 
 ## 3. 错误与并发（T02 生成）
@@ -302,7 +306,7 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 | 新建/保存工作流画布 | `POST/PATCH /workflows` 与 version 写接口 | M7；草稿。未发布不得启动执行 |
 | 对话生成工作流草稿 | 上列 AuthoringSession 写接口 + 复用 M7 workflow 写接口落草稿；`CHAT_SESSION_PROTOCOL_FROZEN=true` | M7 planned（D17）。Daemon HTTP + typed send 已有，**Electron allowlist 未放行**。无 Codex 编排 Agent。**不**宣称对话编排完成 |
 | 发布工作流版本 | `/workflows/{id}/drafts/{draftId}:publish` | M7；有限 DAG 校验通过 |
-| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。项目详情已挂控件；composed 回传；受管 Run 现写执行快照。无 `POST /tasks/{id}/runs`，无 ad-hoc `direct` 调度。**不**宣称 M8 完成 |
+| 选择绑定工作流或直接执行 | 现有 `:start` 可选 `orchestrationMode` + `GET /capabilities` | M8 planned（D18）。项目详情已挂控件；composed 回传；受管 Run 现写执行快照。Chat `start_direct` **不**走 `:start` 冒充成功；Run 只许 `POST /tasks/{id}/runs`。**不**宣称 M8 完成 |
 | 新建/保存自定义团队 | `POST/PATCH /teams` 与 version 写接口 | M7；草稿 list/reload 走 `GET /teams?status=draft` + `GET /teams/{id}`。草稿不得 `:start-planning`。无假 publish/bind |
 | 发布 Team 版本 | `/teams/{id}/drafts/{draftId}:publish` | M7 |
 | 开始规划 | `:start-planning` | 配置齐 |
@@ -315,12 +319,12 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 | 导出 | T14 query/command（T02 列入 protocol） | 最终 digest 已批准 |
 | 打开角色版本库 | `GET /workers`（planned） | 库页；卡片可见 `who` / `how` / `skills`；未接通不得画已创建成功 |
 | 归档/fork 角色版本 | `:archive` / `:fork`（planned） | 已发布不可原地改卡片；要改走 fork |
-| 全局 Chat 分类 | `POST /chat-intents:classify`（planned） | 六类意图 + `need_clarification`；不是完成；禁止默成交流工作 |
-| 空闲对角色说话 | `PATCH .../drafts/{draftId}` 或先 `:fork` | `update_worker`；不新建 Task/Run；不开 IM |
+| 全局 Chat 分类 | `POST /chat-intents:classify`（planned） | 七类意图（含 `start_direct`）+ `need_clarification`；不是完成；禁止默成交流工作 |
+| 空闲对角色说话 | `PATCH .../drafts/{draftId}` 或先 `:fork` | `update_worker`；不新建 Task/Run；不开 IM；不是 `start_direct` |
 | 请角色进项目 | 现有 Team 成员写入 | `invite_team`；已发布 `workerVersionId`；缺项目先问 |
 | 问进度 | `GET /projects/{id}/progress`（planned） | 无记录说还没有记录 |
 | 交流进行中的工作 | `POST /runs/{id}:input` | 必填 `projectId`；执行中再挂 `runId` |
-| 「去做」/direct | 无新 path；`unsupported_capability` | 本批不实现 T09-DIRECT |
+| 「去做」/direct | `start_direct` → 无 `taskId` 则 `POST /projects/{id}/tasks`，再 `POST /tasks/{id}/runs`（`orchestrationMode: "direct"`） | 缺项目问 `projectId`。不是 `unsupported`。无 `:direct` URL。返回 Run 引用，不是 completed |
 
 ## 6. T12/T13/T18/T19/T20/T21 约定
 
@@ -333,4 +337,4 @@ M8 必达——双执行模式（**完成态未实现**；本分支有 start 回
 - 不支持的能力：按钮不渲染为可点击成功态
 - T18/T19：画布 + catalog 写 path + 自定义 Team 写 UI 已接通（部分 M7 UI）；只读目录不得宣称画布 headed 完成或 M7 完成；无假 publish/bind
 - T20/T21：作者壳走 Daemon 会话与 typed send、项目详情 mode 控件与 composed passthrough 已有；`CHAT_SESSION_PROTOCOL_FROZEN=true`；allowlist 未放行作者 path 前不得宣称真窗口 send；不得实现假 Agent 完成或假 `direct` 成功；**禁止**把 mode 写入 `StartRunRequest`
-- 角色库 / 全局 Chat：WorkerVersion 卡片 `who` / `how` / `skills` 与 ChatIntent 只从 `@workforce/protocol` 导入。库 path 与 `POST /chat-intents:classify`、`GET /projects/{id}/progress` 为 **planned**。不实现 `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、Marketplace DTO、`:direct`。Runtime/Policy 不是卡片必填
+- 角色库 / 全局 Chat：WorkerVersion 卡片 `who` / `how` / `skills` 与 ChatIntent 只从 `@workforce/protocol` 导入。库 path 与 `POST /chat-intents:classify`、`GET /projects/{id}/progress` 为 **planned**。`start_direct` 落到已有 `POST /tasks/{id}/runs`；无 Task 时 `POST /projects/{id}/tasks`。不实现 `/chat/inbox`、`/workers/{id}/messages`、`/workers/{id}/remarks`、Marketplace DTO、`:direct`。Runtime/Policy 不是卡片必填

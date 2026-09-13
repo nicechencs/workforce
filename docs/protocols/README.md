@@ -41,9 +41,10 @@ ID 为不透明字符串；推荐 UUIDv7。未知 major `protocolVersion` 必须
 - `v0.1/worker-page.schema.json` — 库列表/搜索分页
 - `v0.1/worker-version-references.schema.json` — 某 WorkerVersion 被哪些 TeamVersion 引用
 - `v0.1/fork-worker-version-accepted.schema.json` — fork 得到新 identity + 新草稿
-- `v0.1/chat-intent.schema.json` — 全局 Chat 意图：`create_worker` / `update_worker` / `invite_team` / `create_workflow` / `query_progress` / `discuss_work`
-- `v0.1/chat-classify-input.schema.json` — 分类输入；可选 `projectId` / `runId` / `workerId`
-- `v0.1/chat-classify-result.schema.json` — 分类结果：intent（可带 `intents`）/ `need_context` / `need_clarification` / 诚实 unsupported；认不出不得默成 `discuss_work`；不是 IM，不是完成态
+- `v0.1/chat-intent.schema.json` — 全局 Chat 意图：`create_worker` / `update_worker` / `invite_team` / `create_workflow` / `query_progress` / `discuss_work` / `start_direct`。「去做」不是 `unsupported`
+- `v0.1/chat-classify-input.schema.json` — 分类输入；可选 `projectId` / `runId` / `workerId` / `taskId`
+- `v0.1/chat-classify-result.schema.json` — 分类结果：intent（可带 `intents`）/ `need_context`（`missing` 含 `taskId`）/ `need_clarification` / 诚实 unsupported（仅 IM）。认不出不得默成 `discuss_work`；不是 IM，不是完成态
+- `v0.1/create-adhoc-task-input.schema.json` — `POST /projects/{id}/tasks` 仅 ad-hoc；不得带 `workflowInstanceId`
 - `v0.1/project-progress-projection.schema.json` — 问进度只读投影；无记录显式「还没有记录」
 - `v0.1/authoring-proposal.schema.json` — 编排 Runtime 的结构化输出；只允许脱敏摘要与 Artifact 引用
 - `v0.1/authoring-change-set.schema.json` — 逐目标 CAS 的 ChangeSet / staged step 状态；应用不等于发布或执行
