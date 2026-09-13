@@ -14,6 +14,7 @@ import type {
   PatchWorkflowInput,
   PatchWorkflowVersionInput,
   TeamMemberDto,
+  WorkerCardFieldsDto,
   WorkerDraftDto,
   WorkerDraftWrite,
   WorkerDto,
@@ -30,7 +31,7 @@ import {
   revisionConflict,
   validationFailed,
 } from "../projects/errors.js";
-import { workerDto } from "./dto.js";
+import { assignWorkerCardFields, workerCardFieldsFrom, workerDto } from "./dto.js";
 import {
   isBindableTeamVersion,
   isExecutableWorkflowVersion,
@@ -505,20 +506,15 @@ export class CatalogService {
       role,
       updatedAt: now,
       ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.runtimeProfileId !== undefined
-        ? { runtimeProfileId: input.runtimeProfileId }
-        : {}),
+      ...(input.runtimeProfileId !== undefined ? { runtimeProfileId: input.runtimeProfileId } : {}),
+      ...workerCardFieldsFrom(input),
     });
     this.deps.catalog.workers.set(worker.id, worker);
     this.deps.catalog.workerDrafts.set(draft.id, draft);
     return { worker, draft };
   }
 
-  patchWorker(
-    id: string,
-    input: PatchWorkerInput,
-    expectedStateRevision?: number,
-  ): WorkerDto {
+  patchWorker(id: string, input: PatchWorkerInput, expectedStateRevision?: number): WorkerDto {
     const worker = this.requireWorker(id);
     expectRevision(worker.stateRevision ?? 1, expectedStateRevision, id);
     if (worker.status !== "draft") {
@@ -564,9 +560,8 @@ export class CatalogService {
       role,
       updatedAt: this.deps.now(),
       ...(description !== undefined ? { description } : {}),
-      ...(input.runtimeProfileId !== undefined
-        ? { runtimeProfileId: input.runtimeProfileId }
-        : {}),
+      ...(input.runtimeProfileId !== undefined ? { runtimeProfileId: input.runtimeProfileId } : {}),
+      ...workerCardFieldsFrom(input),
     });
     this.deps.catalog.workerDrafts.set(draft.id, draft);
     worker.stateRevision = (worker.stateRevision ?? 1) + 1;
@@ -598,6 +593,7 @@ export class CatalogService {
     if (input.runtimeProfileId !== undefined) {
       draft.runtimeProfileId = input.runtimeProfileId;
     }
+    assignWorkerCardFields(draft, input);
     if (draft.name.length === 0) {
       throw validationFailed("worker name is required");
     }
@@ -652,6 +648,7 @@ export class CatalogService {
     if (draft.runtimeProfileId !== undefined) {
       version.runtimeProfileId = draft.runtimeProfileId;
     }
+    assignWorkerCardFields(version, workerCardFieldsFrom(draft));
     const forkedFrom = this.deps.catalog.workerForkSources.get(workerId);
     if (forkedFrom !== undefined) {
       version.forkedFromWorkerVersionId = forkedFrom;
@@ -697,6 +694,7 @@ export class CatalogService {
       ...(source.runtimeProfileId !== undefined
         ? { runtimeProfileId: source.runtimeProfileId }
         : {}),
+      ...workerCardFieldsFrom(source),
     });
     this.deps.catalog.workerForkSources.set(created.worker.id, source.id);
     return {
@@ -710,16 +708,18 @@ export class CatalogService {
     return this.deps.updatedBy ?? `${ID_PREFIX.principal}catalog`;
   }
 
-  private buildWorkerDraft(input: {
-    id: string;
-    workerId: string;
-    revision: number;
-    name: string;
-    role: string;
-    description?: string;
-    runtimeProfileId?: string;
-    updatedAt: string;
-  }): WorkerDraftDto {
+  private buildWorkerDraft(
+    input: {
+      id: string;
+      workerId: string;
+      revision: number;
+      name: string;
+      role: string;
+      description?: string;
+      runtimeProfileId?: string;
+      updatedAt: string;
+    } & WorkerCardFieldsDto,
+  ): WorkerDraftDto {
     const draft: WorkerDraftDto = {
       id: input.id,
       workerId: input.workerId,
@@ -737,6 +737,7 @@ export class CatalogService {
     if (input.runtimeProfileId !== undefined) {
       draft.runtimeProfileId = input.runtimeProfileId;
     }
+    assignWorkerCardFields(draft, input);
     draft.contentHash = workerDraftContentHash(draft);
     return draft;
   }
@@ -819,15 +820,17 @@ function normalizeMembers(
 }
 
 function workerDraftContentHash(
-  draft: Pick<WorkerDraftDto, "name" | "description" | "role" | "runtimeProfileId">,
+  draft: Pick<
+    WorkerDraftDto,
+    "name" | "description" | "role" | "runtimeProfileId" | "who" | "how" | "skills"
+  >,
 ): string {
   return sha256CanonicalDigest({
     name: draft.name,
     role: draft.role,
     ...(draft.description !== undefined ? { description: draft.description } : {}),
-    ...(draft.runtimeProfileId !== undefined
-      ? { runtimeProfileId: draft.runtimeProfileId }
-      : {}),
+    ...(draft.runtimeProfileId !== undefined ? { runtimeProfileId: draft.runtimeProfileId } : {}),
+    ...workerCardFieldsFrom(draft),
   });
 }
 
@@ -843,11 +846,25 @@ function workerMatchesQuery(
     draft?.name ?? "",
     draft?.role ?? "",
     draft?.description ?? "",
-    ...versions.flatMap((version) => [version.name, version.role, version.description ?? ""]),
+    draft?.who ?? "",
+    draft?.how ?? "",
+    draft?.skills ?? "",
+    ...versions.flatMap((version) => [
+      version.name,
+      version.role,
+      version.description ?? "",
+      version.who ?? "",
+      version.how ?? "",
+      version.skills ?? "",
+    ]),
   ]
     .join(" ")
     .toLowerCase();
   return haystack.includes(query);
 }
 
-export { isBindableTeamVersion, isExecutableWorkflowVersion, teamMembersHaveSelectableWorkerVersions };
+export {
+  isBindableTeamVersion,
+  isExecutableWorkflowVersion,
+  teamMembersHaveSelectableWorkerVersions,
+};
