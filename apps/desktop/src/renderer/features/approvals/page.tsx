@@ -13,7 +13,8 @@ import {
   Textarea,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { formatT13Error, getT13Client, t13CommandOptions, useT13Query } from "../_t13_client.js";
+import { commandOptions, formatClientError, useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   approvalDigest,
   approvalExpiry,
@@ -33,8 +34,8 @@ export function ApprovalsPage(props: FeaturePageProps): ReactNode {
 }
 
 function ApprovalListPage(props: FeaturePageProps): ReactNode {
-  const query = useT13Query("approvals:list", async () => {
-    const page = await getT13Client().listApprovals({ limit: 50 });
+  const query = useClientQuery("approvals:list", async () => {
+    const page = await getWorkforceClient().listApprovals({ limit: 50 });
     return page.items;
   });
   return (
@@ -78,8 +79,8 @@ export function ApprovalListView(props: {
 }
 
 function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): ReactNode {
-  const query = useT13Query(`approvals:${props.approvalId}`, () =>
-    getT13Client().getApproval(props.approvalId),
+  const query = useClientQuery(`approvals:${props.approvalId}`, () =>
+    getWorkforceClient().getApproval(props.approvalId),
   );
   const [reason, setReason] = useState("人工确认");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -98,8 +99,8 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
     setBusy(true);
     setActionError(null);
     try {
-      const client = getT13Client();
-      const options = t13CommandOptions(approval.stateRevision);
+      const client = getWorkforceClient();
+      const options = commandOptions(approval.stateRevision);
       if (kind === "approve") {
         await client.approve(approval.id, payload, options);
       } else if (kind === "reject") {
@@ -109,7 +110,7 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
       }
       query.reload();
     } catch (error) {
-      setActionError(formatT13Error(error));
+      setActionError(formatClientError(error));
     } finally {
       setBusy(false);
     }

@@ -14,15 +14,16 @@ import {
   Page,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { getT13Client, useT13Query } from "../_t13_client.js";
+import { useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import { gateLabel } from "../approvals/model.js";
 import { LOCAL_NODE_ID, localNodeSubtitle } from "../nodes/model.js";
 import { formatRunUsage, runStatusLabel } from "../runs/model.js";
 import { activeProjects, activeRuns, pendingApprovals, projectStatusLabel } from "./model.js";
 
 export function DashboardPage(props: FeaturePageProps): ReactNode {
-  const query = useT13Query("dashboard", async () => {
-    const client = getT13Client();
+  const query = useClientQuery("dashboard", async () => {
+    const client = getWorkforceClient();
     const [approvals, runs, projects] = await Promise.all([
       client.listApprovals({ limit: 20, status: "pending" }),
       client.listRuns({ limit: 50 }),

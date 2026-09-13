@@ -3,13 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createDesktopClient, type ClientTransport } from "@workforce/desktop-client";
 import type { ApiRequest, ApiResponse, WorkforcePreloadApi } from "@workforce/ui";
 
+import { asCatalogClient, hasCatalogMethod } from "./catalog-client.js";
 import {
-  asCatalogClient,
   createPreloadTransport,
   getWorkforceClient,
-  hasCatalogMethod,
   setWorkforceClientForTests,
-} from "./_client-fallback.js";
+} from "./renderer-client.js";
 
 afterEach(() => {
   setWorkforceClientForTests(null);

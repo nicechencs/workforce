@@ -14,7 +14,8 @@ import {
   Textarea,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { formatT13Error, getT13Client, t13CommandOptions, useT13Query } from "../_t13_client.js";
+import { commandOptions, formatClientError, useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   canCancelRun,
   canOfferRerun,
@@ -39,8 +40,8 @@ export function RunsPage(props: FeaturePageProps): ReactNode {
 }
 
 function RunListPage(props: FeaturePageProps): ReactNode {
-  const query = useT13Query("runs:list", async () => {
-    const page = await getT13Client().listRuns({ limit: 50 });
+  const query = useClientQuery("runs:list", async () => {
+    const page = await getWorkforceClient().listRuns({ limit: 50 });
     return page.items;
   });
   return (
@@ -95,8 +96,8 @@ export function RunListView(props: { runs: RunDto[]; onOpen: (id: string) => voi
 }
 
 function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode {
-  const query = useT13Query(`runs:${props.runId}`, async () => {
-    const client = getT13Client();
+  const query = useClientQuery(`runs:${props.runId}`, async () => {
+    const client = getWorkforceClient();
     const [run, events, capabilities] = await Promise.all([
       client.getRun(props.runId),
       client.listRunEvents(props.runId, { limit: 200 }),
@@ -145,10 +146,10 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
     setBusy(true);
     setActionError(null);
     try {
-      await getT13Client().cancelRun(run.id, t13CommandOptions(run.stateRevision), {});
+      await getWorkforceClient().cancelRun(run.id, commandOptions(run.stateRevision), {});
       setCancelAccepted(true);
     } catch (error) {
-      setActionError(formatT13Error(error));
+      setActionError(formatClientError(error));
     } finally {
       setBusy(false);
     }
@@ -161,15 +162,15 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
     setBusy(true);
     setActionError(null);
     try {
-      await getT13Client().sendRunInput(
+      await getWorkforceClient().sendRunInput(
         run.id,
         { text: inputText },
-        t13CommandOptions(run.stateRevision),
+        commandOptions(run.stateRevision),
       );
       setInputText("");
       query.reload();
     } catch (error) {
-      setActionError(formatT13Error(error));
+      setActionError(formatClientError(error));
     } finally {
       setBusy(false);
     }

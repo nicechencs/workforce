@@ -1,23 +1,5 @@
 import type { CommandOptions, DesktopClient, ListQuery, PageDto } from "@workforce/desktop-client";
 
-import {
-  createPreloadTransport,
-  getInjectedConnectionForTests,
-  getPreloadApi,
-  getWorkforceClient,
-  setWorkforceClientForTests,
-  setWorkforceConnectionForTests,
-} from "../app/renderer-client.js";
-
-export {
-  createPreloadTransport,
-  getInjectedConnectionForTests,
-  getPreloadApi,
-  getWorkforceClient,
-  setWorkforceClientForTests,
-  setWorkforceConnectionForTests,
-};
-
 export type CatalogClient = {
   listTeams?: (query?: ListQuery) => Promise<PageDto<unknown>>;
   getTeam?: (id: string) => Promise<unknown>;

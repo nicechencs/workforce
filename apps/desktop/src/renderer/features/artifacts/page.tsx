@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
 
 import { Card, ErrorText, LoadingText, Muted, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { getT13Client, useT13Query } from "../_t13_client.js";
+import { useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   artifactVersionHeading,
   decodeArtifactContent,
@@ -30,8 +31,8 @@ export function ArtifactsPage(props: FeaturePageProps): ReactNode {
 }
 
 function ArtifactVersionPage(props: { artifactId: string; versionId: string }): ReactNode {
-  const query = useT13Query(`artifact:${props.artifactId}:${props.versionId}`, async () => {
-    const client = getT13Client();
+  const query = useClientQuery(`artifact:${props.artifactId}:${props.versionId}`, async () => {
+    const client = getWorkforceClient();
     const [artifact, version, content, lineage] = await Promise.all([
       client.getArtifact(props.artifactId),
       client.getArtifactVersion(props.artifactId, props.versionId),

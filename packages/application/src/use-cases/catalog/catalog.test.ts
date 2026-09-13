@@ -94,4 +94,27 @@ describe("catalog write use-cases", () => {
       }),
     ).toThrow(UseCaseError);
   });
+
+  it("lists a created worker with its open draft id and drops it after publish", () => {
+    const catalog = service();
+    const created = catalog.createWorker({
+      name: "Stricter reviewer",
+      role: "reviewer",
+      who: "更严的 reviewer",
+    });
+    const listed = catalog
+      .listWorkers({ status: "draft" })
+      .items.find((item) => item.id === created.worker.id);
+    expect(listed?.status).toBe("draft");
+    expect(listed?.activeDraftId).toBe(created.draft.id);
+    expect(listed?.activeVersionId).toBeUndefined();
+
+    const published = catalog.publishWorkerDraft(created.worker.id, created.draft.id);
+    expect(published.status).toBe("published");
+    const after = catalog
+      .listWorkers({ status: "published" })
+      .items.find((item) => item.id === created.worker.id);
+    expect(after?.activeDraftId).toBeUndefined();
+    expect(after?.activeVersionId).toBe(published.id);
+  });
 });

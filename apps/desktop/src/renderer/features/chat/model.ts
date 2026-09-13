@@ -294,6 +294,10 @@ export function roleLibraryPath(): string {
   return ROLE_LIBRARY_PATH;
 }
 
+export function roleLibraryWorkerPath(workerId: string): string {
+  return `${ROLE_LIBRARY_PATH}?worker=${encodeURIComponent(workerId)}`;
+}
+
 export function landedDraftCanvasPath(draft: LandedWorkflowDraft): string | null {
   const workflowId = draft.workflowId?.trim();
   return workflowId ? `/workflows/${workflowId}/versions/${CANVAS_DRAFT_VERSION_SEGMENT}` : null;

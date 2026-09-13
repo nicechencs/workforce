@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseHashPath, pathToHash, slotForHash } from "../src/renderer/app/hash-router.js";
+import { parseHashPath, parseHashQuery, pathToHash, slotForHash } from "../src/renderer/app/hash-router.js";
 import { createRouteRegistry } from "../src/renderer/routes/index.js";
 
 describe("hash route to slot", () => {
@@ -10,7 +10,8 @@ describe("hash route to slot", () => {
     expect(parseHashPath("#/")).toBe("/");
     expect(parseHashPath("#/projects")).toBe("/projects");
     expect(parseHashPath("#projects/p1")).toBe("/projects/p1");
-    expect(pathToHash("/runs/r1")).toBe("#/runs/r1");
+    expect(parseHashPath("#/role-library?worker=wrk_1")).toBe("/role-library");
+    expect(pathToHash("/role-library?worker=wrk_1")).toBe("#/role-library?worker=wrk_1");
   });
 
   it("maps hash routes onto feature slots without changing catalog paths", () => {
@@ -23,5 +24,7 @@ describe("hash route to slot", () => {
     expect(slotForHash("#/workflows", registry)).toBe("workflows");
     expect(slotForHash("#/workflows/wf_1/versions/0.1.0", registry)).toBe("workflows");
     expect(slotForHash("#/settings", registry)).toBe("settings");
+    expect(slotForHash("#/role-library?worker=wrk_1", registry)).toBe("role-library");
+    expect(parseHashQuery("#/role-library?worker=wrk_1").get("worker")).toBe("wrk_1");
   });
 });

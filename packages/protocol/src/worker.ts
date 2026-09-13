@@ -85,6 +85,8 @@ export const workerDtoSchema = z
     protocolVersion: z.literal("0.1"),
     status: z.enum(workerDefinitionStatuses),
     activeVersionId: z.string().min(1).optional(),
+    /** Open unpublished draft for this identity. Absent after publish. */
+    activeDraftId: z.string().min(1).optional(),
     versions: z.array(workerVersionDtoSchema).optional(),
     stateRevision: z.number().int().min(1).optional(),
     definitionRevision: z.number().int().min(1).optional(),

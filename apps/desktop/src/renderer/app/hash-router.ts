@@ -11,6 +11,12 @@ export function parseHashPath(hash: string): string {
   return withSlash;
 }
 
+export function parseHashQuery(hash: string): URLSearchParams {
+  const trimmed = hash.startsWith("#") ? hash.slice(1) : hash;
+  const query = trimmed.includes("?") ? (trimmed.split("?")[1] ?? "") : "";
+  return new URLSearchParams(query);
+}
+
 export function pathToHash(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return `#${normalized}`;

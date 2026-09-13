@@ -22,7 +22,8 @@ import {
   StatusText,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { getT13Client, useT13Query } from "../_t13_client.js";
+import { useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import { BUDGET_NOTES, capabilityRows } from "./model.js";
 
 const THEME_MODE_ITEMS: readonly { id: ThemeMode; label: string }[] = [
@@ -52,8 +53,8 @@ const CANVAS_LABELS: Record<CanvasId, string> = {
 
 export function SettingsPage(props: FeaturePageProps): ReactNode {
   void props;
-  const query = useT13Query("settings:probe", async () => {
-    const client = getT13Client();
+  const query = useClientQuery("settings:probe", async () => {
+    const client = getWorkforceClient();
     const [health, ready, version, capabilities] = await Promise.all([
       client.getHealth(),
       client.getReady(),

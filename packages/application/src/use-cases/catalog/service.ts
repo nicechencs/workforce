@@ -440,7 +440,7 @@ export class CatalogService {
       ) {
         continue;
       }
-      matched.push(workerDto(worker, versions));
+      matched.push(workerDto(worker, versions, draft));
     }
     const items = matched.slice(0, limit);
     const last = items.at(-1);

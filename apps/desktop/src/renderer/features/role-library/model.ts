@@ -1,6 +1,7 @@
 import {
   ProblemError,
   type CommandOptions,
+  type CreateWorkerInput,
   type DesktopClient,
   type ForkWorkerVersionAcceptedDto,
   type ListWorkersInput,
@@ -26,7 +27,7 @@ export type LibraryTone = "success" | "warning" | "muted";
 export const LIBRARY_PAGE_LIMIT = 50;
 
 export const LIBRARY_API_MISSING =
-  "角色版本库接口尚未接通。列表、搜索、引用、归档、fork 和卡片 PATCH 都不会成功。";
+  "角色版本库接口尚未接通。列表、搜索、引用、归档、fork、新建、发布和卡片 PATCH 都不会成功。";
 
 export const UNPUBLISHED_NOT_EMPLOYEE =
   "未发布草稿不是已发布员工，不能给 Team 选用，也不能当成已发布 WorkerVersion。";
@@ -58,6 +59,12 @@ export const DRAFT_REVISION_CONFLICT =
   "版本冲突（412 revision_conflict）。已保留你输入的三格，请刷新后再保存。";
 
 export const CARD_PATCH_NOT_CONFIRMED = "PATCH 响应不是未发布草稿，未当作已发布员工。";
+
+export const PUBLISH_NOT_DRAFT = "只有未发布草稿才能发布。已发布版本请 fork。";
+
+export const PUBLISH_NOT_CONFIRMED = "发布响应不是已发布 WorkerVersion，未当作已发布员工。";
+
+export const CREATE_ROLE_NEEDS_NAME_ROLE = "名称和职责都要填。不挂项目，也不选 Runtime / Policy。";
 
 export interface CardFieldSpec {
   id: WorkerCardFieldName;
@@ -117,7 +124,9 @@ export function workerLibraryMethodsPresent(client: DesktopClient): boolean {
     typeof client.getWorkerDraft === "function" &&
     typeof client.archiveWorkerVersion === "function" &&
     typeof client.forkWorkerVersion === "function" &&
-    typeof client.patchWorkerDraft === "function"
+    typeof client.patchWorkerDraft === "function" &&
+    typeof client.createWorker === "function" &&
+    typeof client.publishWorkerDraft === "function"
   );
 }
 
@@ -230,6 +239,64 @@ export function canForkVersion(version: WorkerVersionDto): boolean {
 
 export function canPatchCardDraft(draft: WorkerDraftDto | null | undefined): boolean {
   return draft !== null && draft !== undefined && isEditableWorkerDraft(draft);
+}
+
+export function canPublishDraft(
+  worker: Pick<WorkerDto, "status"> | null | undefined,
+  draft: WorkerDraftDto | null | undefined,
+): boolean {
+  return worker !== null && worker !== undefined && isUnpublishedWorker(worker) && canPatchCardDraft(draft);
+}
+
+export function confirmPublishedVersion(version: WorkerVersionDto): WorkerVersionDto {
+  if (!isPublishedWorkerVersion(version)) {
+    throw new Error(PUBLISH_NOT_CONFIRMED);
+  }
+  return version;
+}
+
+export interface CreateRoleForm {
+  name: string;
+  role: string;
+  who: string;
+  how: string;
+  skills: string;
+}
+
+export function emptyCreateRoleForm(): CreateRoleForm {
+  return { name: "", role: "", who: "", how: "", skills: "" };
+}
+
+export function createRoleFormValid(form: CreateRoleForm): boolean {
+  return form.name.trim().length > 0 && form.role.trim().length > 0;
+}
+
+export function createWorkerInputFromForm(form: CreateRoleForm): CreateWorkerInput {
+  const input: CreateWorkerInput = {
+    name: form.name.trim(),
+    role: form.role.trim(),
+  };
+  if (form.who.length > 0) {
+    input.who = form.who;
+  }
+  if (form.how.length > 0) {
+    input.how = form.how;
+  }
+  if (form.skills.length > 0) {
+    input.skills = form.skills;
+  }
+  return input;
+}
+
+export function confirmCreatedDraft(worker: WorkerDto): WorkerDto {
+  if (worker.status !== "draft") {
+    throw new Error("创建结果不是未发布草稿，已拒绝当成已发布员工。");
+  }
+  return worker;
+}
+
+export function activeDraftIdOf(worker: WorkerDto): string | undefined {
+  return worker.activeDraftId;
 }
 
 export function isPublishedCardLocked(version: WorkerVersionDto | null | undefined): boolean {

@@ -4027,6 +4027,10 @@
       "WorkerDto": {
         "additionalProperties": false,
         "properties": {
+          "activeDraftId": {
+            "minLength": 1,
+            "type": "string"
+          },
           "activeVersionId": {
             "minLength": 1,
             "type": "string"
@@ -4162,6 +4166,10 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "activeDraftId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
                 "activeVersionId": {
                   "minLength": 1,
                   "type": "string"

@@ -1,27 +1,19 @@
 import { protocolVersion } from "@workforce/protocol";
-import { assertNoSecretFields, type ConnectionSnapshot } from "@workforce/ui";
 
-import {
-  recordSessionFailureDiagnostic,
-  sessionFailureMessage,
-} from "./daemon-supervisor/diagnostics.js";
-import { ensureDaemon } from "./daemon-supervisor/supervisor.js";
-import type { SupervisorDeps } from "./daemon-supervisor/types.js";
 import {
   applyLastWindowClose,
   applyUiSingleInstancePolicy,
   attachIpcHandlers,
   focusExistingWindow,
-  ipcPushChannels,
   proxyConnectedApiRequest,
   resolvePreloadPath,
   resolveRendererLoadTarget,
 } from "./composition.js";
-import { createDaemonSseBridge } from "./ipc/sse-bridge.js";
-import { EventSubscriptionHub } from "./ipc/subscriptions.js";
-import { WorkspaceGrantStore } from "./ipc/workspace-picker.js";
-import type { SessionSecrets } from "./ipc/rest-proxy.js";
-import { establishSessionFromStateDir } from "./session.js";
+import { createDesktopRuntimeSession } from "./desktop-connection.js";
+import {
+  unknownWorkspaceGrantResponse,
+  WorkspaceGrantStore,
+} from "./ipc/workspace-picker.js";
 import { createSupervisorDeps, resolveDesktopStateDir } from "./supervisor-runtime.js";
 import { createMainWindowSpec, type BrowserWindowSpec } from "./windows/factory.js";
 import { runDesktopMainPathSmoke } from "./smoke-driver.js";
@@ -30,6 +22,7 @@ import {
   isDesktopSmokeHeaded,
   resolveSmokeResultPath,
 } from "./smoke-env.js";
+import type { SupervisorDeps } from "./daemon-supervisor/types.js";
 
 export interface DesktopWindowPort {
   loadURL(url: string): Promise<void>;
@@ -86,63 +79,18 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
     });
   const fetchImpl = options.fetchImpl ?? fetch;
   const grants = new WorkspaceGrantStore();
-  const hub = new EventSubscriptionHub();
-  let snapshot: ConnectionSnapshot = { status: "loading" };
-  let session: SessionSecrets | null = null;
-  let port: number | null = null;
   let windowPort: DesktopWindowPort | null = null;
-  const push = ipcPushChannels();
 
-  const sendToRenderer = (channel: string, payload: unknown): void => {
-    if (windowPort && !windowPort.isDestroyed()) {
-      windowPort.send(channel, payload);
-    }
-  };
-
-  const setSnapshot = (next: ConnectionSnapshot): void => {
-    assertNoSecretFields(next);
-    snapshot = next;
-    sendToRenderer(push.connectionChanged, next);
-  };
-
-  const sse = createDaemonSseBridge({
-    getTarget: () => (port !== null && session ? { port, session } : null),
-    send: (payload) => {
-      sendToRenderer(push.event, payload);
-    },
+  const runtime = createDesktopRuntimeSession({
+    supervisor,
+    stateDir,
     fetchImpl,
+    send: (channel, payload) => {
+      if (windowPort && !windowPort.isDestroyed()) {
+        windowPort.send(channel, payload);
+      }
+    },
   });
-
-  const connect = async (): Promise<ConnectionSnapshot> => {
-    setSnapshot({ status: "loading" });
-    const result = await ensureDaemon(supervisor);
-    if (!result.ok) {
-      session = null;
-      port = null;
-      sse.stop();
-      setSnapshot(result.snapshot);
-      return result.snapshot;
-    }
-    port = result.state.port;
-    try {
-      session = await establishSessionFromStateDir(port, stateDir, fetchImpl);
-    } catch (error) {
-      session = null;
-      const errorSnapshot: ConnectionSnapshot = {
-        status: "error",
-        message: sessionFailureMessage(error, stateDir),
-        recoverable: true,
-      };
-      recordSessionFailureDiagnostic(stateDir, error, new Date(), result.state);
-      setSnapshot(errorSnapshot);
-      return errorSnapshot;
-    }
-    setSnapshot(result.snapshot);
-    for (const subscription of hub.list()) {
-      void sse.start(subscription);
-    }
-    return result.snapshot;
-  };
 
   options.ports.onSecondInstance(() => {
     if (windowPort && !windowPort.isDestroyed()) {
@@ -158,7 +106,7 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
   });
 
   await options.ports.whenReady();
-  await connect();
+  await runtime.connect();
 
   const preloadPath = resolvePreloadPath(options.appRoot);
   const spec = createMainWindowSpec(preloadPath, {
@@ -166,33 +114,25 @@ export async function startDesktopApp(options: StartDesktopOptions): Promise<{
   });
   windowPort = options.ports.createWindow(spec);
   windowPort.onClosed(() => {
-    sse.stop();
-    hub.clear();
+    runtime.dispose();
     windowPort = null;
   });
 
   attachIpcHandlers(options.ports.handleIpc, {
-    getConnection: async () => snapshot,
-    reconnect: connect,
-    requestApi: (input) =>
-      proxyConnectedApiRequest(input, port === null ? null : { port, session }, fetchImpl),
+    getConnection: async () => runtime.getSnapshot(),
+    reconnect: () => runtime.connect(),
+    requestApi: async (input) => {
+      const denied = unknownWorkspaceGrantResponse(input, grants);
+      if (denied !== null) {
+        return denied;
+      }
+      return proxyConnectedApiRequest(input, runtime.loopback(), fetchImpl);
+    },
     dialog: { pick: options.ports.pickDirectory },
     grants,
     subscriptions: {
-      subscribe(input) {
-        const result = hub.subscribe(input);
-        if (result.created) {
-          void sse.start(result.subscription);
-        }
-        return result;
-      },
-      unsubscribe(id) {
-        const removed = hub.unsubscribe(id);
-        if (hub.size === 0) {
-          sse.stop();
-        }
-        return removed;
-      },
+      subscribe: (input) => runtime.subscribe(input),
+      unsubscribe: (id) => runtime.unsubscribe(id),
     },
     quitUi: async () => {
       options.ports.quit();

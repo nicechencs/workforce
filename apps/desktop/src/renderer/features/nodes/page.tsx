@@ -11,7 +11,8 @@ import {
   StatusText,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
-import { getT13Client, useT13Query } from "../_t13_client.js";
+import { useClientQuery } from "../../app/client-query.js";
+import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   formatProbeSummary,
   isLocalNodeId,
@@ -45,8 +46,8 @@ export function NodesPage(props: FeaturePageProps): ReactNode {
 }
 
 function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode {
-  const query = useT13Query("nodes:local", async () => {
-    const client = getT13Client();
+  const query = useClientQuery("nodes:local", async () => {
+    const client = getWorkforceClient();
     const [health, ready, version] = await Promise.all([
       client.getHealth(),
       client.getReady(),

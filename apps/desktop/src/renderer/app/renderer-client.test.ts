@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { getT13Client, resetT13Client, setT13ApiRequest } from "./_t13_client.js";
+import { getWorkforceClient, resetRendererClient, setApiRequestForTests } from "./renderer-client.js";
 
 afterEach(() => {
-  resetT13Client();
+  resetRendererClient();
 });
 
-describe("T13 desktop client wrapper", () => {
+describe("canonical desktop client", () => {
   it("sends typed client calls through the injected preload request, not loopback", async () => {
     const calls: Array<{ method: string; path: string }> = [];
-    setT13ApiRequest(async (input) => {
+    setApiRequestForTests(async (input) => {
       calls.push({ method: input.method, path: input.path });
       return {
         ok: true,
@@ -17,12 +17,12 @@ describe("T13 desktop client wrapper", () => {
         body: { items: [], page: { nextCursor: null, hasMore: false } },
       };
     });
-    await getT13Client().listRuns();
+    await getWorkforceClient().listRuns();
     expect(calls).toEqual([{ method: "GET", path: "/api/v1/runs" }]);
   });
 
   it("surfaces cancel 202 as accepted without inventing a cancelled run", async () => {
-    setT13ApiRequest(async (input) => {
+    setApiRequestForTests(async (input) => {
       expect(input.method).toBe("POST");
       expect(input.path).toBe("/api/v1/runs/run_1:cancel");
       return {
@@ -35,20 +35,20 @@ describe("T13 desktop client wrapper", () => {
         },
       };
     });
-    const accepted = await getT13Client().cancelRun("run_1", { idempotencyKey: "k1" });
+    const accepted = await getWorkforceClient().cancelRun("run_1", { idempotencyKey: "k1" });
     expect(accepted.resource).toEqual({ type: "run", id: "run_1" });
     expect(accepted).not.toMatchObject({ status: "cancelled" });
   });
 
   it("does not turn a failed approve into success", async () => {
-    setT13ApiRequest(async () => ({
+    setApiRequestForTests(async () => ({
       ok: false,
       status: 409,
       code: "conflict",
       message: "Approval digest does not match the canonical action",
     }));
     await expect(
-      getT13Client().approve(
+      getWorkforceClient().approve(
         "apr_1",
         { decisionReason: "ok", digest: "stale" },
         { idempotencyKey: "k2" },

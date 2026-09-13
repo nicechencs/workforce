@@ -24,5 +24,9 @@ export {
   parseSseBlock,
 } from "./sse-bridge.js";
 export type { DaemonSseBridge, SseMessage } from "./sse-bridge.js";
-export { pickWorkspaceDirectory, WorkspaceGrantStore } from "./workspace-picker.js";
+export {
+  pickWorkspaceDirectory,
+  unknownWorkspaceGrantResponse,
+  WorkspaceGrantStore,
+} from "./workspace-picker.js";
 export type { DirectoryDialog } from "./workspace-picker.js";

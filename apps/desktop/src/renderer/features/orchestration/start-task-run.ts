@@ -7,7 +7,7 @@ import {
 } from "@workforce/desktop-client";
 import { parseStartTaskRunInput } from "@workforce/protocol";
 
-import { getPreloadApi } from "../_client-fallback.js";
+import { getPreloadApi } from "../../app/renderer-client.js";
 import {
   DIRECT_TASK_REQUIRED,
   DIRECT_UNSUPPORTED,

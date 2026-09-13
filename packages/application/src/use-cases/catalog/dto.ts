@@ -4,6 +4,7 @@ import type {
   TeamRoleDto,
   TeamVersionDto,
   WorkerCardFieldsDto,
+  WorkerDraftDto,
   WorkerDto,
   WorkerVersionDto,
   WorkflowDto,
@@ -160,7 +161,11 @@ export function workerVersionDto(record: WorkerVersionDto): WorkerVersionDto {
   return record;
 }
 
-export function workerDto(record: WorkerDto, versions: readonly WorkerVersionDto[]): WorkerDto {
+export function workerDto(
+  record: WorkerDto,
+  versions: readonly WorkerVersionDto[],
+  draft?: WorkerDraftDto,
+): WorkerDto {
   const dto: WorkerDto = {
     id: record.id,
     name: record.name,
@@ -174,6 +179,9 @@ export function workerDto(record: WorkerDto, versions: readonly WorkerVersionDto
   if (record.activeVersionId !== undefined) {
     dto.activeVersionId = record.activeVersionId;
   }
+  if (draft !== undefined) {
+    dto.activeDraftId = draft.id;
+  }
   if (record.stateRevision !== undefined) {
     dto.stateRevision = record.stateRevision;
   }
@@ -184,5 +192,6 @@ export function workerDto(record: WorkerDto, versions: readonly WorkerVersionDto
 }
 
 export function workerDtoFromCatalog(catalog: MemoryCatalog, record: WorkerDto): WorkerDto {
-  return workerDto(record, catalog.listWorkerVersions(record.id));
+  const draft = catalog.findWorkerDraftByWorker(record.id);
+  return workerDto(record, catalog.listWorkerVersions(record.id), draft);
 }

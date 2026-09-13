@@ -3,6 +3,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "activeDraftId": {
+      "minLength": 1,
+      "type": "string"
+    },
     "activeVersionId": {
       "minLength": 1,
       "type": "string"
