@@ -1,4 +1,11 @@
-import { isSelectableWorkerVersion } from "@workforce/protocol";
+import {
+  isSelectableWorkerVersion,
+  workerCardFieldNames,
+  type WorkerCardFieldName,
+  type WorkerCardFieldsDto,
+} from "@workforce/protocol";
+
+export { workerCardFieldNames };
 
 export const PRESET_TEAM_ID = "software-development-team" as const;
 export const LIVE_PRESET_TEAM_ID = "tm_software_development" as const;
@@ -14,7 +21,7 @@ export const PRESET_REVIEWER_WORKER_VERSION_ID = "wrv_software_reviewer_0_1_0" a
 export const TEAM_ROLES = ["planner", "developer", "reviewer"] as const;
 export type TeamRole = (typeof TEAM_ROLES)[number];
 
-export interface TeamMemberView {
+export interface TeamMemberView extends WorkerCardFieldsDto {
   id: string;
   role: string;
   title: string;
@@ -110,6 +117,52 @@ export const MISSING_WORKER_VERSION_REASON =
 export const FORK_DRAFT_NOT_SELECTABLE =
   "已 fork 为新 Worker 草稿。草稿未发布，不能加入团队；到角色版本库发布后再选。";
 
+export const EMPTY_WORKER_CARD_FIELD = "空";
+
+export const WORKER_CARD_FIELD_LABELS: Record<WorkerCardFieldName, string> = {
+  who: "他是谁",
+  how: "怎么干活",
+  skills: "会哪些技能",
+};
+
+export function workerCardFieldsFromUnknown(value: unknown): WorkerCardFieldsDto {
+  const record = asRecord(value);
+  if (!record) {
+    return {};
+  }
+  const fields: WorkerCardFieldsDto = {};
+  for (const key of workerCardFieldNames) {
+    const field = record[key];
+    if (typeof field === "string") {
+      fields[key] = field;
+    }
+  }
+  return fields;
+}
+
+export function printableWorkerCardField(value: string | undefined): string {
+  return typeof value === "string" && value.length > 0 ? value : EMPTY_WORKER_CARD_FIELD;
+}
+
+export function resolveMemberCard(
+  member: TeamMemberView,
+  versions: readonly SelectableWorkerVersionView[] = [],
+): WorkerCardFieldsDto {
+  const fromMember = workerCardFieldsFromUnknown(member);
+  const selected = member.workerVersionId
+    ? versions.find((item) => item.workerVersionId === member.workerVersionId)
+    : undefined;
+  const fromVersion = selected ? workerCardFieldsFromUnknown(selected) : {};
+  const fields: WorkerCardFieldsDto = {};
+  for (const key of workerCardFieldNames) {
+    const value = fromMember[key] ?? fromVersion[key];
+    if (value !== undefined) {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
 export const UNPUBLISHED_BIND_REASON = "未发布的 Team 草稿不能绑定到项目，也不能开始规划。";
 
 export const CUSTOM_BIND_UNCONFIRMED_REASON =
@@ -141,7 +194,7 @@ export interface TeamMemberWritePayload {
   quantity: number;
 }
 
-export interface SelectableWorkerVersionView {
+export interface SelectableWorkerVersionView extends WorkerCardFieldsDto {
   workerId: string;
   workerName: string;
   workerVersionId: string;
@@ -744,6 +797,7 @@ function asMemberView(value: unknown, index: number): TeamMemberView | null {
     ...(workerVersionId !== undefined ? { workerVersionId } : {}),
     ...(workerId !== undefined ? { workerId } : {}),
     ...(workerVersion !== undefined ? { workerVersion } : {}),
+    ...workerCardFieldsFromUnknown(record),
   };
 }
 
@@ -948,16 +1002,18 @@ export function memberFromSelectableVersion(
   selected: SelectableWorkerVersionView,
   index = 0,
   quantity = 1,
+  runtimeProfile = selected.runtimeProfileId ?? "",
 ): TeamMemberView {
   return {
     id: selected.workerVersionId || `${selected.role}-${index}`,
     role: selected.role,
     title: selected.name,
-    runtimeProfile: selected.runtimeProfileId ?? "",
+    runtimeProfile,
     quantity,
     workerVersionId: selected.workerVersionId,
     workerId: selected.workerId,
     workerVersion: selected.version,
+    ...workerCardFieldsFromUnknown(selected),
   };
 }
 
@@ -976,7 +1032,12 @@ export function replaceDraftMember(
   const current = members[index];
   return members.map((member, currentIndex) =>
     currentIndex === index
-      ? memberFromSelectableVersion(selected, currentIndex, current?.quantity ?? 1)
+      ? memberFromSelectableVersion(
+          selected,
+          currentIndex,
+          current?.quantity ?? 1,
+          selected.runtimeProfileId ?? current?.runtimeProfile ?? "",
+        )
       : member,
   );
 }
@@ -1067,6 +1128,7 @@ function selectableVersionsFromWorker(value: unknown): SelectableWorkerVersionVi
         archived: false,
         name: workerName,
         role: typeof worker.role === "string" ? worker.role : "developer",
+        ...workerCardFieldsFromUnknown(worker),
       },
       worker.id,
       workerName,
@@ -1114,6 +1176,7 @@ function asSelectableWorkerVersion(
     status,
     immutable,
     ...(runtimeProfileId !== undefined ? { runtimeProfileId } : {}),
+    ...workerCardFieldsFromUnknown(record),
   };
 }
 
