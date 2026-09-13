@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { WorkflowDto } from "@workforce/desktop-client";
 
-import { Badge, Button, Card, List, ListRow, Muted, Page } from "../../components/ui.js";
+import { Badge, Button, Card, List, ListRow, Muted, Notice, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
 import {
@@ -148,7 +148,11 @@ export function WorkflowsPage(props: FeaturePageProps) {
       title="工作流"
       subtitle="模板、版本和结构化步骤。已发布版本只读；未发布草稿走画布。"
       actions={
-        <Button testId="workflow-new-canvas" onClick={() => props.navigate(canvasCreatePath())}>
+        <Button
+          variant="primary"
+          testId="workflow-new-canvas"
+          onClick={() => props.navigate(canvasCreatePath())}
+        >
           新建画布
         </Button>
       }
@@ -203,7 +207,7 @@ function WorkflowDetailPage(props: {
     return (
       <Page
         title="工作流"
-        actions={<Button onClick={() => props.navigate(workflowCatalogPath())}>返回工作流</Button>}
+        actions={<Button variant="outline" onClick={() => props.navigate(workflowCatalogPath())}>返回工作流</Button>}
       >
         <Card>
           <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
@@ -226,17 +230,18 @@ function WorkflowDetailPage(props: {
       actions={
         <>
           <Button
-            testId="workflow-fork-canvas"
-            onClick={() => props.navigate(canvasDraftPath(workflow.id))}
-          >
-            复制到画布
-          </Button>
-          <Button
+            variant="outline"
             onClick={() =>
               props.navigate(versionRoute ? workflowDetailPath(workflow.id) : workflowCatalogPath())
             }
           >
             {versionRoute ? "返回工作流详情" : "返回工作流"}
+          </Button>
+          <Button
+            testId="workflow-fork-canvas"
+            onClick={() => props.navigate(canvasDraftPath(workflow.id))}
+          >
+            复制到画布
           </Button>
         </>
       }
@@ -251,7 +256,13 @@ function WorkflowDetailPage(props: {
         <Muted>{workflow.description}</Muted>
         <Muted>{props.note}</Muted>
         <Muted>{canvas.reason}</Muted>
-        <h2 className="wf-section-title">版本</h2>
+        {selected?.status !== "published" ? (
+          <Notice tone="warning" title="未发布">
+            Runtime 不会执行此版本。确认发布后才能给项目用。
+          </Notice>
+        ) : null}
+      </Card>
+      <Card title="版本">
         <List>
           {workflow.versions.map((version) => (
             <ListRow
@@ -261,10 +272,14 @@ function WorkflowDetailPage(props: {
               meta={`${
                 version.status === "published" ? "不可变" : "未发布，Runtime 不会执行"
               } · 入口 ${version.entry} · ${version.steps.length} 步`}
-              onClick={() => props.navigate(canvasDraftPath(workflow.id, version.id))}
+              onClick={() =>
+                props.navigate(`/workflows/${workflow.id}/versions/${version.id}`)
+              }
             />
           ))}
         </List>
+      </Card>
+      <Card title="结构化步骤">
         {selected ? <StructuredSteps version={selected} /> : <p>未找到该版本。</p>}
       </Card>
     </Page>
@@ -274,7 +289,7 @@ function WorkflowDetailPage(props: {
 export function StructuredSteps(props: { version: WorkflowVersionView }) {
   return (
     <section data-testid="workflow-steps">
-      <h2 className="wf-section-title">结构化步骤 · {props.version.version}</h2>
+      <h2 className="wf-section-title">{props.version.version}</h2>
       <ol className="wf-timeline">
         {props.version.steps.map((step, index) => (
           <WorkflowStepRow key={step.id} step={step} index={index} />

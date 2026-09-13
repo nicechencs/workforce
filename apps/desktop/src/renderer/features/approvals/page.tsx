@@ -5,8 +5,10 @@ import {
   Badge,
   Button,
   Card,
-  CardList,
+  EmptyState,
   ErrorText,
+  List,
+  ListRow,
   LoadingText,
   Muted,
   Page,
@@ -23,6 +25,7 @@ import {
   canApproveApproval,
   canDecideApproval,
   decisionPayload,
+  EVALUATION_PENDING,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
   gateLabel,
@@ -62,22 +65,26 @@ export function ApprovalListView(props: {
   if (props.approvals.length === 0) {
     return (
       <Card>
-        <Muted>暂无审批。</Muted>
+        <EmptyState title="暂无审批">没有跨项目待办。工作台也会链到这里。</EmptyState>
       </Card>
     );
   }
   return (
-    <CardList>
-      {props.approvals.map((approval) => (
-        <ApprovalCard
-          key={approval.id}
-          approval={approval}
-          onOpen={() => {
-            props.onOpen(approval.id);
-          }}
-        />
-      ))}
-    </CardList>
+    <Card>
+      <List testId="approval-list">
+        {props.approvals.map((approval) => (
+          <ListRow
+            key={approval.id}
+            testId={`approval-row-${approval.id}`}
+            title={gateLabel(approval.gate)}
+            meta={`${approvalStatusLabel(approval.status)} · 项目 ${approval.projectId}`}
+            onClick={() => {
+              props.onOpen(approval.id);
+            }}
+          />
+        ))}
+      </List>
+    </Card>
   );
 }
 
@@ -155,38 +162,43 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
       <ErrorText>{actionError}</ErrorText>
       {query.loading && approval === null ? <LoadingText /> : null}
       {approval ? (
-        <ApprovalCard
-          approval={approval}
-          reason={reason}
-          onReason={setReason}
-          busy={busy}
-          onOpenTask={
-            approval.taskId
-              ? () => {
-                  props.navigate(`/projects/${approval.projectId}/tasks/${approval.taskId}`);
-                }
-              : undefined
-          }
-          onOpenProject={() => {
-            props.navigate(`/projects/${approval.projectId}`);
-          }}
-          onOpenArtifact={
-            artifactHref
-              ? () => {
-                  props.navigate(artifactHref);
-                }
-              : undefined
-          }
-          onApprove={() => {
-            void decide("approve");
-          }}
-          onReject={() => {
-            void decide("reject");
-          }}
-          onRequestChanges={() => {
-            void decide("request-changes");
-          }}
-        />
+        <>
+          <ApprovalCard
+            approval={approval}
+            reason={reason}
+            onReason={setReason}
+            busy={busy}
+            onOpenTask={
+              approval.taskId
+                ? () => {
+                    props.navigate(`/projects/${approval.projectId}/tasks/${approval.taskId}`);
+                  }
+                : undefined
+            }
+            onOpenProject={() => {
+              props.navigate(`/projects/${approval.projectId}`);
+            }}
+            onOpenArtifact={
+              artifactHref
+                ? () => {
+                    props.navigate(artifactHref);
+                  }
+                : undefined
+            }
+            onApprove={() => {
+              void decide("approve");
+            }}
+            onReject={() => {
+              void decide("reject");
+            }}
+            onRequestChanges={() => {
+              void decide("request-changes");
+            }}
+          />
+          <Card title="判定" testId="approval-evaluation">
+            <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>
+          </Card>
+        </>
       ) : null}
     </Page>
   );
@@ -197,7 +209,6 @@ export interface ApprovalCardProps {
   reason?: string | undefined;
   busy?: boolean | undefined;
   onReason?: ((value: string) => void) | undefined;
-  onOpen?: (() => void) | undefined;
   onOpenTask?: (() => void) | undefined;
   onOpenProject?: (() => void) | undefined;
   onOpenArtifact?: (() => void) | undefined;
@@ -211,7 +222,7 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
   const extra = approvalExtraRefs(props.approval);
   const approveEnabled = canApproveApproval(props.approval) && props.busy !== true;
   const decideEnabled = canDecideApproval(props.approval) && props.busy !== true && digest !== null;
-  const showActions = props.onApprove !== undefined || props.onOpen !== undefined;
+  const showActions = props.onApprove !== undefined;
 
   return (
     <Card testId={`approval-card-${props.approval.id}`}>
@@ -273,7 +284,6 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
         <dt>影响级别</dt>
         <dd>{extra.impact ?? FIELD_UNRETURNED}</dd>
       </dl>
-      <Muted>{EVALUATION_UNAVAILABLE}</Muted>
       {digest === null ? (
         <p className="wf-error-text" data-testid="approval-digest-missing">
           缺少动作摘要，无法批准。版本变更后必须使用审批 DTO 上的当前 digest。
@@ -281,7 +291,6 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
       ) : null}
       {showActions ? (
         <div className="wf-cluster wf-mt-12">
-          {props.onOpen ? <Button onClick={props.onOpen}>打开审批卡</Button> : null}
           {props.onApprove || props.onReject || props.onRequestChanges ? (
             <>
               <Textarea

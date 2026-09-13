@@ -1,9 +1,10 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
-import type { DesktopClient, ProjectDto } from "@workforce/desktop-client";
+import type { ApprovalDto, DesktopClient, ProjectDto, RunDto } from "@workforce/desktop-client";
 
 import {
   Button,
   Card,
+  EmptyState,
   ErrorText,
   Field,
   Input,
@@ -14,12 +15,15 @@ import {
   Textarea,
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
+import { isActiveRun } from "../runs/model.js";
 import { commandOptions } from "./command.js";
-import { emptyCreateForm, projectStatusLabel, reduceCreateProjectForm } from "./model.js";
+import { emptyCreateForm, pendingApprovalCount, projectStatusLabel, reduceCreateProjectForm } from "./model.js";
 
 export function ProjectList(props: FeaturePageProps & { client: DesktopClient }) {
   const { client, navigate } = props;
   const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalDto[]>([]);
+  const [runs, setRuns] = useState<RunDto[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, dispatch] = useReducer(reduceCreateProjectForm, emptyCreateForm);
 
@@ -27,9 +31,15 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
     let cancelled = false;
     void (async () => {
       try {
-        const page = await client.listProjects();
+        const [projectPage, approvalPage, runPage] = await Promise.all([
+          client.listProjects(),
+          client.listApprovals({ limit: 50 }).catch(() => ({ items: [] as ApprovalDto[] })),
+          client.listRuns({ limit: 50 }).catch(() => ({ items: [] as RunDto[] })),
+        ]);
         if (!cancelled) {
-          setProjects(page.items);
+          setProjects(projectPage.items);
+          setApprovals(approvalPage.items);
+          setRuns(runPage.items);
           setLoadError(null);
         }
       } catch (error) {
@@ -106,17 +116,30 @@ export function ProjectList(props: FeaturePageProps & { client: DesktopClient })
       </Card>
       <Card title="项目列表">
         {projects.length === 0 ? (
-          <Muted>还没有项目。</Muted>
+          <EmptyState title="还没有项目" action={<Muted>用上方表单创建第一个项目。</Muted>}>
+            项目是干活主对象，不是会话历史。
+          </EmptyState>
         ) : (
           <List>
-            {projects.map((project) => (
-              <ListRow
-                key={project.id}
-                title={project.name}
-                meta={`${projectStatusLabel(project)} · ${project.updatedAt}`}
-                onClick={() => navigate(`/projects/${project.id}`)}
-              />
-            ))}
+            {projects.map((project) => {
+              const pending = pendingApprovalCount(
+                approvals.filter((item) => item.projectId === project.id),
+              );
+              const running = runs.filter(
+                (run) => run.projectId === project.id && isActiveRun(run),
+              ).length;
+              const team = project.teamVersionId
+                ? `TeamVersion ${project.teamVersionId}`
+                : "未绑定 Team";
+              return (
+                <ListRow
+                  key={project.id}
+                  title={project.name}
+                  meta={`${projectStatusLabel(project)} · ${team} · 进行中 Run ${running} · 待审批 ${pending}`}
+                  onClick={() => navigate(`/projects/${project.id}`)}
+                />
+              );
+            })}
           </List>
         )}
       </Card>

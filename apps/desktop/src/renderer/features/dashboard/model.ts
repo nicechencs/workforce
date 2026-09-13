@@ -16,6 +16,14 @@ export function activeProjects(items: ProjectDto[]): ProjectDto[] {
   return items.filter((item) => ACTIVE_PROJECT.has(item.status));
 }
 
+export function failedRuns(items: RunDto[]): RunDto[] {
+  return items.filter((item) => item.status === "failed" || item.status === "timed_out");
+}
+
+export function unreadyProjects(items: ProjectDto[]): ProjectDto[] {
+  return items.filter((item) => item.status === "draft" || item.status === "planning");
+}
+
 export function projectStatusLabel(status: string): string {
   switch (status) {
     case "draft":

@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import { CHAT_PATH, SHELL_CHAT, type BannerModel, type ShellView } from "@workforce/ui";
+import {
+  CHAT_PATH,
+  SHELL_CHAT,
+  rememberChatReturnPath,
+  type BannerModel,
+  type ShellView,
+} from "@workforce/ui";
 
 import { nextThemeMode, themeModeLabel, useTheme } from "../app/theme.js";
 import { cn } from "./cn.js";
@@ -163,6 +169,9 @@ function ShellFrameLayout(
                 aria-current={props.chatCurrent === true ? "page" : undefined}
                 title={SHELL_CHAT.label}
                 onClick={() => {
+                  if (props.chatCurrent !== true && typeof window !== "undefined") {
+                    rememberChatReturnPath(window.location.hash);
+                  }
                   onNavigate(CHAT_PATH);
                 }}
               >

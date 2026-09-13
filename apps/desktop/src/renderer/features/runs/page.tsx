@@ -5,7 +5,7 @@ import type { WorkforcePreloadApi } from "@workforce/ui";
 import {
   Button,
   Card,
-  CardList,
+  EmptyState,
   ErrorText,
   List,
   ListRow,
@@ -22,6 +22,7 @@ import { pinnedArtifactVersion } from "../projects/model.js";
 import {
   canCancelRun,
   canOfferRerun,
+  EVALUATION_PENDING,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
   formatRunUsage,
@@ -58,12 +59,6 @@ function RunListPage(props: FeaturePageProps): ReactNode {
         onOpen={(id) => {
           props.navigate(`/runs/${id}`);
         }}
-        onOpenTask={(run) => {
-          props.navigate(`/projects/${run.projectId}/tasks/${run.taskId}`);
-        }}
-        onOpenProject={(projectId) => {
-          props.navigate(`/projects/${projectId}`);
-        }}
       />
     </Page>
   );
@@ -72,65 +67,36 @@ function RunListPage(props: FeaturePageProps): ReactNode {
 export function RunListView(props: {
   runs: RunDto[];
   onOpen: (id: string) => void;
-  onOpenTask?: ((run: RunDto) => void) | undefined;
-  onOpenProject?: ((projectId: string) => void) | undefined;
 }): ReactNode {
   if (props.runs.length === 0) {
     return (
       <Card>
-        <Muted>暂无运行记录。</Muted>
+        <EmptyState title="暂无运行记录">跨项目诊断入口。打开控制台后才看 Task / 项目链。</EmptyState>
       </Card>
     );
   }
   return (
-    <CardList>
-      {props.runs.map((run) => (
-        <Card key={run.id} testId={`run-row-${run.id}`}>
-          <div className="wf-card-header wf-card-header-flush">
-            <div>
-              <p className="wf-list-row-title">{run.id}</p>
-              <div className="wf-cluster">
-                {props.onOpenTask ? (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      props.onOpenTask?.(run);
-                    }}
-                  >
-                    Task {run.taskId}
-                  </Button>
-                ) : (
-                  <Muted>Task {run.taskId}</Muted>
-                )}
-                {props.onOpenProject ? (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      props.onOpenProject?.(run.projectId);
-                    }}
-                  >
-                    项目 {run.projectId}
-                  </Button>
-                ) : (
-                  <Muted>项目 {run.projectId}</Muted>
-                )}
-              </div>
-            </div>
-            <Button
-              onClick={() => {
-                props.onOpen(run.id);
-              }}
-            >
-              打开控制台
-            </Button>
-          </div>
-          <p data-testid={`run-status-${run.id}`}>{runStatusLabel(run)}</p>
-          <Muted>
-            <span data-testid={`run-usage-${run.id}`}>{formatRunUsage(run.usage)}</span>
-          </Muted>
-        </Card>
-      ))}
-    </CardList>
+    <Card>
+      <List testId="run-list">
+        {props.runs.map((run) => (
+          <ListRow
+            key={run.id}
+            testId={`run-row-${run.id}`}
+            title={run.id}
+            meta={
+              <>
+                <span data-testid={`run-status-${run.id}`}>{runStatusLabel(run)}</span>
+                {" · "}
+                <span data-testid={`run-usage-${run.id}`}>{formatRunUsage(run.usage)}</span>
+              </>
+            }
+            onClick={() => {
+              props.onOpen(run.id);
+            }}
+          />
+        ))}
+      </List>
+    </Card>
   );
 }
 
@@ -423,7 +389,7 @@ export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
         )}
       </Card>
       <Card title="判定">
-        <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+        <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>
       </Card>
       <Card title="审批">
         {(props.approvals ?? []).length === 0 ? (

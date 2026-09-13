@@ -163,6 +163,7 @@ export function WorkflowCanvasPage(props: {
       testId="workflow-canvas-page"
       actions={
         <Button
+          variant="outline"
           onClick={() =>
             props.navigate(
               session.draft.workflowId && session.draft.workflowId !== CANVAS_NEW_WORKFLOW_ID
@@ -365,15 +366,7 @@ export function shouldOpenCanvas(params: {
   if (params.workflowId === CANVAS_NEW_WORKFLOW_ID) {
     return true;
   }
-  if (params.versionId === CANVAS_DRAFT_VERSION_ID) {
-    return true;
-  }
-  if (!params.workflowId || !params.versionId || !params.workflow) {
-    return false;
-  }
-  const version = versionById(params.workflow, params.versionId);
-  if (!version || isPublishedVersionFrozen(version) || version.status === "published") {
-    return false;
-  }
-  return version.status === "draft";
+  // Only the reserved `versions/draft` path is the canvas. Concrete version ids
+  // stay on the catalog detail so published (and draft) rows do not open the editor.
+  return params.versionId === CANVAS_DRAFT_VERSION_ID;
 }

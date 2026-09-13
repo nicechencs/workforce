@@ -192,7 +192,7 @@ function WorkerIntentCard(props: {
         <CardFields write={entry.write} />
         <Button
           testId="chat-open-role-library-after"
-          variant="primary"
+          variant="outline"
           onClick={() => props.onOpenLibrary(roleLibraryWorkerPath(worker.id))}
         >
           打开角色详情

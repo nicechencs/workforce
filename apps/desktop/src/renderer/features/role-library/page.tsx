@@ -1,5 +1,6 @@
 import type {
   ForkWorkerVersionAcceptedDto,
+  ProjectDto,
   WorkerDraftDto,
   WorkerDto,
   WorkerVersionDto,
@@ -328,6 +329,7 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
     null,
   );
   const [forkNotice, setForkNotice] = useState<ForkWorkerVersionAcceptedDto | null>(null);
+  const [projects, setProjects] = useState<ProjectDto[]>([]);
 
   const reload = useCallback(async () => {
     if (!workerLibraryMethodsPresent(client)) {
@@ -363,6 +365,12 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         }
       } else {
         setDraft(null);
+      }
+      try {
+        const page = await client.listProjects({ limit: 50 });
+        setProjects(page.items);
+      } catch {
+        setProjects([]);
       }
     } catch (caught) {
       setWorker(null);
@@ -503,11 +511,16 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         </Button>
       }
     >
-      <Notice tone="info" title="空闲说话写卡片">
+      <Notice
+        tone="info"
+        title="空闲说话写卡片"
+        actions={
+          <Button variant="outline" onClick={() => navigate(CHAT_PATH)}>
+            去 Chat 说一句
+          </Button>
+        }
+      >
         请用顶栏 Chat 说一句。确认后写入本卡片对应格子，不会开收件箱，也不派 Task/Run。
-        <Button variant="outline" onClick={() => navigate(CHAT_PATH)}>
-          去 Chat 说一句
-        </Button>
       </Notice>
       <WorkerDetail
         worker={worker}
@@ -519,6 +532,7 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         actionError={actionError}
         busy={actionBusy}
         forkNotice={forkNotice}
+        projects={projects}
         onArchive={() => void archiveSelected()}
         onFork={() => void forkSelected()}
         onPublish={() => void publishSelected()}
@@ -526,6 +540,12 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         onOpenVersion={(next) => {
           setForkNotice(null);
           navigate(roleLibraryDetailHref(workerId, { versionId: next.id }));
+        }}
+        onOpenTeam={(teamId) => {
+          navigate(`/teams/${teamId}`);
+        }}
+        onOpenProjectSettings={(projectId) => {
+          navigate(`/projects/${projectId}?tab=settings`);
         }}
       />
     </Page>

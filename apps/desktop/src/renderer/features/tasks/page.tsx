@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   ErrorText,
   List,
   ListRow,
@@ -28,6 +29,9 @@ import {
 } from "../projects/command.js";
 import { pinnedArtifactVersion, taskDependencyLabel } from "../projects/model.js";
 import {
+import {
+  EVALUATION_PENDING,
+  EVALUATION_ROW,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
   projectTasksPath,
@@ -232,7 +236,25 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
         )}
       </Card>
       <Card title="判定">
-        <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+        {artifacts.length === 0 ? (
+          <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>
+        ) : (
+          <>
+            <List>
+              {artifacts.map((artifact) => {
+                const version = pinnedArtifactVersion(artifact);
+                return (
+                  <ListRow
+                    key={artifact.id}
+                    title={artifact.logicalName}
+                    meta={`${version === null ? "无精确版本" : version.id} · ${EVALUATION_ROW}`}
+                  />
+                );
+              })}
+            </List>
+            <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+          </>
+        )}
       </Card>
       <Card title="审批">
         {approvals.length === 0 ? (

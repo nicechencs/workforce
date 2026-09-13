@@ -20,6 +20,7 @@ export type FeatureOwner = "t11" | "t12" | "t13";
 export const ROLE_LIBRARY_PATH = "/role-library";
 export const CHAT_PATH = "/chat";
 export const WORKFLOW_AUTHORING_PATH = "/workflows/authoring";
+export const CHAT_RETURN_STORAGE_KEY = "workforce:chat-return";
 
 /** Full-page role detail. Same list→detail habit as `/teams/:teamId`. */
 export function roleLibraryWorkerPath(workerId: string): string {
@@ -154,5 +155,44 @@ export const SHELL_CHAT = {
 };
 
 export function isChatPath(path: string): boolean {
-  return path === CHAT_PATH;
+  const trimmed = path.startsWith("#") ? path.slice(1) : path;
+  const withoutQuery = (trimmed.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
+  const withSlash = withoutQuery.startsWith("/") ? withoutQuery : `/${withoutQuery}`;
+  return withSlash === CHAT_PATH;
+}
+
+function normalizeStoredNavPath(input: string): string {
+  const trimmed = input.startsWith("#") ? input.slice(1) : input;
+  if (trimmed.length === 0) {
+    return "/";
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+/** Remember the current hash path before opening Chat, so Chat can return. */
+export function rememberChatReturnPath(currentPath: string): void {
+  const path = normalizeStoredNavPath(currentPath);
+  if (isChatPath(path) || typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(CHAT_RETURN_STORAGE_KEY, path);
+  } catch {
+    // Storage may be blocked; Chat falls back to the workbench.
+  }
+}
+
+export function readChatReturnPath(): string {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+  try {
+    const stored = window.sessionStorage.getItem(CHAT_RETURN_STORAGE_KEY);
+    if (stored !== null && stored.length > 0 && !isChatPath(stored)) {
+      return normalizeStoredNavPath(stored);
+    }
+  } catch {
+    // Storage may be blocked.
+  }
+  return "/";
 }

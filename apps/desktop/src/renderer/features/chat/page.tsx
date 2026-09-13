@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectDto, RunDto, TaskDto, WorkerDto } from "@workforce/desktop-client";
 
+import { readChatReturnPath } from "@workforce/ui";
+
 import { useOptionalWorkforceContext } from "../../app/workforce-context.js";
 import {
   Badge,
@@ -333,13 +335,22 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
       subtitle={CHAT_SUBTITLE}
       testId="chat-page"
       actions={
-        <Button
-          variant="outline"
-          testId="chat-open-role-library"
-          onClick={() => props.navigate(roleLibraryPath())}
-        >
-          打开角色库
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            testId="chat-return"
+            onClick={() => props.navigate(readChatReturnPath())}
+          >
+            返回
+          </Button>
+          <Button
+            variant="outline"
+            testId="chat-open-role-library"
+            onClick={() => props.navigate(roleLibraryPath())}
+          >
+            打开角色库
+          </Button>
+        </>
       }
     >
       <Notice tone="info" title="不是作者页，也不是 IM">
@@ -372,7 +383,7 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         <Cluster>
           <Button
             testId="chat-direct-go"
-            variant={directReady ? "primary" : "outline"}
+            variant="outline"
             disabled={directDisabled}
             onClick={() => void onGoDirect()}
           >

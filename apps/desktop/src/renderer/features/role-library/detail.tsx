@@ -12,6 +12,7 @@ import {
   Button,
   Card,
   Cluster,
+  EmptyState,
   ErrorText,
   Field,
   List,
@@ -59,11 +60,14 @@ export function WorkerDetail(props: {
   actionError: string | null;
   busy: "archive" | "fork" | "save" | "publish" | "create" | null;
   forkNotice: ForkWorkerVersionAcceptedDto | null;
+  projects: readonly { id: string; name: string; status: string }[];
   onArchive: () => void;
   onFork: () => void;
   onPublish: () => void;
   onSaveCard: (form: CardForm) => void;
   onOpenVersion: (version: WorkerVersionDto) => void;
+  onOpenTeam: (teamId: string) => void;
+  onOpenProjectSettings: (projectId: string) => void;
 }): ReactNode {
   const worker = props.worker;
   if (worker === null) {
@@ -118,33 +122,32 @@ export function WorkerDetail(props: {
             {!canPublish ? <Muted>{PUBLISH_NOT_DRAFT}</Muted> : null}
           </>
         ) : null}
+      </Card>
+      <Card title="版本" testId="role-library-versions-card">
         {(worker.versions ?? []).length > 0 ? (
-          <>
-            <h2 className="wf-section-title">版本</h2>
-            <List testId="role-library-versions">
-              {(worker.versions ?? []).map((version) => {
-                const status = versionBadge(version);
-                return (
-                  <ListRow
-                    key={version.id}
-                    testId={`role-library-version-${version.id}`}
-                    title={
-                      <Cluster>
-                        <span>
-                          {version.name} {version.version}
-                        </span>
-                        <Badge tone={status.tone}>{status.label}</Badge>
-                      </Cluster>
-                    }
-                    meta={`${version.role} · ${version.id}`}
-                    onClick={() => {
-                      props.onOpenVersion(version);
-                    }}
-                  />
-                );
-              })}
-            </List>
-          </>
+          <List testId="role-library-versions">
+            {(worker.versions ?? []).map((version) => {
+              const status = versionBadge(version);
+              return (
+                <ListRow
+                  key={version.id}
+                  testId={`role-library-version-${version.id}`}
+                  title={
+                    <Cluster>
+                      <span>
+                        {version.name} {version.version}
+                      </span>
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                    </Cluster>
+                  }
+                  meta={`${version.role} · ${version.id}`}
+                  onClick={() => {
+                    props.onOpenVersion(version);
+                  }}
+                />
+              );
+            })}
+          </List>
         ) : (
           <Muted>此 identity 还没有已发布 WorkerVersion。</Muted>
         )}
@@ -164,8 +167,13 @@ export function WorkerDetail(props: {
           busy={props.busy}
           onArchive={props.onArchive}
           onFork={props.onFork}
+          onOpenTeam={props.onOpenTeam}
         />
       ) : null}
+      <InviteToProjectCard
+        projects={props.projects}
+        onOpenProjectSettings={props.onOpenProjectSettings}
+      />
     </Stack>
   );
 }
@@ -177,6 +185,7 @@ function VersionPanel(props: {
   busy: "archive" | "fork" | "save" | "publish" | "create" | null;
   onArchive: () => void;
   onFork: () => void;
+  onOpenTeam: (teamId: string) => void;
 }): ReactNode {
   const status = versionBadge(props.version);
   const selectable = status.tone === "success";
@@ -212,6 +221,9 @@ function VersionPanel(props: {
               key={`${item.teamId}:${item.teamVersionId}`}
               title={item.teamVersionId}
               meta={referenceMeta(item)}
+              onClick={() => {
+                props.onOpenTeam(item.teamId);
+              }}
             />
           ))}
         </List>
@@ -236,6 +248,35 @@ function VersionPanel(props: {
       {!canArchiveVersion(props.version) && canForkVersion(props.version) ? (
         <Muted>已归档版本不能再被新 Team 选用，仍可 fork 出新草稿。</Muted>
       ) : null}
+    </Card>
+  );
+}
+
+function InviteToProjectCard(props: {
+  projects: readonly { id: string; name: string; status: string }[];
+  onOpenProjectSettings: (projectId: string) => void;
+}): ReactNode {
+  return (
+    <Card title="请到项目" testId="role-library-invite">
+      <Muted>
+        次级动作：打开项目 Settings 绑定已发布 TeamVersion。不会 PATCH 这个库源版本。
+      </Muted>
+      {props.projects.length === 0 ? (
+        <EmptyState title="没有项目">先去项目列表新建，再从这里打开 Settings。</EmptyState>
+      ) : (
+        <List testId="role-library-invite-projects">
+          {props.projects.map((project) => (
+            <ListRow
+              key={project.id}
+              title={project.name}
+              meta={`${project.status} · Settings`}
+              onClick={() => {
+                props.onOpenProjectSettings(project.id);
+              }}
+            />
+          ))}
+        </List>
+      )}
     </Card>
   );
 }

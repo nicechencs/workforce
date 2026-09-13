@@ -314,14 +314,14 @@ function TeamDetailRoute(props: {
 
   if (loading && !team) {
     return (
-      <Page title="AI 团队" actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
+      <Page title="AI 团队" actions={<Button variant="outline" onClick={props.onBack}>返回 AI 团队</Button>}>
         <Skeleton lines={4} />
       </Page>
     );
   }
   if (!team) {
     return (
-      <Page title="AI 团队" actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
+      <Page title="AI 团队" actions={<Button variant="outline" onClick={props.onBack}>返回 AI 团队</Button>}>
         <p data-testid="team-not-found">{loadError ?? "未找到该团队。"}</p>
       </Page>
     );
@@ -440,7 +440,7 @@ function TeamCard(props: {
   }
 
   return (
-    <Page title={props.team.name} actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
+    <Page title={props.team.name} actions={<Button variant="outline" onClick={props.onBack}>返回 AI 团队</Button>}>
       <Card testId={props.team.kind === "preset" ? "team-preset-card" : "team-card"}>
         <Badge tone={badgeTone}>{badgeLabel}</Badge>
         <Muted>
@@ -448,12 +448,6 @@ function TeamCard(props: {
           {props.source === "live" ? "GET /teams" : "预设副本"}
         </Muted>
         {props.note ? <Muted>{props.note}</Muted> : null}
-        <h2 className="wf-section-title">Workers</h2>
-        <MemberList
-          client={props.client}
-          members={props.team.members}
-          onOpenRole={props.onOpenRole}
-        />
         {props.team.kind === "preset" ? <Muted>{save.reason}</Muted> : null}
         {!bindable ? (
           <Muted>
@@ -485,6 +479,14 @@ function TeamCard(props: {
           </Muted>
         ) : null}
         <ErrorText>{forkError}</ErrorText>
+      </Card>
+      <Card title="成员" testId="team-members">
+        <Muted>执行模式无 capability probe 时保持禁用，不画成功切换。</Muted>
+        <MemberList
+          client={props.client}
+          members={props.team.members}
+          onOpenRole={props.onOpenRole}
+        />
       </Card>
     </Page>
   );
@@ -613,7 +615,7 @@ function TeamEditor(props: {
   return (
     <Page
       title={form.teamId ? "编辑团队草稿" : "新建团队草稿"}
-      actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}
+      actions={<Button variant="outline" onClick={props.onBack}>返回 AI 团队</Button>}
     >
       <Card testId="team-editor">
         <Muted>
@@ -766,6 +768,7 @@ function MemberList(props: {
           <TH>卡片</TH>
           <TH>WorkerVersion</TH>
           <TH>数量</TH>
+          <TH>执行模式</TH>
           <TH>
             <span className="wf-sr-only">操作</span>
           </TH>
@@ -783,6 +786,11 @@ function MemberList(props: {
               </TD>
               <TD>{member.workerVersionId ?? "未引用"}</TD>
               <TD>{member.quantity}</TD>
+              <TD>
+                <Button disabled testId="team-member-orchestration">
+                  未返回
+                </Button>
+              </TD>
               <TD>
                 <Button
                   variant="outline"
@@ -819,6 +827,7 @@ function MemberEditor(props: {
   return (
     <div data-testid="team-member-editor">
       <h2 className="wf-section-title">成员</h2>
+      <Muted>每成员执行模式：无 capability probe 则禁用，不画成功切换。</Muted>
       <Table>
         <THead>
           <TR>
@@ -827,6 +836,7 @@ function MemberEditor(props: {
             <TH>卡片</TH>
             <TH>数量</TH>
             <TH>Runtime（可选）</TH>
+            <TH>执行模式</TH>
             <TH>
               <span className="wf-sr-only">操作</span>
             </TH>
@@ -879,6 +889,11 @@ function MemberEditor(props: {
                     )
                   }
                 />
+              </TD>
+              <TD>
+                <Button disabled testId="team-member-orchestration">
+                  未返回
+                </Button>
               </TD>
               <TD>
                 <div className="wf-cluster">

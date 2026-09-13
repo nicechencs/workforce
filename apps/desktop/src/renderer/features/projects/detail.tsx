@@ -53,7 +53,7 @@ import {
   runOrchestrationModeLabel,
   type OrchestrationMode,
 } from "../orchestration/index.js";
-import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
+import { sortTasksForDag, taskStatusLabel, EVALUATION_ROW } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
   PROJECT_DIRECT_ADHOC_NOTE,
@@ -406,6 +406,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       title={project.name}
       actions={
         <Button
+          variant="outline"
           onClick={() => {
             navigate("/projects");
           }}
@@ -568,6 +569,18 @@ function OverviewPanel(props: {
           <dd>{approvals}</dd>
         </dl>
       </Card>
+      <Card title="绑定的 WorkflowVersion" testId="project-overview-workflow">
+        <Muted>
+          {project.planArtifactVersionId
+            ? `已确认计划产物 ${project.planArtifactVersionId}`
+            : "未确认计划。确认前不会开始执行开发任务。"}
+        </Muted>
+        <Muted>
+          {project.executionSnapshotId
+            ? `执行快照 ${project.executionSnapshotId}`
+            : "尚未绑定执行图。自定义图是否进入 :start 是执行缺口，不是再加标签。"}
+        </Muted>
+      </Card>
 
       {project.status === "draft" || project.status === "planning" ? (
         <Card title="名称与目标">
@@ -640,7 +653,7 @@ function TasksPanel(props: {
                   {taskStatusLabel(task.status)} · 负责人 {taskOwnerLabel(task)} ·{" "}
                   {taskDependencyLabel(task, props.tasks)} · attempt {task.attempt} · generation{" "}
                   {task.generation}
-                  {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""}
+                  {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""} · {EVALUATION_ROW}
                 </span>
               }
               onClick={() => props.onOpen(task.id)}
@@ -711,7 +724,7 @@ function ArtifactsPanel(props: {
                   pinned
                     ? ` · ${pinned.id} · hash ${pinned.hash}`
                     : " · 尚无已固定版本，无法打开内容"
-                }`}
+                } · ${EVALUATION_ROW}`}
                 {...(pinned ? { onClick: () => props.onOpen(artifact.id, pinned.id) } : {})}
               />
             );

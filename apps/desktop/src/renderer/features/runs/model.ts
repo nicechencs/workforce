@@ -16,6 +16,8 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
 export const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
 
 export const FIELD_UNRETURNED = "未返回";
+export const EVALUATION_ROW = "判定：未返回";
+export const EVALUATION_PENDING = "尚未判定";
 export const EVALUATION_UNAVAILABLE =
   "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
 

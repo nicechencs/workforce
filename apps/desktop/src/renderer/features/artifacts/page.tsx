@@ -6,13 +6,14 @@ import type {
 } from "@workforce/desktop-client";
 import type { ReactNode } from "react";
 
-import { Button, Card, ErrorText, List, ListRow, LoadingText, Muted, Page } from "../../components/ui.js";
+import { Button, Card, EmptyState, ErrorText, List, ListRow, LoadingText, Muted, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
   artifactVersionHeading,
   decodeArtifactContent,
+  EVALUATION_PENDING,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
   isUnversionedArtifactPath,
@@ -57,8 +58,24 @@ function ArtifactVersionPage(props: {
     }
     return { artifact, version, content, lineage, approvals };
   });
+  const projectId = query.data?.artifact.projectId;
   return (
-    <Page title="产物" subtitle={`${props.artifactId} / versions / ${props.versionId}`}>
+    <Page
+      title="产物"
+      subtitle={`${props.artifactId} / versions / ${props.versionId}`}
+      actions={
+        projectId !== undefined ? (
+          <Button
+            variant="outline"
+            onClick={() => {
+              props.navigate(`/projects/${projectId}`);
+            }}
+          >
+            返回项目
+          </Button>
+        ) : undefined
+      }
+    >
       <ErrorText>{query.error}</ErrorText>
       {query.loading && query.data === null ? <LoadingText /> : null}
       {query.data ? (
@@ -131,7 +148,7 @@ export function ArtifactVersionView(props: {
         <IdList ids={props.lineage.children} empty="无子版本" />
       </Card>
       <Card title="判定">
-        <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+        <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>
       </Card>
       <Card title="审批">
         {approvals.length === 0 ? (

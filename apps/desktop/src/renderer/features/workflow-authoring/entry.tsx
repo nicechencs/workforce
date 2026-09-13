@@ -12,7 +12,7 @@ export function WorkflowAuthoringEntry(props: { navigate: (path: string) => void
       <Cluster>
         <Button
           testId="workflow-authoring-open"
-          variant="primary"
+          variant="outline"
           onClick={() => props.navigate(AUTHORING_ROUTE)}
         >
           打开工作流作者面

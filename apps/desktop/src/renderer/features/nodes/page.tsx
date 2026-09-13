@@ -5,6 +5,8 @@ import {
   Button,
   Card,
   ErrorText,
+  List,
+  ListRow,
   LoadingText,
   Muted,
   Page,
@@ -52,27 +54,46 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
     return { health, ready, version };
   });
   const detail = props.path.includes("/nodes/");
+  const status = localNodeStatusLabel({
+    health: query.data?.health ?? null,
+    ready: query.data?.ready ?? null,
+  });
   return (
     <Page
       title={detail ? "节点详情" : "执行节点"}
       subtitle={detail ? props.nodeId : "V0.1 仅本机节点。远程 enrollment 未接入。"}
+      actions={
+        detail ? (
+          <Button variant="outline" onClick={() => props.navigate("/nodes")}>
+            返回本机节点
+          </Button>
+        ) : undefined
+      }
     >
       <ErrorText>{query.error}</ErrorText>
       {query.loading && query.data === null ? <LoadingText /> : null}
-      <LocalNodeCard
-        nodeId={LOCAL_NODE_ID}
-        health={query.data?.health ?? null}
-        ready={query.data?.ready ?? null}
-        version={query.data?.version ?? null}
-        detail={detail}
-        onOpen={
+      {detail ? (
+        <LocalNodeCard
+          nodeId={LOCAL_NODE_ID}
+          health={query.data?.health ?? null}
+          ready={query.data?.ready ?? null}
+          version={query.data?.version ?? null}
           detail
-            ? undefined
-            : () => {
+        />
+      ) : (
+        <Card>
+          <List testId="node-list">
+            <ListRow
+              testId="local-node-row"
+              title="本机 / Mock"
+              meta={`${status.label} · ${localNodeSubtitle()}`}
+              onClick={() => {
                 props.navigate(`/nodes/${LOCAL_NODE_ID}`);
-              }
-        }
-      />
+              }}
+            />
+          </List>
+        </Card>
+      )}
     </Page>
   );
 }
@@ -97,7 +118,14 @@ export function LocalNodeCard(props: {
             <StatusText tone={tone}>{status.label}</StatusText>
           </span>
         </div>
-        {props.onOpen ? <Button onClick={props.onOpen}>查看详情</Button> : null}
+        {props.onOpen ? (
+          <Button
+            variant="outline"
+            onClick={props.onOpen}
+          >
+            查看详情
+          </Button>
+        ) : null}
       </div>
       <Muted>
         <span data-testid="local-node-probe">{localNodeSubtitle()}</span>
