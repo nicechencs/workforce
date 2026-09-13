@@ -321,13 +321,28 @@ describe("team draft form", () => {
     expect(published.published).toBe(true);
   });
 
-  it("requires role, runtime profile, and quantity >= 1", () => {
+  it("requires a published workerVersionId and quantity >= 1", () => {
     expect(draftMembersValid(PRESET_TEAM.members)).toBe(true);
     expect(draftMembersValid(updateDraftMember(PRESET_TEAM.members, 0, { quantity: 0 }))).toBe(
       false,
     );
     expect(draftMembersValid(updateDraftMember(PRESET_TEAM.members, 0, { role: "" }))).toBe(false);
-    expect(addDraftMember(PRESET_TEAM.members)).toHaveLength(4);
+    expect(
+      draftMembersValid(updateDraftMember(PRESET_TEAM.members, 0, { workerVersionId: "" })),
+    ).toBe(false);
+    expect(
+      addDraftMember(PRESET_TEAM.members, {
+        workerId: "wrk_software_developer",
+        workerName: "Developer",
+        workerVersionId: "wrv_software_developer_0_1_0",
+        version: "0.1.0",
+        name: "Developer",
+        role: "developer",
+        archived: false,
+        status: "published",
+        immutable: true,
+      }),
+    ).toHaveLength(4);
   });
 });
 
@@ -379,13 +394,28 @@ describe("team catalog parsing", () => {
       name: "Docs team",
       version: "0.2.0",
       status: "draft",
-      members: [{ role: "developer", runtimeProfileId: "mock", quantity: 2, title: "Dev" }],
+      members: [
+        {
+          role: "developer",
+          runtimeProfileId: "mock",
+          quantity: 2,
+          title: "Dev",
+          workerVersionId: "wrv_docs_developer_0_1_0",
+        },
+      ],
     });
     expect(custom).toMatchObject({
       kind: "custom",
       status: "draft",
       readonly: false,
-      members: [{ role: "developer", quantity: 2, runtimeProfile: "mock" }],
+      members: [
+        {
+          role: "developer",
+          quantity: 2,
+          runtimeProfile: "mock",
+          workerVersionId: "wrv_docs_developer_0_1_0",
+        },
+      ],
     });
     const fromVersions = asTeamView({
       id: "tm_software_development",
@@ -412,7 +442,12 @@ describe("team catalog parsing", () => {
     expect(fromVersions?.versionId).toBe("tmv_software_development_0_1_0");
     expect(fromVersions?.members.map((member) => member.quantity)).toEqual([1, 2, 1]);
     expect(membersToPayload(custom!.members)).toEqual([
-      { role: "developer", runtimeProfileId: "mock", quantity: 2 },
+      {
+        workerVersionId: "wrv_docs_developer_0_1_0",
+        role: "developer",
+        runtimeProfileId: "mock",
+        quantity: 2,
+      },
     ]);
     const merged = mergeCatalogTeams([custom!]);
     expect(merged[0]).toEqual(PRESET_TEAM);
@@ -436,6 +471,7 @@ describe("team draft persistence", () => {
             title: "Developer",
             runtimeProfile: "mock",
             quantity: 2,
+            workerVersionId: "wrv_software_developer_0_1_0",
           },
         ],
         teamId: null,
@@ -448,7 +484,12 @@ describe("team draft persistence", () => {
     expect(result.team.status).toBe("draft");
     expect(client.calls).toEqual(["createTeam", "createTeamVersion", "getTeam"]);
     expect(client.lastMembers).toEqual([
-      { role: "developer", runtimeProfileId: "mock", quantity: 2 },
+      {
+        workerVersionId: "wrv_software_developer_0_1_0",
+        role: "developer",
+        runtimeProfileId: "mock",
+        quantity: 2,
+      },
     ]);
 
     const reloaded = await loadTeamDetail(client, "tm_1", []);
@@ -551,7 +592,7 @@ function memoryTeamClient(store: Map<string, unknown>) {
     },
     createTeamVersion: async (
       id: string,
-      input: { members: Array<{ role: string; runtimeProfileId: string; quantity: number }> },
+      input: { members: Array<{ workerVersionId: string; role: string; quantity: number }> },
     ) => {
       client.calls.push("createTeamVersion");
       client.lastMembers = input.members;
