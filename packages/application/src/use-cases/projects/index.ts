@@ -60,10 +60,7 @@ export {
   insertAdHocTask,
   type CreateAdHocTaskInput,
 } from "./direct-task.js";
-export {
-  startDirectWork,
-  type StartDirectWorkInput,
-} from "./start-direct-work.js";
+export { startDirectWork, type StartDirectWorkInput } from "./start-direct-work.js";
 export type { AppContext } from "./context.js";
 export {
   captureProjectPolicySnapshot,

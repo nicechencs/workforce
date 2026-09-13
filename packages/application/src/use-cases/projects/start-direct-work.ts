@@ -1,7 +1,4 @@
-import {
-  parseStartDirectTaskRunAccepted,
-  type PlacementIntent,
-} from "@workforce/protocol";
+import { parseStartDirectTaskRunAccepted, type PlacementIntent } from "@workforce/protocol";
 
 import { startTaskRun } from "../runs/runs.js";
 import { requireTask } from "../tasks/tasks.js";
