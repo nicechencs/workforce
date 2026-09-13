@@ -9,7 +9,7 @@ updated: 2026-09-13
 # V0.1 开发任务清单：供后续 agent 领取
 
 日期：2026-09-13  
-状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 自定义 Team 写 UI / 角色库页 / 全局 Chat 壳 / Daemon 会话驱动作者页 / 项目详情 orchestrationMode 控件与 composed passthrough 已有切片；卡片三字段、句意分类、空闲写卡仍 planned。完成度只认 03。  
+状态：**实现已开始。** 本文仍是任务卡与文件所有权；进度以 [03-implementation-status.md](03-implementation-status.md) 和仓库测试为准，不要把本节旧句“均未开始代码实现”当成现状。产品主对象是 **Project（项目制）**。M7 补齐画布、自定义 Team 与对话生成；M8 补齐双执行模式。T18–T21 **不是**「均未实现」：写 API / 画布壳 / 自定义 Team 写 UI / 角色库页 / 全局 Chat 壳 / Daemon 会话驱动作者页 / 项目详情 orchestrationMode 控件与 composed passthrough 已有切片；卡片三字段、句意分类、空闲写卡与 Team `resolveTeamDraft` **已接线**（`d376ba2`）。Task `resolveTaskPatch` 未接；`POST /tasks/{id}/runs` **有路由**但 allowlist 阻断。完成度只认 03。  
 前置阅读：[设计评审与待冻结决策](01-design-review.md)、[决策登记 §0 / D15–D18](decision-register.md)、[产品沟通历史](communication-history.md)、[MVP 原计划](../blueprint/12-mvp-implementation-plan.md)、[实现进度](03-implementation-status.md)。
 
 ## 1. 使用方式
@@ -105,17 +105,17 @@ flowchart TD
 | 子任务 | 所属/唯一 owner | 范围与验收 | 前置依赖 |
 |---|---|---|---|
 | `T02-CANONICAL-GRAPH-CONTRACT` | T02 | **协议切片已实现：** `WorkflowGraphDefinition`、Draft/CAS、TeamVersion、AuthoringProposal/ChangeSet 已冻结为 `packages/protocol` 的唯一图契约；节点、边、failure/concurrency policy 与非法 DAG fixture 可校验，画布与 authoring 复用同一 DTO。Application/SQLite/Daemon 消费者仍待后续任务接线。 | C5–C9 已冻结；解除 T18、T20-SEND、T14-AUTH 的协议阻塞。 |
-| `T02-WORKER-VERSION-LIBRARY` | T02 | **planned：** 冻结 WorkerVersion 身份、角色版本库（列表/搜/归档/引用/fork）与 `TeamMemberDto.workerVersionId`。`role` 为职责标签；读取仍能 parse 旧三字段。不发明 Marketplace path，也不在本文列 HTTP。 | 产品方向已确认（D16 收窄）；解除库/Team 写契约阻塞。 |
-| `T02-GLOBAL-CHAT-SHELL` | T02 | **planned：** 冻结 Chat 四类意图（创建角色 / 创建流程 / 问进度 / 交流工作）与只读进度投影。创建类仍用 AuthoringSession。禁止 IM、`workerId` 会话对端、聊天当完成。不发明 HTTP path。 | 产品方向已确认（D17 收窄）。 |
+| `T02-WORKER-VERSION-LIBRARY` | T02 | **契约已冻结（`d376ba2`）：** WorkerVersion 身份、角色版本库（列表/搜/归档/引用/fork）、卡片 `who` / `how` / `skills` 与 `TeamMemberDto.workerVersionId`。`role` 为职责标签；读取仍能 parse 旧三字段。不发明 Marketplace path。HTTP 已接线，见 03。 | 产品方向已确认（D16 收窄）。 |
+| `T02-GLOBAL-CHAT-SHELL` | T02 | **契约已冻结（`d376ba2`）：** Chat 意图与只读进度投影。建/改角色走库；创建流程仍用 AuthoringSession。禁止 IM、`workerId` 会话对端、聊天当完成。不发明 HTTP path。 | 产品方向已确认（D17 收窄）。 |
 | `T02-RUN-WIRE-CONTRACT` | T02 | 冻结 `POST /tasks/{id}/runs`、placement intent、mode 归一化和 capability mode 维度；Run/Project/Team DTO 只保留一个权威来源，并覆盖幂等、CAS、无能力组合 fixture。 | 阻塞 T09-DIRECT 与 T10 接线。 |
 | `T04-D15-PUBLISH` | T04（迁移/repository）与 T09（发布校验）顺序交接 | **repository 切片已实现：** 以稳定 SHA-256 insert-once 已发布执行图；实例只能引用版本，禁止 `workflow_instances` 写入时隐式 upsert/改写 `workflow_versions`；旧空 FK placeholder 只能一次提升，真实版本更新拒绝且读图回到版本表。Application 发布、历史 backfill 和 T09 图源切换仍待接线。不得复用 catalog DTO 当执行图。 | `T02-CANONICAL-GRAPH-CONTRACT`；repository 阻塞已解除，T09-D02 仍等待发布/图源接线。 |
 | `T04-AUTHORING-REPOSITORIES` | T04（repository）→ T20-B（Application staged apply） | **持久化切片已实现：** Workflow/Team Draft 按父对象 revision append-only CAS；ChangeSet 与全量 step 原子写入，source Run 必须属于同一 Project/organization；ChangeSet 与 step 的推进均要求当前 status CAS。它不定义状态转移规则、不产出 proposal、不应用 patch，也不替代恢复策略。 | `T02-CANONICAL-GRAPH-CONTRACT`；解除 T20-B 的 SQLite 写入阻塞。 |
-| `T20-B-STAGED-APPLY` | T20-B（Application） | **M3 切片已实现：** 只接受 `validating` 的结构化 ChangeSet；在写入前完整校验 Project/organization、source Run、所有 Workflow/Team target、draft revision 和 step 的 pending 状态，随后原子落新 Draft revision、applied step 和审计事件。草稿/ChangeSet 经 SQLite world snapshot、Daemon dual-write 与 composition reload 跨重启恢复。不发布、不启动 Workflow。Daemon typed send 与 Workflow 聊天确认已另切片接线；Task patch、部分失败恢复仍未实现。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T04-AUTHORING-REPOSITORIES`。 |
+| `T20-B-STAGED-APPLY` | T20-B（Application） | **M3 切片已实现：** 只接受 `validating` 的结构化 ChangeSet；在写入前完整校验 Project/organization、source Run、所有 Workflow/Team target、draft revision 和 step 的 pending 状态，随后原子落新 Draft revision、applied step 和审计事件。草稿/ChangeSet 经 SQLite world snapshot、Daemon dual-write 与 composition reload 跨重启恢复。不发布、不启动 Workflow。Daemon typed send、Workflow 与 Team 聊天确认已另切片接线；**Task patch 仍未接到 composition**（Application 已有 `landChatTaskPatch`；Daemon 无 `resolveTaskPatch` / `tasks` port）。部分失败恢复仍未实现。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T04-AUTHORING-REPOSITORIES`。 |
 | `T20-B-PROPOSAL-LIFECYCLE` | T20-B（Application；Runtime 输出接口归 T15/T05） | **M3 切片已实现：** `authoring.start` 创建受治理 Task/Run，复用既有 placement/Runtime Host；结构化 Proposal 仅含摘要和 Artifact 引用，经 source Run/Project 边界校验后创建 `proposed` ChangeSet，显式 validate 才进入 `validating`。intent 不持久化。Mock/Host Proposal 输出与 Daemon typed send 已另切片接线；Task patch、失败/取消/重试与 Codex 映射仍未实现。 | `T20-B-STAGED-APPLY`；T05/T15 输出接口后才能接 Agent。 |
 | `T05-AUTHORING-PROPOSAL-OUTPUT` | T05 Runtime Host；T15/Codex 实现适配 | **Runtime/Mock/Daemon 切片已实现：** SPI 声明唯一 `runtime.authoring.proposal`，Mock 可重复产出严格 `AuthoringProposal`，`LocalNodeHost` 在持久化前以 protocol parser 清洗，丢弃 adapter 提供的摘要文本；非法对象转为拒绝事件。Daemon 只消费非 audit-only、Host request 明确为 `authoring:proposal` 的事件，并从绑定 handle 反查 Application Run/Project 后提交 ChangeSet；未绑定或回调失败会重放。ChangeSet/Event 的 SQLite 投影成功后，才用既有 `inbox_receipts` 写入 per-event ACK，重放先查该 ACK。Codex 已显式声明 `authoring.proposal` unsupported（无可信 JSONL item，禁止文本推断）；真实映射、Task patch、重试和 Renderer send 仍未实现。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T20-B-PROPOSAL-LIFECYCLE`、T05 event/handle recovery。 |
 | `T09-D02-SNAPSHOT-START` | T09 | **M3 snapshot/start 切片已实现：** `confirm-plan` 只创建一次 `ProjectExecutionSnapshot` 并进入 `ready`；`:start` 从 snapshot 创建实例，再实例化 Node/Task。canonical graph 会先落 SQLite/world 后供 snapshot 引用。已覆盖 ready 无实例和幂等重放；失败恢复、Project/租户强校验、真实 policy snapshot、published catalog 图源和 T16 场景仍待完成。 | `T04-D15-PUBLISH` repository 切片；T10 审批边界、T16 场景仍待接线。 |
 | `T10-EVENT-REPLAY-SSE` | T10 | `/events` 与 SSE 从持久 Event Store 补拉，cursor/high-water/retention 跨重启有效；断线、重复、缺口、过滤变化和 `410 event_cursor_expired` 有契约/集成测试。 | T04 Event Store，T16 验收。 |
-| `T08-M5-EVALUATION-RETENTION` | T08 | Evaluation 绑定精确 ArtifactVersion/digest；缺产物、完整性或测试失败不得 completed；quarantine 可审计且不被消费；retention 清理原文而保留摘要。 | T04、T06、T07、T09。 |
+| `T08-M5-EVALUATION-RETENTION` | T08 | **完成门目标句（对照 `d376ba2`）：** T08 `ArtifactEvaluator` 已 `waitCapturedExit`；Windows Job `wait()` 已在 `packages/process`（capture 不可用 fail-closed），不要再把 T06 Windows wait 写成 blocker。composition `recordRunSucceeded` 不把 T08 结论写入 `world.evaluations`；`taskCompletionBarrier` 在**零条 evaluation** 时仍放行 `completed`。缺产物、完整性失败、没有 verdict=`pass` 不得 `completed`；quarantine 可审计且不被消费；retention 清理原文而保留摘要。 | T04、T06、T07、T09。 |
 | `T02-PROCESS-TERMINAL-CONTRACT` | T02 | 冻结唯一 `CapturedProcess.wait()`：仅 root 退出、output EOF 与受管树收敛均已验证时才 resolve 原生 `{ exitCode, signal }`；无法证明收敛、overflow/abandon 或取消失败须以稳定 `ProcessControllerError` fail closed。timeout、用户取消与预算停止由 Application/Workflow Engine 归因，禁止塞入 exit result；`inspect()` 继续只报告 liveness/identity，禁止第二套 CommandRunner 或私有 exit-code port。 | 阻塞 T06 的跨平台实现与 T08 command criterion；需要 T06/T07/T15/T16 的消费者审阅。 |
 | `T06-PROCESS-TERMINAL-OUTCOME` | T06 | 在唯一 `ProcessController` 上实现已冻结的跨平台终态 `{ exitCode, signal }`、identity/受管树收敛与稳定失败码；明确 bounded output 的消费/丢弃策略、调用方 timeout 后的 graceful/force cancel、Windows Job capture 与不支持时的 fail-closed 行为。不得让消费者通过扩展 `inspect()` 或私有 fake 伪造退出码。 | `T02-PROCESS-TERMINAL-CONTRACT`；阻塞 `T08` 的 command criterion；复用 T07 Policy 与 T16 平台验收。 |
 | `T03-REMOTE-NODE-COMPAT-SPIKE` | T03 | 不改 Domain/Task/Event schema 的 Remote Node Mock start/event/cancel/reconcile/lease-expiry 实验；明确它不是生产 runner，并留下 Windows/macOS/Linux 协议层证据。 | T02、T05。 |
@@ -126,11 +126,11 @@ flowchart TD
 | `T02-PROTOCOL-SCHEMA-GENERATION` | T02 | 从 `packages/protocol` 权威定义生成或校验版本化 JSON Schema/fixtures，并在本地门禁发现手写 schema 漂移。 | `T02-CANONICAL-GRAPH-CONTRACT`、`T02-RUN-WIRE-CONTRACT`。 |
 | `T11-RENDERER-CLIENT-CANONICALIZATION` | T11（T18/T19/T20 配合迁移调用） | 确定唯一生产 typed client/context 装配；隔离重复 fallback，真实 preload 与测试注入走同一行为，禁止新增第三套 client。 | 当前 Desktop shell；先于后续 M7 页面扩展。 |
 | `T09-PLACEMENT-LEASE-WIRING` | T09（T04 repository、T16 恢复验收） | **本机切片已实现：** NodeSession 与 per-run ExecutionLease 分离；Project 只保留 PlacementIntent/本机库存，Run 启动解析并写入不可变 `RunExecutionSnapshot`；事务提交后再 spawn，相同 operation 幂等重试；Workflow Scheduler 只做 DAG，Local Node Placement Scheduler 选本机节点。续租/过期跨进程恢复、远程 placement 与 T16 故障注入仍待。 | `T04-RUN-AXIS`、`T02-RUN-WIRE-CONTRACT`、T05 binding。 |
-| `T19-TEAM-CARD` | T19 | **planned：** 请角色进 Team 时带上库里卡片；选择器能看见他是谁 / 怎么干活 / 技能，不把 Runtime 当必选身份。添加成员仍必须选已发布 `workerVersionId`。不复制库页，不发明 Marketplace。 | 角色库页已接线；卡片字段契约归 T02。 |
-| `T20-CHAT-MAP` | T20 | **planned：** Chat UI 按分类结果落到库 / Team / Workflow；空闲说话写卡（草稿 PATCH 或已发布 fork）；认不出再问，不默成交流工作；不强制三张确认卡。建角色走 `POST /workers`，不经 AuthoringSession。不在 Renderer 再写一套关键词分类。 | 壳已接线；句意分类归 Application；卡片写入归 catalog。 |
-| `T20-B-INTENT-CLASSIFY` | T20-B（T14 Application chat；不写库） | **planned：** 分类按发信人句意落到对象，而不是匹配「创建角色 / 创建流程」字面。认不出 → 澄清，禁止默成交流工作。建角色可不挂 `projectId`。空闲写卡与建角色不走 AuthoringSession。 | 意图 DTO 归 T02；禁止 Daemon 第二套关键词分类器。 |
+| `T19-TEAM-CARD` | T19 | **已接线（`d376ba2`）：** 请角色进 Team 时带上库里卡片；选择器能看见他是谁 / 怎么干活 / 技能，不把 Runtime 当必选身份。添加成员仍必须选已发布 `workerVersionId`。不复制库页，不发明 Marketplace。本 tip 未 headed。 | 角色库页已接线；卡片字段契约归 T02。 |
+| `T20-CHAT-MAP` | T20 | **已接线（`d376ba2`）：** Chat UI 按分类结果落到库 / Team / Workflow；空闲说话写卡（草稿 PATCH 或已发布 fork）；认不出再问，不默成交流工作；不强制三张确认卡。建角色走 `POST /workers`，不经 AuthoringSession。不在 Renderer 再写一套关键词分类。「去做」仍 `unsupported_capability`。 | 壳已接线；句意分类归 Application；卡片写入归 catalog。 |
+| `T20-B-INTENT-CLASSIFY` | T20-B（T14 Application chat；不写库） | **已接线（`d376ba2`）：** 分类按发信人句意落到对象。认不出 → 澄清，禁止默成交流工作。建角色可不挂 `projectId`。空闲写卡与建角色不走 AuthoringSession。 | 意图 DTO 归 T02；禁止 Daemon 第二套关键词分类器。 |
 
-`T04-MIG`、`T14-AUTH`、`T20-SEND`、`T09-DIRECT`、`T04-RUN-AXIS`、`T16-UPGRADE`、`T15-LIVE`、`T18-HEADED` 与 `T17-PACK` 已在本任务的先前审计中列为同样受限的父卡子任务；不重复造 T22/T23 一类平行大任务。远程 enrollment、生产远程 runner、容器编排、大文件 GC 和完整 OS sandbox 仍属当前 V0.1 范围外，不得借本表默认扩项。
+`T04-MIG`、`T14-AUTH`、`T20-SEND`、`T09-DIRECT`、`T10-TASK-RUN-HTTP`、`T04-RUN-AXIS`、`T16-UPGRADE`、`T15-LIVE`、`T18-HEADED` 与 `T17-PACK` 已在本任务的先前审计中列为同样受限的父卡子任务；不重复造 T22/T23 一类平行大任务。`T09-DIRECT` **不要**再写成「Daemon 无 `POST /tasks/{id}/runs`」——路由与 typed `startTaskRun` 已有；缺的是 allowlist 放行、`orchestration.direct` probe、去掉 direct 的 `requireWorkflowBinding: true`、项目内 ad-hoc Task 调度。远程 enrollment、生产远程 runner、容器编排、大文件 GC 和完整 OS sandbox 仍属当前 V0.1 范围外，不得借本表默认扩项。
 
 ## 4. 详细任务卡
 
@@ -256,7 +256,7 @@ flowchart TD
 
 **工作：** staging → hash/size/schema verify → available；不可变 ArtifactVersion、output slot、固定版本 lineage、内容受控读取、隔离/quarantine、保留及导出；规则/schema/test evaluator 与测试证据 Artifact。
 
-**验收：** 内容落盘后崩溃可恢复且不重复 available；篡改内容被隔离；不符合 required output 的结果不能验收；新版本不继承旧 pass；读取/审批固定版本；测试命令通过 Process/Policy ports，不能另开不受管 shell。
+**验收：** 内容落盘后崩溃可恢复且不重复 available；篡改内容被隔离；不符合 required output 的结果不能验收；新版本不继承旧 pass；读取/审批固定版本；测试命令通过 Process/Policy ports，不能另开不受管 shell。**完成门目标句（对照 `d376ba2`）：** T08 已 `waitCapturedExit`；零条 evaluation 仍可 `completed`——不得把空 evaluation 列表当成 pass。
 
 **集成依赖：** T04、T06、T07。Evaluation 只报告 verdict/证据，Task 完成决策交给 T09；不直接修改 Workflow 表。
 
@@ -272,7 +272,7 @@ flowchart TD
 - Approval 的四类 gate（计划、产物、动作、预算）、一次性决策/消费、拒绝/要求修改/到期、接管状态。
 - 预算预留、usage 去重与结算、资源释放；审批提高预算应产生新授权版本。
 
-**验收：** 合法/非法状态矩阵通过；并行结果乱序不改变最终判定；重复 start/approve/cancel 不重复副作用；容量等待不消耗失败次数；未知状态不并发重跑；未通过 Artifact/Evaluation/Approval 不能完成 Task；取消收敛前保持中间状态；Reviewer 无循环等待。
+**验收：** 合法/非法状态矩阵通过；并行结果乱序不改变最终判定；重复 start/approve/cancel 不重复副作用；容量等待不消耗失败次数；未知状态不并发重跑；未通过 Artifact/Evaluation/Approval 不能完成 Task；取消收敛前保持中间状态；Reviewer 无循环等待。**对照 `d376ba2`：** 零条 evaluation 仍可 `completed`；`T09-DIRECT` 不要再实现 `POST /tasks/{id}/runs` 路由。
 
 **集成依赖：** T04–T08。可先基于 fake ports 完成状态机，但真实持久化、Mock Host、取消和恢复通过后才验收。不得直接 spawn Codex 或访问具体数据库表。
 
@@ -283,6 +283,8 @@ flowchart TD
 **工作：** loopback 随机端口、受保护 bootstrap、stable principal/session token 分离、Host/Origin 检查、API version、health/readiness、commands/queries、ETag/CAS、持久幂等、统一错误、SSE/high-water mark/expiry/backpressure；实现 T02 能力矩阵中的 endpoint。
 
 **验收：** API handlers 只调用用例；无任意路径/命令能力；重连换 token 后重放同命令仍返回同结果；相同 key 不同 payload 冲突；过期 cursor 触发快照重建；未知成本与 unsupported capability 正确透传；查询与 UI 所用 DTO 一致。
+
+**当前切片（见 03；`T10-TASK-RUN-HTTP`）：** `POST /tasks/{id}/runs` **已有路由**与 typed `startTaskRun`；不要再实现一遍路由。Electron allowlist 仍 `blockedUntil: "T10-TASK-RUN-HTTP"`。composition `requireWorkflowBinding: true` 会拒 ad-hoc；`capabilities.orchestration.direct === false`。`confirmChatDeps` 已接 Team `resolveTeamDraft`，**未接** Task `resolveTaskPatch`。禁止 `:direct` URL。
 
 **集成依赖：** T04/T09/T14；T11 handshake。先用 application fake 可开发 HTTP 契约，业务完成验收必须连真实用例。Artifact 传输由服务 resolver 控制，敏感 token 不进入 URL。
 
@@ -411,7 +413,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；发布后 `GET /teams` 可见；Project 绑定精确 `TeamVersion`。不引入 Marketplace，不把 Worker 标成固定节点。未实现不得写成已完成。
 
-**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `workerVersionId` 写入 + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload 已接线。无假 publish/bind。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。**卡片三字段 / `T19-TEAM-CARD` 仍 planned**。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
+**当前切片（见 03）：** Team 写 API + 自定义 Team 写 UI + `workerVersionId` 写入 + `GET /teams?status=draft` / `GET /teams/{id}` 草稿 reload + **卡片三字段**已接线。无假 publish/bind。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。**不**宣称 M7 完成。领取本卡不要再复制一套 HTTP。
 
 **集成依赖：** T02 TeamVersion 写 DTO、T10 写 API、T12/T14 预设模板并存。
 
@@ -432,7 +434,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** typed client；未实现时无成功态按钮。协议就绪后：对话 → 草稿可见 → 画布可改 → 发布后 Runtime 仍只执行已发布版本。headed 未跑不得宣称对话编排可用。不得把 Mock 聊天冒充已实现。
 
-**当前切片（见 03）：** 全局 Chat 壳已接线（`features/chat/`）；确认 `POST /workers` 进库可无项目。作者壳仍挂入 `?authoring=1`；`CHAT_SESSION_PROTOCOL_FROZEN=true`。问进度只读投影、交流挂点、「去做」诚实失败已接线。分类仍是关键词。Electron allowlist 已放行 workers / classify / progress / authoring-sessions。**`T20-CHAT-MAP`（句意落地 / 空闲写卡）仍 planned**。headed 未跑。不得把壳写成对话编排完成或 M7 完成。
+**当前切片（见 03）：** 全局 Chat 壳已接线（`features/chat/`）；确认 `POST /workers` 进库可无项目。作者壳仍挂入 `?authoring=1`；`CHAT_SESSION_PROTOCOL_FROZEN=true`。问进度只读投影、交流挂点、句意落地、空闲写卡已接线。「去做」诚实失败已接线。Electron allowlist 已放行 workers / classify / progress / authoring-sessions，**未**放行 `POST /tasks/{id}/runs`。headed 未跑。不得把壳写成对话编排完成或 M7 完成。
 
 **集成依赖：** T02 会话/草稿契约、T18 画布、T10 写 API、T19 若生成 Team 草稿。可先用 fake 画 UI，合并时接真实 endpoint。
 
@@ -453,7 +455,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** proposal → draft → CAS/staged apply → 画布编辑 → 发布路径可追溯；revision 冲突、空意图、校验失败、部分失败、取消和重试不假成功；未发布图不会被执行；不同聚合不会被静默部分覆盖。
 
-**当前切片（见 03）：** `authoring.start`、staged-apply、Mock Proposal 回调、Host/Daemon 一次性 transient prompt handoff（磁盘只存 digest）与 `confirmAuthoringChatProposal`（仅 workflow create/update）已接线。`targetType !== "workflow"` 与 Task patch 仍 not implemented；turn retry 为 `unsupported_capability`。**`T20-B-INTENT-CLASSIFY` 仍 planned**。不得把 `authoring.start` 误报为 Agent 已收到 intent，也不得把 AuthoringSession 写成建角色闸门。
+**当前切片（见 03）：** `authoring.start`、staged-apply、Mock Proposal 回调、Host/Daemon 一次性 transient prompt handoff（磁盘只存 digest）、`confirmAuthoringChatProposal`（workflow create/update）与 Team `resolveTeamDraft` 已接线。Application 已有 `landChatTaskPatch` / `resolveTaskPatch`；Daemon **未接** Task patch（无 resolver / `tasks` port）；turn retry 为 `unsupported_capability`。句意分类已接线。不得把 `authoring.start` 误报为 Agent 已收到 intent，也不得把 AuthoringSession 写成建角色闸门。
 
 **集成依赖：** T02、T09、T10、T14；T20 UI 只消费该用例的 typed contract。
 
@@ -473,7 +475,7 @@ T14 同时负责 D17 后端 authoring：实现 Application authoring use case �
 
 **验收：** 无能力组合启动被拒绝（`unsupported_capability` 或等价已冻结错误）。有能力时两种模式都可被选且可在 Run 上读回。不得用 Mock 成功宣称真实 Codex 已验证 direct。headed 未跑不得宣称桌面模式选择可用。
 
-**当前切片（见 03）：** 项目详情已挂 mode 控件；`:start` capability gating 已有；composed `startProject` 把 mode 传入 `app.start()` 并回显 DTO。受管 `startRun` 现构造 `RunExecutionSnapshot`（含 `orchestrationMode`）并经 SQLite 投影落列。公共权威是 `execution.ts`。**禁止**写入 `StartRunRequest`。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。Daemon **无** `POST /tasks/{id}/runs`。无 Codex direct、无 ad-hoc `direct` 调度。**不**宣称 M8 完成。
+**当前切片（见 03；`T09-DIRECT`）：** 项目详情已挂 mode 控件；`:start` capability gating 已有；composed `startProject` 把 mode 传入 `app.start()` 并回显 DTO。受管 `startRun` 现构造 `RunExecutionSnapshot`（含 `orchestrationMode`）并经 SQLite 投影落列。公共权威是 `execution.ts`。**禁止**写入 `StartRunRequest`。headed 真窗 **PASS**（#34 head `06e6b659` / `dev` `ae0f4e6`）。Daemon **有** `POST /tasks/{id}/runs`；allowlist 仍阻断；`orchestration.direct === false`；composition `requireWorkflowBinding: true` 会拒 ad-hoc。无 Codex direct、无 ad-hoc `direct` 调度。**不**宣称 M8 完成。
 
 **集成依赖：** T02 字段、T09 调度、T10 API、T07 Policy、T05/T15 probe。M7 作者面不是本卡硬依赖，但 workflow-bound 仍要求已发布执行图（现有 M3 路径即可）。
 
