@@ -48,15 +48,18 @@ import {
   OrchestrationModeControl,
   buildStartProjectInput,
   DEFAULT_MODE,
-  DIRECT_TASK_REQUIRED,
   probeOrchestrationSupport,
   resolveSelectedMode,
   runOrchestrationModeLabel,
-  startDirectTaskRun,
   type OrchestrationMode,
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
+import {
+  PROJECT_DIRECT_ADHOC_NOTE,
+  PROJECT_DIRECT_EMPTY_OPTION,
+  startProjectDirectExecution,
+} from "./direct.js";
 import {
   applyFormFailure,
   applyProjectRefresh,
@@ -237,17 +240,15 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             setError(probe.reason);
             return;
           }
-          if (directTaskId.length === 0) {
-            setError(DIRECT_TASK_REQUIRED);
-            return;
-          }
-          const task = tasks.find((item) => item.id === directTaskId);
-          await startDirectTaskRun({
+          const landed = await startProjectDirectExecution({
             client,
-            taskId: directTaskId,
+            projectId: project.id,
+            title: project.name,
+            selectedTaskId: directTaskId,
+            tasks,
             probe,
-            options: commandOptions(task?.stateRevision),
           });
+          setDirectTaskId(landed.taskId);
           await reload(true);
           return;
         }
@@ -447,6 +448,8 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
         tasks={tasks.map((task) => ({ id: task.id, title: task.title }))}
         selectedTaskId={directTaskId}
         onSelectTask={setDirectTaskId}
+        emptyOptionLabel={PROJECT_DIRECT_EMPTY_OPTION}
+        emptyTaskCopy={PROJECT_DIRECT_ADHOC_NOTE}
       />
 
       <Tabs
