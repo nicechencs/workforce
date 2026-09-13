@@ -1,6 +1,8 @@
 import type {
   TeamDefinitionStatus,
   TeamMemberDto,
+  WorkerDraftDto,
+  WorkerDto,
   WorkflowDefinitionStatus,
   WorkflowGraphEdgeDto,
   WorkflowGraphNodeDto,
@@ -58,4 +60,9 @@ export interface TeamVersionRecord {
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreatedWorker {
+  worker: WorkerDto;
+  draft: WorkerDraftDto;
 }
