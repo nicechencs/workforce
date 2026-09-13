@@ -3,13 +3,15 @@ title: Workforce V0.1 Implementation Status
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # V0.1 实现进度（以代码与测试为准）
 
-日期：2026-09-12  
+日期：2026-09-13  
 权威：本文件记录**实际已验证**的实现。任务清单 `02-development-task-backlog.md` 的“均未开始”已过时。协作与评审见 [04-collab-and-review.md](04-collab-and-review.md)。  
+修订：2026-09-13 — T00-DOCS：按已确认方向把**我的角色版本库**、**全局 Chat 壳**、Team 成员目标 `workerVersionId`、Marketplace「现在不是一等面、未来要做」写入规划。本页只标 **planned**，不把库页、全局 Chat、问进度投影、`workerVersionId` 写入或商店写成已完成。当前代码仍是 Team 成员三字段 + 作者页 AuthoringSession。不改源码、不发明 HTTP path。**不**宣称 M7/M8 完成。
+
 修订：2026-09-12 — T00-DOC-ALIGN：按 `dev` tip `79528a0` 源码把本页 T02/T04/T05/T10/T20/T20-B/T21 与 §5 对齐到现行事实，不改产品决策。`CHAT_SESSION_PROTOCOL_FROZEN=true`；Daemon 已注册 AuthoringSession HTTP；typed client 与作者页 `sendAuthoringMessage` 已接线；Host 一次性 transient prompt handoff（磁盘只存 digest）；Codex authoring input 在 spawn 前 fail-closed。`docs/protocols/v0.1/` 现 **31** 个已生成 schema；`RunDto`/`ProjectDto` 在 `packages/protocol`，daemon `modules/dto.ts` 再导出。Electron allowlist **仍缺** authoring-sessions 模板；`POST /api/v1/tasks/{id}/runs` 在 allowlist 但 Daemon **无**该路由。本轮不改源码、不跑测试。**不**宣称 M7/M8 完成。
 
 修订：2026-09-12 — T09 完成 **Run 级 Placement / ExecutionLease 切片**：NodeSession 不再持有 fencing token；每个 Run 有独立 lease；Application 在事务内写入 Run、placement snapshot、lease、Event 后才调用 Runtime；Workflow Scheduler 保持 DAG 就绪，另有 Local Node Placement Scheduler。文档区分 Local / Remote Server / Distributed，并写明 `apps/daemon` 是 V0.1 本地组合。Mock 本地流程保持。**不**宣称远程节点、集群通信或独立 Control Plane。
@@ -99,8 +101,8 @@ M7/M8 是 V0.1 release gate，**不是**当前 M3 通过条件，也**尚未完�
 | T16 | M3 HTTP/桌面验证切片；D17/D18 upgrade fixture planned，未实现 | HTTP M3 + typed client；桌面 happy-dom（非真窗口）。current-M3 upgrade fixture 未跑。执行三轴协议已冻结；DB 有 005 expand、006 catalog 与 007 profile transport / Run 快照投影。`:start` 可回显 `orchestrationMode` 并传入 `app.start()` / Run 记录（不进 `StartRunRequest`），但尚未组装并持久化完整运行快照。无 headed PASS |
 | T17 | 未开始 | 打包/签名 |
 | T18 | 部分 M7 UI：画布 + 草稿写 API 已有，未完成、未 headed | 画布页 + `write-client` + catalog 写路由（`POST/PATCH /workflows`、`/versions`、`:publish`）+ IPC 写 allowlist。列表「新建画布」。happy-dom / 包测已跑。**未** headed 验收。未发布图仍不可被 Runtime 执行。皮肤用 `features/projects/ui.ts` inline，未重贴设计系统。**不**宣称 M7 完成 |
-| T19 | 写 UI + 草稿 persist 已接线；headed 真窗 **PASS**；M7 未完成 | 换掉只读 `rejectCustomTeamSave()` 桩。列表/详情走 `GET /teams` + `GET /teams?status=draft` + `GET /teams/{id}`；保存走已有 `POST/PATCH /teams` 与 versions。发布按钮诚实：无假 publish/bind 成功。项目 Settings 可选手动绑定已发布自定义 TeamVersion（须服务端回传 `teamVersionId`）。headed 真窗口 **PASS**（PR #34 head `06e6b659`，报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`；已 squash 进 `dev` `ae0f4e6`）。**不**宣称 M7 完成 |
-| T20 | Daemon 会话驱动作者页；`CHAT_SESSION_PROTOCOL_FROZEN=true`；typed send 已接线；真窗口 allowlist 未放行 | `workflow-authoring` 由工作流页 `?authoring=1` 挂入；会话始终绑定 Project（route query/hash 或项目选择器），**不是** renderer `localStorage` 本地笔记。页面调用 typed client 的 `createAuthoringSession` / `sendAuthoringMessage`；服务端提案须显式 confirm 才落未发布 Workflow 草稿。旗标为 **true**。**Electron allowlist 零条** `authoring-sessions` 模板，真窗口 IPC 会拒路。无 Codex 编排 Agent。headed 未跑。禁止假 Agent 完成，**不**宣称对话编排或 M7 完成。 |
+| T19 | 写 UI + 草稿 persist 已接线；headed 真窗 **PASS**；M7 未完成；**角色版本库 planned** | 换掉只读 `rejectCustomTeamSave()` 桩。列表/详情走 `GET /teams` + `GET /teams?status=draft` + `GET /teams/{id}`；保存走已有 `POST/PATCH /teams` 与 versions。发布按钮诚实：无假 publish/bind 成功。项目 Settings 可选手动绑定已发布自定义 TeamVersion（须服务端回传 `teamVersionId`）。headed 真窗口 **PASS**（PR #34 head `06e6b659`，报告 `/workspace/qa-issues/WORKFORCE-PR34-06e6b659-T19-T21-TRUEWINDOW.md`；已 squash 进 `dev` `ae0f4e6`）。成员仍是 `{ role, runtimeProfileId, quantity }` 切片。**不是**角色版本库完成，**不**宣称 M7 完成 |
+| T20 | Daemon 会话驱动作者页；`CHAT_SESSION_PROTOCOL_FROZEN=true`；typed send 已接线；真窗口 allowlist 未放行；**全局 Chat 壳 planned** | `workflow-authoring` 由工作流页 `?authoring=1` 挂入；会话始终绑定 Project（route query/hash 或项目选择器），**不是** renderer `localStorage` 本地笔记。页面调用 typed client 的 `createAuthoringSession` / `sendAuthoringMessage`；服务端提案须显式 confirm 才落未发布 Workflow 草稿。旗标为 **true**。**Electron allowlist 零条** `authoring-sessions` 模板，真窗口 IPC 会拒路。无 Codex 编排 Agent。headed 未跑。禁止假 Agent 完成。**不是**全局 Chat / 问进度 / 创建角色完成，**不**宣称对话编排或 M7 完成。 |
 | T20-B | Proposal 生命周期 + staged-apply + chat confirm（仅 Workflow）+ Host/Daemon handoff 骨架 | `authoring.start` 建受治理 Task/Run；raw intent 不进 `StartRunRequest`。Daemon `setInitialInput` + Host `startWithInitialInput` 做一次性 transient handoff，磁盘只存 digest；重启不可恢复须 fail-closed。Runtime SPI/Mock 的 Proposal 由 handle 反查后生成 ChangeSet；`confirmAuthoringChatProposal` 仅 workflow create/update。`targetType !== "workflow"` 与 `step.targetType === "task"` 仍 not implemented；turn retry 为 `unsupported_capability`。SQLite 只存会话 ref/hash/脱敏 preview。部分失败恢复、Team 聊天确认、Codex 映射与 UI 诚实失败展示仍未收口 |
 | T21 | 项目详情已挂 mode 控件；`:start` 回显；受管 Run 现写执行快照；headed 真窗 **PASS**；M8 未完成 | `GET /capabilities.orchestration`；`:start` 可选 `orchestrationMode`；`direct` 无 probe → 422。项目「开始执行」把控件选中的 mode 传入 `startProject`。composed `startProject` 把 mode 传入 `app.start()` 并回显 DTO。Application `startRun` 现构造 `RunExecutionSnapshot`（含 `orchestrationMode`）并经 SQLite world snapshot 投影落列。**不**写入 protocol `StartRunRequest`。Daemon **无** `POST /tasks/{id}/runs`。`:start` 的 `direct` **仍走已发布图**，不创建 ad-hoc Task。headed 真窗口 **PASS**（#34 / `06e6b659` → `ae0f4e6`）。无 Codex direct、无 `direct` 调度、**不**宣称 M8 完成 |
 
@@ -222,12 +224,15 @@ Mock 产物权威                                ✅ LocalArtifactStore；可删
 2. **Codex live**：Adapter 已能经 Process 启动/流式/取消；本机仍无 Codex CLI。需在已安装 CLI 的机器上跑授权 `codex exec --json`。Auth `login status`、中途 input、event-cursor resume、win32 captured spawn、Daemon 重启后 re-attach 仍未测或 unsupported。  
 3. **T17** 打包。  
 4. **T18 剩余**：headed 真窗扫画布保存/刷新；画布页已改组合 `components/ui.tsx`（T11 设计系统收口），未发布图仍不得被 `:start` / Runtime 执行。画布 + 写 API **不等于** M7 完成。
-5. **T19 剩余**：写 UI + 草稿 persist 已在本 tip。headed 真窗 **PASS**（`06e6b659` / `ae0f4e6`，同上报告）。发布/绑定不得假成功；未发布草稿仍不可开始规划。不等于 M7 完成。  
-6. **T20/T20-B 剩余**：Daemon AuthoringSession HTTP、typed send、Host transient handoff 与 Workflow 聊天确认已在本 tip；`CHAT_SESSION_PROTOCOL_FROZEN=true`。**仍缺** Electron allowlist 放行、T20 headed、Codex 编排 Agent、Task patch、Team 聊天确认、部分失败恢复与 turn retry。不得把 typed send 写成真窗口已接通或 Agent 已完成。不等于对话编排完成或 M7 完成。
+5. **T19 剩余**：写 UI + 草稿 persist 已在本 tip。headed 真窗 **PASS**（`06e6b659` / `ae0f4e6`，同上报告）。发布/绑定不得假成功；未发布草稿仍不可开始规划。**角色版本库 / `workerVersionId` 成员写入仍 planned**，不得把成员三字段写成库完成。不等于 M7 完成。  
+6. **T20/T20-B 剩余**：Daemon AuthoringSession HTTP、typed send、Host transient handoff 与 Workflow 聊天确认已在本 tip；`CHAT_SESSION_PROTOCOL_FROZEN=true`。**仍缺** Electron allowlist 放行、T20 headed、Codex 编排 Agent、Task patch、Team 聊天确认、部分失败恢复与 turn retry。**全局 Chat 壳、创建角色、问进度只读投影、交流工作挂 `projectId`/`runId` 均 planned**。不得把 typed send 或作者页写成真窗口已接通、Agent 已完成或全局 Chat 完成。不等于对话编排完成或 M7 完成。
 7. **T21 剩余**：控件已挂项目详情；`:start` 回显与 capability gating 已有；受管 `startRun` 现构造 `RunExecutionSnapshot` 并经投影落列。headed 真窗 **PASS**（同上报告）。Daemon **无** `POST /tasks/{id}/runs`；无 ad-hoc `direct` 调度。**禁止**把 mode 写入 `StartRunRequest`。无 Codex direct。**不**宣称 M8 完成。  
 8. 可写项目策略与远程节点 enrollment 仍无公开 API；远程/容器是 D19 产品冻结，runner **未实现**。UI 只读说明，未伪造已接入。  
 9. Policy grant 已落 `policy_grants`；未测断电/WAL 强制 fsync。审批记录与 digest 仍在 `approvals`，不要把两张表当成同一对象。  
 10. T08 任务卡其余 M5 项（Evaluation / quarantine / 保留）仍未宣称完成；特别是命令 criterion 目前无法从跨平台受管 Process port 获得可信 exit/signal，必须先完成 `T06-PROCESS-TERMINAL-OUTCOME`，不得用 private `inspect()` 扩展或 fake adapter 伪造通过。
+11. **我的角色版本库（planned）：** 无独立库页、无 WorkerVersion 身份写入、无归档/fork/引用关系产品面。T19 成员行不是库完成。
+12. **全局 Chat 壳（planned）：** 当前只有工作流页 `?authoring=1` 的 AuthoringSession，不是随时可开的语言入口；无创建角色、问进度投影、交流工作挂点。不得把作者页写成 Chat 完成。
+13. **Marketplace：** 现在不是一等面；当前无商店 UI 符合「现在不做」。未来要做，不要写成永久禁止。
 
 ## 6. 如何跑
 

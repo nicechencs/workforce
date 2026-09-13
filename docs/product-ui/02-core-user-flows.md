@@ -3,19 +3,19 @@ title: Workforce 核心用户流程
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Workforce 核心用户流程
 
 **版本：** V0.1 Draft  
 **状态：** Product flow baseline  
-**日期：** 2026-09-11  
-**修订：** 2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned），均未实现。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
+**日期：** 2026-09-13  
+**修订：** 2026-09-13 — §8 改为库选用/fork；§9 扩为全局 Chat 四类意图（均 planned）。2026-09-11 — 主循环改为项目制：Project → 编排 Team → 编排 Tasks → 编排 Workflow。增补 §7 画布与 §8 自定义 Team（M7）。同日增补 §9 对话生成（D17 / M7 planned）与 §10 双执行模式（D18 / M8 planned），均未实现。2026-09-10 — §1 映射到 IA §4.3.4（Settings 绑定，页头命令）。
 
 ## 1. 创建并运行项目
 
-产品主对象是 Project。围着该项目：编排 Team（M3 选预设；M7 可自定义或由对话生成角色草稿）、编排 Tasks、编排 Workflow（M3 只读目录；M7 对话生成草稿后进画布编辑），再执行与验收（M8：每个 Agent 可绑定已发布工作流或直接执行）。桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。D17/D18 **尚未实现**。
+产品主对象是 Project。围着该项目：编排 Team（M3 选预设；M7 从**我的角色版本库**选用/fork `WorkerVersion`，也可用 Chat 创建角色草稿）、编排 Tasks、编排 Workflow（M3 只读目录；M7 可用 Chat 创建流程后进画布编辑），再执行与验收（M8：每个 Agent 可绑定已发布工作流或直接执行）。**全局 Chat 随时可开**，不限于作者页。桌面 V0.1 把“绑定 Workspace”映射到项目详情 **Settings**（IA §4.3.4）。开始规划 / 确认计划 / 开始执行留在页头，不随标签卸载。角色库、全局 Chat、D17/D18 **尚未实现**。
 
 ```mermaid
 flowchart TD
@@ -56,7 +56,7 @@ flowchart TD
   Approval -->|direct 验收通过| DirectDone[完成 ad-hoc Task / Run；永不推进父聚合]
 ```
 
-M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team、画布与对话生成。M8 才要求按 Agent 选择执行模式。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。无 capability 不得渲染直接执行成功态。
+M3 切片：Team 步只读预设，Workflow 步只读已发布目录。M7 才要求自定义 Team、角色版本库、画布与全局 Chat。M8 才要求按 Agent 选择执行模式。未发布图 / 草稿 Team 不得进入开始规划或 Runtime。无 capability 不得渲染直接执行成功态。问进度不得编造完成。
 
 ## 2. 单节点多 Agent 调度
 
@@ -173,24 +173,36 @@ flowchart TD
 
 ## 8. 自定义 Team 编排（M7）
 
+从**我的角色版本库**选用或 fork 已发布 WorkerVersion，而不是把 `{ role, runtimeProfileId, quantity }` 当编辑目标。
+
 ```mermaid
 flowchart TD
   Preset[预设 Software Dev Team] --> Use[项目绑定已发布版本]
-  New[新建自定义 Team] --> Draft[编辑 TeamDraft 成员与 RuntimeProfile]
+  Lib[我的角色版本库] --> Pick[选用已发布 WorkerVersion]
+  Lib --> Fork[fork 出新草稿]
+  Fork --> PublishWorker[发布新 WorkerVersion]
+  PublishWorker --> Pick
+  New[新建自定义 Team] --> Draft[TeamDraft 引用 workerVersionId]
+  Pick --> Draft
   Draft --> Pub{发布并产生 TeamVersion}
   Pub -->|通过| Use
   Pub -->|失败| Draft
 ```
 
-未发布草稿不能 `:start-planning`。预设模板始终可选。
+未发布草稿不能 `:start-planning`。归档版本不可再被新 Team 选用。预设模板始终可选。现在不做 Marketplace 一等面。
 
-## 9. 对话生成工作流（M7，尚未实现）
+## 9. 全局 Chat（V0.1 就要有，尚未实现）
 
-用户与编排 Agent 对话，生成可编辑的工作流（及可选的角色/任务草稿），再进入 D15 画布。
+用户随时打开 Chat 壳。每句解析到意图，并读或写已点名的对象。创建类走 AuthoringSession；问进度只读事实；交流工作挂 `projectId` / 执行中 `runId`。
 
 ```mermaid
 flowchart TD
-  Talk[用户描述角色流程与任务] --> Agent[编排 Agent 理解意图]
+  Open[随时打开 Chat 壳] --> Intent{意图}
+  Intent -->|创建角色| WorkerDraft[WorkerVersion 草稿]
+  WorkerDraft --> ConfirmRole[用户确认]
+  ConfirmRole --> Library[进我的角色版本库]
+  Intent -->|创建流程| Session[AuthoringSession]
+  Session --> Agent[编排 Agent 理解意图]
   Agent --> Start[Application 创建受治理 authoring Task / Run]
   Start --> Runtime[Runtime SPI 执行编排 Agent]
   Runtime --> Proposal[AuthoringProposal / ChangeSet 输出]
@@ -205,15 +217,27 @@ flowchart TD
   Publish -->|校验失败| Edit
   Publish -->|通过| Frozen[不可变 WorkflowVersion]
   Frozen --> Bind[确认计划后绑定执行图]
+  Intent -->|问进度| Facts[只读 Task / Run / Event / Artifact]
+  Facts --> Empty{是否有记录}
+  Empty -->|无| None[还没有记录]
+  Empty -->|有| Show[渲染投影事实]
+  Intent -->|交流工作| ProjectAsk{是否已有项目}
+  ProjectAsk -->|无| AskWhich[先问哪个项目]
+  ProjectAsk -->|有| RunAsk{是否执行中}
+  RunAsk -->|是| Input[挂 runId 走已有输入]
+  RunAsk -->|否| Discuss[项目内讨论 / 返工]
 ```
 
 约束：
 
 - authoring Run 会通过 Runtime SPI 执行编排 Agent；但生成出的 Workflow 定义不会被该 Run 执行，也不把聊天回复写成目标 Task/Run 完成。
-- 生成结果必须可编辑；禁止一次生成即锁定。
-- authoring Run 的 usage、budget、cancel、retry、failure 和 Event 必须可追踪。
-- 未发布图不能被 Runtime 执行。写接口未就绪时，「对话生成」不得假成功。
-- 会话协议未由 T02 冻结前，本流程只是产品路径，不对应已实现 endpoint。
+- 创建类必须经用户确认才落草稿；禁止一次生成即锁定或即执行。
+- 问进度没有事实就说「还没有记录」，禁止模型编造完成。
+- 交流工作没有 `projectId` 不发写；针对执行中再挂 `runId`。
+- 「去做」未就绪时诚实 unsupported，不渲染已在跑。
+- 未发布图不能被 Runtime 执行。写接口未就绪时，Chat 不得假成功。
+- 公开 path 由 T02 冻结前，本流程只是产品路径，不对应已实现 endpoint。
+- 仍禁止 Worker IM / 无项目聊天室。
 
 ## 10. 按 Agent 选择执行模式（M8，尚未实现）
 

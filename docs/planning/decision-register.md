@@ -3,17 +3,17 @@ title: Workforce V0.1 Decision Register
 type: decision
 status: current
 owner: maintainers
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # V0.1 决策登记
 
-日期：2026-09-12  
-状态：**已冻结（M0–M3 开工基线；项目制主对象；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式；执行 Placement：本机默认，远程与容器为一等能力）**  
-范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行；产品支持在**本机（默认）**、经**远程连接**和在**容器**中工作。  
+日期：2026-09-13  
+状态：**已冻结（M0–M3 开工基线；项目制主对象；我的角色版本库与全局 Chat 壳现在就要有；Marketplace 现在不是一等面、未来要做；M7 补齐 Team/Workflow 编排与对话生成；M8 双执行模式；执行 Placement：本机默认，远程与容器为一等能力）**  
+范围：设计评审 R01–R09 及评审推荐默认值；2026-09-11 用户决定：产品是**项目制**；可视化画布与自定义 Team 是项目主循环的必达环节；工作流必须高度可定制；用户可通过对话让 Agent **生成**可编辑工作流；每个 Agent 可绑定已发布工作流或直接执行；产品支持在**本机（默认）**、经**远程连接**和在**容器**中工作。2026-09-13 收窄：第一天对象就是 WorkerVersion，**我的角色版本库现在就要有**；**全局 Chat 壳现在就要有**（创建角色、创建流程、问进度、交流工作）；Marketplace 原为 V0.1 非目标，收窄为**现在不做一等面、未来要做**。  
 协调者：当前 Herdr 主会话。后续公共契约变更只通过 T00/T02 走兼容流程。产品/规划文档变更必须追加 [communication-history.md](communication-history.md)。
 
-本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**完成态尚未实现**。远程与容器是已冻结的产品 Placement，**不是** later nicety；V0.1 实现深度仍是 Local Node + worktree，见 [D19](#d19-执行-placement本机远程与容器)。进度以 [03-implementation-status.md](03-implementation-status.md) 为准，不得把已有画布/写 API/作者壳/mode 回显切片写成「都还没有代码」。
+本文把 [01-design-review.md](01-design-review.md) 的建议默认写成唯一实现规则。蓝图原文若与本文冲突，**以本文为准**；蓝图正文整合属于 B2，不阻塞 M0。PRD「明确不做大型无代码编辑器」已被 D15 取代：产品**必须**有可视化画布，但画布不是 Runtime，也不做通用 iPaaS。高度可定制、对话生成与双执行模式是产品要求，**完成态尚未实现**。远程与容器是已冻结的产品 Placement，**不是** later nicety；V0.1 实现深度仍是 Local Node + worktree，见 [D19](#d19-执行-placement本机远程与容器)。进度以 [03-implementation-status.md](03-implementation-status.md) 为准，不得把已有画布/写 API/作者壳/mode 回显切片写成「都还没有代码」。角色版本库、全局 Chat 四类意图、Team 成员 `workerVersionId` 均 **planned**，不得写成已完成。
 
 未测的真实 Runtime 能力转交 T03，不得用猜测当决定。
 
@@ -21,19 +21,22 @@ updated: 2026-09-12
 
 **主对象是 Project。** Workforce 不是独立的团队工作室，也不是脱离项目的通用工作流 IDE。围着**一个项目**，用户：
 
-1. **编排 / 配置 Team**（含自定义 Team 编排，不只是只读预设）
+1. **编排 / 配置 Team**（从**我的角色版本库**选用或 fork 已发布 `WorkerVersion`，不只是只读预设或成员三字段）
 2. **编排 Tasks**
 3. **编排 Workflow**（必须高度可定制：对话生成 + 可视化画布/结构化编辑 + 发布）
 
-主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。
+主循环：`Project → Team → Tasks → Workflow 编排 → 执行与验收`。语言是随时入口，不是另一套主对象。
 
-画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求，不是后期 nicety。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、自定义 Team 写 UI + 草稿 persist、作者壳 + Desktop-local session store（无 Agent/send）、项目详情挂载 orchestrationMode 控件与 composed start/Run 回传。D17 已决定新增受鉴权、Project-scoped 的 AuthoringSession / Message / Turn API；不发明泛用 chat、`:direct` 或 enrollment path，也**不**宣称 M7/M8 完成或远程/容器 runner 已实现。
+画布编辑器与自定义 Team 是这条循环上的承诺能力（D15 / D16），**不是**外挂目录、可选插件或「以后再说的 nicety」。**我的角色版本库**与**全局 Chat 壳**同样是现在就要有的产品面，不是过渡、也不是 later。工作流高度可定制、对话式生成（D17）以及按 Agent 选择「跟随已发布工作流 / 直接执行」（D18）同样是产品要求。M3 Mock 仍可用预设 Team + 只读已发布工作流走完闭环——那是**切片深度**，不是产品模型。实现进度以 [03-implementation-status.md](03-implementation-status.md) 为准：循环可写面的**完成态**尚未实现（M7/M8 未完成）。本分支已有部分切片——画布 + catalog 写 API、自定义 Team 写 UI + 草稿 persist、作者壳 + Desktop-local session store、项目详情挂载 orchestrationMode 控件与 composed start/Run 回传。D17 已决定创建类使用受鉴权、Project-scoped 的 AuthoringSession / Message / Turn；**「不发明泛用 Chat」读成禁止 IM**（Worker 收件箱、无项目聊天室），不是禁止全局语言入口。本文不发明 HTTP path、`:direct` 或 enrollment path，也**不**宣称 M7/M8、角色库或全局 Chat 完成，或远程/容器 runner 已实现。
 
 ## 1. 冻结总表
 
 | 决策 | 冻结值 | 主要受影响任务 |
 |---|---|---|
 | 产品主对象 | 项目制：一切围绕 Project；Team / Task / Workflow 在项目内编排；工作流必须高度可定制 | T00、T12、T14、T18–T21 |
+| 角色版本 | 第一天对象就是 WorkerVersion；**我的角色版本库现在就要有**（找、搜、引用、归档、选用/fork）；Team 成员目标是 `workerVersionId` | T00、T02、T19 |
+| 语言入口 | **全局 Chat 壳现在就要有**：创建角色、创建流程、问进度、交流工作；创建类仍走 AuthoringSession；不是 IM，不是聊天当完成 | T00、T02、T20 |
+| Marketplace | **现在不是一等面，未来要做**；装进来仍进自己的库再 Team 绑 Project。不要写成永久禁止 | T00；契约扩展归 T02 |
 | 工作流作者路径 | 对话生成草稿（D17）后必须可在画布/结构化面编辑（D15）；未发布不得执行 | T18、T20、T02 |
 | Agent 执行模式 | 绑定已发布工作流，或直接执行；两者皆一等、靠 probe 诚实显隐（D18） | T21、T09、T10 |
 | 执行 Placement | 种类：`local`（本机，**默认**）\| `remote` \| `container`。调度意图仍为 `automatic \| local_only \| remote_only \| specific_node`，系统默认 `local_only`。V0.1 只实现 Local Node + worktree；远程=契约/Mock，容器=planned，均非 later nicety（D07 / D19） | T02、T05、T09、T10、T13 |
@@ -399,13 +402,15 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 ### D16 — 自定义 Team 编排
 
-自定义 Team 是**项目制循环里给该项目配团队**的能力，不是独立的员工目录产品。
+自定义 Team 是**项目制循环里给该项目配团队**的能力。找员工现在就用**我的角色版本库**，不是花名册或 IM 联系人，也不是把成员三字段当目标模型。
 
 **范围（M7 必达）：**
 
-1. 围着 Project 编排 Team：创建 Team identity，在 `TeamDraft` 中编辑成员/角色/RuntimeProfile 并以 revision/CAS 保存；发布 Draft 才产生不可变、带 `publishedAt` 的 `TeamVersion`，供该项目（及后续项目）绑定。
-2. Project 仍绑定 **TeamVersion 快照**（D02：draft 先配齐 Workspace / Team / Runtime / 预算才能开始规划）。绑定未发布草稿不得 `:start-planning`。
-3. 预设 Software Development Team 保留，作为 M3 主路径与默认选项。自定义 Team 补齐项目循环，不删除模板。
+1. 围着 Project 编排 Team：创建 Team identity，在 `TeamDraft` 中编辑成员并以 revision/CAS 保存；发布 Draft 才产生不可变、带 `publishedAt` 的 `TeamVersion`，供该项目（及后续项目）绑定。
+2. 第一天对象就是 **WorkerVersion**。发布或绑定成员的**目标**是已发布、未归档的 `workerVersionId`。`role` 只作职责标签，不是身份。现行协议切片 `{ role, runtimeProfileId, quantity }` 可继续被读取，但不得再写成编辑目标。契约字段归 T02，本文不发明 HTTP path。
+3. **我的角色版本库现在就要有**：找、搜、引用关系、归档；Team 从库选用或 fork。WorkerVersion 发布不可变；不适应则 fork 出新草稿，不得改仍被引用的已发布版本。Chat 创建的角色草稿确认后进同一座库。
+4. Project 仍绑定 **TeamVersion 快照**（D02：draft 先配齐 Workspace / Team / Runtime / 预算才能开始规划）。绑定未发布草稿或成员缺已发布 `workerVersionId` 的阵容不得 `:start-planning`。
+5. 预设 Software Development Team 保留，作为 M3 主路径与默认选项。自定义 Team 补齐项目循环，不删除模板。
 
 **M3 Mock 仍允许：**
 
@@ -414,35 +419,50 @@ M7 与 M4（真实 Codex）、M5（治理全链路）、M6（三平台打包）�
 
 **M7 起变为必需：**
 
-- 写接口见能力矩阵 Team 行；成员可嵌在 `TeamDraft` payload（role + RuntimeProfile + quantity）。不另开 Worker Marketplace。
+- 写接口见能力矩阵 Team 行。成员写入以库中 `workerVersionId` 为目标（T02 冻结后）。**现在不另开一等 Marketplace 面。**
 - 已发布 `TeamVersion` 可供项目绑定；编辑已发布编排必须创建新的 `TeamDraft` revision，不能 UPDATE 旧 version。
 
 **非目标：**
 
-- 云端组织、SSO、跨用户分享团队、Agent Marketplace，或与 Project 脱钩的「先建团队再考虑有没有项目」。
+- **现在不做一等面、未来要做：** Agent/角色 Marketplace（上架/安装别人的已发布 WorkerVersion）。装进来仍须进自己的库，再 Team 绑 Project。不要写成永久禁止商店。
+- 仍禁止：云端组织、SSO、跨用户分享；没有项目也能养联系人、花名册或 Worker IM。
 - 把 Worker 标成固定跑在某台机器（节点仍由 Placement 决定）。
 - 自定义 Team 不是 M3 Mock 闭环的硬依赖；缺它时项目仍可用预设走完 Mock。
 
+**收窄对照（相对原 D16 非目标）：**
+
+| 原表述 | 收窄后 |
+|---|---|
+| 不做独立员工目录；Marketplace 为 V0.1 非目标 | **自己的角色版本库现在就要有**；商店现在不是一等面、未来要做 |
+| 成员行 `{ role, runtimeProfileId, quantity }` 当编辑目标 | 目标是 `workerVersionId`；三字段是当前实现切片，不是目标模型 |
+
 ## 9. 对话生成与双执行模式（M7/M8）
 
-用户决定（2026-09-11；2026-09-12 明确聊天为创建主入口，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户通过与 Agent 对话生成 bot/角色/流程/任务；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**产品完成态尚未实现**；D17 提供专用 AuthoringSession / Message / Turn endpoint，而不提供泛用 chat 或 `:direct` endpoint。切片进度以 [03-implementation-status.md](03-implementation-status.md) 为准（作者壳 / mode 回显 ≠ D17/D18 完成）。
+用户决定（2026-09-11；2026-09-12 明确聊天为创建主入口；2026-09-13 收窄为全局 Chat 壳，见 [communication-history.md](communication-history.md)）：工作流必须**高度可定制**；用户随时随地通过语言创建角色、创建流程、问进度、交流工作；生成结果可在画布上继续编辑；每个 Agent 做事时可跟随已发布工作流，或直接执行。这是产品要求，不是 later。**产品完成态尚未实现**。创建类仍用专用 AuthoringSession / Message / Turn；**不发明 IM / Worker 收件箱 / `:direct` endpoint**。切片进度以 [03-implementation-status.md](03-implementation-status.md) 为准（作者壳 / mode 回显 ≠ 全局 Chat 或 D17/D18 完成）。
 
-D17 扩展 **M7**（与 D15 同一作者环：生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
+D17 从「只在作者页生成工作流」扩成：**全局 Chat 壳 → 多种意图**（创建角色 / 创建流程 / 问进度 / 交流工作），创建类仍与 D15 同一作者环（生成 → 画布编辑 → 发布）。D18 列入 **M8**（执行面；可与 M4–M7 并行排期，但不并进 M3 闭环或 T17）。未领取 T20/T21 前，禁止在普通 PR 里顺便做对话生成或假 mode 按钮。
 
 ### D17 — 对话式 Agent 编排工作流
 
-对话是项目制循环里**生成**可定制工作流的一等作者路径，不是独立聊天产品，也不是替代画布的第二套 Runtime。
+对话是项目制循环里**生成**可定制工作流的一等作者路径，也是 **V0.1 就要有的全局语言壳**。Chat 自己不是一等业务对象：每句必须解析到 WorkerVersion / Workflow / Task / Run / Artifact。它不是 IM，也不是替代画布的第二套 Runtime。
 
 **范围（M7 扩展，必达，完成态尚未实现）：**
 
-1. 用户用自然语言描述意图，例如：创建 bot1（角色）、bot2、bot3；跑流程 X；某个 bot 负责任务 Y。编排 Agent 理解后**生成**草稿：Team 角色、Tasks、有限 DAG 的 `WorkflowDraft` / canonical graph；此阶段不产生可执行的 `WorkflowVersion`。
-2. 生成结果必须可编辑：进入 D15 画布或结构化编辑面，改节点/边/角色/任务后再保存、发布。禁止「对话一次生成即锁定、不可改」。
-3. 发布仍走 D02 / D15：已发布 `WorkflowVersion` 不可变；未发布图不得被 Mock 或真实 Runtime 执行。
-4. 高度可定制是本条与 D15 的共同产品要求：用户能按项目改角色、步骤与边，而不是只能选预设模板。
+1. **Chat 全局可开**，不限于工作流作者页或 `?authoring=1`。
+2. 四类意图（分类结果不是完成态）：
+   - **创建角色** — 语言 → WorkerVersion **草稿**；用户确认后才落库；发布后才可被 Team 引用。
+   - **创建流程** — 语言 → AuthoringSession → WorkflowDraft；确认后进画布；发布后才可执行。
+   - **询问进度** — 只读已有 Task / Run / Event / Artifact 投影。没有事实就说「还没有记录」，禁止模型编造「做完了」。
+   - **交流工作内容** — 补约束、返工、讨论当前工作。必填 `projectId`；针对执行中再挂 `runId`。落到已有 Run 输入命令，不新开聊天室产品。
+3. 创建类仍走现有 Project-scoped AuthoringSession：提案 → 用户确认 → 草稿。无用户确认不落库。未发布不得执行。
+4. 生成结果必须可编辑：进入 D15 画布或结构化编辑面，改节点/边/角色/任务后再保存、发布。禁止「对话一次生成即锁定、不可改」。
+5. 发布仍走 D02 / D15：已发布 `WorkflowVersion` 不可变；未发布图不得被 Mock 或真实 Runtime 执行。
+6. 「现在改这个 bug」一类即席执行仍是 D18：必须落成项目内 Task/Run。本批不得渲染已在跑。
+7. 高度可定制是本条与 D15 的共同产品要求：用户能按项目改角色、步骤与边，而不是只能选预设模板。
 
 Authoring 契约：对话 turn/raw intent 先由 Application 创建受治理 authoring Task/Run，通过 Runtime SPI 执行编排 Agent，`AuthoringProposal` / `ChangeSet` 是该 Run 的输出；Application 再做 schema、Policy、Budget、CredentialRef、DAG 和 Project 边界校验，以 `expectedRevision` 执行 CAS 原子应用，跨 Team/Task/Workflow 无法同事务提交时使用持久化 staged apply。成功只代表草稿 revision 更新，不代表发布或执行生成出的 Workflow。生成、应用、取消、重试、失败与过期事件均保存脱敏摘要/引用；会话原文按 Project retention/redaction policy 管理，禁止进入 Secret、Task、Event 或 Artifact。
 
-V0.1 的会话资源不是泛用 Chat：只允许受鉴权用户在真实 Project 内创建 AuthoringSession、发送 user message，并对 Turn 执行 confirm/cancel/retry/close。发送命令返回引用型 accepted 结果，不能将原文复制进 command receipt；完整会话以有权限的查询读取。Runtime 输入使用受保护、短生命周期的一次性引用，不能写入 `StartRunRequest`、Host handle、Event、ChangeSet 或 receipt。
+创建类会话资源仍是受鉴权、Project-scoped 的 AuthoringSession / Message / Turn（confirm/cancel/retry/close）。**「不发明泛用 Chat」读成禁止 IM**：不要每个 Worker 一个收件箱，不要没有项目边界的聊天室，不要以 `workerId` 为会话对端。这**不是**禁止全局语言入口。公开 path 由 T02 写入能力矩阵；本文不发明 endpoint。发送命令返回引用型 accepted 结果，不能将原文复制进 command receipt。Runtime 输入使用受保护、短生命周期的一次性引用，不能写入 `StartRunRequest`、Host handle、Event、ChangeSet 或 receipt。
 
 **M3 Mock 仍允许：**
 
@@ -451,15 +471,23 @@ V0.1 的会话资源不是泛用 Chat：只允许受鉴权用户在真实 Projec
 
 **M7 起变为必需：**
 
-- 对话生成草稿后，用户能打开画布编辑并发布（依赖 T18 写接口）。
-- 会话协议 / 草稿 DTO 由 T02 冻结后写入能力矩阵；领取前本登记与矩阵只标 **planned**，不列虚构 path。
-- 生成失败、空意图、校验失败必须诚实错误，不回退夹具冒充已生成。
+- 任意页面能打开 Chat 壳；创建流程后用户能打开画布编辑并发布（依赖 T18 写接口）。
+- 会话协议 / 草稿 DTO / 意图分类由 T02 冻结后写入能力矩阵；领取前本登记与矩阵只标 **planned**，不列虚构 path。
+- 生成失败、空意图、校验失败、无进度记录必须诚实错误或「还没有记录」，不回退夹具冒充已生成或已完成。
 
 **非目标：**
 
-- 不把对话窗口当成 Runtime，也不把「Agent 在聊天里说做完了」写成 Task/Run 完成。
+- **仍禁止 IM 化：** Worker 收件箱、无项目聊天室、把会话对象当成某个员工私聊。
+- **仍禁止聊天当完成：** 不把对话窗口当成 Runtime，也不把「Agent 在聊天里说做完了」写成 Task/Run 完成；问进度不得编造终态。
 - 不另造一套与 D15 无关的图协议。
-- 不在未冻结 endpoint 时让前端假装已保存对话产物。
+- 不在未冻结 endpoint 时让前端假装已保存对话产物、已创建员工或已在跑。
+
+**收窄对照（相对原 D17 非目标）：**
+
+| 原表述 | 收窄后 |
+|---|---|
+| 不是独立聊天产品；只在作者页 | **全局 Chat 壳现在就要有**；仍不是 IM |
+| 不发明泛用 Chat API | 禁止 IM / `workerId` 对端；创建类继续 AuthoringSession；问进度只读投影由 T02 冻结 |
 
 ### D18 — 双执行模式：绑定工作流与直接执行
 
@@ -475,7 +503,7 @@ V0.1 的会话资源不是泛用 Chat：只允许受鉴权用户在真实 Projec
 **M3 Mock 仍允许：**
 
 - 只有跟随已发布执行图的 Mock 闭环。无「直接执行」按钮。
-- 不得把「在聊天里让 bot 去做」渲染成已支持的 direct mode。
+- 不得把「在聊天里让 bot 去做」渲染成已支持的 direct mode。全局 Chat 里的即席「去做」仍落 D18；未就绪时诚实 unsupported，不假装已在跑。
 
 **M8 起变为必需：**
 
