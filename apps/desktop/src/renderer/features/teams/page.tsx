@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
 
 import {
@@ -33,24 +33,31 @@ import {
   draftFormFromTeam,
   draftMembersValid,
   emptyTeamDraftForm,
+  FORK_DRAFT_NOT_SELECTABLE,
+  forkPublishedWorkerVersion,
+  loadSelectableWorkerVersions,
   loadTeamCatalog,
   loadTeamDetail,
+  memberHasWorkerVersionRef,
+  MISSING_WORKER_VERSION_REASON,
   persistTeamDraft,
   PRESET_TEAM,
-  PRESET_RUNTIME_ID,
   publishPersistedTeamVersion,
   publishTeamButton,
   reduceTeamDraftForm,
   rejectCustomTeamPublish,
   rejectCustomTeamSave,
   removeDraftMember,
-  TEAM_ROLES,
+  replaceDraftMember,
   TEAM_WRITE_API_MISSING,
   teamPageModel,
   teamWriteMethodsPresent,
   probeTeamWriteSupport,
   updateDraftMember,
+  workerLibraryMethodsPresent,
+  WORKER_LIBRARY_API_MISSING,
   writeOptions,
+  type SelectableWorkerVersionView,
   type TeamDraftForm,
   type TeamMemberView,
   type TeamView,
@@ -65,7 +72,6 @@ export function TeamsPage(props: FeaturePageProps) {
   const [source, setSource] = useState<"preset" | "live">(initial.source);
   const [writeSupport, setWriteSupport] = useState<TeamWriteSupport>(initial.writeSupport);
   const [listError, setListError] = useState<string | null>(null);
-  const [runtimes, setRuntimes] = useState<string[]>([PRESET_RUNTIME_ID]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,27 +80,6 @@ export function TeamsPage(props: FeaturePageProps) {
       const support = await probeTeamWriteSupport(client);
       if (!cancelled) {
         setWriteSupport(support);
-      }
-      if (hasCatalogMethod(catalog, "listRuntimes")) {
-        try {
-          const page = await catalog.listRuntimes();
-          const ids = page.items
-            .map((item) =>
-              typeof item === "object" &&
-              item !== null &&
-              typeof (item as { id?: unknown }).id === "string"
-                ? (item as { id: string }).id
-                : null,
-            )
-            .filter((item): item is string => item !== null);
-          if (!cancelled && ids.length > 0) {
-            setRuntimes(Array.from(new Set([PRESET_RUNTIME_ID, ...ids])));
-          }
-        } catch {
-          if (!cancelled) {
-            setRuntimes([PRESET_RUNTIME_ID]);
-          }
-        }
       }
       if (!hasCatalogMethod(catalog, "listTeams")) {
         if (!cancelled) {
@@ -173,9 +158,7 @@ export function TeamsPage(props: FeaturePageProps) {
     const visible =
       catalog?.find(
         (item) =>
-          item.id === team.id &&
-          item.status === "published" &&
-          item.versionId === team.versionId,
+          item.id === team.id && item.status === "published" && item.versionId === team.versionId,
       ) ?? (team.status === "published" ? team : null);
     if (!visible) {
       return;
@@ -191,8 +174,8 @@ export function TeamsPage(props: FeaturePageProps) {
       <TeamEditor
         client={client}
         writeSupport={writeSupport}
-        runtimes={runtimes}
         onBack={() => props.navigate("/teams")}
+        onOpenLibrary={() => props.navigate("/role-library")}
         onPersisted={openTeam}
         onPublished={(team) => void openPublishedTeam(team)}
       />
@@ -207,9 +190,9 @@ export function TeamsPage(props: FeaturePageProps) {
         note={note}
         source={source}
         writeSupport={writeSupport}
-        runtimes={runtimes}
         client={client}
         onBack={() => props.navigate("/teams")}
+        onOpenLibrary={() => props.navigate("/role-library")}
         onPersisted={openTeam}
         onPublished={(team) => void openPublishedTeam(team)}
       />
@@ -257,9 +240,14 @@ export function TeamsPage(props: FeaturePageProps) {
               title={team.name}
               meta={`${team.kind === "preset" ? "预设" : "自定义"} · ${
                 team.status === "published" ? "已发布" : "草稿"
-              } · ${team.members.map((member) => `${member.role}×${member.quantity}`).join(" / ")} · ${
-                team.runtime.label
-              }`}
+              } · ${team.members
+                .map(
+                  (member) =>
+                    `${member.role}${
+                      member.workerVersionId ? `@${member.workerVersionId}` : ""
+                    }×${member.quantity}`,
+                )
+                .join(" / ")}`}
               onClick={() => props.navigate(`/teams/${team.id}`)}
             />
           ))}
@@ -275,9 +263,9 @@ function TeamDetailRoute(props: {
   note: string | null;
   source: "preset" | "live";
   writeSupport: TeamWriteSupport;
-  runtimes: string[];
   client: DesktopClient;
   onBack: () => void;
+  onOpenLibrary: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -303,24 +291,14 @@ function TeamDetailRoute(props: {
 
   if (loading && !team) {
     return (
-      <Page
-        title="AI 团队"
-        actions={
-          <Button onClick={props.onBack}>返回 AI 团队</Button>
-        }
-      >
+      <Page title="AI 团队" actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
         <Skeleton lines={4} />
       </Page>
     );
   }
   if (!team) {
     return (
-      <Page
-        title="AI 团队"
-        actions={
-          <Button onClick={props.onBack}>返回 AI 团队</Button>
-        }
-      >
+      <Page title="AI 团队" actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
         <p data-testid="team-not-found">{loadError ?? "未找到该团队。"}</p>
       </Page>
     );
@@ -331,9 +309,9 @@ function TeamDetailRoute(props: {
       note={props.note}
       source={props.source}
       writeSupport={props.writeSupport}
-      runtimes={props.runtimes}
       client={props.client}
       onBack={props.onBack}
+      onOpenLibrary={props.onOpenLibrary}
       onPersisted={props.onPersisted}
       onPublished={props.onPublished}
     />
@@ -345,9 +323,9 @@ function TeamDetail(props: {
   note: string | null;
   source: "preset" | "live";
   writeSupport: TeamWriteSupport;
-  runtimes: string[];
   client: DesktopClient;
   onBack: () => void;
+  onOpenLibrary: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -360,9 +338,9 @@ function TeamDetail(props: {
       <TeamEditor
         client={props.client}
         writeSupport={writeSupport}
-        runtimes={props.runtimes}
         initial={draftFormFromTeam(team)}
         onBack={props.onBack}
+        onOpenLibrary={props.onOpenLibrary}
         onPersisted={props.onPersisted}
         onPublished={props.onPublished}
       />
@@ -395,8 +373,7 @@ function TeamCard(props: {
   const save = rejectCustomTeamSave(props.writeSupport);
   const publish = publishTeamButton(props.writeSupport);
   const bindable = canBindTeamVersion(props.team);
-  const badgeTone =
-    props.team.status === "published" ? "success" : "muted";
+  const badgeTone = props.team.status === "published" ? "success" : "muted";
   const badgeLabel =
     props.team.kind === "preset"
       ? "预设只读"
@@ -435,12 +412,7 @@ function TeamCard(props: {
   }
 
   return (
-    <Page
-      title={props.team.name}
-      actions={
-        <Button onClick={props.onBack}>返回 AI 团队</Button>
-      }
-    >
+    <Page title={props.team.name} actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}>
       <Card testId={props.team.kind === "preset" ? "team-preset-card" : "team-card"}>
         <Badge tone={badgeTone}>{badgeLabel}</Badge>
         <Muted>
@@ -461,7 +433,8 @@ function TeamCard(props: {
         {props.team.kind === "custom" && props.team.status === "published" ? (
           <Muted>
             <span data-testid="team-published-version">
-              已发布精确 TeamVersion {props.team.versionId}。可在项目 Settings 绑定该版本后开始规划。
+              已发布精确 TeamVersion {props.team.versionId}。可在项目 Settings
+              绑定该版本后开始规划。
             </span>
           </Muted>
         ) : null}
@@ -488,9 +461,9 @@ function TeamCard(props: {
 function TeamEditor(props: {
   client: DesktopClient;
   writeSupport: TeamWriteSupport;
-  runtimes: string[];
   initial?: TeamDraftForm;
   onBack: () => void;
+  onOpenLibrary: () => void;
   onPersisted: (team: TeamView) => void;
   onPublished: (team: TeamView) => void;
 }) {
@@ -499,14 +472,15 @@ function TeamEditor(props: {
   const publish = publishTeamButton(props.writeSupport);
   const valid = form.name.trim().length > 0 && draftMembersValid(form.members);
   const canSave = props.writeSupport.create && valid && !form.submitting;
-  const canPublish =
-    props.writeSupport.publish && valid && draftMembersValid(form.members) && !form.submitting;
+  const canPublish = props.writeSupport.publish && valid && !form.submitting;
+  const missingRefs = !draftMembersValid(form.members);
 
   async function run(action: "save" | "publish") {
     if (action === "save" && !props.writeSupport.create) {
       setForm((current) => ({
         ...current,
         error: rejectCustomTeamSave(props.writeSupport).reason,
+        published: false,
       }));
       return;
     }
@@ -514,6 +488,15 @@ function TeamEditor(props: {
       setForm((current) => ({
         ...current,
         error: rejectCustomTeamPublish(props.writeSupport).reason,
+        published: false,
+      }));
+      return;
+    }
+    if (!draftMembersValid(form.members)) {
+      setForm((current) => ({
+        ...current,
+        error: MISSING_WORKER_VERSION_REASON,
+        published: false,
       }));
       return;
     }
@@ -563,7 +546,7 @@ function TeamEditor(props: {
           teamId: persisted.teamId,
           versionId: persisted.versionId,
           ...(persisted.versionStateRevision !== undefined
-            ? { versionRevision: persisted.versionStateRevision }
+            ? { versionStateRevision: persisted.versionStateRevision }
             : {}),
         },
         writeOptions,
@@ -597,12 +580,13 @@ function TeamEditor(props: {
   return (
     <Page
       title={form.teamId ? "编辑团队草稿" : "新建团队草稿"}
-      actions={
-        <Button onClick={props.onBack}>返回 AI 团队</Button>
-      }
+      actions={<Button onClick={props.onBack}>返回 AI 团队</Button>}
     >
       <Card testId="team-editor">
-        <Muted>成员包含 role、RuntimeProfile 与 quantity。发布后不可变，编辑必须新建版本。</Muted>
+        <Muted>
+          成员必须引用已发布且未归档的
+          WorkerVersion。数量仍可编；职责标签来自所选版本。发布后不可变。
+        </Muted>
         {!props.writeSupport.create ? (
           <Notice tone="warning">
             <span data-testid="team-write-api-missing">{create.reason}</span>
@@ -621,18 +605,29 @@ function TeamEditor(props: {
           />
         </Field>
         <MemberEditor
+          client={props.client}
           members={form.members}
-          runtimes={props.runtimes}
           disabled={!props.writeSupport.create}
+          onOpenLibrary={props.onOpenLibrary}
           onChange={(members) =>
             setForm((current) => reduceTeamDraftForm(current, { type: "setMembers", members }))
           }
         />
+        {missingRefs ? (
+          <Muted>
+            <span data-testid="team-missing-worker-version">{MISSING_WORKER_VERSION_REASON}</span>
+          </Muted>
+        ) : null}
         <div className="wf-cluster">
           <Button
             testId="team-save-draft"
             disabled={!canSave}
-            onClick={() => void run("save")}
+            onClick={() => {
+              if (!canSave) {
+                return;
+              }
+              void run("save");
+            }}
           >
             保存草稿
           </Button>
@@ -640,7 +635,12 @@ function TeamEditor(props: {
             variant="primary"
             testId={publish.testId}
             disabled={!canPublish}
-            onClick={() => void run("publish")}
+            onClick={() => {
+              if (!canPublish) {
+                return;
+              }
+              void run("publish");
+            }}
           >
             {publish.label}
           </Button>
@@ -674,9 +674,9 @@ function MemberList(props: { members: TeamMemberView[] }) {
     <Table>
       <THead>
         <TR>
-          <TH>成员</TH>
-          <TH>角色</TH>
-          <TH>RuntimeProfile</TH>
+          <TH>角色版本</TH>
+          <TH>职责</TH>
+          <TH>WorkerVersion</TH>
           <TH>数量</TH>
         </TR>
       </THead>
@@ -685,7 +685,7 @@ function MemberList(props: { members: TeamMemberView[] }) {
           <TR key={member.id} testId={`team-member-${member.id}`}>
             <TD>{member.title}</TD>
             <TD>{member.role}</TD>
-            <TD>{member.runtimeProfile}</TD>
+            <TD>{member.workerVersionId ?? "未引用"}</TD>
             <TD>{member.quantity}</TD>
           </TR>
         ))}
@@ -695,23 +695,21 @@ function MemberList(props: { members: TeamMemberView[] }) {
 }
 
 function MemberEditor(props: {
+  client: DesktopClient;
   members: TeamMemberView[];
-  runtimes: string[];
   disabled: boolean;
+  onOpenLibrary: () => void;
   onChange: (members: TeamMemberView[]) => void;
 }) {
-  const runtimeOptions = useMemo(
-    () => Array.from(new Set([PRESET_RUNTIME_ID, ...props.runtimes])),
-    [props.runtimes],
-  );
+  const [picker, setPicker] = useState<"add" | number | null>(null);
   return (
     <div data-testid="team-member-editor">
       <h2 className="wf-section-title">成员</h2>
       <Table>
         <THead>
           <TR>
-            <TH>角色</TH>
-            <TH>RuntimeProfile</TH>
+            <TH>角色版本</TH>
+            <TH>职责</TH>
             <TH>数量</TH>
             <TH>
               <span className="wf-sr-only">操作</span>
@@ -722,47 +720,15 @@ function MemberEditor(props: {
           {props.members.map((member, index) => (
             <TR key={`${member.id}-${index}`} testId="team-member-row">
               <TD>
-                <Select
-                  disabled={props.disabled}
-                  value={member.role}
-                  onChange={(event) =>
-                    props.onChange(
-                      updateDraftMember(props.members, index, { role: event.target.value }),
-                    )
-                  }
-                >
-                  {TEAM_ROLES.includes(member.role as (typeof TEAM_ROLES)[number]) ? null : (
-                    <option value={member.role}>{member.role}</option>
-                  )}
-                  {TEAM_ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </Select>
+                {memberHasWorkerVersionRef(member) ? (
+                  <span data-testid="team-member-worker-version">
+                    {member.title} · {member.workerVersionId}
+                  </span>
+                ) : (
+                  <span data-testid="team-member-unreferenced">未选择 WorkerVersion</span>
+                )}
               </TD>
-              <TD>
-                <Select
-                  disabled={props.disabled}
-                  value={member.runtimeProfile}
-                  onChange={(event) =>
-                    props.onChange(
-                      updateDraftMember(props.members, index, {
-                        runtimeProfile: event.target.value,
-                      }),
-                    )
-                  }
-                >
-                  {runtimeOptions.includes(member.runtimeProfile) ? null : (
-                    <option value={member.runtimeProfile}>{member.runtimeProfile}</option>
-                  )}
-                  {runtimeOptions.map((runtime) => (
-                    <option key={runtime} value={runtime}>
-                      {runtime}
-                    </option>
-                  ))}
-                </Select>
-              </TD>
+              <TD>{member.role}</TD>
               <TD>
                 <Input
                   type="number"
@@ -780,26 +746,201 @@ function MemberEditor(props: {
                 />
               </TD>
               <TD>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={props.disabled || props.members.length <= 1}
-                  onClick={() => props.onChange(removeDraftMember(props.members, index))}
-                >
-                  移除
-                </Button>
+                <div className="wf-cluster">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    testId="team-replace-member"
+                    disabled={props.disabled}
+                    onClick={() => setPicker(index)}
+                  >
+                    更换
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={props.disabled || props.members.length <= 1}
+                    onClick={() => props.onChange(removeDraftMember(props.members, index))}
+                  >
+                    移除
+                  </Button>
+                </div>
               </TD>
             </TR>
           ))}
         </TBody>
       </Table>
-      <Button
-        testId="team-add-member"
-        disabled={props.disabled}
-        onClick={() => props.onChange(addDraftMember(props.members))}
-      >
+      <Button testId="team-add-member" disabled={props.disabled} onClick={() => setPicker("add")}>
         添加成员
       </Button>
+      {picker !== null ? (
+        <WorkerVersionPicker
+          client={props.client}
+          disabled={props.disabled}
+          onOpenLibrary={props.onOpenLibrary}
+          onCancel={() => setPicker(null)}
+          onSelect={(selected) => {
+            if (picker === "add") {
+              props.onChange(addDraftMember(props.members, selected));
+            } else {
+              props.onChange(replaceDraftMember(props.members, picker, selected));
+            }
+            setPicker(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function WorkerVersionPicker(props: {
+  client: DesktopClient;
+  disabled: boolean;
+  onOpenLibrary: () => void;
+  onCancel: () => void;
+  onSelect: (selected: SelectableWorkerVersionView) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<SelectableWorkerVersionView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [forkNote, setForkNote] = useState<string | null>(null);
+  const [forkingId, setForkingId] = useState<string | null>(null);
+  const libraryReady = workerLibraryMethodsPresent(props.client);
+
+  useEffect(() => {
+    if (!libraryReady) {
+      setLoading(false);
+      setOptions([]);
+      setError(WORKER_LIBRARY_API_MISSING);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      try {
+        const loaded = await loadSelectableWorkerVersions(props.client, { q: query });
+        if (!cancelled) {
+          setOptions(loaded);
+          setError(null);
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setOptions([]);
+          setError(errorMessage(caught));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [libraryReady, props.client, query]);
+
+  async function fork(option: SelectableWorkerVersionView) {
+    if (props.disabled) {
+      return;
+    }
+    setForkingId(option.workerVersionId);
+    setForkNote(null);
+    try {
+      const forked = await forkPublishedWorkerVersion(props.client, {
+        workerId: option.workerId,
+        workerVersionId: option.workerVersionId,
+      });
+      setForkNote(
+        `${FORK_DRAFT_NOT_SELECTABLE} 新草稿 ${forked.workerDraftId}（Worker ${forked.workerId}）。`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setForkingId(null);
+    }
+  }
+
+  return (
+    <div data-testid="team-worker-version-picker">
+      <h3 className="wf-section-title">从角色版本库选用</h3>
+      <Muted>只列出已发布且未归档的 WorkerVersion。草稿和归档不能点成成功。</Muted>
+      <Field label="搜索库" htmlFor="wf-team-worker-search">
+        <Input
+          id="wf-team-worker-search"
+          testId="team-worker-search"
+          value={query}
+          disabled={props.disabled || !libraryReady}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </Field>
+      {loading ? <Skeleton lines={3} /> : null}
+      {error ? (
+        <div data-testid="team-worker-picker-error">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      ) : null}
+      {forkNote ? (
+        <Notice tone="warning">
+          <span data-testid="team-worker-fork-draft">{forkNote}</span>
+        </Notice>
+      ) : null}
+      {!loading && options.length === 0 && error === null ? (
+        <Muted>库里没有可选用的已发布 WorkerVersion。</Muted>
+      ) : null}
+      {options.length > 0 ? (
+        <Table>
+          <THead>
+            <TR>
+              <TH>版本</TH>
+              <TH>职责</TH>
+              <TH>
+                <span className="wf-sr-only">操作</span>
+              </TH>
+            </TR>
+          </THead>
+          <TBody>
+            {options.map((option) => (
+              <TR key={option.workerVersionId} testId="team-worker-option">
+                <TD>
+                  {option.name} · {option.workerVersionId}
+                </TD>
+                <TD>{option.role}</TD>
+                <TD>
+                  <div className="wf-cluster">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      testId="team-select-worker-version"
+                      disabled={props.disabled}
+                      onClick={() => props.onSelect(option)}
+                    >
+                      选用
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      testId="team-fork-worker-version"
+                      disabled={props.disabled || forkingId === option.workerVersionId}
+                      onClick={() => void fork(option)}
+                    >
+                      Fork
+                    </Button>
+                  </div>
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      ) : null}
+      <div className="wf-cluster">
+        <Button variant="outline" testId="team-worker-picker-cancel" onClick={props.onCancel}>
+          取消
+        </Button>
+        <Button variant="ghost" testId="team-open-role-library" onClick={props.onOpenLibrary}>
+          打开角色版本库
+        </Button>
+      </div>
     </div>
   );
 }
@@ -824,11 +965,7 @@ export function ProjectTeamBindingField(props: {
   const customSelected = selected.kind === "custom";
   const exactVersion = canBindTeamVersion(selected);
   const canBind =
-    props.writeSupport.bind &&
-    customSelected &&
-    exactVersion &&
-    !props.disabled &&
-    !props.busy;
+    props.writeSupport.bind && customSelected && exactVersion && !props.disabled && !props.busy;
   return (
     <div data-testid="project-team-binding">
       <Field label="团队（已发布 TeamVersion）" htmlFor="wf-project-team">

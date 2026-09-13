@@ -1,7 +1,15 @@
+import { isSelectableWorkerVersion } from "@workforce/protocol";
+
 export const PRESET_TEAM_ID = "software-development-team" as const;
 export const LIVE_PRESET_TEAM_ID = "tm_software_development" as const;
 export const PRESET_TEAM_VERSION = "0.1.0" as const;
 export const PRESET_RUNTIME_ID = "mock" as const;
+export const PRESET_PLANNER_WORKER_ID = "wrk_software_planner" as const;
+export const PRESET_PLANNER_WORKER_VERSION_ID = "wrv_software_planner_0_1_0" as const;
+export const PRESET_DEVELOPER_WORKER_ID = "wrk_software_developer" as const;
+export const PRESET_DEVELOPER_WORKER_VERSION_ID = "wrv_software_developer_0_1_0" as const;
+export const PRESET_REVIEWER_WORKER_ID = "wrk_software_reviewer" as const;
+export const PRESET_REVIEWER_WORKER_VERSION_ID = "wrv_software_reviewer_0_1_0" as const;
 
 export const TEAM_ROLES = ["planner", "developer", "reviewer"] as const;
 export type TeamRole = (typeof TEAM_ROLES)[number];
@@ -12,6 +20,9 @@ export interface TeamMemberView {
   title: string;
   runtimeProfile: string;
   quantity: number;
+  workerVersionId?: string;
+  workerId?: string;
+  workerVersion?: string;
 }
 
 export interface TeamWorkerView {
@@ -45,6 +56,9 @@ export const PRESET_MEMBERS: TeamMemberView[] = [
     title: "Planner",
     runtimeProfile: PRESET_RUNTIME_ID,
     quantity: 1,
+    workerVersionId: PRESET_PLANNER_WORKER_VERSION_ID,
+    workerId: PRESET_PLANNER_WORKER_ID,
+    workerVersion: PRESET_TEAM_VERSION,
   },
   {
     id: "developer",
@@ -52,6 +66,9 @@ export const PRESET_MEMBERS: TeamMemberView[] = [
     title: "Developer",
     runtimeProfile: PRESET_RUNTIME_ID,
     quantity: 1,
+    workerVersionId: PRESET_DEVELOPER_WORKER_VERSION_ID,
+    workerId: PRESET_DEVELOPER_WORKER_ID,
+    workerVersion: PRESET_TEAM_VERSION,
   },
   {
     id: "reviewer",
@@ -59,6 +76,9 @@ export const PRESET_MEMBERS: TeamMemberView[] = [
     title: "Reviewer",
     runtimeProfile: PRESET_RUNTIME_ID,
     quantity: 1,
+    workerVersionId: PRESET_REVIEWER_WORKER_VERSION_ID,
+    workerId: PRESET_REVIEWER_WORKER_ID,
+    workerVersion: PRESET_TEAM_VERSION,
   },
 ];
 
@@ -80,6 +100,15 @@ export const LIVE_CATALOG_NOTE =
 
 export const TEAM_WRITE_API_MISSING =
   "自定义团队写接口尚未接通或探测失败。发布/保存不会成功；预设 Software Development Team 仍只读可用。";
+
+export const WORKER_LIBRARY_API_MISSING =
+  "角色版本库接口尚未接通。添加成员必须从库中选择已发布 WorkerVersion，未选引用不会当作成功。";
+
+export const MISSING_WORKER_VERSION_REASON =
+  "添加成员必须选择已发布且未归档的 WorkerVersion。未选引用不能保存或发布成功。";
+
+export const FORK_DRAFT_NOT_SELECTABLE =
+  "已 fork 为新 Worker 草稿。草稿未发布，不能加入团队；到角色版本库发布后再选。";
 
 export const UNPUBLISHED_BIND_REASON = "未发布的 Team 草稿不能绑定到项目，也不能开始规划。";
 
@@ -106,9 +135,23 @@ export interface TeamWriteOptions {
 }
 
 export interface TeamMemberWritePayload {
+  workerVersionId: string;
   role: string;
-  runtimeProfileId: string;
+  runtimeProfileId?: string;
   quantity: number;
+}
+
+export interface SelectableWorkerVersionView {
+  workerId: string;
+  workerName: string;
+  workerVersionId: string;
+  version: string;
+  name: string;
+  role: string;
+  runtimeProfileId?: string;
+  archived: boolean;
+  status: "draft" | "published";
+  immutable: boolean;
 }
 
 export interface TeamWriteClient {
@@ -136,6 +179,18 @@ export interface TeamWriteClient {
   patchProject?: (
     id: string,
     input: { teamVersionId: string },
+    options: TeamWriteOptions,
+  ) => Promise<unknown>;
+  listWorkers?: (query?: {
+    q?: string;
+    status?: "draft" | "published";
+    includeArchived?: boolean;
+    cursor?: string;
+    limit?: number;
+  }) => Promise<{ items: unknown[] }>;
+  forkWorkerVersion?: (
+    id: string,
+    versionId: string,
     options: TeamWriteOptions,
   ) => Promise<unknown>;
 }
@@ -436,9 +491,7 @@ export function canBindTeamVersion(
   return hasExactTeamVersionId(team);
 }
 
-export function hasExactTeamVersionId(
-  team: Pick<TeamView, "id" | "kind" | "versionId">,
-): boolean {
+export function hasExactTeamVersionId(team: Pick<TeamView, "id" | "kind" | "versionId">): boolean {
   if (team.versionId.length === 0) {
     return false;
   }
@@ -654,8 +707,25 @@ function asMemberView(value: unknown, index: number): TeamMemberView | null {
   if (!role) {
     return null;
   }
-  const id = typeof record.id === "string" ? record.id : `${role}-${index}`;
-  const title = typeof record.title === "string" ? record.title : roleLabel(role);
+  const workerVersionId =
+    typeof record.workerVersionId === "string" && record.workerVersionId.length > 0
+      ? record.workerVersionId
+      : undefined;
+  const workerId =
+    typeof record.workerId === "string" && record.workerId.length > 0 ? record.workerId : undefined;
+  const workerVersion =
+    typeof record.workerVersion === "string" && record.workerVersion.length > 0
+      ? record.workerVersion
+      : typeof record.version === "string" && record.version.length > 0
+        ? record.version
+        : undefined;
+  const id = typeof record.id === "string" ? record.id : (workerVersionId ?? `${role}-${index}`);
+  const title =
+    typeof record.title === "string"
+      ? record.title
+      : typeof record.name === "string"
+        ? record.name
+        : roleLabel(role);
   const runtimeProfile =
     typeof record.runtimeProfileId === "string"
       ? record.runtimeProfileId
@@ -665,7 +735,16 @@ function asMemberView(value: unknown, index: number): TeamMemberView | null {
           ? record.runtime
           : PRESET_RUNTIME_ID;
   const quantity = parseQuantity(record.quantity);
-  return { id, role, title, runtimeProfile, quantity };
+  return {
+    id,
+    role,
+    title,
+    runtimeProfile,
+    quantity,
+    ...(workerVersionId !== undefined ? { workerVersionId } : {}),
+    ...(workerId !== undefined ? { workerId } : {}),
+    ...(workerVersion !== undefined ? { workerVersion } : {}),
+  };
 }
 
 function asRoleMember(value: unknown, index: number): TeamMemberView | null {
@@ -700,13 +779,17 @@ export function parseQuantity(value: unknown): number {
   return 1;
 }
 
+export function memberHasWorkerVersionRef(member: TeamMemberView): boolean {
+  return typeof member.workerVersionId === "string" && member.workerVersionId.trim().length > 0;
+}
+
 export function draftMembersValid(members: TeamMemberView[]): boolean {
   return (
     members.length > 0 &&
     members.every(
       (member) =>
+        memberHasWorkerVersionRef(member) &&
         member.role.trim().length > 0 &&
-        member.runtimeProfile.trim().length > 0 &&
         Number.isInteger(member.quantity) &&
         member.quantity >= 1,
     )
@@ -861,8 +944,41 @@ export function defaultMember(role: string, index = 0): TeamMemberView {
   };
 }
 
-export function addDraftMember(members: TeamMemberView[], role = "developer"): TeamMemberView[] {
-  return [...members, defaultMember(role, members.length)];
+export function memberFromSelectableVersion(
+  selected: SelectableWorkerVersionView,
+  index = 0,
+  quantity = 1,
+): TeamMemberView {
+  return {
+    id: selected.workerVersionId || `${selected.role}-${index}`,
+    role: selected.role,
+    title: selected.name,
+    runtimeProfile: selected.runtimeProfileId ?? "",
+    quantity,
+    workerVersionId: selected.workerVersionId,
+    workerId: selected.workerId,
+    workerVersion: selected.version,
+  };
+}
+
+export function addDraftMember(
+  members: TeamMemberView[],
+  selected: SelectableWorkerVersionView,
+): TeamMemberView[] {
+  return [...members, memberFromSelectableVersion(selected, members.length)];
+}
+
+export function replaceDraftMember(
+  members: TeamMemberView[],
+  index: number,
+  selected: SelectableWorkerVersionView,
+): TeamMemberView[] {
+  const current = members[index];
+  return members.map((member, currentIndex) =>
+    currentIndex === index
+      ? memberFromSelectableVersion(selected, currentIndex, current?.quantity ?? 1)
+      : member,
+  );
 }
 
 export function updateDraftMember(
@@ -886,11 +1002,170 @@ export function removeDraftMember(members: TeamMemberView[], index: number): Tea
 }
 
 export function membersToPayload(members: TeamMemberView[]): TeamMemberWritePayload[] {
-  return members.map((member) => ({
-    role: member.role,
-    runtimeProfileId: member.runtimeProfile,
-    quantity: member.quantity,
-  }));
+  return members.map((member) => {
+    const workerVersionId = member.workerVersionId?.trim() ?? "";
+    const payload: TeamMemberWritePayload = {
+      workerVersionId,
+      role: member.role,
+      quantity: member.quantity,
+    };
+    const runtimeProfileId = member.runtimeProfile.trim();
+    if (runtimeProfileId.length > 0) {
+      payload.runtimeProfileId = runtimeProfileId;
+    }
+    return payload;
+  });
+}
+
+export function workerLibraryMethodsPresent(client: TeamWriteClient): boolean {
+  return typeof client.listWorkers === "function";
+}
+
+export function asSelectableWorkerVersions(value: unknown): SelectableWorkerVersionView[] {
+  const record = asRecord(value);
+  const items = Array.isArray(record?.items) ? record.items : Array.isArray(value) ? value : [];
+  const selected: SelectableWorkerVersionView[] = [];
+  for (const item of items) {
+    selected.push(...selectableVersionsFromWorker(item));
+  }
+  return selected;
+}
+
+function selectableVersionsFromWorker(value: unknown): SelectableWorkerVersionView[] {
+  const worker = asRecord(value);
+  if (!worker || typeof worker.id !== "string" || worker.id.length === 0) {
+    return [];
+  }
+  const workerName =
+    typeof worker.name === "string" && worker.name.length > 0 ? worker.name : worker.id;
+  const versions = Array.isArray(worker.versions) ? worker.versions : null;
+  if (versions !== null) {
+    const collected: SelectableWorkerVersionView[] = [];
+    for (const item of versions) {
+      const version = asSelectableWorkerVersion(item, worker.id, workerName);
+      if (version) {
+        collected.push(version);
+      }
+    }
+    return collected;
+  }
+  const activeId =
+    typeof worker.activeVersionId === "string" && worker.activeVersionId.length > 0
+      ? worker.activeVersionId
+      : null;
+  if (!activeId) {
+    return [];
+  }
+  return [
+    asSelectableWorkerVersion(
+      {
+        id: activeId,
+        workerId: worker.id,
+        version: PRESET_TEAM_VERSION,
+        status: worker.status,
+        immutable: worker.status === "published",
+        archived: false,
+        name: workerName,
+        role: typeof worker.role === "string" ? worker.role : "developer",
+      },
+      worker.id,
+      workerName,
+    ),
+  ].filter((item): item is SelectableWorkerVersionView => item !== null);
+}
+
+function asSelectableWorkerVersion(
+  value: unknown,
+  workerId: string,
+  workerName: string,
+): SelectableWorkerVersionView | null {
+  const record = asRecord(value);
+  if (!record || typeof record.id !== "string" || record.id.length === 0) {
+    return null;
+  }
+  const status = record.status === "draft" ? "draft" : "published";
+  const archived = record.archived === true;
+  const immutable = record.immutable === true;
+  if (!isSelectableWorkerVersion({ status, immutable, archived })) {
+    return null;
+  }
+  const role =
+    typeof record.role === "string" && record.role.length > 0 ? record.role : "developer";
+  const name = typeof record.name === "string" && record.name.length > 0 ? record.name : workerName;
+  const version =
+    typeof record.version === "string" && record.version.length > 0
+      ? record.version
+      : PRESET_TEAM_VERSION;
+  const runtimeProfileId =
+    typeof record.runtimeProfileId === "string" && record.runtimeProfileId.length > 0
+      ? record.runtimeProfileId
+      : undefined;
+  return {
+    workerId:
+      typeof record.workerId === "string" && record.workerId.length > 0
+        ? record.workerId
+        : workerId,
+    workerName,
+    workerVersionId: record.id,
+    version,
+    name,
+    role,
+    archived,
+    status,
+    immutable,
+    ...(runtimeProfileId !== undefined ? { runtimeProfileId } : {}),
+  };
+}
+
+export async function loadSelectableWorkerVersions(
+  client: TeamWriteClient,
+  query?: { q?: string },
+): Promise<SelectableWorkerVersionView[]> {
+  if (typeof client.listWorkers !== "function") {
+    throw new Error(WORKER_LIBRARY_API_MISSING);
+  }
+  const q = query?.q?.trim();
+  const page = await client.listWorkers({
+    status: "published",
+    includeArchived: false,
+    limit: 100,
+    ...(q && q.length > 0 ? { q } : {}),
+  });
+  return asSelectableWorkerVersions(page);
+}
+
+export async function forkPublishedWorkerVersion(
+  client: TeamWriteClient,
+  input: { workerId: string; workerVersionId: string },
+  options?: TeamWriteOptions,
+): Promise<{ workerId: string; workerDraftId: string; forkedFromWorkerVersionId: string }> {
+  if (typeof client.forkWorkerVersion !== "function") {
+    throw new Error(WORKER_LIBRARY_API_MISSING);
+  }
+  const accepted = asRecord(
+    await client.forkWorkerVersion(
+      input.workerId,
+      input.workerVersionId,
+      options ?? writeOptions(),
+    ),
+  );
+  const workerId =
+    typeof accepted?.workerId === "string" && accepted.workerId.length > 0
+      ? accepted.workerId
+      : null;
+  const workerDraftId =
+    typeof accepted?.workerDraftId === "string" && accepted.workerDraftId.length > 0
+      ? accepted.workerDraftId
+      : null;
+  const forkedFromWorkerVersionId =
+    typeof accepted?.forkedFromWorkerVersionId === "string" &&
+    accepted.forkedFromWorkerVersionId.length > 0
+      ? accepted.forkedFromWorkerVersionId
+      : input.workerVersionId;
+  if (!workerId || !workerDraftId) {
+    throw new Error("fork 未返回新草稿 id，未当作可选用的成员引用。");
+  }
+  return { workerId, workerDraftId, forkedFromWorkerVersionId };
 }
 
 export function writeOptions(ifMatch?: number): TeamWriteOptions {
@@ -1044,9 +1319,12 @@ export async function persistTeamDraft(
     throw new Error("团队名称不能为空。");
   }
   if (!draftMembersValid(input.members)) {
-    throw new Error("成员必须包含 role、RuntimeProfile 与 quantity ≥ 1。");
+    throw new Error(MISSING_WORKER_VERSION_REASON);
   }
   const members = membersToPayload(input.members);
+  if (members.some((member) => member.workerVersionId.length === 0)) {
+    throw new Error(MISSING_WORKER_VERSION_REASON);
+  }
   let teamId = input.teamId;
   let versionId = input.versionId;
   let teamStateRevision = input.teamStateRevision;
