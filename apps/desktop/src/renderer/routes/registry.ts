@@ -3,10 +3,16 @@ import type { ReactNode } from "react";
 
 import { SHELL_ROUTES, type ShellRoute } from "./catalog.js";
 
+/**
+ * T11 catalog already includes `/role-library` and `/chat`.
+ * Downstream feature folders glob-register `Page`; until then
+ * `featureRegistered` stays false and the shell renders an unwired empty state.
+ */
+
 export interface FeatureModule {
   slot: FeatureSlot;
   title?: string;
-  /** Optional T12/T13 page. Shell glob-loads features/<slot>/index.tsx. */
+  /** Optional feature page. Shell glob-loads features/<slot>/index.tsx. */
   Page?: (props: {
     params: Record<string, string>;
     path: string;
