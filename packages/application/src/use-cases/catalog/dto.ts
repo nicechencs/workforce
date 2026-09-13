@@ -1,7 +1,10 @@
+import { protocolVersion } from "@workforce/protocol";
 import type {
   TeamDto,
   TeamRoleDto,
   TeamVersionDto,
+  WorkerDto,
+  WorkerVersionDto,
   WorkflowDto,
   WorkflowVersionDto,
 } from "@workforce/protocol";
@@ -13,8 +16,6 @@ import type {
   WorkflowDefinitionRecord,
   WorkflowVersionRecord,
 } from "./types.js";
-
-const PROTOCOL_VERSION = "0.1" as const;
 
 export function workflowVersionDto(record: WorkflowVersionRecord): WorkflowVersionDto {
   const dto: WorkflowVersionDto = {
@@ -51,7 +52,7 @@ export function workflowDto(
     id: record.id,
     name: record.name,
     description: record.description,
-    protocolVersion: PROTOCOL_VERSION,
+    protocolVersion,
     status: record.status,
     versions: versions.map(workflowVersionDto),
     stateRevision: record.stateRevision,
@@ -103,7 +104,7 @@ export function teamDto(
     name: record.name,
     version: active?.version ?? "",
     status: record.status,
-    protocolVersion: PROTOCOL_VERSION,
+    protocolVersion,
     roles: teamRolesFromVersion(active),
     versions: versions.map(teamVersionDto),
     stateRevision: record.stateRevision,
@@ -127,4 +128,35 @@ export function workflowDtoFromCatalog(
 
 export function teamDtoFromCatalog(catalog: MemoryCatalog, record: TeamDefinitionRecord): TeamDto {
   return teamDto(record, catalog.listTeamVersions(record.id));
+}
+
+export function workerVersionDto(record: WorkerVersionDto): WorkerVersionDto {
+  return record;
+}
+
+export function workerDto(record: WorkerDto, versions: readonly WorkerVersionDto[]): WorkerDto {
+  const dto: WorkerDto = {
+    id: record.id,
+    name: record.name,
+    protocolVersion,
+    status: record.status,
+    versions: versions.map(workerVersionDto),
+  };
+  if (record.description !== undefined) {
+    dto.description = record.description;
+  }
+  if (record.activeVersionId !== undefined) {
+    dto.activeVersionId = record.activeVersionId;
+  }
+  if (record.stateRevision !== undefined) {
+    dto.stateRevision = record.stateRevision;
+  }
+  if (record.definitionRevision !== undefined) {
+    dto.definitionRevision = record.definitionRevision;
+  }
+  return dto;
+}
+
+export function workerDtoFromCatalog(catalog: MemoryCatalog, record: WorkerDto): WorkerDto {
+  return workerDto(record, catalog.listWorkerVersions(record.id));
 }
