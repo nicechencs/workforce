@@ -5,6 +5,7 @@ import type {
   IdGenerator,
   UnitOfWork,
 } from "../../ports/index.js";
+import type { BindableTeamVersionLookup } from "../projects/progress.js";
 import type {
   ConfirmedWorkflowVersion,
   PlanApprovalRecord,
@@ -103,6 +104,8 @@ export interface StartPlannerDeps {
   tasks: PlannerTaskRepository;
   runRecords: PlannerRunRepository;
   runs: PlannerTaskRunPort;
+  /** Catalog lookup for bindable TeamVersion. Absent → bind guard is a no-op. */
+  teamVersions?: BindableTeamVersionLookup;
 }
 
 export interface AcceptPlannerArtifactDeps {
