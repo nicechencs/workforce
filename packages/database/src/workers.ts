@@ -5,12 +5,14 @@ import {
   parseForkWorkerVersionAccepted,
   parseListWorkersInput,
   parseWorker,
+  parseWorkerCardFields,
   parseWorkerDraft,
   parseWorkerPage,
   parseWorkerVersion,
   parseWorkerVersionReferences,
   type ForkWorkerVersionAcceptedDto,
   type ListWorkersInput,
+  type WorkerCardFieldsDto,
   type WorkerDraftDto,
   type WorkerDto,
   type WorkerPageDto,
@@ -31,12 +33,12 @@ const WORKER_COLUMNS = `
 const VERSION_COLUMNS = `
   id, worker_id, version, status, immutable, archived, name, description, role,
   runtime_profile_id, forked_from_worker_version_id, state_revision,
-  published_at, archived_at, created_at, updated_at
+  published_at, archived_at, created_at, updated_at, who, how, skills
 `;
 
 const DRAFT_COLUMNS = `
   id, worker_id, revision, status, name, description, role, runtime_profile_id,
-  content_hash, updated_at, updated_by
+  content_hash, updated_at, updated_by, who, how, skills
 `;
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -170,8 +172,8 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
         `INSERT INTO catalog_worker_versions (
            id, worker_id, version, status, immutable, archived, name, description, role,
            runtime_profile_id, forked_from_worker_version_id, state_revision,
-           published_at, archived_at, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           published_at, archived_at, created_at, updated_at, who, how, skills
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         published.id,
         published.workerId,
@@ -189,6 +191,9 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
         published.archived ? (published.archivedAt ?? now) : null,
         now,
         now,
+        nullableCardField(published.who),
+        nullableCardField(published.how),
+        nullableCardField(published.skills),
       );
     } catch (error) {
       mapLibraryWriteError(error, `worker version ${published.id} already exists`);
@@ -267,7 +272,7 @@ export class SqliteWorkerLibraryRepository implements WorkerLibraryRepository {
       );
     }
     insertWorkerRow(db, identity, draft.updatedAt, sourceWorkerVersionId);
-    insertDraftRow(db, draft);
+    insertDraftRow(db, draftWithCopiedCardFields(draft, source));
     const unchanged = this.getVersionFrom(db, sourceWorkerVersionId);
     if (unchanged === null || versionFingerprint(unchanged) !== versionFingerprint(source)) {
       throw new PersistenceError(
@@ -398,8 +403,8 @@ function insertDraftRow(db: DatabaseSync, draft: WorkerDraftDto): void {
     db.prepare(
       `INSERT INTO worker_drafts (
          id, worker_id, revision, status, name, description, role, runtime_profile_id,
-         content_hash, updated_at, updated_by
-       ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+         content_hash, updated_at, updated_by, who, how, skills
+       ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       draft.id,
       draft.workerId,
@@ -411,6 +416,9 @@ function insertDraftRow(db: DatabaseSync, draft: WorkerDraftDto): void {
       draft.contentHash,
       draft.updatedAt,
       draft.updatedBy,
+      nullableCardField(draft.who),
+      nullableCardField(draft.how),
+      nullableCardField(draft.skills),
     );
   } catch (error) {
     mapLibraryWriteError(error, `worker draft ${draft.id} already exists`);
@@ -450,6 +458,7 @@ function rowToVersion(row: Record<string, unknown>): WorkerVersionDto {
     stateRevision: requiredInt(cell(row, "state_revision"), "state_revision"),
     ...ifPresent("publishedAt", optionalText(cell(row, "published_at"))),
     ...ifPresent("archivedAt", optionalText(cell(row, "archived_at"))),
+    ...cardFieldsFromRow(row),
   });
 }
 
@@ -466,7 +475,46 @@ function rowToDraft(row: Record<string, unknown>): WorkerDraftDto {
     contentHash: requiredText(cell(row, "content_hash"), "content_hash"),
     updatedAt: requiredText(cell(row, "updated_at"), "updated_at"),
     updatedBy: requiredText(cell(row, "updated_by"), "updated_by"),
+    ...cardFieldsFromRow(row),
   });
+}
+
+function cardFieldsFromRow(row: Record<string, unknown>): WorkerCardFieldsDto {
+  return parseWorkerCardFields({
+    ...ifPresent("who", optionalText(cell(row, "who"))),
+    ...ifPresent("how", optionalText(cell(row, "how"))),
+    ...ifPresent("skills", optionalText(cell(row, "skills"))),
+  });
+}
+
+function cardFieldsFromVersion(version: WorkerVersionDto): WorkerCardFieldsDto {
+  return parseWorkerCardFields({
+    ...ifPresent("who", version.who ?? null),
+    ...ifPresent("how", version.how ?? null),
+    ...ifPresent("skills", version.skills ?? null),
+  });
+}
+
+function draftWithCopiedCardFields(draft: WorkerDraftDto, source: WorkerVersionDto): WorkerDraftDto {
+  return parseWorkerDraft({
+    id: draft.id,
+    workerId: draft.workerId,
+    revision: draft.revision,
+    status: draft.status,
+    name: draft.name,
+    ...ifPresent("description", draft.description ?? null),
+    role: draft.role,
+    ...ifPresent("runtimeProfileId", draft.runtimeProfileId ?? null),
+    contentHash: draft.contentHash,
+    updatedAt: draft.updatedAt,
+    updatedBy: draft.updatedBy,
+    ...cardFieldsFromVersion(source),
+  });
+}
+
+/** Undefined stays NULL (absent). Empty string is an explicit blank cell. */
+function nullableCardField(value: string | undefined): string | null {
+  return value === undefined ? null : value;
 }
 
 function emptyToNull(value: string | null): string | null {

@@ -1216,6 +1216,45 @@ BEGIN
 END;
 `;
 
+/**
+ * Role-card slots on library drafts/versions. 015 SQL is frozen: add nullable
+ * who/how/skills and recreate the immutable trigger so published card columns
+ * cannot UPDATE. Archive columns stay writable. Old NULL cells mean absent.
+ */
+export const MIGRATION_016_SQL = `
+ALTER TABLE catalog_worker_versions ADD COLUMN who TEXT;
+ALTER TABLE catalog_worker_versions ADD COLUMN how TEXT;
+ALTER TABLE catalog_worker_versions ADD COLUMN skills TEXT;
+ALTER TABLE worker_drafts ADD COLUMN who TEXT;
+ALTER TABLE worker_drafts ADD COLUMN how TEXT;
+ALTER TABLE worker_drafts ADD COLUMN skills TEXT;
+
+DROP TRIGGER IF EXISTS catalog_worker_versions_immutable_update;
+
+CREATE TRIGGER catalog_worker_versions_immutable_update
+BEFORE UPDATE ON catalog_worker_versions
+FOR EACH ROW
+WHEN OLD.immutable = 1
+BEGIN
+  SELECT RAISE(ABORT, 'published worker version is immutable')
+  WHERE NEW.id IS NOT OLD.id
+     OR NEW.worker_id IS NOT OLD.worker_id
+     OR NEW.version IS NOT OLD.version
+     OR NEW.status IS NOT OLD.status
+     OR NEW.immutable IS NOT OLD.immutable
+     OR NEW.name IS NOT OLD.name
+     OR NEW.description IS NOT OLD.description
+     OR NEW.role IS NOT OLD.role
+     OR NEW.runtime_profile_id IS NOT OLD.runtime_profile_id
+     OR NEW.forked_from_worker_version_id IS NOT OLD.forked_from_worker_version_id
+     OR NEW.state_revision IS NOT OLD.state_revision
+     OR NEW.published_at IS NOT OLD.published_at
+     OR NEW.who IS NOT OLD.who
+     OR NEW.how IS NOT OLD.how
+     OR NEW.skills IS NOT OLD.skills;
+END;
+`;
+
 export const MIGRATIONS = [
   { version: "001_init", sql: MIGRATION_001_SQL },
   { version: "002_entity_alignment", sql: MIGRATION_002_SQL },
@@ -1232,4 +1271,5 @@ export const MIGRATIONS = [
   { version: "013_execution_axes_contract", sql: MIGRATION_013_SQL },
   { version: "014_projection_reconciliation", sql: MIGRATION_014_SQL },
   { version: "015_worker_library", sql: MIGRATION_015_SQL },
+  { version: "016_worker_card_fields", sql: MIGRATION_016_SQL },
 ] as const;

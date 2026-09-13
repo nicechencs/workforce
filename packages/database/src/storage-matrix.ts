@@ -141,10 +141,10 @@ export const STORAGE_MATRIX: readonly StorageLocation[] = [
   {
     record: "Worker library identity / version / draft",
     location:
-      "catalog_workers + catalog_worker_versions + worker_drafts (015; not 001 worker_versions)",
+      "catalog_workers + catalog_worker_versions + worker_drafts (015; not 001 worker_versions); who/how/skills columns on versions and drafts (016)",
     uniqueness:
-      "PK catalog_workers.id; PK catalog_worker_versions.id UNIQUE(worker_id, version); worker_drafts PK id UNIQUE(worker_id, revision); published version insert-once + immutable trigger",
+      "PK catalog_workers.id; PK catalog_worker_versions.id UNIQUE(worker_id, version); worker_drafts PK id UNIQUE(worker_id, revision); published version insert-once + immutable trigger covering card columns",
     recovery:
-      "load catalog_workers after restart; published rows stay insert-once; draft CAS is MAX(revision); archive is queryable; fork inserts a new identity and does not mutate the source; TeamVersion refs are json_each(catalog_team_versions.definition_json members.workerVersionId)",
+      "load catalog_workers after restart; published rows stay insert-once; draft CAS is MAX(revision); card NULL is absent, empty string is an explicit blank; archive is queryable; fork copies source who/how/skills onto the new draft and does not mutate the source; published UPDATE of card columns is aborted; TeamVersion refs are json_each(catalog_team_versions.definition_json members.workerVersionId)",
   },
 ];
