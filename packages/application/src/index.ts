@@ -42,3 +42,5 @@ export type {
 export * from "./use-cases/delivery/index.js";
 export * from "./use-cases/catalog/index.js";
 export * from "./use-cases/authoring/index.js";
+export { classifyChatIntent } from "./use-cases/chat/index.js";
+export type { ChatClassifyContext } from "./use-cases/chat/index.js";
