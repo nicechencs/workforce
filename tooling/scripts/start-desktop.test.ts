@@ -25,5 +25,6 @@ describe("start-desktop launcher", () => {
     expect(output).toContain("Workforce Desktop (dev)");
     expect(output).toContain(root);
     expect(output).toContain("pnpm --filter @workforce/desktop dev");
+    expect(output).toMatch(/install: (skip \(workspace links complete\)|pnpm install --frozen-lockfile \()/);
   });
 });

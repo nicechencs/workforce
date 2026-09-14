@@ -15,7 +15,7 @@ Before editing, record the current branch, HEAD, working-tree changes, task acce
 
 - Package manager: pnpm 9.4.x (`packageManager` in the root `package.json`).
 - Node.js: `>=22`. `.nvmrc` pins the LTS major (`22`). Node 22 and 24 are both supported for local development.
-- Install with `pnpm install --frozen-lockfile` after cloning.
+- Install with `pnpm install --frozen-lockfile` after cloning, and again after pulling if `package.json` / `pnpm-lock.yaml` workspace dependencies changed. Root `node_modules` can exist while a new `workspace:*` link is missing. `pnpm check:workspace-links` lists gaps; `start.cmd` / `start.sh` run install automatically when links are incomplete.
 
 Do not use npm or yarn. New third-party dependencies and lockfile edits are owned by T01 / the coordinator after the skeleton lands.
 

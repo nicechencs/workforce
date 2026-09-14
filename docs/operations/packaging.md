@@ -3,7 +3,7 @@ title: 三平台打包与随包 Daemon
 type: operations
 status: current
 owner: t17
-updated: 2026-09-12
+updated: 2026-09-14
 ---
 
 # 三平台打包与随包 Daemon
@@ -24,7 +24,7 @@ updated: 2026-09-12
 
 | 命令 | 是什么 |
 | --- | --- |
-| `start.cmd` / `start.sh` / `node tooling/scripts/start-desktop.mjs` | 源码树一键开发启动 |
+| `start.cmd` / `start.sh` / `node tooling/scripts/start-desktop.mjs` | 源码树一键开发启动；根 `node_modules` 或 `workspace:*` 链接缺失时会跑 `pnpm install --frozen-lockfile`。`pnpm check:workspace-links` 只检查不启动。 |
 | `pnpm --filter @workforce/desktop dev` | 开发窗口 + 源码/dist Daemon |
 | `pnpm --filter @workforce/desktop start` | 本地 `dist` + 本机 Electron |
 | `node tooling/release/pack.mjs` | 解压分发包（仍未发布） |

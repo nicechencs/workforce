@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
  * Local one-click launcher for Workforce Desktop (dev).
- * Checks Node.js, ensures pnpm, installs when node_modules is missing,
- * then runs `@workforce/desktop` `dev`. Electron starts the loopback Daemon.
+ * Checks Node.js, ensures pnpm, installs when node_modules or workspace
+ * links are missing, then runs `@workforce/desktop` `dev`. Electron starts
+ * the loopback Daemon.
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { workspaceInstallReason } from "./workspace-links.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PNPM_VERSION = "9.4.0";
@@ -65,7 +68,7 @@ function helpText() {
     "Options:",
     "  --help       Show this help",
     "  --dry-run    Check toolchain and print the launch command without starting Electron",
-    "  --install    Run pnpm install --frozen-lockfile even if node_modules exists",
+    "  --install    Run pnpm install --frozen-lockfile even if node_modules and workspace links exist",
     "",
     "This starts the Electron dev shell. The app launches the loopback Daemon.",
     "It is not a packaged installer and does not enable live Codex exec.",
@@ -155,9 +158,6 @@ async function ensurePnpm(dryRun) {
   return "pnpm";
 }
 
-function needsInstall(force) {
-  return force || !existsSync(path.join(root, "node_modules"));
-}
 
 function assertWorkspaceRoot() {
   const pkgPath = path.join(root, "package.json");
@@ -180,7 +180,8 @@ assertWorkspaceRoot();
 assertNode();
 const dryRun = flags.has("dry-run");
 const pnpm = await ensurePnpm(dryRun);
-const install = needsInstall(flags.has("install"));
+const installReason = workspaceInstallReason(root, { force: flags.has("install") });
+const install = installReason !== null;
 const launchArgs = ["--filter", DESKTOP_FILTER, "dev", ...passthrough];
 
 write(
@@ -190,7 +191,7 @@ write(
     `  repo:  ${root}`,
     `  node:  ${process.versions.node}`,
     `  pnpm:  ${pnpm}`,
-    `  install: ${install ? "pnpm install --frozen-lockfile" : "skip (node_modules present)"}`,
+    `  install: ${install ? `pnpm install --frozen-lockfile (${installReason})` : "skip (workspace links complete)"}`,
     `  launch: pnpm ${launchArgs.join(" ")}`,
   ].join("\n"),
 );
