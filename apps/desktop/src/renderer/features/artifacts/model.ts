@@ -52,7 +52,47 @@ export const FIELD_UNRETURNED = "未返回";
 export const EVALUATION_ROW = "判定：未返回";
 export const EVALUATION_PENDING = "尚未判定";
 export const EVALUATION_UNAVAILABLE =
-  "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
+  "没有独立 Evaluation 列表。判定看 evaluation / test_result 产物内容，不能把 Run 成功或聊天当成完成。";
+
+export function isJudgementKind(kind: string): boolean {
+  const value = kind.toLowerCase();
+  return (
+    value.includes("evaluation") ||
+    value.includes("review") ||
+    value.includes("test")
+  );
+}
+
+export function evaluationRowForKind(kind: string): string {
+  const value = kind.toLowerCase();
+  if (value.includes("evaluation") || value.includes("review")) {
+    return "判定产物：打开版本看 verdict";
+  }
+  if (value.includes("test")) {
+    return "测试产物：打开版本看 passed / verdict";
+  }
+  return "判定：本产物不是 evaluation；完成门仍看 pass";
+}
+
+export function evaluationRowFromArtifacts(artifacts: ReadonlyArray<{ kind: string }>): string {
+  const judged = artifacts.find((artifact) => isJudgementKind(artifact.kind));
+  return judged ? evaluationRowForKind(judged.kind) : EVALUATION_PENDING;
+}
+
+export function verdictFromDecodedText(text: string): string | undefined {
+  try {
+    const parsed = JSON.parse(text) as { verdict?: unknown; passed?: unknown };
+    if (typeof parsed.verdict === "string" && parsed.verdict.trim().length > 0) {
+      return parsed.verdict;
+    }
+    if (typeof parsed.passed === "boolean") {
+      return parsed.passed ? "pass" : "fail";
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
 export function artifactVersionPath(artifactId: string, versionId: string): string {
   return `/artifacts/${artifactId}/versions/${versionId}`;

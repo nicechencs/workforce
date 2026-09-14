@@ -10,7 +10,7 @@ export { workerCardFieldNames };
 export const PRESET_TEAM_ID = "software-development-team" as const;
 export const LIVE_PRESET_TEAM_ID = "tm_software_development" as const;
 export const PRESET_TEAM_VERSION = "0.1.0" as const;
-export const PRESET_RUNTIME_ID = "mock" as const;
+export const PRESET_RUNTIME_ID = "codex" as const;
 export const PRESET_PLANNER_WORKER_ID = "wrk_software_planner" as const;
 export const PRESET_PLANNER_WORKER_VERSION_ID = "wrv_software_planner_0_1_0" as const;
 export const PRESET_DEVELOPER_WORKER_ID = "wrk_software_developer" as const;
@@ -97,7 +97,7 @@ export const PRESET_TEAM: TeamView = {
   kind: "preset",
   status: "published",
   readonly: true,
-  runtime: { adapterId: PRESET_RUNTIME_ID, label: "Mock" },
+  runtime: { adapterId: PRESET_RUNTIME_ID, label: "Codex" },
   members: PRESET_MEMBERS,
   workers: PRESET_MEMBERS.map(memberToWorker),
 };
@@ -1538,7 +1538,7 @@ export function roleLabel(role: string): string {
 
 function runtimeLabel(members: TeamMemberView[]): string {
   const profile = members[0]?.runtimeProfile ?? PRESET_RUNTIME_ID;
-  return profile === PRESET_RUNTIME_ID ? "Mock" : profile;
+  return profile === "codex" ? "Codex" : profile === "mock" ? "Mock" : profile;
 }
 
 function memberToWorker(member: TeamMemberView): TeamWorkerView {
@@ -1546,6 +1546,10 @@ function memberToWorker(member: TeamMemberView): TeamWorkerView {
     id: member.id,
     role: member.role,
     title: member.title,
-    runtime: member.runtimeProfile === PRESET_RUNTIME_ID ? "Mock" : member.runtimeProfile,
+    runtime: member.runtimeProfile === "codex"
+      ? "Codex"
+      : member.runtimeProfile === "mock"
+        ? "Mock"
+        : member.runtimeProfile,
   };
 }

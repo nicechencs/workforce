@@ -67,6 +67,8 @@ import {
 import { interpretMockAuthoringIntent } from "@workforce/runtime-mock";
 import { WorkspaceError } from "@workforce/workspace";
 import { InvalidTransitionError, validateWorkflowGraph } from "@workforce/workflow-engine";
+import { RuntimeSdkError } from "@workforce/runtime-sdk";
+import { CODEX_ADAPTER_ID } from "@workforce/runtime-codex";
 
 import { loadOrCreateClientId, loadOrCreatePrincipalId } from "../bootstrap/state-file.js";
 import { canonicalJson, sha256Hex } from "../modules/digest.js";
@@ -139,6 +141,10 @@ import {
   MOCK_RUNTIME_CAPABILITIES,
   MOCK_RUNTIME_ID,
   MOCK_RUNTIME_INSTALLATION_ID,
+  CODEX_RUNTIME,
+  CODEX_RUNTIME_CAPABILITIES,
+  CODEX_RUNTIME_ID,
+  CODEX_RUNTIME_INSTALLATION_ID,
   ORGANIZATION_ID,
   PROTOCOL_VERSION,
   SOFTWARE_TEAM_VERSION,
@@ -148,8 +154,13 @@ import {
   seedPresetWorkerLibrary,
   unknownProjectBudget,
 } from "./catalog.js";
-import { captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
+import { captureLivePatch, captureMockPatch, gitDiffArtifactFromCapture, isGitDiffSlot } from "./delivery-bind.js";
 import { createEnginePort } from "./engine.js";
+import {
+  createComposedCodexRuntime,
+  describeCodexHostBlocker,
+  resolveComposedCodexStart,
+} from "./codex.js";
 import {
   ComposedMockHost,
   type RunAuthoringProposalEvent,
@@ -196,6 +207,10 @@ export interface ComposedAppServicesOptions {
   stateDir: string;
   principalId?: string;
   clientId?: string;
+  /**
+   * Test-only Mock Host opt-in. Production omits this and uses Codex.
+   * Never treat a missing value as 10ms Mock success.
+   */
   completeAfterMs?: number;
   policyEngine?: InMemoryPolicyEngine;
 }
@@ -214,6 +229,8 @@ export class ComposedAppServices implements AppServices {
   readonly policy: CompositionPolicy;
   readonly authoring: CatalogService;
   readonly stateDir: string;
+  /** True when production Codex Host is composed. False is test-only Mock. */
+  readonly liveRuntime: boolean;
   private readonly hostStore: JsonRuntimeHostStore;
   private readonly sqliteWriter: SqliteWriter;
   private readonly eventSubscriptions: SqliteSubscriptionReader;
@@ -240,6 +257,7 @@ export class ComposedAppServices implements AppServices {
     policy: CompositionPolicy;
     sqliteWriter: SqliteWriter;
     authoring: CatalogService;
+    liveRuntime: boolean;
   }) {
     this.stateDir = input.stateDir;
     this.app = input.app;
@@ -256,6 +274,7 @@ export class ComposedAppServices implements AppServices {
     this.policy = input.policy;
     this.sqliteWriter = input.sqliteWriter;
     this.authoring = input.authoring;
+    this.liveRuntime = input.liveRuntime;
     this.eventSubscriptions = new SqliteSubscriptionReader(input.sqlite.connection);
   }
 
@@ -281,23 +300,49 @@ export class ComposedAppServices implements AppServices {
       : createCompositionPolicy({ principalId, grants: sqlite.grants });
     const composed: { services?: ComposedAppServices } = {};
     const worktrees = await CompositionWorktreeHost.open({ stateDir: options.stateDir });
-    const host = new ComposedMockHost({
-      store: hostStore,
-      completeAfterMs: options.completeAfterMs ?? 10,
-      nodeId: LOCAL_NODE_ID,
-      onTerminal: async (event) => {
+    const liveRuntime = options.completeAfterMs === undefined;
+    const hostTerminal = {
+      onTerminal: async (event: RunTerminalEvent) => {
         if (!composed.services) {
           return;
         }
         await composed.services.handleTerminal(event);
       },
-      onAuthoringProposal: async (event) => {
+      onAuthoringProposal: async (event: RunAuthoringProposalEvent) => {
         if (!composed.services) {
           return false;
         }
         return composed.services.handleAuthoringProposal(event);
       },
-    });
+    };
+    const host = liveRuntime
+      ? new ComposedMockHost({
+          store: hostStore,
+          nodeId: LOCAL_NODE_ID,
+          defaultAdapterId: CODEX_ADAPTER_ID,
+          defaultSnapshotRef: "codex:exec",
+          adapter: createComposedCodexRuntime({
+            resolveStart: (request) => {
+              const task = composed.services?.app.world.tasks.get(request.taskId);
+              const project = task
+                ? composed.services?.app.world.projects.get(task.projectId)
+                : undefined;
+              return resolveComposedCodexStart({
+                request,
+                worktrees,
+                ...(task ? { task } : {}),
+                ...(project?.objective ? { objective: project.objective } : {}),
+              });
+            },
+          }),
+          ...hostTerminal,
+        })
+      : new ComposedMockHost({
+          store: hostStore,
+          completeAfterMs: options.completeAfterMs,
+          nodeId: LOCAL_NODE_ID,
+          ...hostTerminal,
+        });
     const app = createWorkforceApp({
       engine,
       host: bindWorktreesToHost({
@@ -333,6 +378,7 @@ export class ComposedAppServices implements AppServices {
       worktrees,
       policy,
       authoring,
+      liveRuntime,
       sqliteWriter:
         (options as InternalComposedAppServicesOptions)[sqliteWriterOption] ?? dualWriteSqlite,
     });
@@ -406,7 +452,7 @@ export class ComposedAppServices implements AppServices {
       run: {
         pause: false,
         resume: false,
-        input: true,
+        input: this.liveRuntime ? false : true,
         takeOver: false,
       },
       project: {
@@ -416,7 +462,7 @@ export class ComposedAppServices implements AppServices {
       },
       orchestration: {
         workflowBound: true,
-        /** Mock Runtime is composed and can execute direct Runs. */
+        /** Live Codex Host can start direct Runs; missing CLI/auth fail-closed. */
         direct: true,
       },
     };
@@ -784,14 +830,31 @@ export class ComposedAppServices implements AppServices {
 
   listRuntimes(_query: ListQuery): PageDto<RuntimeDto> {
     void _query;
-    return pageOf([MOCK_RUNTIME]);
+    return pageOf([this.liveRuntime ? CODEX_RUNTIME : MOCK_RUNTIME]);
   }
 
   getRuntime(id: string): RuntimeDto | null {
+    if (this.liveRuntime) {
+      return id === CODEX_RUNTIME_ID ? CODEX_RUNTIME : null;
+    }
     return id === MOCK_RUNTIME_ID ? MOCK_RUNTIME : null;
   }
 
   getRuntimeCapabilities(id: string): RuntimeCapabilitiesDto | null {
+    if (this.liveRuntime) {
+      if (id !== CODEX_RUNTIME_ID) {
+        return null;
+      }
+      const blocker = describeCodexHostBlocker();
+      return {
+        ...CODEX_RUNTIME_CAPABILITIES,
+        capabilities: CODEX_RUNTIME_CAPABILITIES.capabilities.map((item) =>
+          item.name === "coding"
+            ? { ...item, available: blocker === undefined }
+            : item,
+        ),
+      };
+    }
     return id === MOCK_RUNTIME_ID ? MOCK_RUNTIME_CAPABILITIES : null;
   }
 
@@ -930,10 +993,12 @@ export class ComposedAppServices implements AppServices {
         projectId: project.id,
         workspaceId: workspace.id,
         teamVersionId,
-        runtimeId: MOCK_RUNTIME_ID,
+        runtimeId: this.liveRuntime ? CODEX_RUNTIME_ID : MOCK_RUNTIME_ID,
         budgetId: project.budgetId ?? DEFAULT_BUDGET_ID,
         executionNodeId: LOCAL_NODE_ID,
-        runtimeInstallationId: MOCK_RUNTIME_INSTALLATION_ID,
+        runtimeInstallationId: this.liveRuntime
+          ? CODEX_RUNTIME_INSTALLATION_ID
+          : MOCK_RUNTIME_INSTALLATION_ID,
         workspaceInstanceId: project.workspaceInstanceId ?? this.app.world.ids.ulid("wsi_"),
         ...optionalRevision(ctx.ifMatch),
       });
@@ -1014,8 +1079,9 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const project = this.requireProject(id);
       this.assertMatch(project.stateRevision, ctx.ifMatch);
+      await this.assertRuntimeStartAllowed(project);
       await this.policy.assertStartAllowed({
-        runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
+        runtime: project.runtimeId ?? (this.liveRuntime ? CODEX_RUNTIME_ID : MOCK_RUNTIME_ID),
         resource: `project:${project.id}`,
         ...(input.budgetHardLimitMinor !== undefined
           ? { budgetHardLimitMinor: input.budgetHardLimitMinor }
@@ -1207,7 +1273,7 @@ export class ComposedAppServices implements AppServices {
               idempotencyKey: ctx.operationId,
               taskId: id,
               orchestrationMode,
-              snapshotRef: "mock:success",
+              snapshotRef: this.host.defaultSnapshotRef,
               requireWorkflowBinding: true,
               ...optionalRevision(ctx.ifMatch),
               ...(input.placementIntent ? { placementIntent: input.placementIntent } : {}),
@@ -1240,7 +1306,7 @@ export class ComposedAppServices implements AppServices {
           operationId: runOperationId(live),
           idempotencyKey: runOperationId(live),
           taskId: live.id,
-          snapshotRef: "mock:success",
+          snapshotRef: this.host.defaultSnapshotRef,
         });
       }
       const run = this.app.world.activeRunForTask(id) ?? latestRun(this.app.world.runs, id);
@@ -1341,7 +1407,9 @@ export class ComposedAppServices implements AppServices {
     return this.exclusive(async () => {
       const run = this.requireRun(id);
       const project = this.requireProject(run.projectId);
-      await this.policy.assertPauseAllowed(project.runtimeId ?? MOCK_RUNTIME_ID);
+      await this.policy.assertPauseAllowed(
+        project.runtimeId ?? (this.liveRuntime ? CODEX_RUNTIME_ID : MOCK_RUNTIME_ID),
+      );
       await this.app.pauseRun(id);
       throw new AppError("unsupported_capability", "lifecycle.pause is unsupported");
     });
@@ -2232,7 +2300,10 @@ export class ComposedAppServices implements AppServices {
 
   listArtifacts(query: ListQuery): PageDto<ArtifactDto> {
     return paginate(
-      this.filter(this.artifactDtos(), query, { projectId: (dto) => dto.projectId }),
+      this.filter(this.artifactDtos(), query, {
+        projectId: (dto) => dto.projectId,
+        taskId: (dto) => this.artifactTaskId(dto.id),
+      }),
       query.cursor,
       query.limit,
     );
@@ -2334,12 +2405,20 @@ export class ComposedAppServices implements AppServices {
         return;
       }
       if (event.status === "succeeded") {
-        await this.bindRequiredOutputs(run);
-        await this.recordBoundOutputEvaluations(run);
-        this.app.recordRunSucceeded(run.id);
-        await this.maybeIntegrate(run.projectId);
-        await this.maybeCreateArtifactApproval(run.projectId);
-        await this.dispatchReadyTasks(run.projectId);
+        try {
+          await this.bindRequiredOutputs(run);
+          await this.recordBoundOutputEvaluations(run);
+          this.app.recordRunSucceeded(run.id);
+          await this.maybeIntegrate(run.projectId);
+          await this.maybeCreateArtifactApproval(run.projectId);
+          await this.dispatchReadyTasks(run.projectId);
+        } catch (error) {
+          if (!this.liveRuntime) {
+            throw error;
+          }
+          this.app.recordRunFailed(run.id);
+          await this.failAuthoringTurnForRun(run.id);
+        }
       } else if (event.status === "failed") {
         this.app.recordRunFailed(run.id);
         await this.failAuthoringTurnForRun(run.id);
@@ -2519,7 +2598,7 @@ export class ComposedAppServices implements AppServices {
         operationId: runOperationId(task),
         idempotencyKey: runOperationId(task),
         taskId: task.id,
-        snapshotRef: "mock:success",
+        snapshotRef: this.host.defaultSnapshotRef,
       });
     }
   }
@@ -2768,6 +2847,14 @@ export class ComposedAppServices implements AppServices {
           `missing isolated worktree for ${task.workflowNodeId ?? task.id} attempt ${task.attempt}`,
         );
       }
+      if (this.liveRuntime) {
+        const captured = await captureLivePatch({
+          git: this.worktrees.git,
+          instanceId: provisioned.workspaceInstanceId,
+          nodeId: provisioned.nodeId,
+        });
+        return gitDiffArtifactFromCapture(captured, provisioned.nodeId);
+      }
       const captured = await captureMockPatch({
         git: this.worktrees.git,
         instanceId: provisioned.workspaceInstanceId,
@@ -2775,6 +2862,11 @@ export class ComposedAppServices implements AppServices {
         nodeId: provisioned.nodeId,
       });
       return gitDiffArtifactFromCapture(captured, provisioned.nodeId);
+    }
+    if (this.liveRuntime) {
+      throw new Error(
+        `Codex did not produce a Workforce ${slotId} artifact; refusing to fabricate Mock ${slotId}`,
+      );
     }
     return syntheticOutput(slotId, nodeId);
   }
@@ -2865,9 +2957,16 @@ export class ComposedAppServices implements AppServices {
   }
 
   private async assertRuntimeStartAllowed(project: ProjectRecord): Promise<void> {
+    if (this.liveRuntime) {
+      const blocker = describeCodexHostBlocker();
+      if (blocker) {
+        throw new AppError("validation_failed", blocker);
+      }
+    }
+    const runtimeId = project.runtimeId ?? (this.liveRuntime ? CODEX_RUNTIME_ID : MOCK_RUNTIME_ID);
     await this.policy.assertStartAllowed({
-      runtime: project.runtimeId ?? MOCK_RUNTIME_ID,
-      resource: `runtime:${project.runtimeId ?? MOCK_RUNTIME_ID}`,
+      runtime: runtimeId,
+      resource: `runtime:${runtimeId}`,
     });
   }
 
@@ -3524,6 +3623,15 @@ export class ComposedAppServices implements AppServices {
     return [...grouped.values()];
   }
 
+  private artifactTaskId(artifactId: string): string {
+    for (const record of this.artifactContents.values()) {
+      if (record.artifactId === artifactId && record.taskId) {
+        return record.taskId;
+      }
+    }
+    return "";
+  }
+
   private filter<D extends { id: string; status?: string }>(
     items: D[],
     query: ListQuery,
@@ -3933,6 +4041,18 @@ function wrapError(error: unknown): unknown {
   }
   if (error instanceof HostCapabilityError) {
     return new AppError("unsupported_capability", error.message);
+  }
+  if (error instanceof RuntimeSdkError) {
+    if (
+      error.code === "validation_failed" ||
+      error.code === "unsupported_capability" ||
+      error.code === "not_found" ||
+      error.code === "conflict" ||
+      error.code === "idempotency_key_reused"
+    ) {
+      return new AppError(error.code, error.message);
+    }
+    return new AppError("validation_failed", error.message);
   }
   if (error instanceof WorkspaceError) {
     if (error.message === "unknown authorizationRef") {

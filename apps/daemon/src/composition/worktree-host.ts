@@ -293,6 +293,17 @@ export class CompositionWorktreeHost {
     return this.byRunKey.get(runKeyFor(taskId, attempt));
   }
 
+  projectCwd(projectId: string): string {
+    const binding = this.projectBindings.get(projectId);
+    if (binding?.hostGrantRef) {
+      const hostPath = this.resolveGrant(binding.hostGrantRef);
+      if (hostPath) {
+        return hostPath;
+      }
+    }
+    return this.repoPath;
+  }
+
   listForProject(projectId: string): ProvisionedWorktree[] {
     return [...this.byRunKey.values()].filter((item) => item.projectId === projectId);
   }

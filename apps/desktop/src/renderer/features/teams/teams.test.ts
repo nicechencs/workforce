@@ -65,7 +65,7 @@ describe("team pages", () => {
       "reviewer",
     ]);
     expect(PRESET_TEAM.members.map((member) => member.quantity)).toEqual([1, 1, 1]);
-    expect(PRESET_TEAM.runtime.label).toBe("Mock");
+    expect(PRESET_TEAM.runtime.label).toBe("Codex");
     expect(PRESET_TEAM.readonly).toBe(true);
     expect(PRESET_TEAM.kind).toBe("preset");
   });

@@ -14,9 +14,11 @@ import {
   type RuntimeHostStore,
   type TransientInitialInput,
 } from "@workforce/runtime-sdk";
-import type { RuntimeHandle } from "@workforce/runtime-spi";
+import type { RuntimeAdapter, RuntimeHandle } from "@workforce/runtime-spi";
 
 import { LOCAL_NODE_ID, MOCK_RUNTIME_ID } from "./catalog.js";
+
+type HostAdapter = RuntimeAdapter & { dispose?: () => Promise<void> };
 
 export type RunTerminalStatus = "succeeded" | "failed" | "cancelled";
 
@@ -39,13 +41,22 @@ export interface ComposedMockHostOptions {
   onTerminal: (event: RunTerminalEvent) => Promise<void>;
   /** false means the durable Application Run is not bound yet; Host must replay later. */
   onAuthoringProposal?: (event: RunAuthoringProposalEvent) => Promise<boolean>;
+  /**
+   * Test-only Mock opt-in. Production must inject `adapter` instead.
+   * Omitting both is a hard error; Host never defaults to 10ms Mock success.
+   */
   completeAfterMs?: number;
+  adapter?: HostAdapter;
+  defaultAdapterId?: string;
+  defaultSnapshotRef?: string;
   nodeId?: string;
 }
 
 export class ComposedMockHost implements RuntimeHostPort {
-  readonly adapter: MockRuntimeAdapter;
+  readonly adapter: HostAdapter;
   readonly host: LocalNodeHost;
+  readonly defaultAdapterId: string;
+  readonly defaultSnapshotRef: string;
   private readonly store: RuntimeHostStore;
   private readonly onTerminal: (event: RunTerminalEvent) => Promise<void>;
   private readonly onAuthoringProposal:
@@ -57,9 +68,21 @@ export class ComposedMockHost implements RuntimeHostPort {
   private disposed = false;
 
   constructor(options: ComposedMockHostOptions) {
-    this.adapter = new MockRuntimeAdapter({
-      completeAfterMs: options.completeAfterMs ?? 10,
-    });
+    if (options.adapter) {
+      this.adapter = options.adapter;
+      this.defaultAdapterId = options.defaultAdapterId ?? "codex";
+      this.defaultSnapshotRef = options.defaultSnapshotRef ?? "codex:exec";
+    } else if (options.completeAfterMs !== undefined) {
+      this.adapter = new MockRuntimeAdapter({
+        completeAfterMs: options.completeAfterMs,
+      });
+      this.defaultAdapterId = options.defaultAdapterId ?? MOCK_RUNTIME_ID;
+      this.defaultSnapshotRef = options.defaultSnapshotRef ?? "mock:success";
+    } else {
+      throw new Error(
+        "Composed host requires an injected RuntimeAdapter or explicit completeAfterMs (test-only Mock). Host will not default to MockRuntimeAdapter.",
+      );
+    }
     this.host = new LocalNodeHost({
       adapter: this.adapter,
       store: options.store,
@@ -87,10 +110,10 @@ export class ComposedMockHost implements RuntimeHostPort {
       clientId: request.clientId,
       placement: request.placement,
       runtime: {
-        adapterId: request.runtime.adapterId || MOCK_RUNTIME_ID,
+        adapterId: this.defaultAdapterId,
         protocolVersion: request.runtime.protocolVersion || "0.1",
       },
-      snapshotRef: request.snapshotRef || "mock:success",
+      snapshotRef: request.snapshotRef || this.defaultSnapshotRef,
     });
     const initialInput = this.initialInputs.get(parsed.operationId);
     this.initialInputs.delete(parsed.operationId);
@@ -153,7 +176,9 @@ export class ComposedMockHost implements RuntimeHostPort {
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    await this.adapter.dispose();
+    if (this.adapter.dispose) {
+      await this.adapter.dispose();
+    }
     await this.host.dispose();
   }
 
@@ -165,7 +190,7 @@ export class ComposedMockHost implements RuntimeHostPort {
     return {
       handleId,
       runId: handleId,
-      adapterId: MOCK_RUNTIME_ID,
+      adapterId: this.defaultAdapterId,
       createdAt: new Date().toISOString(),
     };
   }

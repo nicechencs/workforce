@@ -34,6 +34,7 @@ import {
 import { ProjectTeamBindingField } from "../teams/page.js";
 import {
   PRESET_TEAM,
+  PRESET_RUNTIME_ID,
   TEAM_WRITE_API_MISSING,
   isTeamReadyForPlanning,
   loadTeamCatalog,
@@ -53,7 +54,7 @@ import {
   runOrchestrationModeLabel,
   type OrchestrationMode,
 } from "../orchestration/index.js";
-import { sortTasksForDag, taskStatusLabel, EVALUATION_ROW } from "../tasks/model.js";
+import { sortTasksForDag, taskStatusLabel, evaluationRowForKind, evaluationRowFromArtifacts } from "../tasks/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
   PROJECT_DIRECT_ADHOC_NOTE,
@@ -390,7 +391,10 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       },
       projectTeamVersionId: boundTeamVersionId,
     }),
-    runtimeSelected: selection.runtimeId === "mock",
+    runtimeSelected:
+      selection.runtimeId === PRESET_RUNTIME_ID ||
+      selection.runtimeId === "codex" ||
+      selection.runtimeId === "mock",
     capabilities: capabilities.project,
     ...(project.planArtifactVersionId !== undefined
       ? { planArtifactVersionId: project.planArtifactVersionId }
@@ -481,6 +485,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
           <TasksPanel
             project={project}
             tasks={tasks}
+            artifacts={artifacts}
             onOpen={(taskId) => navigate(`/projects/${project.id}/tasks/${taskId}`)}
           />
         ) : null}
@@ -635,8 +640,10 @@ function OverviewPanel(props: {
 function TasksPanel(props: {
   project: ProjectDto;
   tasks: TaskDto[];
+  artifacts: ArtifactDto[];
   onOpen: (taskId: string) => void;
 }) {
+  const evaluationNote = evaluationRowFromArtifacts(props.artifacts);
   return (
     <Card title="Tasks">
       <Muted>按已发布执行图依赖排列的任务列表。</Muted>
@@ -653,7 +660,7 @@ function TasksPanel(props: {
                   {taskStatusLabel(task.status)} · 负责人 {taskOwnerLabel(task)} ·{" "}
                   {taskDependencyLabel(task, props.tasks)} · attempt {task.attempt} · generation{" "}
                   {task.generation}
-                  {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""} · {EVALUATION_ROW}
+                  {task.workflowNodeId ? ` · node ${task.workflowNodeId}` : ""} · {evaluationNote}
                 </span>
               }
               onClick={() => props.onOpen(task.id)}
@@ -724,7 +731,7 @@ function ArtifactsPanel(props: {
                   pinned
                     ? ` · ${pinned.id} · hash ${pinned.hash}`
                     : " · 尚无已固定版本，无法打开内容"
-                } · ${EVALUATION_ROW}`}
+                } · ${evaluationRowForKind(artifact.kind)}`}
                 {...(pinned ? { onClick: () => props.onOpen(artifact.id, pinned.id) } : {})}
               />
             );
@@ -775,7 +782,7 @@ function SettingsPanel(props: {
   return (
     <>
       <Card title="WorkspaceBinding" testId="project-settings-workspace">
-        <Muted>绑定工作区、已发布团队与 Mock 运行时。界面不展示宿主绝对路径。</Muted>
+        <Muted>绑定工作区、已发布团队与本机 Codex Runtime。未检测到 CLI 或未登录时启动会失败，不会回退 Mock。</Muted>
         <div className="wf-cluster">
           {showBind ? (
             <Button testId="project-bind-workspace" onClick={props.onBind}>
@@ -796,7 +803,7 @@ function SettingsPanel(props: {
           onBind={props.onBindTeam}
         />
         <Field label="运行时" htmlFor="wf-project-runtime">
-          <Input id="wf-project-runtime" value="Mock" readOnly />
+          <Input id="wf-project-runtime" value="Codex CLI" readOnly />
         </Field>
       </Card>
       <Card title="预算" testId="project-settings-budget">

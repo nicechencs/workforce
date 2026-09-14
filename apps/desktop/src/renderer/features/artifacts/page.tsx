@@ -17,6 +17,8 @@ import {
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
   isUnversionedArtifactPath,
+  verdictFromDecodedText,
+  isJudgementKind,
 } from "./model.js";
 
 export function ArtifactsPage(props: FeaturePageProps): ReactNode {
@@ -148,7 +150,21 @@ export function ArtifactVersionView(props: {
         <IdList ids={props.lineage.children} empty="无子版本" />
       </Card>
       <Card title="判定">
-        <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>
+        {(() => {
+          const verdict = verdictFromDecodedText(decoded.text);
+          if (verdict) {
+            return (
+              <>
+                <Muted>verdict：{verdict}</Muted>
+                <Muted>来自本产物内容，不是独立 Evaluation 列表。</Muted>
+              </>
+            );
+          }
+          if (isJudgementKind(props.artifact.kind)) {
+            return <Muted>这是判定类产物，但正文没有可解析的 verdict / passed。</Muted>;
+          }
+          return <EmptyState title={EVALUATION_PENDING}>{EVALUATION_UNAVAILABLE}</EmptyState>;
+        })()}
       </Card>
       <Card title="审批">
         {approvals.length === 0 ? (

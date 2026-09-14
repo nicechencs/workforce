@@ -19,7 +19,7 @@ export const FIELD_UNRETURNED = "未返回";
 export const EVALUATION_ROW = "判定：未返回";
 export const EVALUATION_PENDING = "尚未判定";
 export const EVALUATION_UNAVAILABLE =
-  "公开 API 未提供 Evaluation 列表。尚未判定。完成只看产物与判定，不能把 Run 成功或聊天当成完成。";
+  "没有独立 Evaluation 列表。判定看 evaluation / test_result 产物内容，不能把 Run 成功或聊天当成完成。";
 
 export function isActiveRun(run: Pick<RunDto, "status">): boolean {
   return !TERMINAL_RUN_STATUSES.has(run.status);

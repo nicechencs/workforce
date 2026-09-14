@@ -38,6 +38,9 @@ export const LOCAL_NODE_ID = "ndl_local";
 export const MOCK_RUNTIME_ID = "mock";
 export const MOCK_RUNTIME_INSTALLATION_ID = "rtm_mock_local";
 export const MOCK_RUNTIME_VERSION = "0.1.0";
+export const CODEX_RUNTIME_ID = "codex";
+export const CODEX_RUNTIME_INSTALLATION_ID = "rtm_codex_local";
+export const CODEX_RUNTIME_VERSION = "0.1.0";
 export const DEFAULT_BUDGET_ID = "bdg_local";
 export const MOCK_WORKFLOW_GRAPH_ID = "wfv_mock_feature";
 export const FEATURE_DELIVERY_WORKFLOW_ID = "software-development-team.feature-delivery";
@@ -372,6 +375,30 @@ export const MOCK_RUNTIME_CAPABILITIES: RuntimeCapabilitiesDto = {
     { name: "interactive_input", version: "1.0", available: true },
     { name: "lifecycle.pause", version: "1.0", available: false },
     { name: "event.resume", version: "1.0", available: false },
+  ],
+};
+
+export const CODEX_RUNTIME: RuntimeDto = {
+  id: CODEX_RUNTIME_ID,
+  displayName: "OpenAI Codex CLI",
+  adapterId: CODEX_RUNTIME_ID,
+  version: CODEX_RUNTIME_VERSION,
+  protocolVersion: PROTOCOL_VERSION,
+  transport: "process",
+};
+
+export const CODEX_RUNTIME_CAPABILITIES: RuntimeCapabilitiesDto = {
+  runtimeId: CODEX_RUNTIME_ID,
+  input: false,
+  pause: false,
+  resume: false,
+  takeOver: false,
+  capabilities: [
+    { name: "coding", version: "1.0", available: false },
+    { name: "interactive_input", version: "1.0", available: false },
+    { name: "lifecycle.pause", version: "1.0", available: false },
+    { name: "event.resume", version: "1.0", available: false },
+    { name: "authoring.proposal", version: "1.0", available: false },
   ],
 };
 

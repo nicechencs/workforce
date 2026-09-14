@@ -32,6 +32,20 @@ export async function writeMockSlice(worktreePath: string, nodeId: string): Prom
   return fileName;
 }
 
+export async function captureLivePatch(input: {
+  git: GitWorkspaceService;
+  instanceId: string;
+  nodeId: string;
+}): Promise<DiffArtifactProposal> {
+  const captured = await input.git.captureDiff(input.instanceId);
+  if (captured.patch.trim().length === 0) {
+    throw new Error(
+      `Codex produced no git diff for ${input.nodeId}; refusing to fabricate a patch`,
+    );
+  }
+  return captured;
+}
+
 export async function captureMockPatch(input: {
   git: GitWorkspaceService;
   instanceId: string;

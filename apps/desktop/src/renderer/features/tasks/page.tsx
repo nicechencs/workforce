@@ -30,9 +30,10 @@ import {
 import { pinnedArtifactVersion, taskDependencyLabel } from "../projects/model.js";
 import {
   EVALUATION_PENDING,
-  EVALUATION_ROW,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
+  evaluationRowForKind,
+  evaluationRowFromArtifacts,
   projectTasksPath,
   RETRY_NEW_RUN_NOTE,
   runStatusLabel,
@@ -246,12 +247,14 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
                   <ListRow
                     key={artifact.id}
                     title={artifact.logicalName}
-                    meta={`${version === null ? "无精确版本" : version.id} · ${EVALUATION_ROW}`}
+                    meta={`${version === null ? "无精确版本" : version.id} · ${evaluationRowForKind(artifact.kind)}`}
                   />
                 );
               })}
             </List>
-            <Muted>{EVALUATION_UNAVAILABLE}</Muted>
+            <Muted>
+              {evaluationRowFromArtifacts(artifacts)}. {EVALUATION_UNAVAILABLE}
+            </Muted>
           </>
         )}
       </Card>

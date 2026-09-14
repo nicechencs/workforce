@@ -221,7 +221,7 @@ export interface RuntimeDto {
   adapterId: string;
   version: string;
   protocolVersion: "0.1";
-  transport: "sdk";
+  transport: "sdk" | "process";
 }
 
 export interface RuntimeCapabilityItemDto {

@@ -5,7 +5,6 @@ import { readChatReturnPath } from "@workforce/ui";
 
 import { useOptionalWorkforceContext } from "../../app/workforce-context.js";
 import {
-  Badge,
   Button,
   Card,
   Cluster,
@@ -38,7 +37,6 @@ import {
   DIRECT_UNSUPPORTED_NOTE,
   errorCode,
   errorMessage,
-  intentKindLabel,
   isActiveRun,
   isDirectCapabilityReady,
   isEmptyChatIntent,
@@ -353,61 +351,9 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         </>
       }
     >
-      <Notice tone="info" title="不是作者页，也不是 IM">
-        <Muted>{CHAT_NOT_AUTHORING_ONLY}</Muted>
-        <Muted>{CHAT_NOT_IM}</Muted>
-      </Notice>
-      <BindingBar
-        projects={projects}
-        workers={workers}
-        runs={runs}
-        tasks={tasks}
-        projectId={projectId}
-        runId={runId}
-        taskId={taskId}
-        workerId={workerId}
-        online={online}
-        onProjectChange={setProjectId}
-        onRunChange={setRunId}
-        onTaskChange={setTaskId}
-        onWorkerChange={onWorkerChange}
-      />
-      <LandingCard
-        projectId={projectId}
-        workerId={workerId}
-        taskId={taskId}
-        runId={runId}
-        navigate={props.navigate}
-      />
-      <Card testId={directReady ? "chat-direct-ready" : "chat-direct-closed"}>
-        <Cluster>
-          <Button
-            testId="chat-direct-go"
-            variant="outline"
-            disabled={directDisabled}
-            onClick={() => void onGoDirect()}
-          >
-            {busy === "starting" ? "启动中…" : "去做"}
-          </Button>
-          {directReady ? (
-            <Badge tone="info">{intentKindLabel("start_direct")}</Badge>
-          ) : (
-            <Badge tone="warning">unsupported_capability</Badge>
-          )}
-        </Cluster>
-        <Muted>{directReady ? DIRECT_READY_NOTE : DIRECT_UNSUPPORTED_NOTE}</Muted>
-      </Card>
-      <Transcript
-        entries={entries}
-        busy={busy}
-        navigate={props.navigate}
-        onConfirmWorker={(id) => {
-          void onConfirmWorker(id);
-        }}
-        onConfirmWorkflow={(id) => {
-          void onConfirmWorkflow(id);
-        }}
-      />
+      <Muted>
+        {CHAT_NOT_AUTHORING_ONLY} {CHAT_NOT_IM}
+      </Muted>
       <Card title="发送" testId="chat-composer">
         <Field
           label="用语言描述要做的事"
@@ -429,14 +375,27 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
             }}
           />
         </Field>
-        <Button
-          testId="chat-send"
-          variant="primary"
-          disabled={sendDisabled}
-          onClick={() => void onSend()}
-        >
-          {busy === "classify" ? "分类中…" : "发送"}
-        </Button>
+        <Cluster>
+          <Button
+            testId="chat-send"
+            variant="primary"
+            disabled={sendDisabled}
+            onClick={() => void onSend()}
+          >
+            {busy === "classify" ? "分类中…" : "发送"}
+          </Button>
+          <Button
+            testId="chat-direct-go"
+            variant="outline"
+            disabled={directDisabled}
+            onClick={() => void onGoDirect()}
+          >
+            {busy === "starting" ? "启动中…" : "去做"}
+          </Button>
+        </Cluster>
+        <div data-testid={directReady ? "chat-direct-ready" : "chat-direct-closed"}>
+          <Muted>{directReady ? DIRECT_READY_NOTE : DIRECT_UNSUPPORTED_NOTE}</Muted>
+        </div>
         {emptyIntent ? (
           <Notice tone="warning" title="空意图未发送">
             当前对话和未确认提案都保留，不会回退夹具或伪造成成功。
@@ -451,6 +410,41 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
           </div>
         ) : null}
       </Card>
+      <LandingCard
+        projectId={projectId}
+        workerId={workerId}
+        taskId={taskId}
+        runId={runId}
+      />
+      <Transcript
+        entries={entries}
+        busy={busy}
+        navigate={props.navigate}
+        onConfirmWorker={(id) => {
+          void onConfirmWorker(id);
+        }}
+        onConfirmWorkflow={(id) => {
+          void onConfirmWorkflow(id);
+        }}
+      />
+      <details className="wf-card" data-testid="chat-binding-details">
+        <summary>挂点（需要时再展开）</summary>
+        <BindingBar
+          projects={projects}
+          workers={workers}
+          runs={runs}
+          tasks={tasks}
+          projectId={projectId}
+          runId={runId}
+          taskId={taskId}
+          workerId={workerId}
+          online={online}
+          onProjectChange={setProjectId}
+          onRunChange={setRunId}
+          onTaskChange={setTaskId}
+          onWorkerChange={onWorkerChange}
+        />
+      </details>
     </Page>
   );
 }
@@ -460,28 +454,13 @@ function LandingCard(props: {
   workerId: string;
   taskId: string;
   runId: string;
-  navigate: (path: string) => void;
 }): ReactNode {
   const lines = chatLandingLines(props);
   return (
     <Card title="将落到" testId="chat-landing">
-      <Muted>分类以 Daemon 为准。这里只说明当前挂点会进哪些对象，不是会话轨，也不是完成态。</Muted>
-      {lines.map((line) => (
-        <div key={line.object} className="wf-stack">
-          <strong>{line.object}</strong>
-          <Muted>{line.note}</Muted>
-          {line.href ? (
-            <Button
-              variant="outline"
-              onClick={() => {
-                props.navigate(line.href ?? "");
-              }}
-            >
-              打开
-            </Button>
-          ) : null}
-        </div>
-      ))}
+      <Muted>
+        {lines.map((line) => `${line.object}：${line.note}`).join(" · ")}
+      </Muted>
     </Card>
   );
 }
