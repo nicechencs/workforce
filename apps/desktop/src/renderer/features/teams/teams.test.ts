@@ -386,7 +386,7 @@ describe("team catalog parsing", () => {
     expect(fromRoles?.kind).toBe("preset");
     expect(fromRoles?.members[0]).toMatchObject({
       role: "planner",
-      runtimeProfile: "mock",
+      runtimeProfile: "codex",
       quantity: 1,
     });
     const custom = asTeamView({

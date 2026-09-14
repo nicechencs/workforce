@@ -77,7 +77,10 @@ export function resolveComposedCodexStart(input: {
   const sandbox = task?.role === "reviewer" ? "read-only" : "workspace-write";
   return {
     cwd,
-    prompt: buildCodexPrompt({ task, objective: input.objective }),
+    prompt: buildCodexPrompt({
+      ...(task ? { task } : {}),
+      ...(input.objective ? { objective: input.objective } : {}),
+    }),
     sandbox,
     approval: "never",
   };

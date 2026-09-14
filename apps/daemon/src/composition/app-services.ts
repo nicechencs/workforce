@@ -315,34 +315,35 @@ export class ComposedAppServices implements AppServices {
         return composed.services.handleAuthoringProposal(event);
       },
     };
-    const host = liveRuntime
-      ? new ComposedMockHost({
-          store: hostStore,
-          nodeId: LOCAL_NODE_ID,
-          defaultAdapterId: CODEX_ADAPTER_ID,
-          defaultSnapshotRef: "codex:exec",
-          adapter: createComposedCodexRuntime({
-            resolveStart: (request) => {
-              const task = composed.services?.app.world.tasks.get(request.taskId);
-              const project = task
-                ? composed.services?.app.world.projects.get(task.projectId)
-                : undefined;
-              return resolveComposedCodexStart({
-                request,
-                worktrees,
-                ...(task ? { task } : {}),
-                ...(project?.objective ? { objective: project.objective } : {}),
-              });
-            },
-          }),
-          ...hostTerminal,
-        })
-      : new ComposedMockHost({
-          store: hostStore,
-          completeAfterMs: options.completeAfterMs,
-          nodeId: LOCAL_NODE_ID,
-          ...hostTerminal,
-        });
+    const host =
+      options.completeAfterMs === undefined
+        ? new ComposedMockHost({
+            store: hostStore,
+            nodeId: LOCAL_NODE_ID,
+            defaultAdapterId: CODEX_ADAPTER_ID,
+            defaultSnapshotRef: "codex:exec",
+            adapter: createComposedCodexRuntime({
+              resolveStart: (request) => {
+                const task = composed.services?.app.world.tasks.get(request.taskId);
+                const project = task
+                  ? composed.services?.app.world.projects.get(task.projectId)
+                  : undefined;
+                return resolveComposedCodexStart({
+                  request,
+                  worktrees,
+                  ...(task ? { task } : {}),
+                  ...(project?.objective ? { objective: project.objective } : {}),
+                });
+              },
+            }),
+            ...hostTerminal,
+          })
+        : new ComposedMockHost({
+            store: hostStore,
+            completeAfterMs: options.completeAfterMs,
+            nodeId: LOCAL_NODE_ID,
+            ...hostTerminal,
+          });
     const app = createWorkforceApp({
       engine,
       host: bindWorktreesToHost({
