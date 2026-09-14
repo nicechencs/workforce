@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Cluster,
   EmptyState,
   ErrorText,
   LoadingText,
@@ -46,6 +47,7 @@ import {
   UPDATE_WORKER_LANDED_NOTE,
   type WorkerProposalWrite,
 } from "./model.js";
+import { roleLibraryDetailHref } from "../role-library/model.js";
 
 export function Transcript(props: {
   entries: readonly ChatEntry[];
@@ -133,9 +135,15 @@ function EntryCard(props: {
         />
       );
     case "update_worker":
-      return <UpdateWorkerCard entry={entry} />;
+      return <UpdateWorkerCard entry={entry} onOpenRole={(path) => props.navigate(path)} />;
     case "invite_team":
-      return <InviteTeamCard entry={entry} />;
+      return (
+        <InviteTeamCard
+          entry={entry}
+          onOpenRole={(path) => props.navigate(path)}
+          onOpenProject={() => props.navigate(`/projects/${entry.projectId}`)}
+        />
+      );
     case "create_workflow":
       return (
         <WorkflowIntentCard
@@ -236,7 +244,10 @@ function CardFields(props: { write: WorkerProposalWrite }): ReactNode {
   );
 }
 
-function UpdateWorkerCard(props: { entry: UpdateWorkerEntry }): ReactNode {
+function UpdateWorkerCard(props: {
+  entry: UpdateWorkerEntry;
+  onOpenRole: (path: string) => void;
+}): ReactNode {
   const { entry } = props;
   if (entry.phase === "failed") {
     return (
@@ -257,12 +268,24 @@ function UpdateWorkerCard(props: { entry: UpdateWorkerEntry }): ReactNode {
         {CARD_FIELD_LABELS[entry.cardField]} · Worker {entry.workerId} · 草稿 {entry.draftId}
         {entry.forkedFromWorkerVersionId ? ` · fork 自 ${entry.forkedFromWorkerVersionId}` : ""}
       </Muted>
+      <Button
+        variant="outline"
+        testId="chat-open-role-after-update"
+        onClick={() => props.onOpenRole(roleLibraryDetailHref(entry.workerId, { draftId: entry.draftId }))}
+      >
+        打开角色详情
+      </Button>
     </Card>
   );
 }
 
-function InviteTeamCard(props: { entry: InviteTeamEntry }): ReactNode {
+function InviteTeamCard(props: {
+  entry: InviteTeamEntry;
+  onOpenRole: (path: string) => void;
+  onOpenProject: () => void;
+}): ReactNode {
   const { entry } = props;
+  const workerId = entry.workerId;
   if (entry.phase === "failed") {
     return (
       <Card testId="chat-invite-failed">
@@ -282,6 +305,22 @@ function InviteTeamCard(props: { entry: InviteTeamEntry }): ReactNode {
         {entry.teamVersionId ? ` · Version ${entry.teamVersionId}` : ""}
       </Muted>
       <Muted>{INVITE_TEAM_UNPUBLISHED_NOTE}</Muted>
+      <Cluster>
+        {workerId ? (
+          <Button
+            variant="outline"
+            testId="chat-open-role-after-invite"
+            onClick={() =>
+              props.onOpenRole(roleLibraryDetailHref(workerId, { versionId: entry.workerVersionId }))
+            }
+          >
+            打开角色详情
+          </Button>
+        ) : null}
+        <Button variant="outline" testId="chat-open-project-after-invite" onClick={props.onOpenProject}>
+          打开项目
+        </Button>
+      </Cluster>
     </Card>
   );
 }

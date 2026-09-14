@@ -18,6 +18,11 @@ import type { FeaturePageProps } from "../contract.js";
 import { commandOptions, formatClientError, useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
+  findWorkerRefByVersionId,
+  identityPreviewLine,
+  roleLibraryDetailHref,
+} from "../role-library/model.js";
+import {
   approvalDigest,
   approvalExpiry,
   approvalExtraRefs,
@@ -106,13 +111,31 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
         artifactHref = undefined;
       }
     }
-    return { approval, artifactHref };
+    let roleHref: string | undefined;
+    let roleMeta: string | undefined;
+    const extra = approvalExtraRefs(approval);
+    if (extra.workerVersionId) {
+      try {
+        const page = await client.listWorkers({ limit: 100 });
+        const ref = findWorkerRefByVersionId(page.items, extra.workerVersionId);
+        if (ref) {
+          roleHref = roleLibraryDetailHref(ref.workerId, { versionId: ref.version.id });
+          roleMeta = identityPreviewLine(ref.version);
+        }
+      } catch {
+        roleHref = undefined;
+        roleMeta = undefined;
+      }
+    }
+    return { approval, artifactHref, roleHref, roleMeta };
   });
   const [reason, setReason] = useState("人工确认");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const approval = query.data?.approval;
   const artifactHref = query.data?.artifactHref;
+  const roleHref = query.data?.roleHref;
+  const roleMeta = query.data?.roleMeta;
 
   async function decide(kind: "approve" | "reject" | "request-changes"): Promise<void> {
     if (!approval) {
@@ -185,6 +208,14 @@ function ApprovalDetailPage(props: FeaturePageProps & { approvalId: string }): R
                   }
                 : undefined
             }
+            onOpenRole={
+              roleHref
+                ? () => {
+                    props.navigate(roleHref);
+                  }
+                : undefined
+            }
+            roleMeta={roleMeta}
             onApprove={() => {
               void decide("approve");
             }}
@@ -212,6 +243,8 @@ export interface ApprovalCardProps {
   onOpenTask?: (() => void) | undefined;
   onOpenProject?: (() => void) | undefined;
   onOpenArtifact?: (() => void) | undefined;
+  onOpenRole?: (() => void) | undefined;
+  roleMeta?: string | undefined;
   onApprove?: (() => void) | undefined;
   onReject?: (() => void) | undefined;
   onRequestChanges?: (() => void) | undefined;
@@ -274,7 +307,20 @@ export function ApprovalCard(props: ApprovalCardProps): ReactNode {
         <dt>请求时间</dt>
         <dd>{props.approval.requestedAt}</dd>
         <dt>WorkerVersion</dt>
-        <dd>{extra.workerVersionId ?? FIELD_UNRETURNED}</dd>
+        <dd>
+          {extra.workerVersionId ? (
+            props.onOpenRole ? (
+              <Button variant="ghost" testId="approval-open-role" onClick={props.onOpenRole}>
+                {extra.workerVersionId}
+                {props.roleMeta ? ` · ${props.roleMeta}` : ""}
+              </Button>
+            ) : (
+              extra.workerVersionId
+            )
+          ) : (
+            FIELD_UNRETURNED
+          )}
+        </dd>
         <dt>Run</dt>
         <dd>{extra.runId ?? FIELD_UNRETURNED}</dd>
         <dt>节点</dt>

@@ -268,6 +268,7 @@ async function landInviteTeamEntry(
       kind: "invite_team",
       projectId: landed.projectId,
       workerVersionId: landed.workerVersionId,
+      workerId: landed.workerId,
       phase: "landed",
       teamId: landed.teamId,
       teamVersionId: landed.teamVersionId,

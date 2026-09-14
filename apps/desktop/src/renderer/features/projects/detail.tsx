@@ -61,6 +61,7 @@ import {
   type OrchestrationMode,
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel, evaluationRowForKind, evaluationRowFromArtifacts } from "../tasks/model.js";
+import { identityPreviewLine, roleLibraryDetailHref } from "../role-library/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
   PROJECT_DIRECT_ADHOC_NOTE,
@@ -485,6 +486,11 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             grant={grant}
             budget={budget}
             teamName={selectedTeam.name}
+            teamMembers={selectedTeam.members}
+            onOpenTeam={() => navigate(`/teams/${selectedTeam.id}`)}
+            onOpenRole={(workerId, versionId) =>
+              navigate(roleLibraryDetailHref(workerId, versionId ? { versionId } : {}))
+            }
             runtimeLabel={projectRuntimeLabel(hostRuntime)}
             runtimeSummary={hostRuntime.summary}
             edit={edit}
@@ -558,12 +564,15 @@ function OverviewPanel(props: {
   grant: WorkspaceGrant | null;
   budget: string;
   teamName: string;
+  teamMembers: TeamView["members"];
   runtimeLabel: string;
   runtimeSummary: string;
   edit: ProjectEditForm;
   setEdit: (update: (current: ProjectEditForm) => ProjectEditForm) => void;
   onSave: () => void;
   onOpenSettings: () => void;
+  onOpenTeam: () => void;
+  onOpenRole: (workerId: string, versionId?: string) => void;
 }) {
   const { project, tasks, approvals, grant, budget, teamName, edit } = props;
   return (
@@ -574,7 +583,11 @@ function OverviewPanel(props: {
           <dt>状态</dt>
           <dd>{projectStatusLabel(project)}</dd>
           <dt>团队</dt>
-          <dd>{teamName}</dd>
+          <dd>
+            <Button variant="ghost" onClick={props.onOpenTeam}>
+              {teamName}
+            </Button>
+          </dd>
           <dt>节点范围</dt>
           <dd>{nodeScopeLabel()}</dd>
           <dt>进度</dt>
@@ -589,6 +602,35 @@ function OverviewPanel(props: {
           <dd>{approvals}</dd>
         </dl>
         <Muted>{props.runtimeSummary}</Muted>
+      </Card>
+      <Card title="阵容里的角色" testId="project-overview-roles">
+        <Muted>点行打开角色库同一详情。改卡片去库，不在项目里复制一套 Agent。</Muted>
+        {props.teamMembers.length === 0 ? (
+          <Muted>还没有成员。去 AI 团队选用已发布 WorkerVersion。</Muted>
+        ) : (
+          <List testId="project-overview-role-list">
+            {props.teamMembers.map((member) => {
+              const workerId = member.workerId;
+              return (
+                <ListRow
+                  key={member.id}
+                  testId={`project-overview-role-${member.id}`}
+                  title={`${member.title} · ${member.role}`}
+                  meta={
+                    member.who || member.how || member.skills
+                      ? identityPreviewLine(member)
+                      : member.workerVersionId ?? "未引用 WorkerVersion"
+                  }
+                  onClick={
+                    workerId
+                      ? () => props.onOpenRole(workerId, member.workerVersionId)
+                      : props.onOpenTeam
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
       </Card>
       <Card title="绑定的 WorkflowVersion" testId="project-overview-workflow">
         <Muted>

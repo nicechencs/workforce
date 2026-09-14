@@ -1,6 +1,6 @@
 import type { ApprovalDto, ArtifactDto, CapabilitiesDto, RunDto } from "@workforce/desktop-client";
 import { useEffect, useState, type ReactNode } from "react";
-import type { WorkforcePreloadApi } from "@workforce/ui";
+import { ROLE_LIBRARY_PATH, type WorkforcePreloadApi } from "@workforce/ui";
 
 import {
   Button,
@@ -19,6 +19,7 @@ import type { FeaturePageProps } from "../contract.js";
 import { commandOptions, formatClientError, useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import { pinnedArtifactVersion } from "../projects/model.js";
+import { LOCAL_HOST_PROBE_PENDING, probeHostRuntime, type HostRuntimeView } from "../runtime/model.js";
 import {
   canCancelRun,
   canOfferRerun,
@@ -103,16 +104,17 @@ export function RunListView(props: {
 function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode {
   const query = useClientQuery(`runs:${props.runId}`, async () => {
     const client = getWorkforceClient();
-    const [run, events, capabilities] = await Promise.all([
+    const [run, events, capabilities, runtime] = await Promise.all([
       client.getRun(props.runId),
       client.listRunEvents(props.runId, { limit: 200 }),
       client.getCapabilities(),
+      probeHostRuntime(client),
     ]);
     const [artifacts, approvals] = await Promise.all([
       listOrEmpty(() => client.listArtifacts({ runId: run.id })),
       listOrEmpty(() => client.listApprovals({ runId: run.id })),
     ]);
-    return { run, events: events.items, capabilities, artifacts, approvals };
+    return { run, events: events.items, capabilities, artifacts, approvals, runtime };
   });
   const [cancelAccepted, setCancelAccepted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -210,6 +212,10 @@ function RunConsolePage(props: FeaturePageProps & { runId: string }): ReactNode 
           capabilities={snapshot?.capabilities ?? null}
           artifacts={snapshot?.artifacts ?? []}
           approvals={snapshot?.approvals ?? []}
+          runtime={snapshot?.runtime ?? null}
+          onOpenRoleLibrary={() => {
+            props.navigate(ROLE_LIBRARY_PATH);
+          }}
           cancelAccepted={cancelAccepted}
           busy={busy}
           inputText={inputText}
@@ -244,6 +250,7 @@ export interface RunConsoleViewProps {
   capabilities: CapabilitiesDto | null;
   artifacts?: ArtifactDto[] | undefined;
   approvals?: ApprovalDto[] | undefined;
+  runtime?: HostRuntimeView | null | undefined;
   cancelAccepted?: boolean | undefined;
   busy?: boolean | undefined;
   inputText?: string | undefined;
@@ -254,6 +261,7 @@ export interface RunConsoleViewProps {
   onOpenProject?: (() => void) | undefined;
   onOpenArtifact?: ((artifactId: string, versionId: string) => void) | undefined;
   onOpenApproval?: ((approvalId: string) => void) | undefined;
+  onOpenRoleLibrary?: (() => void) | undefined;
 }
 
 export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
@@ -347,11 +355,19 @@ export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
           <p data-testid="run-usage">{formatRunUsage(props.run.usage)}</p>
           <Muted>用量区分未知 / 估算 / 已结算。未知成本不是 0。</Muted>
           <Muted>WorkerVersion：{FIELD_UNRETURNED}</Muted>
-          <Muted>Host：本机 Codex</Muted>
+          <Muted>
+            现在能不能用 Codex：{props.runtime?.summary ?? LOCAL_HOST_PROBE_PENDING}
+          </Muted>
+          <Muted>Host：{props.runtime?.title ?? "本机 Codex"}</Muted>
           <Muted>Runtime：{props.run.transport ?? FIELD_UNRETURNED}</Muted>
           <Muted>节点：{FIELD_UNRETURNED}</Muted>
           <Muted>WorkspaceInstance：{FIELD_UNRETURNED}</Muted>
           <Muted>编排模式：{props.run.orchestrationMode ?? FIELD_UNRETURNED}</Muted>
+          {props.onOpenRoleLibrary ? (
+            <Button variant="outline" onClick={props.onOpenRoleLibrary}>
+              打开角色库
+            </Button>
+          ) : null}
           {canOfferRerun(props.run.status) ? <Button>重跑</Button> : null}
         </Card>
       </Split>

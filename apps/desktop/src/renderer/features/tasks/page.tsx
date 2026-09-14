@@ -29,6 +29,11 @@ import {
 } from "../projects/command.js";
 import { pinnedArtifactVersion, taskDependencyLabel } from "../projects/model.js";
 import {
+  identityPreviewLine,
+  publishedVersionsMatchingRole,
+  roleLibraryDetailHref,
+} from "../role-library/model.js";
+import {
   EVALUATION_PENDING,
   EVALUATION_UNAVAILABLE,
   FIELD_UNRETURNED,
@@ -53,6 +58,7 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
   const [runs, setRuns] = useState<RunDto[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactDto[]>([]);
   const [approvals, setApprovals] = useState<ApprovalDto[]>([]);
+  const [roleHits, setRoleHits] = useState<ReturnType<typeof publishedVersionsMatchingRole>>([]);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState<TaskActionId | null>(null);
@@ -64,6 +70,16 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
     setRuns(sortRunsNewestFirst(page.items));
     setArtifacts(await listOrEmpty(() => client.listArtifacts({ taskId: loaded.id })));
     setApprovals(await listOrEmpty(() => client.listApprovals({ taskId: loaded.id })));
+    if (loaded.role && loaded.role.trim().length > 0) {
+      try {
+        const page = await client.listWorkers({ limit: 100, status: "published" });
+        setRoleHits(publishedVersionsMatchingRole(page.items, loaded.role));
+      } catch {
+        setRoleHits([]);
+      }
+    } else {
+      setRoleHits([]);
+    }
   }, [client, taskId]);
 
   useEffect(() => {
@@ -183,6 +199,23 @@ export function TaskDetailPage(props: FeaturePageProps & { client: DesktopClient
         <Muted>WorkerVersion：{FIELD_UNRETURNED}</Muted>
         <Muted>卡片三字段：{FIELD_UNRETURNED}</Muted>
         <Muted>职责标签：{task.role?.trim() ? task.role : FIELD_UNRETURNED}</Muted>
+        <Muted>Task DTO 没有 assignment。下面是库里同职责、可选用的已发布版本（已有 GET /workers），不是编造的分配。</Muted>
+        {roleHits.length === 0 ? (
+          <Muted>库里没有可链到的同职责已发布版本。</Muted>
+        ) : (
+          <List testId="task-role-identity">
+            {roleHits.map((hit) => (
+              <ListRow
+                key={hit.version.id}
+                title={`${hit.workerName} · ${hit.version.version}`}
+                meta={identityPreviewLine(hit.version)}
+                onClick={() =>
+                  navigate(roleLibraryDetailHref(hit.workerId, { versionId: hit.version.id }))
+                }
+              />
+            ))}
+          </List>
+        )}
       </Card>
       <Card title="Placement / Runtime">
         <Muted>Placement：{FIELD_UNRETURNED}</Muted>

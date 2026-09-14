@@ -31,7 +31,8 @@ import {
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
-import { WorkerDetail } from "./detail.js";
+import { probeHostRuntime, type HostRuntimeView } from "../runtime/model.js";
+import { CodexReadinessCard, WorkerDetail } from "./detail.js";
 import {
   activeDraftIdOf,
   activeVersionOf,
@@ -74,7 +75,7 @@ import {
   versionOptionLabel,
   workerBadge,
   workerLibraryMethodsPresent,
-  workerListMeta,
+  workerListIdentityMeta,
   type CardForm,
   type CreateRoleForm,
   type LibraryQuery,
@@ -104,6 +105,7 @@ function RoleLibraryListPage(props: FeaturePageProps): ReactNode {
   const [createError, setCreateError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<"create" | null>(null);
   const [hashOpened, setHashOpened] = useState(false);
+  const [hostRuntime, setHostRuntime] = useState<HostRuntimeView | null>(null);
 
   const selectable = useMemo(() => selectableVersionOptions(workers), [workers]);
 
@@ -141,6 +143,18 @@ function RoleLibraryListPage(props: FeaturePageProps): ReactNode {
   useEffect(() => {
     void reloadList(query);
   }, [client, query, reloadList]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void probeHostRuntime(client).then((runtime) => {
+      if (!cancelled) {
+        setHostRuntime(runtime);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   useEffect(() => {
     if (hashOpened || loading) {
@@ -215,6 +229,11 @@ function RoleLibraryListPage(props: FeaturePageProps): ReactNode {
           {LIBRARY_API_MISSING}
         </Notice>
       )}
+      <CodexReadinessCard
+        runtime={hostRuntime}
+        onOpenSettings={() => navigate("/settings?tab=capabilities")}
+        onOpenNodes={() => navigate("/nodes/local")}
+      />
       <CreateRoleCard
         form={createForm}
         error={createError}
@@ -293,7 +312,7 @@ function RoleLibraryListPage(props: FeaturePageProps): ReactNode {
                       <Badge tone={badge.tone}>{badge.label}</Badge>
                     </Cluster>
                   }
-                  meta={workerListMeta(worker)}
+                  meta={workerListIdentityMeta(worker)}
                   onClick={() => {
                     navigate(roleLibraryDetailHref(worker.id));
                   }}
@@ -330,6 +349,7 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
   );
   const [forkNotice, setForkNotice] = useState<ForkWorkerVersionAcceptedDto | null>(null);
   const [projects, setProjects] = useState<ProjectDto[]>([]);
+  const [hostRuntime, setHostRuntime] = useState<HostRuntimeView | null>(null);
 
   const reload = useCallback(async () => {
     if (!workerLibraryMethodsPresent(client)) {
@@ -371,6 +391,11 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         setProjects(page.items);
       } catch {
         setProjects([]);
+      }
+      try {
+        setHostRuntime(await probeHostRuntime(client));
+      } catch {
+        setHostRuntime(null);
       }
     } catch (caught) {
       setWorker(null);
@@ -547,6 +572,9 @@ function RoleLibraryDetailPage(props: FeaturePageProps & { workerId: string }): 
         onOpenProjectSettings={(projectId) => {
           navigate(`/projects/${projectId}?tab=settings`);
         }}
+        hostRuntime={hostRuntime}
+        onOpenSettings={() => navigate("/settings?tab=capabilities")}
+        onOpenNodes={() => navigate("/nodes/local")}
       />
     </Page>
   );
