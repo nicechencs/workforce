@@ -26,9 +26,15 @@ import type { FeaturePageProps } from "../contract.js";
 import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
+  LOCAL_HOST_RUNTIME_FIELD,
+  probeHostRuntime,
+  type HostRuntimeView,
+} from "../runtime/model.js";
+import {
   BUDGET_NOTES,
   capabilityRows,
   parseSettingsTabFromHash,
+  runtimeCapabilityNote,
   SETTINGS_TAB_LABELS,
   SETTINGS_TABS,
   settingsPath,
@@ -66,13 +72,14 @@ export function SettingsPage(props: FeaturePageProps): ReactNode {
   );
   const query = useClientQuery("settings:probe", async () => {
     const client = getWorkforceClient();
-    const [health, ready, version, capabilities] = await Promise.all([
+    const [health, ready, version, capabilities, runtime] = await Promise.all([
       client.getHealth(),
       client.getReady(),
       client.getVersion(),
       client.getCapabilities(),
+      probeHostRuntime(client),
     ]);
-    return { health, ready, version, capabilities };
+    return { health, ready, version, capabilities, runtime };
   });
 
   useEffect(() => {
@@ -110,10 +117,14 @@ export function SettingsPage(props: FeaturePageProps): ReactNode {
           health={snapshot?.health ?? null}
           ready={snapshot?.ready ?? null}
           version={snapshot?.version ?? null}
+          runtime={snapshot?.runtime ?? null}
         />
       ) : null}
       {tab === "capabilities" ? (
-        <SettingsCapabilitiesView capabilities={snapshot?.capabilities ?? null} />
+        <SettingsCapabilitiesView
+          capabilities={snapshot?.capabilities ?? null}
+          runtime={snapshot?.runtime ?? null}
+        />
       ) : null}
     </Page>
   );
@@ -175,11 +186,17 @@ export function SettingsView(props: {
   ready: ReadyDto | null;
   version: VersionDto | null;
   capabilities: CapabilitiesDto | null;
+  runtime?: HostRuntimeView | null;
 }): ReactNode {
   return (
     <>
-      <SettingsLocalView health={props.health} ready={props.ready} version={props.version} />
-      <SettingsCapabilitiesView capabilities={props.capabilities} />
+      <SettingsLocalView
+        health={props.health}
+        ready={props.ready}
+        version={props.version}
+        runtime={props.runtime ?? null}
+      />
+      <SettingsCapabilitiesView capabilities={props.capabilities} runtime={props.runtime ?? null} />
     </>
   );
 }
@@ -188,6 +205,7 @@ export function SettingsLocalView(props: {
   health: HealthDto | null;
   ready: ReadyDto | null;
   version: VersionDto | null;
+  runtime?: HostRuntimeView | null;
 }): ReactNode {
   return (
     <>
@@ -220,6 +238,17 @@ export function SettingsLocalView(props: {
           <Muted>就绪检查待返回。</Muted>
         )}
       </Card>
+      <Card title="运行时" testId="settings-runtime">
+        <p className="wf-list-row-title">{LOCAL_HOST_RUNTIME_FIELD}</p>
+        <Muted>{runtimeCapabilityNote(props.runtime)}</Muted>
+        {props.runtime ? (
+          <Muted>
+            adapter {props.runtime.adapterId} · {props.runtime.displayName}
+          </Muted>
+        ) : (
+          <Muted>Runtime 目录探测待返回。产品 Host 仍是 Codex，不是 Mock。</Muted>
+        )}
+      </Card>
       <Card title="预算说明" testId="settings-budget">
         <ul className="wf-list">
           {BUDGET_NOTES.map((note) => (
@@ -235,12 +264,13 @@ export function SettingsLocalView(props: {
 
 export function SettingsCapabilitiesView(props: {
   capabilities: CapabilitiesDto | null;
+  runtime?: HostRuntimeView | null;
 }): ReactNode {
   return (
     <Card title="能力" testId="settings-capabilities">
       {props.capabilities ? (
         <ul className="wf-list">
-          {capabilityRows(props.capabilities).map((row) => (
+          {capabilityRows(props.capabilities, props.runtime).map((row) => (
             <li key={`${row.group}-${row.name}`} className="wf-list-row">
               <span className="wf-list-row-title">
                 {row.group} / {row.name}：{row.value}

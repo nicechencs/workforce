@@ -34,7 +34,7 @@ export const DIRECT_UNSUPPORTED_NOTE =
   "「去做 / 现在改这个 bug」在 capabilities.orchestration.direct 不是 true 时是 unsupported_capability，按钮不可点，也不会渲染成已在跑。";
 
 export const DIRECT_READY_NOTE =
-  "「去做」只在 capabilities.orchestration.direct === true 时可点。无 taskId 时先 POST /projects/{id}/tasks 建项目内 ad-hoc Task，再 POST /tasks/{id}/runs（orchestrationMode=direct）。返回 Run 引用，不是 completed。";
+  "「去做」只在 capabilities.orchestration.direct === true 时可点。无 taskId 时先 POST /projects/{id}/tasks 建项目内 ad-hoc Task，再 POST /tasks/{id}/runs（orchestrationMode=direct）。返回 Run 引用，不是 completed。执行走本机 Codex Host；缺 CLI 或未登录会失败，不会回退 Mock。";
 
 export const START_DIRECT_LANDED_NOTE =
   "已落到项目内 Task 并启动 direct Run。这是 Run 引用，不是 Task 完成。没有 Artifact / evaluation pass 不能画成做完。";

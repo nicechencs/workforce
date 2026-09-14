@@ -5,6 +5,8 @@ import {
   type WorkerCardFieldsDto,
 } from "@workforce/protocol";
 
+import { runtimeProfileLabel } from "../runtime/model.js";
+
 export { workerCardFieldNames };
 
 export const PRESET_TEAM_ID = "software-development-team" as const;
@@ -1538,7 +1540,7 @@ export function roleLabel(role: string): string {
 
 function runtimeLabel(members: TeamMemberView[]): string {
   const profile = members[0]?.runtimeProfile ?? PRESET_RUNTIME_ID;
-  return profile === "codex" ? "Codex" : profile === "mock" ? "Mock" : profile;
+  return runtimeProfileLabel(profile);
 }
 
 function memberToWorker(member: TeamMemberView): TeamWorkerView {
@@ -1546,10 +1548,6 @@ function memberToWorker(member: TeamMemberView): TeamWorkerView {
     id: member.id,
     role: member.role,
     title: member.title,
-    runtime: member.runtimeProfile === "codex"
-      ? "Codex"
-      : member.runtimeProfile === "mock"
-        ? "Mock"
-        : member.runtimeProfile,
+    runtime: runtimeProfileLabel(member.runtimeProfile),
   };
 }

@@ -1,15 +1,20 @@
 import type { CapabilitiesDto } from "@workforce/desktop-client";
 
+import { LOCAL_HOST_RUNTIME_FIELD, type HostRuntimeView } from "../runtime/model.js";
+
 export function capabilityFlag(value: boolean): string {
   return value ? "支持" : "不支持";
 }
 
-export function capabilityRows(capabilities: CapabilitiesDto): Array<{
+export function capabilityRows(
+  capabilities: CapabilitiesDto,
+  runtime?: HostRuntimeView | null,
+): Array<{
   group: string;
   name: string;
   value: string;
 }> {
-  return [
+  const rows = [
     { group: "运行", name: "暂停", value: capabilityFlag(capabilities.run.pause) },
     { group: "运行", name: "继续", value: capabilityFlag(capabilities.run.resume) },
     { group: "运行", name: "输入", value: capabilityFlag(capabilities.run.input) },
@@ -17,7 +22,35 @@ export function capabilityRows(capabilities: CapabilitiesDto): Array<{
     { group: "项目", name: "暂停", value: capabilityFlag(capabilities.project.pause) },
     { group: "项目", name: "继续", value: capabilityFlag(capabilities.project.resume) },
     { group: "项目", name: "归档", value: capabilityFlag(capabilities.project.archive) },
+    {
+      group: "编排",
+      name: "跟随工作流",
+      value: capabilityFlag(capabilities.orchestration?.workflowBound !== false),
+    },
+    {
+      group: "编排",
+      name: "直接执行",
+      value: capabilityFlag(capabilities.orchestration?.direct === true),
+    },
   ];
+  if (runtime) {
+    rows.unshift(
+      { group: "运行时", name: "当前 Host", value: runtime.fieldLabel },
+      {
+        group: "运行时",
+        name: "编码",
+        value: runtime.codingReady ? "支持（Codex CLI 已就绪）" : "未就绪（启动会失败）",
+      },
+    );
+  }
+  return rows;
+}
+
+export function runtimeCapabilityNote(runtime: HostRuntimeView | null | undefined): string {
+  if (!runtime) {
+    return `${LOCAL_HOST_RUNTIME_FIELD} 是产品默认 Host。能力探测待返回前不当成有本地执行器在干活。`;
+  }
+  return runtime.summary;
 }
 
 export const SETTINGS_TABS = ["appearance", "local", "capabilities"] as const;

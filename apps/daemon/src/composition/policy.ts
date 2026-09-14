@@ -132,7 +132,7 @@ function throwDenied(decision: PolicyDecision): never {
   if (reason.startsWith("unknown_cost_not_enforceable")) {
     throw new AppError(
       "unknown_cost_not_enforceable",
-      "Mock run cost is unknown and cannot enforce a hard currency limit",
+      "Run cost is unknown and cannot enforce a hard currency limit",
     );
   }
   if (reason.startsWith("unsupported_capability")) {

@@ -7,6 +7,8 @@ import type {
 } from "@workforce/desktop-client";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { runtimeProfileLabel } from "../runtime/model.js";
+
 import {
   Badge,
   Button,
@@ -202,7 +204,7 @@ function VersionPanel(props: {
       <Muted>
         {props.version.id} · 职责 {props.version.role}
         {props.version.runtimeProfileId !== undefined
-          ? ` · runtime ${props.version.runtimeProfileId}（执行绑定，不是卡片必填）`
+          ? ` · runtime ${runtimeProfileLabel(props.version.runtimeProfileId)}（执行绑定，不是卡片必填）`
           : ""}
       </Muted>
       {unpublished ? <Notice tone="warning">{UNPUBLISHED_NOT_EMPLOYEE}</Notice> : null}

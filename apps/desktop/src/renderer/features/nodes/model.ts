@@ -1,6 +1,13 @@
 import type { HealthDto, ReadyDto, VersionDto } from "@workforce/desktop-client";
 
+import {
+  LOCAL_HOST_PROBE_PENDING,
+  LOCAL_HOST_TITLE,
+  type HostRuntimeView,
+} from "../runtime/model.js";
+
 export const LOCAL_NODE_ID = "local";
+export { LOCAL_HOST_TITLE };
 
 const LOCAL_NODE_IDS = new Set(["local", "local-node", "local_node", "本机"]);
 
@@ -11,8 +18,8 @@ export function isLocalNodeId(nodeId: string | undefined): boolean {
   return LOCAL_NODE_IDS.has(nodeId);
 }
 
-export function localNodeSubtitle(): string {
-  return "探测结果待 Daemon 目录接口";
+export function localNodeSubtitle(runtime?: HostRuntimeView | null | undefined): string {
+  return runtime?.summary ?? LOCAL_HOST_PROBE_PENDING;
 }
 
 export function localNodeStatusLabel(input: { health: HealthDto | null; ready: ReadyDto | null }): {
@@ -32,8 +39,9 @@ export function formatProbeSummary(input: {
   health: HealthDto | null;
   ready: ReadyDto | null;
   version: VersionDto | null;
+  runtime?: HostRuntimeView | null | undefined;
 }): string[] {
-  const lines: string[] = ["类型：本机 / Mock", localNodeSubtitle()];
+  const lines: string[] = [`类型：${LOCAL_HOST_TITLE}`, localNodeSubtitle(input.runtime)];
   if (input.version) {
     lines.push(`协议 ${input.version.protocolVersion} · API ${input.version.apiVersion}`);
   }

@@ -46,6 +46,12 @@ import {
   type TeamWriteSupport,
 } from "../teams/model.js";
 import {
+  probeHostRuntime,
+  projectRuntimeLabel,
+  type HostRuntimeView,
+  unprobedHostRuntime,
+} from "../runtime/model.js";
+import {
   OrchestrationModeControl,
   buildStartProjectInput,
   DEFAULT_MODE,
@@ -119,6 +125,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [bindError, setBindError] = useState<string | null>(null);
   const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
   const [directTaskId, setDirectTaskId] = useState("");
+  const [hostRuntime, setHostRuntime] = useState<HostRuntimeView>(unprobedHostRuntime);
 
   const reload = useCallback(
     async (keepInput: boolean) => {
@@ -127,20 +134,23 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       setEdit((current) =>
         keepInput ? applyProjectRefresh(current, loaded, true) : projectEditForm(loaded),
       );
-      const [taskPage, approvalPage, caps, runPage, artifactPage, eventPage] = await Promise.all([
-        client.listTasks({ projectId }),
-        client.listApprovals({ projectId }),
-        client.getCapabilities().catch(() => defaultCapabilities()),
-        client.listRuns({ projectId, limit: 50 }).catch(() => emptyList<RunDto>()),
-        client.listArtifacts({ projectId, limit: 50 }).catch(() => emptyList<ArtifactDto>()),
-        client.listEvents({ projectId, limit: 50 }).catch(() => emptyList<unknown>()),
-      ]);
+      const [taskPage, approvalPage, caps, runPage, artifactPage, eventPage, runtimeView] =
+        await Promise.all([
+          client.listTasks({ projectId }),
+          client.listApprovals({ projectId }),
+          client.getCapabilities().catch(() => defaultCapabilities()),
+          client.listRuns({ projectId, limit: 50 }).catch(() => emptyList<RunDto>()),
+          client.listArtifacts({ projectId, limit: 50 }).catch(() => emptyList<ArtifactDto>()),
+          client.listEvents({ projectId, limit: 50 }).catch(() => emptyList<unknown>()),
+          probeHostRuntime(client),
+        ]);
       setTasks(sortTasksForDag(taskPage.items));
       setApprovals(pendingApprovalCount(approvalPage.items));
       setCapabilities(caps);
       setRuns(runPage.items);
       setArtifacts(artifactPage.items);
       setEvents(eventPage.items);
+      setHostRuntime(runtimeView);
       const catalog = asCatalogClient(client);
       const support = await probeTeamWriteSupport(client);
       setTeamWrite(support);
@@ -475,6 +485,8 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             grant={grant}
             budget={budget}
             teamName={selectedTeam.name}
+            runtimeLabel={projectRuntimeLabel(hostRuntime)}
+            runtimeSummary={hostRuntime.summary}
             edit={edit}
             setEdit={setEdit}
             onSave={() => void saveEdit()}
@@ -513,6 +525,7 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             projectTeamVersionId={boundTeamVersionId}
             bindBusy={bindBusy}
             bindError={bindError}
+            runtime={hostRuntime}
             onBind={() => void bindWorkspace()}
             onSelectTeam={(team) => {
               setSelection((current) => ({
@@ -545,6 +558,8 @@ function OverviewPanel(props: {
   grant: WorkspaceGrant | null;
   budget: string;
   teamName: string;
+  runtimeLabel: string;
+  runtimeSummary: string;
   edit: ProjectEditForm;
   setEdit: (update: (current: ProjectEditForm) => ProjectEditForm) => void;
   onSave: () => void;
@@ -565,7 +580,7 @@ function OverviewPanel(props: {
           <dt>进度</dt>
           <dd data-testid="project-progress">{projectProgressLabel(tasks)}</dd>
           <dt>运行时</dt>
-          <dd>Mock</dd>
+          <dd>{props.runtimeLabel}</dd>
           <dt>工作区</dt>
           <dd>{publicWorkspaceLabel(grant)}（只读摘要；写入在 Settings）</dd>
           <dt>预算</dt>
@@ -573,6 +588,7 @@ function OverviewPanel(props: {
           <dt>待审批</dt>
           <dd>{approvals}</dd>
         </dl>
+        <Muted>{props.runtimeSummary}</Muted>
       </Card>
       <Card title="绑定的 WorkflowVersion" testId="project-overview-workflow">
         <Muted>
@@ -774,6 +790,7 @@ function SettingsPanel(props: {
   projectTeamVersionId: string | null;
   bindBusy: boolean;
   bindError: string | null;
+  runtime: HostRuntimeView;
   onBind: () => void;
   onSelectTeam: (team: TeamView) => void;
   onBindTeam: () => void;
@@ -803,8 +820,13 @@ function SettingsPanel(props: {
           onBind={props.onBindTeam}
         />
         <Field label="运行时" htmlFor="wf-project-runtime">
-          <Input id="wf-project-runtime" value="Codex CLI" readOnly />
+          <Input
+            id="wf-project-runtime"
+            value={projectRuntimeLabel(props.runtime)}
+            readOnly
+          />
         </Field>
+        <Muted>{props.runtime.summary}</Muted>
       </Card>
       <Card title="预算" testId="project-settings-budget">
         <Muted>{props.budget}</Muted>

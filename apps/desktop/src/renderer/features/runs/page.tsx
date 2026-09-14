@@ -347,6 +347,7 @@ export function RunConsoleView(props: RunConsoleViewProps): ReactNode {
           <p data-testid="run-usage">{formatRunUsage(props.run.usage)}</p>
           <Muted>用量区分未知 / 估算 / 已结算。未知成本不是 0。</Muted>
           <Muted>WorkerVersion：{FIELD_UNRETURNED}</Muted>
+          <Muted>Host：本机 Codex</Muted>
           <Muted>Runtime：{props.run.transport ?? FIELD_UNRETURNED}</Muted>
           <Muted>节点：{FIELD_UNRETURNED}</Muted>
           <Muted>WorkspaceInstance：{FIELD_UNRETURNED}</Muted>

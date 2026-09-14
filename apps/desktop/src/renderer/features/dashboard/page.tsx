@@ -18,6 +18,7 @@ import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import { gateLabel } from "../approvals/model.js";
 import { LOCAL_NODE_ID, localNodeSubtitle } from "../nodes/model.js";
+import { LOCAL_HOST_TITLE, probeHostRuntime } from "../runtime/model.js";
 import { formatRunUsage, runStatusLabel } from "../runs/model.js";
 import {
   activeProjects,
@@ -31,10 +32,11 @@ import {
 export function DashboardPage(props: FeaturePageProps): ReactNode {
   const query = useClientQuery("dashboard", async () => {
     const client = getWorkforceClient();
-    const [approvals, runs, projects] = await Promise.all([
+    const [approvals, runs, projects, runtime] = await Promise.all([
       client.listApprovals({ limit: 20, status: "pending" }),
       client.listRuns({ limit: 50 }),
       client.listProjects({ limit: 50 }),
+      probeHostRuntime(client),
     ]);
     return {
       approvals: pendingApprovals(approvals.items),
@@ -42,6 +44,7 @@ export function DashboardPage(props: FeaturePageProps): ReactNode {
       failed: failedRuns(runs.items),
       projects: activeProjects(projects.items),
       unready: unreadyProjects(projects.items),
+      runtime,
     };
   });
   return (
@@ -80,6 +83,8 @@ export function DashboardPage(props: FeaturePageProps): ReactNode {
         onNodes={() => {
           props.navigate(`/nodes/${LOCAL_NODE_ID}`);
         }}
+        runtimeTitle={query.data?.runtime.title}
+        runtimeMeta={localNodeSubtitle(query.data?.runtime ?? null)}
       />
     </Page>
   );
@@ -95,6 +100,8 @@ export function DashboardView(props: {
   onRun: (id: string) => void;
   onProject: (id: string) => void;
   onNodes: () => void;
+  runtimeTitle?: string | undefined;
+  runtimeMeta?: string | undefined;
 }): ReactNode {
   const failed = props.failed ?? [];
   const unready = props.unready ?? [];
@@ -205,7 +212,11 @@ export function DashboardView(props: {
 
       <Card title="执行节点" testId="dash-local-node">
         <List>
-          <ListRow title="本机 / Mock" meta={localNodeSubtitle()} onClick={props.onNodes} />
+          <ListRow
+            title={props.runtimeTitle ?? LOCAL_HOST_TITLE}
+            meta={props.runtimeMeta ?? localNodeSubtitle()}
+            onClick={props.onNodes}
+          />
         </List>
       </Card>
     </div>

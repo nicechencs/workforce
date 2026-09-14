@@ -22,7 +22,7 @@ export const FORK_FROM_PUBLISHED_NOTE =
   "正在从未发布草稿编辑。若从已发布模板进入，这是一份本地新 version，不会改原已发布图。";
 
 export const CATALOG_WITH_CANVAS_NOTE =
-  "只读已发布模板与结构化步骤仍可浏览。新建/编辑走画布上的未发布 WorkflowVersion。未发布图不会被 Mock/Codex Runtime 执行。";
+  "只读已发布模板与结构化步骤仍可浏览。新建/编辑走画布上的未发布 WorkflowVersion。未发布图不会被当前 Runtime 执行。";
 
 export const EMPTY_CATALOG_WITH_CREATE_NOTE =
   "已发布工作流目录为空。可以新建空白画布；未发布草稿不会回退本地夹具冒充已接通，也不会被 Runtime 执行。";

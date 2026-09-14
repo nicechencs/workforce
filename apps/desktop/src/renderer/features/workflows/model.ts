@@ -99,7 +99,7 @@ export const FEATURE_DELIVERY_WORKFLOW: WorkflowTemplateView = {
 
 export const CATALOG_LOADING_NOTE = "正在读取已发布工作流目录…";
 export const LIVE_CATALOG_NOTE =
-  "只读已发布模板与结构化步骤。不是画布编辑器，也不表示 Mock/Codex Runtime 可执行这些定义。";
+  "只读已发布模板与结构化步骤。不是画布编辑器，也不表示当前 Runtime 可执行这些定义。";
 export const EMPTY_CATALOG_NOTE =
   "已发布工作流目录为空。此页只读展示已发布模板、版本和结构化步骤，不会回退本地夹具冒充已接通。";
 export const UNAVAILABLE_CATALOG_NOTE =

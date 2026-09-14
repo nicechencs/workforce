@@ -16,6 +16,11 @@ import type { FeaturePageProps } from "../contract.js";
 import { useClientQuery } from "../../app/client-query.js";
 import { getWorkforceClient } from "../../app/renderer-client.js";
 import {
+  LOCAL_HOST_TITLE,
+  probeHostRuntime,
+  type HostRuntimeView,
+} from "../runtime/model.js";
+import {
   formatProbeSummary,
   isLocalNodeId,
   LOCAL_NODE_ID,
@@ -46,14 +51,16 @@ export function NodesPage(props: FeaturePageProps): ReactNode {
 function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode {
   const query = useClientQuery("nodes:local", async () => {
     const client = getWorkforceClient();
-    const [health, ready, version] = await Promise.all([
+    const [health, ready, version, runtime] = await Promise.all([
       client.getHealth(),
       client.getReady(),
       client.getVersion(),
+      probeHostRuntime(client),
     ]);
-    return { health, ready, version };
+    return { health, ready, version, runtime };
   });
   const detail = props.path.includes("/nodes/");
+  const runtime = query.data?.runtime ?? null;
   const status = localNodeStatusLabel({
     health: query.data?.health ?? null,
     ready: query.data?.ready ?? null,
@@ -61,7 +68,7 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
   return (
     <Page
       title={detail ? "节点详情" : "执行节点"}
-      subtitle={detail ? props.nodeId : "V0.1 仅本机节点。远程 enrollment 未接入。"}
+      subtitle={detail ? props.nodeId : "V0.1 仅本机节点。远程 enrollment 未接入。当前 Host 是 Codex。"}
       actions={
         detail ? (
           <Button variant="outline" onClick={() => props.navigate("/nodes")}>
@@ -78,6 +85,7 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
           health={query.data?.health ?? null}
           ready={query.data?.ready ?? null}
           version={query.data?.version ?? null}
+          runtime={runtime}
           detail
         />
       ) : (
@@ -85,8 +93,8 @@ function LocalNodePage(props: FeaturePageProps & { nodeId: string }): ReactNode 
           <List testId="node-list">
             <ListRow
               testId="local-node-row"
-              title="本机 / Mock"
-              meta={`${status.label} · ${localNodeSubtitle()}`}
+              title={LOCAL_HOST_TITLE}
+              meta={`${status.label} · ${localNodeSubtitle(runtime)}`}
               onClick={() => {
                 props.navigate(`/nodes/${LOCAL_NODE_ID}`);
               }}
@@ -103,6 +111,7 @@ export function LocalNodeCard(props: {
   health: HealthDto | null;
   ready: ReadyDto | null;
   version: VersionDto | null;
+  runtime?: HostRuntimeView | null | undefined;
   detail?: boolean | undefined;
   onOpen?: (() => void) | undefined;
 }): ReactNode {
@@ -113,7 +122,7 @@ export function LocalNodeCard(props: {
     <Card testId="local-node-card">
       <div className="wf-card-header wf-card-header-flush">
         <div>
-          <p className="wf-list-row-title">本机 / Mock</p>
+          <p className="wf-list-row-title">{LOCAL_HOST_TITLE}</p>
           <span data-testid="local-node-status">
             <StatusText tone={tone}>{status.label}</StatusText>
           </span>
@@ -128,13 +137,14 @@ export function LocalNodeCard(props: {
         ) : null}
       </div>
       <Muted>
-        <span data-testid="local-node-probe">{localNodeSubtitle()}</span>
+        <span data-testid="local-node-probe">{localNodeSubtitle(props.runtime)}</span>
       </Muted>
       <ul className="wf-list">
         {formatProbeSummary({
           health: props.health,
           ready: props.ready,
           version: props.version,
+          runtime: props.runtime ?? null,
         }).map((line) => (
           <li key={line} className="wf-list-row">
             <span className="wf-list-row-meta">{line}</span>
@@ -143,7 +153,7 @@ export function LocalNodeCard(props: {
       </ul>
       {props.detail === true ? (
         <Muted>
-          listNodes / listRuntimes 尚未出现在 typed client 中时，不把本机卡片渲染成远程在线机群。
+          V0.1 仅本机节点。远程 enrollment 未接入。当前 Host 是 Codex；缺 CLI 或未登录时启动会失败。
         </Muted>
       ) : null}
     </Card>

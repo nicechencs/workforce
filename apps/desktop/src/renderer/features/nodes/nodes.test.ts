@@ -6,7 +6,7 @@ import { isLocalNodeId } from "./model.js";
 import { LocalNodeCard, NodesPage, RemoteNodePlaceholder } from "./page.js";
 
 describe("local node", () => {
-  it("labels the only node as 本机 / Mock and does not invent a remote fleet", () => {
+  it("labels the only node as 本机 Codex and does not invent a remote fleet", () => {
     expect(isLocalNodeId("local")).toBe(true);
     const html = renderToStaticMarkup(
       createElement(LocalNodeCard, {
@@ -16,8 +16,9 @@ describe("local node", () => {
         version: null,
       }),
     );
-    expect(html).toContain("本机 / Mock");
-    expect(html).toContain("探测结果待 Daemon 目录接口");
+    expect(html).toContain("本机 Codex");
+    expect(html).not.toContain("本机 / Mock");
+    expect(html).toContain("本机 Codex Host");
     expect(html).not.toContain("3/4");
     expect(html.toLowerCase()).not.toContain("online");
   });

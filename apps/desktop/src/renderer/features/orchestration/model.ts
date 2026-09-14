@@ -18,16 +18,16 @@ export const DEFAULT_MODE = DEFAULT_ORCHESTRATION_MODE;
 export const DIRECT_CAPABILITY_NAME = "orchestration.direct";
 
 export const DIRECT_UNSUPPORTED =
-  "当前 capability probe 未声明 orchestration.direct。已禁用直接执行，避免假 mode。错误码：unsupported_capability。这不是生产 Codex direct，也不是 D19 Placement。";
+  "当前 capability probe 未声明 orchestration.direct。已禁用直接执行，避免假 mode。错误码：unsupported_capability。执行走本机 Codex Host；缺 CLI 或未登录会失败，不会回退 Mock。";
 
 export const WORKFLOW_BOUND_COPY =
   "跟随已发布工作流：只执行该项目已确认、已发布 WorkflowVersion 中轮到的节点。";
 
 export const DIRECT_COPY =
-  "直接执行：有所选 Task 时 POST /tasks/{id}/runs（orchestrationMode=direct）；无 Task 时先 POST /projects/{id}/tasks 建 ad-hoc Task 再跑同一 Run 接口。仍走 Policy、Workspace、预算与 Approval。不是 Renderer 直接 spawn，也不走 :start，没有 :direct URL。";
+  "直接执行：有所选 Task 时 POST /tasks/{id}/runs（orchestrationMode=direct）；无 Task 时先 POST /projects/{id}/tasks 建 ad-hoc Task 再跑同一 Run 接口。仍走 Policy、Workspace、预算与 Approval。Host 是本机 Codex；缺 CLI 或未登录会失败。不是 Renderer 直接 spawn，也不走 :start，没有 :direct URL。";
 
 export const SLICE_NOTE =
-  "T21 UI 切片：workflow_bound 走现有 POST /projects/{id}:start 的 orchestrationMode；direct 走 POST /tasks/{id}/runs。Task 详情不挂未接线控件。不发明 /runs/{id}:direct。不宣称 M8 完成、headed PASS 或生产 Codex direct。";
+  "workflow_bound 走 POST /projects/{id}:start；direct 走 POST /tasks/{id}/runs。Task 详情不挂未接线控件。Host 是本机 Codex；缺 CLI 或未登录会失败，不会回退 Mock。没有 :direct URL，也不是 headed 验收。";
 
 export const DIRECT_TASK_REQUIRED =
   "直接执行需要选择项目内已有 Task，再 POST /tasks/{id}/runs。不会改走 :start 假装成功，也不会由 Renderer 创建 ad-hoc Task。";
@@ -80,7 +80,7 @@ export function probeOrchestrationSupport(input: {
       workflowBound: true,
       direct: true,
       source: "capabilities",
-      reason: "GET /capabilities 声明 orchestration.direct。仍不是生产 Codex direct 验收。",
+      reason: "GET /capabilities 声明 orchestration.direct。执行走本机 Codex Host；缺 CLI 或未登录会失败，不会回退 Mock。",
     };
   }
   const runtimeHit = input.runtimeCapabilities?.capabilities.some(
@@ -91,7 +91,7 @@ export function probeOrchestrationSupport(input: {
       workflowBound: true,
       direct: true,
       source: "runtime",
-      reason: "Runtime probe 声明 orchestration.direct。仍不是生产 Codex direct 验收。",
+      reason: "Runtime probe 声明 orchestration.direct。执行走本机 Codex Host；缺 CLI 或未登录会失败，不会回退 Mock。",
     };
   }
   return emptyOrchestrationProbe();
