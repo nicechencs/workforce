@@ -22,6 +22,7 @@ import {
   Muted,
   Notice,
   Page,
+  Select,
   Tabs,
   Textarea,
   type Tone,
@@ -64,7 +65,7 @@ import {
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel, evaluationRowForKind, evaluationRowFromArtifacts } from "../tasks/model.js";
 import { identityPreviewLine, roleLibraryDetailHref } from "../role-library/model.js";
-import { FEATURE_DELIVERY_STEPS, stepKindLabel } from "../workflows/model.js";
+import { asWorkflowView, FEATURE_DELIVERY_STEPS, stepKindLabel, type WorkflowTemplateView } from "../workflows/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
   PROJECT_DIRECT_ADHOC_NOTE,
@@ -75,10 +76,13 @@ import {
   applyFormFailure,
   applyProjectRefresh,
   artifactKindLabel,
+  bindableWorkflowVersions,
+  boundWorkflowCopy,
   budgetPlaceholder,
   defaultCapabilities,
   defaultDraftSelection,
   emptyTasksCopy,
+  findWorkflowBindOption,
   nodeScopeLabel,
   pendingApprovalCount,
   pinnedArtifactVersion,
@@ -87,14 +91,19 @@ import {
   projectPolicyCopy,
   projectProgressLabel,
   projectStatusLabel,
+  projectWorkflowVersionId,
   publicWorkspaceLabel,
   splitProjectRuns,
   statusBadgeTone,
   taskDependencyLabel,
   taskOwnerLabel,
+  UNBOUND_WORKFLOW_NOTE,
   visibleProjectActions,
+  workflowBindEnabled,
+  WORKFLOW_BIND_WRITE_MISSING,
   type ProjectActionId,
   type ProjectEditForm,
+  type WorkflowBindOption,
 } from "./model.js";
 import {
   hashWithProjectTab,
@@ -128,6 +137,11 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const [teamWrite, setTeamWrite] = useState<TeamWriteSupport>(unavailableTeamWriteSupport);
   const [bindBusy, setBindBusy] = useState(false);
   const [bindError, setBindError] = useState<string | null>(null);
+  const [catalogWorkflows, setCatalogWorkflows] = useState<WorkflowTemplateView[]>([]);
+  const [workflowCatalogAvailable, setWorkflowCatalogAvailable] = useState(false);
+  const [workflowSelection, setWorkflowSelection] = useState<string>("");
+  const [workflowBindBusy, setWorkflowBindBusy] = useState(false);
+  const [workflowBindError, setWorkflowBindError] = useState<string | null>(null);
   const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(DEFAULT_MODE);
   const [directTaskId, setDirectTaskId] = useState("");
   const [hostRuntime, setHostRuntime] = useState<HostRuntimeView>(unprobedHostRuntime);
@@ -178,9 +192,30 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
       } else {
         setBudget(budgetPlaceholder(null));
       }
+      try {
+        const page = await client.listWorkflows();
+        const parsed = page.items
+          .map((item) => asWorkflowView(item))
+          .filter((item): item is WorkflowTemplateView => item !== null);
+        setCatalogWorkflows(parsed);
+        setWorkflowCatalogAvailable(true);
+      } catch {
+        setCatalogWorkflows([]);
+        setWorkflowCatalogAvailable(false);
+      }
     },
     [client, projectId],
   );
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+    const bound = projectWorkflowVersionId(project);
+    if (bound) {
+      setWorkflowSelection((current) => (current === "" ? bound : current));
+    }
+  }, [project]);
 
   useEffect(() => {
     let cancelled = false;
@@ -375,6 +410,32 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
     }
   }
 
+  async function bindPublishedWorkflow() {
+    if (!project || workflowSelection.length === 0) {
+      return;
+    }
+    setWorkflowBindBusy(true);
+    setWorkflowBindError(null);
+    try {
+      const next = await client.patchProject(
+        project.id,
+        { workflowVersionId: workflowSelection },
+        commandOptions(project.stateRevision),
+      );
+      const echoed = projectWorkflowVersionId(next);
+      if (echoed !== workflowSelection) {
+        setProject(next);
+        setWorkflowBindError("服务端未回传精确 workflowVersionId，未当作绑定成功。");
+        return;
+      }
+      setProject(next);
+    } catch (caught) {
+      setWorkflowBindError(errorMessage(caught));
+    } finally {
+      setWorkflowBindBusy(false);
+    }
+  }
+
   if (error && !project) {
     return (
       <Page title="项目">
@@ -419,6 +480,9 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
   const statusLabel = projectStatusLabel(project);
   const probe = probeOrchestrationSupport({ capabilities });
   const selectedMode = resolveSelectedMode(orchestrationMode, probe);
+  const boundWorkflowVersionId = projectWorkflowVersionId(project);
+  const workflowOptions = bindableWorkflowVersions(catalogWorkflows);
+  const boundWorkflowOption = findWorkflowBindOption(workflowOptions, boundWorkflowVersionId);
 
   return (
     <Page
@@ -501,6 +565,8 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
             setEdit={setEdit}
             onSave={() => void saveEdit()}
             onOpenSettings={() => selectTab("settings")}
+            boundWorkflowVersionId={boundWorkflowVersionId}
+            boundWorkflowOption={boundWorkflowOption}
           />
         ) : null}
         {tab === "tasks" ? (
@@ -546,6 +612,17 @@ export function ProjectDetail(props: FeaturePageProps & { client: DesktopClient 
               setBindError(null);
             }}
             onBindTeam={() => void bindPublishedTeam()}
+            workflowOptions={workflowOptions}
+            workflowCatalogAvailable={workflowCatalogAvailable}
+            workflowSelection={workflowSelection}
+            boundWorkflowVersionId={boundWorkflowVersionId}
+            workflowBindBusy={workflowBindBusy}
+            workflowBindError={workflowBindError}
+            onSelectWorkflow={(versionId) => {
+              setWorkflowSelection(versionId);
+              setWorkflowBindError(null);
+            }}
+            onBindWorkflow={() => void bindPublishedWorkflow()}
           />
         ) : null}
       </div>
@@ -577,6 +654,8 @@ function OverviewPanel(props: {
   onOpenSettings: () => void;
   onOpenTeam: () => void;
   onOpenRole: (workerId: string, versionId?: string) => void;
+  boundWorkflowVersionId: string | null;
+  boundWorkflowOption: WorkflowBindOption | null;
 }) {
   const { project, tasks, approvals, grant, budget, teamName, edit } = props;
   return (
@@ -637,9 +716,20 @@ function OverviewPanel(props: {
         )}
       </Card>
       <Card title="绑定的 WorkflowVersion" testId="project-overview-workflow">
-        <Notice tone="warning" title="规划仍是模板">
-          {PLANNING_TEMPLATE_NOTE}
-        </Notice>
+        {props.boundWorkflowVersionId ? (
+          <Notice tone="info" title="已绑定自定义图">
+            <span data-testid="project-workflow-bound">
+              {boundWorkflowCopy({
+                boundVersionId: props.boundWorkflowVersionId,
+                option: props.boundWorkflowOption,
+              })}
+            </span>
+          </Notice>
+        ) : (
+          <Notice tone="warning" title="未绑定，回落模板">
+            <span data-testid="project-workflow-unbound">{UNBOUND_WORKFLOW_NOTE}</span>
+          </Notice>
+        )}
         <Muted>
           {project.planArtifactVersionId
             ? `已确认计划产物 ${project.planArtifactVersionId}`
@@ -647,9 +737,20 @@ function OverviewPanel(props: {
         </Muted>
         <Muted>
           {project.executionSnapshotId
-            ? `执行快照 ${project.executionSnapshotId}。快照图来自 confirmPlan，不是画布上未发布的草稿。`
-            : "尚未绑定执行图。自定义已发布图是否进入 :start 是执行缺口，不是再加标签。"}
+            ? `执行快照 ${project.executionSnapshotId}。快照图来自 confirmPlan，来源是${
+                props.boundWorkflowVersionId ? "已绑定的自定义 WorkflowVersion" : "软件交付模板"
+              }，不是画布上未发布的草稿。`
+            : "尚未确认计划，还没有执行快照。"}
         </Muted>
+        {project.status === "draft" || project.status === "planning" ? (
+          <Button
+            variant="ghost"
+            testId="project-overview-open-workflow-settings"
+            onClick={props.onOpenSettings}
+          >
+            去 Settings 绑定 WorkflowVersion
+          </Button>
+        ) : null}
       </Card>
 
       {project.status === "draft" || project.status === "planning" ? (
@@ -696,21 +797,34 @@ function OverviewPanel(props: {
         <Card title="计划">
           <p>计划产物版本：{project.planArtifactVersionId ?? "尚未生成"}</p>
           <Muted>确认计划会提交 planArtifactVersionId。未确认前不会开始执行开发任务。</Muted>
-          <Muted>{PLANNING_TEMPLATE_NOTE}</Muted>
-          <ol className="wf-timeline" data-testid="project-planning-template-steps">
-            {FEATURE_DELIVERY_STEPS.map((step, index) => (
-              <li key={step.id} className="wf-timeline-row">
-                <span className="wf-list-row-title">
-                  {index + 1}. {step.title}
-                </span>
-                <span className="wf-list-row-meta">
-                  {stepKindLabel(step.kind)}
-                  {step.worker ? ` · ${step.worker}` : ""}
-                  {step.gate ? ` · gate ${step.gate}` : ""}
-                </span>
-              </li>
-            ))}
-          </ol>
+          {props.boundWorkflowVersionId ? (
+            <Muted>
+              <span data-testid="project-planning-bound-workflow">
+                {boundWorkflowCopy({
+                  boundVersionId: props.boundWorkflowVersionId,
+                  option: props.boundWorkflowOption,
+                })}
+              </span>
+            </Muted>
+          ) : (
+            <>
+              <Muted>{PLANNING_TEMPLATE_NOTE}</Muted>
+              <ol className="wf-timeline" data-testid="project-planning-template-steps">
+                {FEATURE_DELIVERY_STEPS.map((step, index) => (
+                  <li key={step.id} className="wf-timeline-row">
+                    <span className="wf-list-row-title">
+                      {index + 1}. {step.title}
+                    </span>
+                    <span className="wf-list-row-meta">
+                      {stepKindLabel(step.kind)}
+                      {step.worker ? ` · ${step.worker}` : ""}
+                      {step.gate ? ` · gate ${step.gate}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
         </Card>
       ) : null}
     </>
@@ -858,8 +972,17 @@ function SettingsPanel(props: {
   onBind: () => void;
   onSelectTeam: (team: TeamView) => void;
   onBindTeam: () => void;
+  workflowOptions: WorkflowBindOption[];
+  workflowCatalogAvailable: boolean;
+  workflowSelection: string;
+  boundWorkflowVersionId: string | null;
+  workflowBindBusy: boolean;
+  workflowBindError: string | null;
+  onSelectWorkflow: (versionId: string) => void;
+  onBindWorkflow: () => void;
 }) {
   const showBind = props.project.status === "draft";
+  const workflowBindWindowOpen = workflowBindEnabled(props.project.status);
   return (
     <>
       <Card title="WorkspaceBinding" testId="project-settings-workspace">
@@ -891,6 +1014,58 @@ function SettingsPanel(props: {
           />
         </Field>
         <Muted>{props.runtime.summary}</Muted>
+      </Card>
+      <Card title="绑定 WorkflowVersion" testId="project-settings-workflow">
+        <Muted>
+          在确认计划前，可以绑定画布上已发布的自定义 WorkflowVersion。confirmPlan / :start
+          会优先用这张图；不绑定则回落软件交付模板。
+        </Muted>
+        {props.workflowCatalogAvailable && props.workflowOptions.length > 0 ? (
+          <>
+            <Field label="已发布 WorkflowVersion" htmlFor="wf-project-workflow">
+              <Select
+                id="wf-project-workflow"
+                testId="project-workflow-select"
+                disabled={!workflowBindWindowOpen}
+                value={props.workflowSelection}
+                onChange={(event) => props.onSelectWorkflow(event.target.value)}
+              >
+                <option value="">选择已发布 WorkflowVersion…</option>
+                {props.workflowOptions.map((option) => (
+                  <option key={option.versionId} value={option.versionId}>
+                    {option.workflowName} · {option.versionId}（version {option.version}）
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Button
+              testId="project-bind-workflow"
+              disabled={
+                !workflowBindWindowOpen ||
+                props.workflowBindBusy ||
+                props.workflowSelection.length === 0 ||
+                props.workflowSelection === props.boundWorkflowVersionId
+              }
+              onClick={props.onBindWorkflow}
+            >
+              绑定已发布 WorkflowVersion
+            </Button>
+          </>
+        ) : (
+          <Muted>
+            <span data-testid="project-workflow-bind-disabled">
+              {props.workflowCatalogAvailable ? "目录里还没有已发布的自定义 WorkflowVersion。" : WORKFLOW_BIND_WRITE_MISSING}
+            </span>
+          </Muted>
+        )}
+        {!workflowBindWindowOpen ? (
+          <Muted>规划确认后不能再改绑定；WorkflowVersion 由 confirmPlan 冻结进执行快照。</Muted>
+        ) : null}
+        {props.workflowBindError ? (
+          <div data-testid="project-workflow-bind-error">
+            <ErrorText>{props.workflowBindError}</ErrorText>
+          </div>
+        ) : null}
       </Card>
       <Card title="预算" testId="project-settings-budget">
         <Muted>{props.budget}</Muted>

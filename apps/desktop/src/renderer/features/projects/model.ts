@@ -11,6 +11,7 @@ import { isActiveRun } from "../runs/model.js";
 import { sortRunsNewestFirst } from "../tasks/model.js";
 import { errorMessage, isRevisionConflict, revisionConflictMessage } from "./command.js";
 import { PRESET_RUNTIME_ID, PRESET_TEAM, PRESET_TEAM_ID } from "../teams/model.js";
+import type { WorkflowTemplateView } from "../workflows/model.js";
 
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -352,6 +353,87 @@ export function taskDependencyLabel(
 
 export const PLANNING_TEMPLATE_NOTE =
   "确认计划仍使用软件交付模板 DAG（规划 → 实现 → 整合 → 审查 → 验收），不是 Planner Run，也不是你在画布上编的自定义图。自定义已发布图只有项目绑了才会进开始执行。";
+
+/** Domain model §4.2: candidate `workflowVersionId` bound in draft/planning, read by confirmPlan/:start. */
+export interface WorkflowBindOption {
+  workflowId: string;
+  workflowName: string;
+  versionId: string;
+  version: string;
+}
+
+export const UNBOUND_WORKFLOW_NOTE =
+  "未绑定已发布 WorkflowVersion。confirmPlan / :start 会回落到软件交付模板 DAG（规划 → 实现 → 整合 → 审查 → 验收），不是 Planner Run，也不是画布上未发布的草稿。";
+
+export const WORKFLOW_BIND_WRITE_MISSING =
+  "读取已发布 WorkflowVersion 目录失败或写接口不可用。绑定不会成功；未绑定时仍回落模板。";
+
+export function projectWorkflowVersionId(
+  project: Pick<ProjectDto, "workflowVersionId">,
+): string | null {
+  return typeof project.workflowVersionId === "string" && project.workflowVersionId.length > 0
+    ? project.workflowVersionId
+    : null;
+}
+
+/** Only published, immutable versions are bindable (未发布草稿拒绝绑定). */
+export function bindableWorkflowVersions(workflows: WorkflowTemplateView[]): WorkflowBindOption[] {
+  const seen = new Set<string>();
+  const options: WorkflowBindOption[] = [];
+  for (const workflow of workflows) {
+    for (const version of workflow.versions) {
+      if (version.status !== "published" || !version.immutable) {
+        continue;
+      }
+      if (seen.has(version.id)) {
+        continue;
+      }
+      seen.add(version.id);
+      options.push({
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        versionId: version.id,
+        version: version.version,
+      });
+    }
+  }
+  return options;
+}
+
+export function findWorkflowBindOption(
+  options: WorkflowBindOption[],
+  versionId: string | null,
+): WorkflowBindOption | null {
+  if (!versionId) {
+    return null;
+  }
+  return options.find((item) => item.versionId === versionId) ?? null;
+}
+
+export function boundWorkflowIdentityLabel(
+  boundVersionId: string,
+  option: WorkflowBindOption | null,
+): string {
+  if (option) {
+    return `${option.workflowName} · WorkflowVersion ${option.versionId}（version ${option.version}）`;
+  }
+  return `WorkflowVersion ${boundVersionId}`;
+}
+
+export function boundWorkflowCopy(input: {
+  boundVersionId: string | null;
+  option: WorkflowBindOption | null;
+}): string {
+  if (!input.boundVersionId) {
+    return UNBOUND_WORKFLOW_NOTE;
+  }
+  return `已绑定 ${boundWorkflowIdentityLabel(input.boundVersionId, input.option)}。confirmPlan / :start 会用这张已发布图，不回落模板。`;
+}
+
+/** Bind/rebind is a draft/planning-only write (domain model §4.2); confirmPlan freezes it. */
+export function workflowBindEnabled(status: string): boolean {
+  return status === "draft" || status === "planning";
+}
 
 export function emptyTasksCopy(status: string): string {
   if (status === "draft" || status === "planning") {
