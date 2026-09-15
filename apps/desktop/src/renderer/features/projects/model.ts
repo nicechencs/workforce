@@ -350,9 +350,12 @@ export function taskDependencyLabel(
   return `依赖：${labels.join("、")}`;
 }
 
+export const PLANNING_TEMPLATE_NOTE =
+  "确认计划仍使用软件交付模板 DAG（规划 → 实现 → 整合 → 审查 → 验收），不是 Planner Run，也不是你在画布上编的自定义图。自定义已发布图只有项目绑了才会进开始执行。";
+
 export function emptyTasksCopy(status: string): string {
   if (status === "draft" || status === "planning") {
-    return "确认计划后才会发布执行任务图。";
+    return "确认计划后才会按软件交付模板发布执行任务图。自定义画布草稿不会自动出现在这里。";
   }
   return "暂无任务。";
 }

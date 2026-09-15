@@ -2,8 +2,10 @@ import { useEffect, useReducer, type ReactNode } from "react";
 import type { WorkflowDto, WorkflowVersionDto } from "@workforce/desktop-client";
 
 import {
+  Badge,
   Button,
   Card,
+  Cluster,
   ErrorText,
   Field,
   Input,
@@ -11,6 +13,7 @@ import {
   Notice,
   Page,
   Textarea,
+  Tooltip,
 } from "../../../components/ui.js";
 import { useWorkforceClient } from "../../hooks.js";
 import { toGraphPayload } from "../graph/types.js";
@@ -29,9 +32,12 @@ import {
   CANVAS_DRAFT_VERSION_ID,
   CANVAS_NEW_WORKFLOW_ID,
   canvasDraftPath,
+  canvasDraftSteps,
   isPublishedVersionFrozen,
   persistStatusLabel,
+  publishButtonState,
   reduceCanvasSession,
+  saveButtonState,
   sessionFromBlank,
   sessionFromDraftVersion,
   sessionFromFork,
@@ -39,7 +45,6 @@ import {
   workflowDetailPath,
   type CanvasSession,
 } from "./model.js";
-import { canvasDraftSteps } from "./model.js";
 import { WorkflowCanvasToolbar } from "./toolbar.js";
 
 export function WorkflowCanvasPage(props: {
@@ -156,27 +161,68 @@ export function WorkflowCanvasPage(props: {
   const title =
     props.workflowId === CANVAS_NEW_WORKFLOW_ID ? CANVAS_PAGE_TITLE_NEW : CANVAS_PAGE_TITLE_EDIT;
   const frozen = session.mode === "readonly-frozen";
+  const save = saveButtonState(session);
+  const publish = publishButtonState(session);
+  const draftLabel = frozen
+    ? "已发布 · 只读"
+    : session.persist === "saved"
+      ? "已保存草稿"
+      : "未发布草稿";
 
   return (
     <Page
       title={title}
+      subtitle="编辑未发布图版本。发布后才可给项目用；画布上不能 Run。"
       testId="workflow-canvas-page"
       actions={
-        <Button
-          variant="outline"
-          onClick={() =>
-            props.navigate(
-              session.draft.workflowId && session.draft.workflowId !== CANVAS_NEW_WORKFLOW_ID
-                ? workflowDetailPath(session.draft.workflowId)
-                : workflowCatalogPath(),
-            )
-          }
-        >
-          返回工作流
-        </Button>
+        <Cluster>
+          <Button
+            variant="outline"
+            onClick={() =>
+              props.navigate(
+                session.draft.workflowId && session.draft.workflowId !== CANVAS_NEW_WORKFLOW_ID
+                  ? workflowDetailPath(session.draft.workflowId)
+                  : workflowCatalogPath(),
+              )
+            }
+          >
+            返回工作流
+          </Button>
+          <Tooltip content={save.reason ?? "保存未发布草稿"}>
+            <Button
+              testId="workflow-canvas-save"
+              disabled={save.disabled}
+              title={save.reason ?? "保存未发布草稿"}
+              onClick={() => {
+                void onSave();
+              }}
+            >
+              保存草稿
+            </Button>
+          </Tooltip>
+          <Tooltip content={publish.reason ?? "发布不可变版本"}>
+            <Button
+              variant="primary"
+              testId="workflow-canvas-publish"
+              disabled={publish.disabled}
+              title={publish.reason ?? "发布不可变版本"}
+              onClick={() => {
+                void onPublish();
+              }}
+            >
+              发布
+            </Button>
+          </Tooltip>
+        </Cluster>
       }
     >
       <Card>
+        <div className="wf-cluster">
+          <Badge tone={frozen ? "success" : "warning"}>{draftLabel}</Badge>
+          <Muted>
+            <span data-testid="workflow-canvas-persist">{persistStatusLabel(session.persist)}</span>
+          </Muted>
+        </div>
         <Muted>
           <span data-testid="workflow-canvas-loop-note">{PROJECT_LOOP_NOTE}</span>
         </Muted>
@@ -189,9 +235,16 @@ export function WorkflowCanvasPage(props: {
         <Muted>
           <span data-testid="workflow-canvas-write-note">{session.write.note}</span>
         </Muted>
-        <Muted>
-          <span data-testid="workflow-canvas-persist">{persistStatusLabel(session.persist)}</span>
-        </Muted>
+        {save.reason ? (
+          <Muted>
+            <span data-testid="workflow-canvas-save-reason">{save.reason}</span>
+          </Muted>
+        ) : null}
+        {publish.reason && publish.reason !== save.reason ? (
+          <Muted>
+            <span data-testid="workflow-canvas-publish-reason">{publish.reason}</span>
+          </Muted>
+        ) : null}
         {session.persistError ? (
           <div data-testid="workflow-canvas-error">
             <ErrorText>{session.persistError}</ErrorText>
@@ -224,16 +277,6 @@ export function WorkflowCanvasPage(props: {
             }
           />
         </Field>
-        <WorkflowCanvasToolbar
-          session={session}
-          dispatch={dispatch}
-          onSave={() => {
-            void onSave();
-          }}
-          onPublish={() => {
-            void onPublish();
-          }}
-        />
         {!session.validation.ok ? (
           <ul data-testid="workflow-canvas-validation" className="wf-validation-list">
             {session.validation.reasons.map((reason) => (
@@ -247,7 +290,8 @@ export function WorkflowCanvasPage(props: {
             </span>
           </Muted>
         )}
-        <div className="wf-split">
+        <div className="wf-canvas-workspace">
+          <WorkflowCanvasToolbar session={session} dispatch={dispatch} />
           <WorkflowCanvasEditor
             session={session}
             onSelectNode={(nodeId) => dispatch({ type: "selectNode", nodeId })}

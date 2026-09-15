@@ -21,7 +21,7 @@ export const AGENT_REPLY_GAP =
 export const AUTHORING_PROPOSAL_PREVIEW_NOTE =
   "这是服务端返回的结构化提案。必须明确确认后，才会落成未发布工作流草稿。";
 export const AUTHORING_ROUTE_GAP =
-  "会话始终绑定当前项目；切换项目会重新加载该项目的会话，不复用其他项目的消息或提案。";
+  "会话始终绑定当前项目；切换项目会重新加载该项目的会话，不复用其他项目的消息或提案。确认只落未发布草稿，不是 IM，也不是 Task/Run 完成。";
 export const DRAFT_NOT_RUNTIME_NOTE =
   "确认结果是未发布工作流草稿，不会自动发布、执行或创建 Task/Run。";
 export const EMPTY_INTENT_NOTE =

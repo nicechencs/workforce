@@ -517,8 +517,9 @@ function ConversationPanel(props: {
   onSend: () => void;
 }): ReactNode {
   return (
-    <Card title="工作流编排对话" testId="workflow-authoring-chat">
+    <Card title="描述要生成的流程" testId="workflow-authoring-chat">
       <MessageList messages={props.session.messages} />
+      <Muted>不是某个员工的收件箱。回复气泡不是完成；确认后只创建未发布草稿。</Muted>
       <Field
         label="发送消息"
         htmlFor="wf-authoring-intent"
