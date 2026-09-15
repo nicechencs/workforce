@@ -23,6 +23,12 @@ export const projectDtoSchema = z
     planArtifactVersionId: z.string().min(1).optional(),
     executionSnapshotId: z.string().min(1).optional(),
     teamVersionId: z.string().min(1).optional(),
+    /**
+     * Candidate (draft/planning) or confirmed (post-confirmPlan) published
+     * WorkflowVersion id. confirmPlan/:start prefer this graph over the
+     * generated software-delivery template; unset means template fallback.
+     */
+    workflowVersionId: z.string().min(1).optional(),
     /** Echo of requested D18 mode after `:start`. Not a scheduler claim. */
     orchestrationMode: orchestrationModeSchema.optional(),
   })

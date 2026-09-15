@@ -416,6 +416,24 @@ export class CatalogService {
     return version;
   }
 
+  /**
+   * A Project may bind a candidate `workflowVersionId` before confirmPlan
+   * (domain model §4.2). Only a published, non-empty WorkflowVersion is
+   * bindable; an unpublished draft must be rejected, not silently ignored.
+   */
+  assertBindableWorkflowVersion(versionId: string): WorkflowVersionRecord {
+    const version = this.deps.catalog.findWorkflowVersion(versionId);
+    if (!version) {
+      throw notFound("workflow version", versionId);
+    }
+    if (!isExecutableWorkflowVersion(version) || version.nodes.length === 0) {
+      throw invalidTransition(
+        "WorkflowVersion cannot bind to a project unless it is a published version with at least one node",
+      );
+    }
+    return version;
+  }
+
   listWorkers(input: ListWorkersInput = {}): WorkerPageDto {
     const includeArchived = input.includeArchived === true;
     const query = input.q?.trim().toLowerCase();

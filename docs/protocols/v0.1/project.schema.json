@@ -54,6 +54,10 @@
     },
     "updatedAt": {
       "type": "string"
+    },
+    "workflowVersionId": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [

@@ -197,6 +197,8 @@ export interface PatchProjectInput {
   name?: string;
   objective?: string;
   teamVersionId?: string;
+  /** Candidate published WorkflowVersion to bind before confirmPlan. */
+  workflowVersionId?: string;
 }
 
 export interface ConfirmPlanInput {
