@@ -60,6 +60,7 @@ export interface InviteTeamEntry {
   kind: "invite_team";
   projectId: string;
   workerVersionId: string;
+  workerId?: string;
   phase: "landed" | "failed";
   teamId?: string;
   teamVersionId?: string;

@@ -405,6 +405,60 @@ export function versionBadge(version: WorkerVersionDto): { label: string; tone: 
   return { label: "可选用", tone: "success" };
 }
 
+export const IDENTITY_SHORT_LABELS: Record<WorkerCardFieldName, string> = {
+  who: "谁",
+  how: "怎么干活",
+  skills: "会什么",
+};
+
+export function identityPreviewLine(source: WorkerCardFieldsDto | null | undefined): string {
+  return CARD_FIELDS.map((field) => {
+    const raw = cardFieldText(source, field.id).trim();
+    const shown = raw.length === 0 ? CARD_EMPTY : raw.length > 36 ? `${raw.slice(0, 36)}…` : raw;
+    return `${IDENTITY_SHORT_LABELS[field.id]}：${shown}`;
+  }).join(" · ");
+}
+
+export function identitySourceOfWorker(worker: WorkerDto): WorkerCardFieldsDto | null {
+  return cardSourceOf(null, activeVersionOf(worker) ?? null);
+}
+
+export function workerListIdentityMeta(worker: WorkerDto): string {
+  return `${identityPreviewLine(identitySourceOfWorker(worker))} · ${workerListMeta(worker)}`;
+}
+
+export function findWorkerRefByVersionId(
+  workers: readonly WorkerDto[],
+  versionId: string,
+): { workerId: string; version: WorkerVersionDto } | undefined {
+  for (const worker of workers) {
+    const version = (worker.versions ?? []).find((item) => item.id === versionId);
+    if (version !== undefined) {
+      return { workerId: worker.id, version };
+    }
+  }
+  return undefined;
+}
+
+export function publishedVersionsMatchingRole(
+  workers: readonly WorkerDto[],
+  role: string,
+): Array<{ workerId: string; workerName: string; version: WorkerVersionDto }> {
+  const needle = role.trim();
+  if (needle.length === 0) {
+    return [];
+  }
+  const hits: Array<{ workerId: string; workerName: string; version: WorkerVersionDto }> = [];
+  for (const worker of workers) {
+    for (const version of worker.versions ?? []) {
+      if (version.role === needle && isSelectableWorkerVersion(version)) {
+        hits.push({ workerId: worker.id, workerName: worker.name, version });
+      }
+    }
+  }
+  return hits;
+}
+
 export function workerListMeta(worker: WorkerDto): string {
   if (isUnpublishedWorker(worker)) {
     return "未发布 · 不可选用";

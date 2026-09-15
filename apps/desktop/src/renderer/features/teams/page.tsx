@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DesktopClient } from "@workforce/desktop-client";
 import { roleLibraryWorkerPath } from "@workforce/ui";
+import { identityPreviewLine } from "../role-library/model.js";
 
 import {
   Badge,
@@ -263,12 +264,10 @@ export function TeamsPage(props: FeaturePageProps) {
               meta={`${team.kind === "preset" ? "预设" : "自定义"} · ${
                 team.status === "published" ? "已发布" : "草稿"
               } · ${team.members
-                .map(
-                  (member) =>
-                    `${member.role}${
-                      member.workerVersionId ? `@${member.workerVersionId}` : ""
-                    }×${member.quantity}`,
-                )
+                .map((member) => {
+                  const hasCard = Boolean(member.who || member.how || member.skills);
+                  return hasCard ? `${member.title}（${identityPreviewLine(member)}）` : member.title;
+                })
                 .join(" / ")}`}
               onClick={() => props.navigate(`/teams/${team.id}`)}
             />

@@ -10,6 +10,8 @@ import {
   Cluster,
   ErrorText,
   Field,
+  List,
+  ListRow,
   Muted,
   Notice,
   Page,
@@ -18,6 +20,12 @@ import {
 } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient, useWorkforceConnection } from "../hooks.js";
+import {
+  identityPreviewLine,
+  identitySourceOfWorker,
+  roleLibraryDetailHref,
+} from "../role-library/model.js";
+import { LOCAL_HOST_PROBE_PENDING, probeHostRuntime, type HostRuntimeView } from "../runtime/model.js";
 import {
   confirmWorkflowAuthoringTurn,
   landedWorkflowDraft,
@@ -70,19 +78,25 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [emptyIntent, setEmptyIntent] = useState(false);
+  const [hostRuntime, setHostRuntime] = useState<HostRuntimeView | null>(null);
 
   useEffect(() => {
     if (!online) {
       return;
     }
     let cancelled = false;
-    void Promise.all([client.listProjects({ limit: 100 }), client.listWorkers({ limit: 100 })])
-      .then(([projectPage, workerPage]) => {
+    void Promise.all([
+      client.listProjects({ limit: 100 }),
+      client.listWorkers({ limit: 100 }),
+      probeHostRuntime(client),
+    ])
+      .then(([projectPage, workerPage, runtime]) => {
         if (cancelled) {
           return;
         }
         setProjects(projectPage.items);
         setWorkers(workerPage.items);
+        setHostRuntime(runtime);
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -415,6 +429,9 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
         workerId={workerId}
         taskId={taskId}
         runId={runId}
+        workers={workers}
+        runtime={hostRuntime}
+        onOpen={(path) => props.navigate(path)}
       />
       <Transcript
         entries={entries}
@@ -443,6 +460,11 @@ export function ChatPage(props: FeaturePageProps): ReactNode {
           onRunChange={setRunId}
           onTaskChange={setTaskId}
           onWorkerChange={onWorkerChange}
+          onOpenRole={
+            workerId
+              ? () => props.navigate(roleLibraryDetailHref(workerId))
+              : undefined
+          }
         />
       </details>
     </Page>
@@ -454,13 +476,44 @@ function LandingCard(props: {
   workerId: string;
   taskId: string;
   runId: string;
+  workers: readonly WorkerDto[];
+  runtime: HostRuntimeView | null;
+  onOpen: (path: string) => void;
 }): ReactNode {
   const lines = chatLandingLines(props);
+  const worker = props.workers.find((item) => item.id === props.workerId);
   return (
     <Card title="将落到" testId="chat-landing">
-      <Muted>
-        {lines.map((line) => `${line.object}：${line.note}`).join(" · ")}
-      </Muted>
+      <List testId="chat-landing-list">
+        {lines.map((line) => {
+          const href = line.href;
+          return (
+            <ListRow
+              key={line.object}
+              testId={`chat-landing-${line.object}`}
+              title={line.object}
+              meta={line.note}
+              onClick={
+                href
+                  ? () => {
+                      props.onOpen(href);
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
+      </List>
+      {worker ? (
+        <p className="wf-muted" data-testid="chat-landing-identity">
+          {identityPreviewLine(identitySourceOfWorker(worker))}
+        </p>
+      ) : (
+        <Muted>未选角色时，建角色确认后会进库草稿详情。空闲写卡请先选角色。</Muted>
+      )}
+      <p className="wf-muted" data-testid="chat-landing-codex">
+        现在能不能用 Codex：{props.runtime?.summary ?? LOCAL_HOST_PROBE_PENDING}
+      </p>
     </Card>
   );
 }
@@ -479,6 +532,7 @@ function BindingBar(props: {
   onRunChange: (runId: string) => void;
   onTaskChange: (taskId: string) => void;
   onWorkerChange: (workerId: string) => void;
+  onOpenRole?: (() => void) | undefined;
 }): ReactNode {
   const activeRuns = props.runs.filter((run) => isActiveRun(run.status));
   return (
@@ -513,7 +567,7 @@ function BindingBar(props: {
             <option value="">未选择（空闲写卡 / 请来 Team 对不上角色时先选）</option>
             {props.workers.map((worker) => (
               <option key={worker.id} value={worker.id}>
-                {worker.name} · {worker.status} · {worker.id}
+                {worker.name} · {identityPreviewLine(identitySourceOfWorker(worker))}
               </option>
             ))}
           </Select>
@@ -551,6 +605,14 @@ function BindingBar(props: {
           </Select>
         </Field>
       </Cluster>
+      <Button
+        variant="outline"
+        testId="chat-open-selected-role"
+        disabled={!props.onOpenRole}
+        onClick={props.onOpenRole}
+      >
+        打开角色详情
+      </Button>
       <Muted>
         {CREATE_WORKFLOW_NEEDS_PROJECT} {START_DIRECT_NEEDS_PROJECT} 没有 projectId / runId /
         workerId / taskId 时只问，不发写。

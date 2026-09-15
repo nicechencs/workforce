@@ -7,7 +7,11 @@ import type {
 } from "@workforce/desktop-client";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { runtimeProfileLabel } from "../runtime/model.js";
+import {
+  LOCAL_HOST_PROBE_PENDING,
+  runtimeProfileLabel,
+  type HostRuntimeView,
+} from "../runtime/model.js";
 
 import {
   Badge,
@@ -70,6 +74,9 @@ export function WorkerDetail(props: {
   onOpenVersion: (version: WorkerVersionDto) => void;
   onOpenTeam: (teamId: string) => void;
   onOpenProjectSettings: (projectId: string) => void;
+  hostRuntime?: HostRuntimeView | null;
+  onOpenSettings?: () => void;
+  onOpenNodes?: () => void;
 }): ReactNode {
   const worker = props.worker;
   if (worker === null) {
@@ -161,6 +168,11 @@ export function WorkerDetail(props: {
         busy={props.busy === "save"}
         onSave={props.onSaveCard}
       />
+      <CodexReadinessCard
+        runtime={props.hostRuntime ?? null}
+        onOpenSettings={props.onOpenSettings}
+        onOpenNodes={props.onOpenNodes}
+      />
       {props.version !== null ? (
         <VersionPanel
           version={props.version}
@@ -250,6 +262,41 @@ function VersionPanel(props: {
       {!canArchiveVersion(props.version) && canForkVersion(props.version) ? (
         <Muted>已归档版本不能再被新 Team 选用，仍可 fork 出新草稿。</Muted>
       ) : null}
+    </Card>
+  );
+}
+
+export function CodexReadinessCard(props: {
+  runtime: HostRuntimeView | null;
+  onOpenSettings?: (() => void) | undefined;
+  onOpenNodes?: (() => void) | undefined;
+}): ReactNode {
+  const ready = props.runtime?.codingReady === true;
+  return (
+    <Card title="现在能不能用 Codex" testId="role-library-codex">
+      <StatusText tone={ready ? "success" : "warning"}>
+        {ready ? "本机 Codex CLI 已就绪" : "Codex 未就绪"}
+      </StatusText>
+      <Muted>{props.runtime?.summary ?? LOCAL_HOST_PROBE_PENDING}</Muted>
+      <Muted>
+        干活走本机 Codex Host，不是给这个角色单独安装 CLI。Runtime / Policy 不是卡片必填。未发布草稿不能当员工去跑。
+      </Muted>
+      <Cluster>
+        {props.onOpenSettings ? (
+          <Button
+            variant="outline"
+            testId="role-library-open-capabilities"
+            onClick={props.onOpenSettings}
+          >
+            打开设置 · 能力
+          </Button>
+        ) : null}
+        {props.onOpenNodes ? (
+          <Button variant="outline" testId="role-library-open-nodes" onClick={props.onOpenNodes}>
+            打开本机节点
+          </Button>
+        ) : null}
+      </Cluster>
     </Card>
   );
 }

@@ -137,6 +137,7 @@ export interface IdleCardWriteResult {
 export interface InviteTeamWriteResult {
   projectId: string;
   workerVersionId: string;
+  workerId: string;
   teamId: string;
   teamVersionId: string;
   unpublished: true;
@@ -518,6 +519,7 @@ export async function landInviteTeam(
       return {
         projectId: intent.projectId,
         workerVersionId: selected.version.id,
+        workerId: selected.workerId,
         teamId: written.teamId,
         teamVersionId: written.teamVersionId,
         unpublished: true,
@@ -539,6 +541,7 @@ export async function landInviteTeam(
   return {
     projectId: intent.projectId,
     workerVersionId: selected.version.id,
+    workerId: selected.workerId,
     teamId: team.id,
     teamVersionId: created.id,
     unpublished: true,
