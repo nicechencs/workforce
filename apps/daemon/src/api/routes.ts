@@ -274,14 +274,27 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         requireIfMatch: true,
       },
       (ctx, body) => {
-        rejectUnknownFields(body, ["name", "objective", "teamVersionId", "operationId"]);
-        const input: { name?: string; objective?: string; teamVersionId?: string } = {};
+        rejectUnknownFields(body, [
+          "name",
+          "objective",
+          "teamVersionId",
+          "workflowVersionId",
+          "operationId",
+        ]);
+        const input: {
+          name?: string;
+          objective?: string;
+          teamVersionId?: string;
+          workflowVersionId?: string;
+        } = {};
         const name = optionalString(body, "name");
         const objective = optionalString(body, "objective");
         const teamVersionId = optionalString(body, "teamVersionId");
+        const workflowVersionId = optionalString(body, "workflowVersionId");
         if (name !== undefined) input.name = name;
         if (objective !== undefined) input.objective = objective;
         if (teamVersionId !== undefined) input.teamVersionId = teamVersionId;
+        if (workflowVersionId !== undefined) input.workflowVersionId = workflowVersionId;
         return deps.services.patchProject(ctx, param(request, "id"), input);
       },
     );

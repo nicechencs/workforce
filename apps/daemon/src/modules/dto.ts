@@ -157,6 +157,12 @@ export interface PatchProjectInput {
   name?: string;
   objective?: string;
   teamVersionId?: string;
+  /**
+   * Candidate published WorkflowVersion to bind before confirmPlan (domain
+   * model §4.2). confirmPlan/:start prefer this graph over the generated
+   * software-delivery template; unset falls back to the template.
+   */
+  workflowVersionId?: string;
 }
 
 export interface ConfirmPlanInput {

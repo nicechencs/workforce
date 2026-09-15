@@ -36,6 +36,7 @@ import {
   findPublishedWorkflow,
   findPublishedWorkflowVersion,
   isPresetPublishedTeamVersion,
+  isPresetPublishedWorkflowVersionId,
   seedPresetWorkerLibrary,
 } from "../composition/catalog.js";
 
@@ -191,6 +192,19 @@ export function assertBindableTeamVersionId(service: CatalogService, versionId: 
     return;
   }
   service.assertBindableTeamVersion(versionId);
+}
+
+/**
+ * A project may bind a candidate WorkflowVersion before confirmPlan (domain
+ * model §4.2). Only a published, non-empty WorkflowVersion is bindable; an
+ * unpublished draft is rejected here so the write fails fast instead of
+ * being silently dropped at confirmPlan/:start graph resolution.
+ */
+export function assertBindableWorkflowVersionId(service: CatalogService, versionId: string): void {
+  if (isPresetPublishedWorkflowVersionId(versionId)) {
+    return;
+  }
+  service.assertBindableWorkflowVersion(versionId);
 }
 
 /**

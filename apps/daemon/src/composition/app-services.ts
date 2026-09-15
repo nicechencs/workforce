@@ -182,6 +182,7 @@ import { CompositionPolicy, createCompositionPolicy } from "./policy.js";
 import { bindWorktreesToHost, CompositionWorktreeHost } from "./worktree-host.js";
 import {
   assertBindableTeamVersionId,
+  assertBindableWorkflowVersionId,
   classifyChatIntent,
   createAuthoringCatalog,
   listedDraftTeams,
@@ -973,6 +974,10 @@ export class ComposedAppServices implements AppServices {
       if (input.teamVersionId !== undefined) {
         assertBindableTeamVersionId(this.authoring, input.teamVersionId);
         project.teamVersionId = input.teamVersionId;
+      }
+      if (input.workflowVersionId !== undefined) {
+        assertBindableWorkflowVersionId(this.authoring, input.workflowVersionId);
+        project.workflowVersionId = input.workflowVersionId;
       }
       project.stateRevision += 1;
       project.updatedAt = this.app.world.nowIso();
@@ -3512,6 +3517,9 @@ export class ComposedAppServices implements AppServices {
     }
     if (project.teamVersionId !== undefined) {
       dto.teamVersionId = project.teamVersionId;
+    }
+    if (project.workflowVersionId !== undefined) {
+      dto.workflowVersionId = project.workflowVersionId;
     }
     if (project.executionSnapshotId !== undefined) {
       dto.executionSnapshotId = project.executionSnapshotId;

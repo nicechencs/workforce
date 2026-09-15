@@ -138,6 +138,11 @@ export function findPublishedWorkflowVersion(
   );
 }
 
+/** The preset feature-delivery template is always published/executable; nothing to validate. */
+export function isPresetPublishedWorkflowVersionId(versionId: string): boolean {
+  return findPublishedWorkflowVersion(FEATURE_DELIVERY_WORKFLOW_ID, versionId) !== null;
+}
+
 export const PRESET_PLANNER_WORKER_VERSION: WorkerVersionDto = {
   id: PLANNER_WORKER_VERSION_ID,
   workerId: PLANNER_WORKER_ID,
