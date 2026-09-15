@@ -1,3 +1,11 @@
+import type {
+  CanvasGate,
+  CanvasJoinPolicy,
+  CanvasNodeKind,
+  CanvasUpstreamWait,
+  CanvasWorkerRole,
+} from "../graph/types.js";
+
 export const CANVAS_PAGE_TITLE_NEW = "新建工作流画布";
 export const CANVAS_PAGE_TITLE_EDIT = "在画布中编辑";
 
@@ -11,7 +19,54 @@ export const D02_FREEZE_NOTE =
   "已发布版本不可变。确认计划后的活动执行图按 D02 冻结，不能在画布上原地改。要改流程请新建未发布 version。";
 
 export const EMPTY_CANVAS_NOTE =
-  "画布是空的。添加任务、审批、条件或并行节点并连线。未保存的本地草稿不会出现在已发布目录里。";
+  "画布是空的。从左侧添加任务、审批、条件或并行节点并连线。未保存的本地草稿不会出现在已发布目录里。";
+
+export const EMPTY_CANVAS_TITLE = "还没有节点";
+
+export const INSPECTOR_EMPTY_NOTE = "选中节点或边以编辑属性。画布只编排未发布草稿。";
+
+export const KIND_LABEL: Record<CanvasNodeKind, string> = {
+  task: "任务",
+  approval: "审批",
+  condition: "条件",
+  parallel: "并行",
+  delivery: "交付",
+};
+
+export const ROLE_LABEL: Record<CanvasWorkerRole, string> = {
+  planner: "规划",
+  developer: "实现",
+  reviewer: "审查",
+  approver: "审批人",
+};
+
+export const GATE_LABEL: Record<CanvasGate, string> = {
+  plan: "计划门",
+  artifact: "产物门",
+};
+
+export const JOIN_LABEL: Record<CanvasJoinPolicy, string> = {
+  all_success: "全部成功",
+  all_terminal: "全部终态",
+  min_success: "最少成功数",
+};
+
+export const WAIT_LABEL: Record<CanvasUpstreamWait, string> = {
+  outputs_ready: "上游产物就绪",
+  completed: "上游已完成",
+  failed: "上游失败",
+  cancelled: "上游已取消",
+  any_terminal: "上游任一终态",
+};
+
+export const PALETTE_GROUPS: ReadonlyArray<{
+  label: string;
+  kinds: readonly CanvasNodeKind[];
+}> = [
+  { label: "步骤", kinds: ["task", "delivery"] },
+  { label: "控制", kinds: ["condition", "parallel"] },
+  { label: "门", kinds: ["approval"] },
+];
 
 export const PUBLISH_NEEDS_VALID_DAG =
   "发布前须通过有限 DAG 校验（无循环、无自环、有入口、节点可达）。";

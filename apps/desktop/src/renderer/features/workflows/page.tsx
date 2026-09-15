@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { WorkflowDto } from "@workforce/desktop-client";
 
-import { Badge, Button, Card, List, ListRow, Muted, Notice, Page } from "../../components/ui.js";
+import { Badge, Button, Card, EmptyState, List, ListRow, LoadingText, Muted, Notice, Page } from "../../components/ui.js";
 import type { FeaturePageProps } from "../contract.js";
 import { useWorkforceClient } from "../hooks.js";
 import {
@@ -19,6 +19,7 @@ import {
 import {
   asWorkflowView,
   catalogListCard,
+  CATALOG_OBJECT_NOTE,
   rejectWorkflowCanvas,
   stepKindLabel,
   versionById,
@@ -146,7 +147,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
   return (
     <Page
       title="工作流"
-      subtitle="模板、版本和结构化步骤。已发布版本只读；未发布草稿走画布。"
+      subtitle="图版本目录。已发布版本只读；未发布草稿走画布。执行只走已发布 WorkflowVersion。"
       actions={
         <Button
           variant="primary"
@@ -157,6 +158,7 @@ export function WorkflowsPage(props: FeaturePageProps) {
         </Button>
       }
     >
+      <Muted>{CATALOG_OBJECT_NOTE}</Muted>
       <Muted>{note}</Muted>
       <WorkflowAuthoringEntry navigate={props.navigate} />
       <Card>
@@ -166,13 +168,14 @@ export function WorkflowsPage(props: FeaturePageProps) {
           <List>
             {workflows.map((workflow) => {
               const version = versionById(workflow, undefined);
+              const published = version?.status === "published";
               return (
                 <ListRow
                   key={workflow.id}
                   testId={`workflow-row-${workflow.id}`}
                   title={workflow.name}
                   meta={`${workflow.id} · ${
-                    version?.status === "published" ? "已发布" : "草稿"
+                    published ? "已发布" : "草稿"
                   } ${version?.version ?? workflow.activeVersionId} · ${
                     version?.steps.length ?? 0
                   } 步`}
@@ -189,10 +192,24 @@ export function WorkflowsPage(props: FeaturePageProps) {
 
 function CatalogListStatus(props: { source: WorkflowCatalogSource }) {
   const card = catalogListCard(props.source);
+  if (props.source === "loading") {
+    return (
+      <LoadingText>
+        <span data-testid={card.testId}>{card.text}</span>
+      </LoadingText>
+    );
+  }
+  if (props.source === "unavailable") {
+    return (
+      <EmptyState title="目录未加载" testId={card.testId}>
+        {card.text}
+      </EmptyState>
+    );
+  }
   return (
-    <Muted>
-      <span data-testid={card.testId}>{card.text}</span>
-    </Muted>
+    <EmptyState title="还没有已发布的工作流" testId={card.testId}>
+      {card.text} 用页头「新建画布」创建未发布草稿，或打开对话生成。
+    </EmptyState>
   );
 }
 
@@ -210,8 +227,13 @@ function WorkflowDetailPage(props: {
         actions={<Button variant="outline" onClick={() => props.navigate(workflowCatalogPath())}>返回工作流</Button>}
       >
         <Card>
-          <p>{props.source === "loading" ? props.note : "未找到该工作流模板。"}</p>
-          {props.source === "unavailable" ? <Muted>{props.note}</Muted> : null}
+          {props.source === "loading" ? (
+            <LoadingText>{props.note}</LoadingText>
+          ) : (
+            <EmptyState title="未找到该工作流模板。">
+              {props.source === "unavailable" ? props.note : "目录里没有这条 identity。"}
+            </EmptyState>
+          )}
         </Card>
       </Page>
     );
@@ -223,10 +245,14 @@ function WorkflowDetailPage(props: {
   const versionRoute = Boolean(props.versionId);
   const sourceLabel =
     props.source === "live" ? "GET /workflows" : props.source === "empty" ? "空目录" : "目录未加载";
+  const published = selected?.status === "published";
+  const hasDraft = workflow.versions.some((item) => item.status === "draft");
+  const canvasActionLabel = hasDraft && !versionRoute ? "打开草稿画布" : "复制到画布";
 
   return (
     <Page
       title={workflow.name}
+      subtitle="已发布版本只读。要改流程请复制到未发布画布。"
       actions={
         <>
           <Button
@@ -241,46 +267,59 @@ function WorkflowDetailPage(props: {
             testId="workflow-fork-canvas"
             onClick={() => props.navigate(canvasDraftPath(workflow.id))}
           >
-            复制到画布
+            {canvasActionLabel}
           </Button>
         </>
       }
     >
-      <Card testId="workflow-detail">
+      <Card testId="workflow-detail" title="身份">
         <div className="wf-cluster">
-          <Badge tone="muted">只读</Badge>
+          <Badge tone={published ? "success" : "warning"}>{published ? "已发布" : "草稿"}</Badge>
+          <Badge tone="muted">只读目录</Badge>
           <Muted>
             来源 {sourceLabel} · 活动版本 {workflow.activeVersionId}
           </Muted>
         </div>
-        <Muted>{workflow.description}</Muted>
+        <Muted>{workflow.description || "说明未返回"}</Muted>
         <Muted>{props.note}</Muted>
         <Muted>{canvas.reason}</Muted>
         {selected?.status !== "published" ? (
           <Notice tone="warning" title="未发布">
             Runtime 不会执行此版本。确认发布后才能给项目用。
           </Notice>
-        ) : null}
+        ) : (
+          <Notice tone="info" title="不可变版本">
+            项目执行若绑定此版本，不会在画布上原地改。复制到画布会生成新的未发布 version。
+          </Notice>
+        )}
       </Card>
       <Card title="版本">
-        <List>
-          {workflow.versions.map((version) => (
-            <ListRow
-              key={version.id}
-              testId={`workflow-version-${version.id}`}
-              title={`${version.version} · ${version.status === "published" ? "已发布" : "草稿"}`}
-              meta={`${
-                version.status === "published" ? "不可变" : "未发布，Runtime 不会执行"
-              } · 入口 ${version.entry} · ${version.steps.length} 步`}
-              onClick={() =>
-                props.navigate(`/workflows/${workflow.id}/versions/${version.id}`)
-              }
-            />
-          ))}
-        </List>
+        {workflow.versions.length === 0 ? (
+          <EmptyState title="没有版本">目录未返回 version。不会回退夹具。</EmptyState>
+        ) : (
+          <List>
+            {workflow.versions.map((version) => (
+              <ListRow
+                key={version.id}
+                testId={`workflow-version-${version.id}`}
+                title={`${version.version} · ${version.status === "published" ? "已发布" : "草稿"}`}
+                meta={`${
+                  version.status === "published" ? "不可变" : "未发布，Runtime 不会执行"
+                } · 入口 ${version.entry || "未返回"} · ${version.steps.length} 步`}
+                onClick={() =>
+                  props.navigate(`/workflows/${workflow.id}/versions/${version.id}`)
+                }
+              />
+            ))}
+          </List>
+        )}
       </Card>
-      <Card title="结构化步骤">
-        {selected ? <StructuredSteps version={selected} /> : <p>未找到该版本。</p>}
+      <Card>
+        {selected ? (
+          <StructuredSteps version={selected} />
+        ) : (
+          <EmptyState title="未找到该版本。">版本行打开详情，不会进画布。</EmptyState>
+        )}
       </Card>
     </Page>
   );
@@ -289,7 +328,7 @@ function WorkflowDetailPage(props: {
 export function StructuredSteps(props: { version: WorkflowVersionView }) {
   return (
     <section data-testid="workflow-steps">
-      <h2 className="wf-section-title">{props.version.version}</h2>
+      <h2 className="wf-section-title">结构化步骤 · {props.version.version}</h2>
       <ol className="wf-timeline">
         {props.version.steps.map((step, index) => (
           <WorkflowStepRow key={step.id} step={step} index={index} />

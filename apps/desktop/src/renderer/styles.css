@@ -621,6 +621,10 @@ a {
   .wf-split {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .wf-canvas-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .wf-kpi {
@@ -1539,6 +1543,36 @@ button.wf-list-row:hover {
 
 /* ─── 工作流画布（共享层，页面只组合 class） ─────────────────────────────── */
 
+.wf-canvas-workspace {
+  display: grid;
+  gap: var(--wf-space-12);
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) minmax(16rem, 22rem);
+  align-items: start;
+}
+
+.wf-canvas-palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-space-8);
+}
+
+.wf-canvas-palette-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-space-8);
+}
+
+.wf-canvas-palette-group-label {
+  margin: 0;
+  font-size: var(--wf-font-meta);
+  color: var(--wf-text-secondary);
+}
+
+.wf-canvas-palette .wf-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 .wf-canvas-frame {
   position: relative;
   min-height: 420px;
@@ -1549,8 +1583,15 @@ button.wf-list-row:hover {
 }
 
 .wf-canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0;
   padding: var(--wf-space-16);
+  pointer-events: none;
   color: var(--wf-text-muted);
   font-size: var(--wf-font-meta);
 }
@@ -1635,6 +1676,9 @@ button.wf-list-row:hover {
 .wf-canvas-inspector {
   min-width: 16rem;
   max-width: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wf-space-8);
 }
 
 .wf-validation-list {

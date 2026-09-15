@@ -7,7 +7,7 @@ export function WorkflowAuthoringEntry(props: { navigate: (path: string) => void
       <Badge tone="muted">Daemon 会话 · 项目范围</Badge>
       <Muted>{CHAT_SESSION_GAP}</Muted>
       <Muted>
-        在聊天中描述工作流，等待结构化提案后由你确认。确认只会创建未发布草稿，不会自动发布或执行。
+        在项目范围内描述要生成的流程，确认后只落未发布草稿。不是 Worker IM，聊完也不算执行完成。
       </Muted>
       <Cluster>
         <Button

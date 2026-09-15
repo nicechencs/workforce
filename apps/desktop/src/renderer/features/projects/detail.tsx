@@ -13,12 +13,14 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   ErrorText,
   Field,
   Input,
   List,
   ListRow,
   Muted,
+  Notice,
   Page,
   Tabs,
   Textarea,
@@ -61,6 +63,7 @@ import {
   type OrchestrationMode,
 } from "../orchestration/index.js";
 import { sortTasksForDag, taskStatusLabel, evaluationRowForKind, evaluationRowFromArtifacts } from "../tasks/model.js";
+import { FEATURE_DELIVERY_STEPS, stepKindLabel } from "../workflows/model.js";
 import { commandOptions, errorMessage, isCommandAccepted, isRevisionConflict } from "./command.js";
 import {
   PROJECT_DIRECT_ADHOC_NOTE,
@@ -78,6 +81,7 @@ import {
   nodeScopeLabel,
   pendingApprovalCount,
   pinnedArtifactVersion,
+  PLANNING_TEMPLATE_NOTE,
   projectEditForm,
   projectPolicyCopy,
   projectProgressLabel,
@@ -591,6 +595,9 @@ function OverviewPanel(props: {
         <Muted>{props.runtimeSummary}</Muted>
       </Card>
       <Card title="绑定的 WorkflowVersion" testId="project-overview-workflow">
+        <Notice tone="warning" title="规划仍是模板">
+          {PLANNING_TEMPLATE_NOTE}
+        </Notice>
         <Muted>
           {project.planArtifactVersionId
             ? `已确认计划产物 ${project.planArtifactVersionId}`
@@ -598,8 +605,8 @@ function OverviewPanel(props: {
         </Muted>
         <Muted>
           {project.executionSnapshotId
-            ? `执行快照 ${project.executionSnapshotId}`
-            : "尚未绑定执行图。自定义图是否进入 :start 是执行缺口，不是再加标签。"}
+            ? `执行快照 ${project.executionSnapshotId}。快照图来自 confirmPlan，不是画布上未发布的草稿。`
+            : "尚未绑定执行图。自定义已发布图是否进入 :start 是执行缺口，不是再加标签。"}
         </Muted>
       </Card>
 
@@ -647,6 +654,21 @@ function OverviewPanel(props: {
         <Card title="计划">
           <p>计划产物版本：{project.planArtifactVersionId ?? "尚未生成"}</p>
           <Muted>确认计划会提交 planArtifactVersionId。未确认前不会开始执行开发任务。</Muted>
+          <Muted>{PLANNING_TEMPLATE_NOTE}</Muted>
+          <ol className="wf-timeline" data-testid="project-planning-template-steps">
+            {FEATURE_DELIVERY_STEPS.map((step, index) => (
+              <li key={step.id} className="wf-timeline-row">
+                <span className="wf-list-row-title">
+                  {index + 1}. {step.title}
+                </span>
+                <span className="wf-list-row-meta">
+                  {stepKindLabel(step.kind)}
+                  {step.worker ? ` · ${step.worker}` : ""}
+                  {step.gate ? ` · gate ${step.gate}` : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
         </Card>
       ) : null}
     </>
@@ -662,9 +684,9 @@ function TasksPanel(props: {
   const evaluationNote = evaluationRowFromArtifacts(props.artifacts);
   return (
     <Card title="Tasks">
-      <Muted>按已发布执行图依赖排列的任务列表。</Muted>
+      <Muted>按确认计划后的执行图依赖排列。当前仍是软件交付模板，不是画布自定义图。</Muted>
       {props.tasks.length === 0 ? (
-        <Muted>{emptyTasksCopy(props.project.status)}</Muted>
+        <EmptyState title="还没有任务">{emptyTasksCopy(props.project.status)}</EmptyState>
       ) : (
         <List testId="project-task-list">
           {props.tasks.map((task) => (

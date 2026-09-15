@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 
-import { CANVAS_NODE_SIZE } from "../graph/operations.js";
-import type { CanvasEdge, CanvasGraph, CanvasNode, CanvasNodeKind } from "../graph/types.js";
+import { EmptyState } from "../../../components/ui.js";
 import { cn } from "../../../components/cn.js";
+import { CANVAS_NODE_SIZE } from "../graph/operations.js";
+import type { CanvasEdge, CanvasGraph, CanvasNode } from "../graph/types.js";
+import { EMPTY_CANVAS_NOTE, EMPTY_CANVAS_TITLE, KIND_LABEL, ROLE_LABEL } from "./copy.js";
 import type { CanvasSession } from "./model.js";
 
 export function WorkflowCanvasEditor(props: {
@@ -16,9 +18,9 @@ export function WorkflowCanvasEditor(props: {
   return (
     <div className="wf-canvas-frame" data-testid="workflow-canvas">
       {graph.nodes.length === 0 ? (
-        <p className="wf-canvas-empty" data-testid="workflow-canvas-empty">
-          画布是空的。从工具栏添加节点。未发布，Runtime 不会执行此图。
-        </p>
+        <div className="wf-canvas-empty" data-testid="workflow-canvas-empty">
+          <EmptyState title={EMPTY_CANVAS_TITLE}>{EMPTY_CANVAS_NOTE}</EmptyState>
+        </div>
       ) : null}
       <svg
         role="img"
@@ -113,15 +115,14 @@ function NodeRect(props: {
         rx={8}
       />
       <text className="wf-canvas-node-kind" x={12} y={22}>
-        {kindLabel(node.kind)}
+        {KIND_LABEL[node.kind]}
         {props.isEntry ? " · 入口" : ""}
       </text>
       <text className="wf-canvas-node-title" x={12} y={44}>
         {truncate(node.title, 14)}
       </text>
       <text className="wf-canvas-node-id" x={12} y={64}>
-        {node.id}
-        {node.role ? ` · ${node.role}` : ""}
+        {nodeMeta(node)}
       </text>
     </g>
   );
@@ -159,19 +160,17 @@ function EdgePath(props: {
   );
 }
 
-function kindLabel(kind: CanvasNodeKind): string {
-  switch (kind) {
-    case "task":
-      return "任务";
-    case "approval":
-      return "审批";
-    case "condition":
-      return "条件";
-    case "parallel":
-      return "并行";
-    case "delivery":
-      return "交付";
+function nodeMeta(node: CanvasNode): string {
+  const bits = [node.id];
+  if (node.role) {
+    bits.push(ROLE_LABEL[node.role]);
   }
+  if (node.gate === "plan") {
+    bits.push("计划门");
+  } else if (node.gate === "artifact") {
+    bits.push("产物门");
+  }
+  return bits.join(" · ");
 }
 
 function truncate(value: string, max: number): string {
