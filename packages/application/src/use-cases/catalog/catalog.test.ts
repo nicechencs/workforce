@@ -95,6 +95,42 @@ describe("catalog write use-cases", () => {
     ).toThrow(UseCaseError);
   });
 
+  it("publishes a WorkflowVersion and refuses unpublished/empty-node project binds", () => {
+    const catalog = new MemoryCatalog();
+    const useCase = new CatalogService({
+      catalog,
+      ids: new MemoryIds(),
+      now: () => "2026-09-11T12:00:00.000Z",
+      validateWorkflowGraph,
+    });
+    const workflow = useCase.createWorkflow({ name: "Bindable" });
+    const draft = useCase.createWorkflowVersion(workflow.id, linearGraph);
+    expect(isExecutableWorkflowVersion(draft)).toBe(false);
+    expect(() => useCase.assertBindableWorkflowVersion(draft.id)).toThrow(
+      /unless it is a published version with at least one node/i,
+    );
+
+    const published = useCase.publishWorkflowVersion(workflow.id, draft.id);
+    expect(isExecutableWorkflowVersion(published)).toBe(true);
+    expect(useCase.assertBindableWorkflowVersion(published.id).immutable).toBe(true);
+
+    expect(() => useCase.assertBindableWorkflowVersion("wfv_missing")).toThrow(UseCaseError);
+
+    // publishWorkflowVersion already refuses to publish an empty-node graph, so
+    // an executable-but-empty version can only exist via direct store
+    // corruption (defense in depth for `assertBindableWorkflowVersion`, same
+    // spirit as the team-version bind guard above).
+    catalog.workflowVersions.set("wfv_corrupt", {
+      ...published,
+      id: "wfv_corrupt",
+      nodes: [],
+      edges: [],
+    });
+    expect(() => useCase.assertBindableWorkflowVersion("wfv_corrupt")).toThrow(
+      /unless it is a published version with at least one node/i,
+    );
+  });
+
   it("lists a created worker with its open draft id and drops it after publish", () => {
     const catalog = service();
     const created = catalog.createWorker({

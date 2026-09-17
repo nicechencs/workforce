@@ -4,13 +4,18 @@ import { describe, expect, it } from "vitest";
 import type { ArtifactDto, RunDto } from "@workforce/desktop-client";
 
 import { problemFrom } from "./command.js";
+import type { WorkflowTemplateView } from "../workflows/model.js";
 import {
   applyFormFailure,
   applyProjectRefresh,
   artifactKindLabel,
+  bindableWorkflowVersions,
+  boundWorkflowCopy,
+  boundWorkflowIdentityLabel,
   budgetPlaceholder,
   emptyCreateForm,
   emptyTasksCopy,
+  findWorkflowBindOption,
   hiddenIllegalActions,
   isDraftConfigComplete,
   nodeScopeLabel,
@@ -18,12 +23,15 @@ import {
   projectPolicyCopy,
   projectProgressLabel,
   projectStatusLabel,
+  projectWorkflowVersionId,
   publicWorkspaceLabel,
   reduceCreateProjectForm,
   splitProjectRuns,
   taskDependencyLabel,
   taskOwnerLabel,
+  UNBOUND_WORKFLOW_NOTE,
   visibleProjectActions,
+  workflowBindEnabled,
   type ProjectActionInput,
 } from "./model.js";
 import {
@@ -324,5 +332,103 @@ describe("project detail tab models", () => {
     expect(artifactKindLabel("git_diff")).toBe("代码");
     expect(pinnedArtifactVersion(artifact)?.id).toBe("arv_2");
     expect(pinnedArtifactVersion({ versions: [] })).toBeNull();
+  });
+});
+
+describe("candidate WorkflowVersion bind (domain model §4.2)", () => {
+  function workflowView(partial: Partial<WorkflowTemplateView>): WorkflowTemplateView {
+    return {
+      id: "wfd_1",
+      name: "Custom delivery",
+      description: "",
+      activeVersionId: "wfv_published",
+      versions: [],
+      readonly: true,
+      ...partial,
+    };
+  }
+
+  const published = {
+    id: "wfv_published",
+    version: "1",
+    status: "published" as const,
+    immutable: true,
+    entry: "plan",
+    steps: [],
+    executionFrozen: true,
+  };
+  const draft = {
+    id: "wfv_draft",
+    version: "2",
+    status: "draft" as const,
+    immutable: false,
+    entry: "plan",
+    steps: [],
+    executionFrozen: false,
+  };
+
+  it("only offers published, immutable versions to bind — drafts are excluded (未发布草稿拒绝绑定)", () => {
+    const workflows = [workflowView({ versions: [published, draft] })];
+    const options = bindableWorkflowVersions(workflows);
+    expect(options).toEqual([
+      {
+        workflowId: "wfd_1",
+        workflowName: "Custom delivery",
+        versionId: "wfv_published",
+        version: "1",
+      },
+    ]);
+  });
+
+  it("drops duplicate version ids and skips a published-but-mutable version", () => {
+    const mutablePublished = { ...published, immutable: false };
+    const workflows = [
+      workflowView({ id: "wfd_1", versions: [published] }),
+      workflowView({ id: "wfd_2", versions: [published] }),
+      workflowView({ id: "wfd_3", versions: [mutablePublished] }),
+    ];
+    const options = bindableWorkflowVersions(workflows);
+    expect(options.map((item) => item.workflowId)).toEqual(["wfd_1"]);
+  });
+
+  it("finds a bind option by versionId and returns null for an unbound/unknown id", () => {
+    const options = bindableWorkflowVersions([workflowView({ versions: [published] })]);
+    expect(findWorkflowBindOption(options, "wfv_published")?.workflowName).toBe("Custom delivery");
+    expect(findWorkflowBindOption(options, "wfv_missing")).toBeNull();
+    expect(findWorkflowBindOption(options, null)).toBeNull();
+  });
+
+  it("reads the project's echoed candidate workflowVersionId, distinguishing empty from unset", () => {
+    expect(projectWorkflowVersionId({ workflowVersionId: "wfv_published" })).toBe("wfv_published");
+    expect(projectWorkflowVersionId({ workflowVersionId: "" })).toBeNull();
+    expect(projectWorkflowVersionId({})).toBeNull();
+  });
+
+  it("labels the bound identity by workflow name + version, falling back to the raw id", () => {
+    const options = bindableWorkflowVersions([workflowView({ versions: [published] })]);
+    const option = findWorkflowBindOption(options, "wfv_published");
+    expect(boundWorkflowIdentityLabel("wfv_published", option)).toBe(
+      "Custom delivery · WorkflowVersion wfv_published（version 1）",
+    );
+    expect(boundWorkflowIdentityLabel("wfv_orphaned", null)).toBe("WorkflowVersion wfv_orphaned");
+  });
+
+  it("states the honest template-fallback note when unbound, and never claims a Planner Run", () => {
+    expect(boundWorkflowCopy({ boundVersionId: null, option: null })).toBe(UNBOUND_WORKFLOW_NOTE);
+    expect(UNBOUND_WORKFLOW_NOTE).toContain("软件交付模板");
+    expect(UNBOUND_WORKFLOW_NOTE).toContain("不是 Planner Run");
+
+    const options = bindableWorkflowVersions([workflowView({ versions: [published] })]);
+    const option = findWorkflowBindOption(options, "wfv_published");
+    const bound = boundWorkflowCopy({ boundVersionId: "wfv_published", option });
+    expect(bound).toContain("已绑定");
+    expect(bound).toContain("不回落模板");
+  });
+
+  it("only allows binding while draft or planning; confirmPlan freezes the choice", () => {
+    expect(workflowBindEnabled("draft")).toBe(true);
+    expect(workflowBindEnabled("planning")).toBe(true);
+    expect(workflowBindEnabled("ready")).toBe(false);
+    expect(workflowBindEnabled("running")).toBe(false);
   });
 });
